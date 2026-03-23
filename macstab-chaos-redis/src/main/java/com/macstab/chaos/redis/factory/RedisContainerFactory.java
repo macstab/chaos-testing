@@ -8,8 +8,6 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
 import org.testcontainers.containers.wait.strategy.Wait;
@@ -20,50 +18,10 @@ import com.github.dockerjava.api.model.Capability;
 import com.macstab.chaos.core.util.ContainerIdFormatter;
 import com.macstab.chaos.redis.exception.ClusterCreationException;
 
-/**
- * Factory for creating Testcontainers-based Redis instances.
- *
- * <p><strong>Design:</strong> Provides pre-configured Redis containers for common test scenarios:
- *
- * <ul>
- *   <li>Standalone Redis (no auth, no SSL)
- *   <li>Standalone Redis with TLS (mutual TLS, client certificates)
- *   <li>Sentinel cluster (1 master + 2 replicas + 3 sentinels)
- * </ul>
- *
- * <p><strong>Lifecycle:</strong> All containers are returned in {@code started} state. Callers must
- * {@code stop()} when done, or use {@code @Container} annotation for auto-cleanup.
- *
- * <p><strong>Thread Safety:</strong> This factory is stateless and thread-safe.
- *
- * <p><strong>Preferred Usage:</strong> Use annotations ({@code @RedisStandalone},
- * {@code @RedisSentinel}) instead of manual factory calls. This factory is for advanced/custom use
- * cases.
- *
- * <p><strong>Example:</strong>
- *
- * <pre>{@code
- * // Manual usage (for custom test setup)
- * GenericContainer<?> redis = RedisContainerFactory.createStandalone();
- * String host = redis.getHost();
- * Integer port = redis.getFirstMappedPort();
- *
- * // SSL/TLS Redis
- * GenericContainer<?> redisSSL = RedisContainerFactory.createStandaloneWithSSL();
- *
- * // Sentinel cluster
- * SentinelCluster cluster = RedisContainerFactory.createSentinelCluster();
- * GenericContainer<?> sentinel = cluster.firstSentinel();
- * }</pre>
- *
- * @author Christian Schnapka - Macstab GmbH
- * @see com.macstab.chaos.redis.annotation.RedisStandalone
- * @see com.macstab.chaos.redis.annotation.RedisSentinel
- */
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 public final class RedisContainerFactory {
-
-  private static final Logger LOGGER = LoggerFactory.getLogger(RedisContainerFactory.class);
-
   private static final DockerImageName REDIS_IMAGE = DockerImageName.parse("redis:7-alpine");
   private static final Duration DEFAULT_STARTUP_TIMEOUT = Duration.ofSeconds(30);
 
@@ -233,7 +191,7 @@ public final class RedisContainerFactory {
     }
 
     final int quorum = calculateQuorum(sentinelCount);
-    LOGGER.info(
+    log.info(
         "🚀 Creating Sentinel cluster: {} replicas, {} sentinels, quorum={}, networkChaos={}",
         replicaCount,
         sentinelCount,
@@ -244,24 +202,24 @@ public final class RedisContainerFactory {
 
     // 1. Create network
     final Network network = Network.newNetwork();
-    LOGGER.debug("✓ Network created: {}", network.getId());
+    log.debug("✓ Network created: {}", network.getId());
 
     // 2. Start master
-    LOGGER.debug("Starting master node...");
+    log.debug("Starting master node...");
     final GenericContainer<?> master = createMasterNode(network, enableNetworkChaos);
     try {
       master.start();
-      LOGGER.info(
+      log.info(
           "✓ Master started: {} ({}ms)",
           ContainerIdFormatter.truncate(master.getContainerId()),
           System.currentTimeMillis() - startTime);
     } catch (Exception e) {
-      LOGGER.error("✗ Master startup failed", e);
+      log.error("✗ Master startup failed", e);
       throw new ClusterCreationException("Failed to start master", 1, 1, e);
     }
 
     // 3. Start replicas
-    LOGGER.debug("Starting {} replica(s)...", replicaCount);
+    log.debug("Starting {} replica(s)...", replicaCount);
     final List<GenericContainer<?>> replicas = new java.util.ArrayList<>();
     for (int i = 1; i <= replicaCount; i++) {
       final long replicaStartTime = System.currentTimeMillis();
@@ -270,7 +228,7 @@ public final class RedisContainerFactory {
       try {
         replica.start();
         final long replicaDuration = System.currentTimeMillis() - replicaStartTime;
-        LOGGER.info(
+        log.info(
             "✓ Replica {}/{} started: {} ({}ms)",
             i,
             replicaCount,
@@ -278,17 +236,17 @@ public final class RedisContainerFactory {
             replicaDuration);
         replicas.add(replica);
       } catch (Exception e) {
-        LOGGER.error("✗ Replica {}/{} startup failed", i, replicaCount, e);
+        log.error("✗ Replica {}/{} startup failed", i, replicaCount, e);
         throw new ClusterCreationException("Failed to start replica", i, replicaCount, e);
       }
     }
 
     // 4. Get master IP for Sentinel configuration
     final String masterIp = getMasterIpAddress(master);
-    LOGGER.debug("Master IP: {}", masterIp);
+    log.debug("Master IP: {}", masterIp);
 
     // 5. Start sentinels
-    LOGGER.debug("Starting {} sentinel(s) with quorum={}...", sentinelCount, quorum);
+    log.debug("Starting {} sentinel(s) with quorum={}...", sentinelCount, quorum);
     final List<GenericContainer<?>> sentinels = new java.util.ArrayList<>();
     for (int i = 1; i <= sentinelCount; i++) {
       final long sentinelStartTime = System.currentTimeMillis();
@@ -297,7 +255,7 @@ public final class RedisContainerFactory {
       try {
         sentinel.start();
         final long sentinelDuration = System.currentTimeMillis() - sentinelStartTime;
-        LOGGER.info(
+        log.info(
             "✓ Sentinel {}/{} started: {} ({}ms)",
             i,
             sentinelCount,
@@ -305,18 +263,18 @@ public final class RedisContainerFactory {
             sentinelDuration);
         sentinels.add(sentinel);
       } catch (Exception e) {
-        LOGGER.error("✗ Sentinel {}/{} startup failed", i, sentinelCount, e);
+        log.error("✗ Sentinel {}/{} startup failed", i, sentinelCount, e);
         throw new ClusterCreationException("Failed to start sentinel", i, sentinelCount, e);
       }
     }
 
     // 6. Wait for Sentinel stabilization (internal state synchronization)
-    LOGGER.debug("Waiting for Sentinel stabilization...");
+    log.debug("Waiting for Sentinel stabilization...");
     waitForSentinelStabilization();
-    LOGGER.debug("✓ Sentinel cluster stabilized");
+    log.debug("✓ Sentinel cluster stabilized");
 
     final long totalDuration = System.currentTimeMillis() - startTime;
-    LOGGER.info(
+    log.info(
         "✓ Sentinel cluster created successfully in {}ms: 1 master + {} replicas + {} sentinels",
         totalDuration,
         replicaCount,

@@ -8,56 +8,15 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.Container.ExecResult;
 
 import com.macstab.chaos.core.exception.PackageInstallationException;
 
-/**
- * High-level orchestrator for installing packages in containers with deduplication and
- * verification.
- *
- * <p><strong>Purpose:</strong> Provides a clean API for package installation that handles:
- *
- * <ul>
- *   <li>Automatic deduplication (preserving order)
- *   <li>Linux distribution detection
- *   <li>Package manager selection
- *   <li>Installation verification
- *   <li>Comprehensive error handling
- * </ul>
- *
- * <p><strong>Design Principles:</strong>
- *
- * <ul>
- *   <li>Idempotent: Can run multiple times safely
- *   <li>Fast-fail: Throws exception immediately on error
- *   <li>Observable: Comprehensive logging at all levels
- *   <li>Defensive: Validates all inputs
- * </ul>
- *
- * <p><strong>Usage Example:</strong>
- *
- * <pre>{@code
- * GenericContainer<?> redis = new GenericContainer<>("redis:7.4");
- * redis.start();
- *
- * // Install packages with automatic verification
- * PackageInstaller.install(redis, List.of("curl", "jq", "curl"), true);
- * // Deduplicates to: ["curl", "jq"]
- * // Auto-detects: Debian → apt-get
- * // Installs: apt-get install -y --no-install-recommends curl jq
- * // Verifies: which curl && which jq
- * }</pre>
- *
- * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
- */
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 public final class PackageInstaller {
-
-  private static final Logger LOGGER = LoggerFactory.getLogger(PackageInstaller.class);
-
   /** Private constructor - utility class. */
   private PackageInstaller() {
     throw new UnsupportedOperationException("Utility class - not instantiable");
@@ -105,57 +64,24 @@ public final class PackageInstaller {
     Objects.requireNonNull(container, "container");
     Objects.requireNonNull(packages, "packages");
 
-    // Validate container is started
-    if (!container.isRunning()) {
-      throw new IllegalStateException(
-          "Container must be started before installing packages. Container ID: "
-              + container.getContainerId());
-    }
+    validateContainerRunning(container);
 
-    // Deduplicate packages (preserve order)
     final List<String> deduplicated = deduplicatePackages(packages);
-
-    // Empty packages = no-op
     if (deduplicated.isEmpty()) {
-      LOGGER.debug("No packages to install (empty list)");
+      log.debug("No packages to install (empty list)");
       return;
     }
 
     final String containerId = container.getContainerId();
-    LOGGER.info(
-        "Installing {} package(s) in container {}: {}",
-        deduplicated.size(),
-        ContainerIdFormatter.truncate(containerId),
-        deduplicated);
+    logInstallStart(containerId, deduplicated);
 
     try {
-      // Detect package manager
-      final PackageManager pm = PackageManager.detect(container);
-      LOGGER.debug("Detected package manager: {}", pm.getCommand());
-
-      // Install packages
-      final long startTime = System.currentTimeMillis();
-      pm.install(container, deduplicated.toArray(new String[0]));
-      final long duration = System.currentTimeMillis() - startTime;
-
-      LOGGER.info(
-          "✓ Packages installed successfully in {}ms using {}: {}",
-          duration,
-          pm.getCommand(),
-          deduplicated);
-
-      // Verify installation
+      executeInstallation(container, deduplicated);
       if (verify) {
         verifyInstallation(container, deduplicated);
       }
-
     } catch (final Exception e) {
-      // Wrap in PackageInstallationException if not already
-      if (e instanceof PackageInstallationException) {
-        throw (PackageInstallationException) e;
-      }
-      throw new PackageInstallationException(
-          "Failed to install packages", containerId, deduplicated, e);
+      handleInstallationError(e, containerId, deduplicated);
     }
   }
 
@@ -207,9 +133,79 @@ public final class PackageInstaller {
       }
       return true; // All packages found
     } catch (final Exception e) {
-      LOGGER.warn("Failed to check package installation: {}", e.getMessage());
+      log.warn("Failed to check package installation: {}", e.getMessage());
       return false;
     }
+  }
+
+  // ==================== Private Helper Methods ====================
+
+  /**
+   * Validates that container is running.
+   *
+   * @param container target container
+   * @throws IllegalStateException if container is not started
+   */
+  private static void validateContainerRunning(final GenericContainer<?> container) {
+    if (!container.isRunning()) {
+      throw new IllegalStateException(
+          "Container must be started before installing packages. Container ID: "
+              + container.getContainerId());
+    }
+  }
+
+  /**
+   * Logs installation start message.
+   *
+   * @param containerId container ID
+   * @param packages packages to install
+   */
+  private static void logInstallStart(final String containerId, final List<String> packages) {
+    log.info(
+        "Installing {} package(s) in container {}: {}",
+        packages.size(),
+        ContainerIdFormatter.truncate(containerId),
+        packages);
+  }
+
+  /**
+   * Executes package installation using detected package manager.
+   *
+   * @param container target container
+   * @param packages packages to install
+   * @throws Exception if installation fails
+   */
+  private static void executeInstallation(
+      final GenericContainer<?> container, final List<String> packages) throws Exception {
+    final PackageManager pm = PackageManager.detect(container);
+    log.debug("Detected package manager: {}", pm.getCommand());
+
+    final long startTime = System.currentTimeMillis();
+    pm.install(container, packages.toArray(new String[0]));
+    final long duration = System.currentTimeMillis() - startTime;
+
+    log.info(
+        "✓ Packages installed successfully in {}ms using {}: {}",
+        duration,
+        pm.getCommand(),
+        packages);
+  }
+
+  /**
+   * Handles installation errors by wrapping in PackageInstallationException.
+   *
+   * @param e original exception
+   * @param containerId container ID
+   * @param packages packages that failed
+   * @throws PackageInstallationException always throws
+   */
+  private static void handleInstallationError(
+      final Exception e, final String containerId, final List<String> packages) {
+    if (e instanceof PackageInstallationException) {
+      throw (PackageInstallationException) e;
+    }
+    throw new PackageInstallationException(
+        "Failed to install packages", containerId, packages, e);
   }
 
   /**
@@ -231,11 +227,10 @@ public final class PackageInstaller {
   static List<String> deduplicatePackages(final Collection<String> packages) {
     Objects.requireNonNull(packages, "packages");
 
-    // LinkedHashSet preserves insertion order + removes duplicates
     final Set<String> deduplicated = new LinkedHashSet<>(packages);
 
     if (deduplicated.size() < packages.size()) {
-      LOGGER.debug(
+      log.debug(
           "Deduplicated {} packages to {} (removed {} duplicates)",
           packages.size(),
           deduplicated.size(),
@@ -263,41 +258,67 @@ public final class PackageInstaller {
    */
   private static void verifyInstallation(
       final GenericContainer<?> container, final List<String> packages) {
-    LOGGER.debug("Verifying installation of {} package(s)...", packages.size());
+    log.debug("Verifying installation of {} package(s)...", packages.size());
 
     for (final String pkg : packages) {
-      try {
-        final var result = container.execInContainer("which", pkg);
-        if (result.getExitCode() == 0) {
-          final String path = result.getStdout().trim();
-          LOGGER.debug("✓ Package '{}' verified at: {}", pkg, path);
-        } else {
-          // Package not found - verification failed
-          LOGGER.warn("✗ Package '{}' verification failed: binary not found in PATH", pkg);
-          throw new PackageInstallationException(
-              "Package verification failed: '" + pkg + "' binary not found in PATH",
-              container.getContainerId(),
-              List.of(pkg),
-              result.getExitCode(),
-              result.getStdout(),
-              result.getStderr());
-        }
-      } catch (final Exception e) {
-        if (e instanceof PackageInstallationException) {
-          throw (PackageInstallationException) e;
-        }
-        throw new PackageInstallationException(
-            "Failed to verify package installation", container.getContainerId(), List.of(pkg), e);
-      }
+      verifyPackage(container, pkg);
     }
 
-    LOGGER.info("✓ All {} package(s) verified successfully", packages.size());
+    log.info("✓ All {} package(s) verified successfully", packages.size());
   }
 
   /**
-   * Truncates container ID to first 12 characters for readability.
+   * Verifies single package installation.
    *
-   * @param id container ID
-   * @return truncated ID (12 chars) or original if shorter
+   * @param container target container
+   * @param pkg package name
+   * @throws PackageInstallationException if verification fails
    */
+  private static void verifyPackage(final GenericContainer<?> container, final String pkg) {
+    try {
+      final ExecResult result = container.execInContainer("which", pkg);
+      
+      if (result.getExitCode() == 0) {
+        logPackageVerified(pkg, result.getStdout().trim());
+      } else {
+        throwVerificationFailed(container, pkg, result);
+      }
+    } catch (final Exception e) {
+      if (e instanceof PackageInstallationException) {
+        throw (PackageInstallationException) e;
+      }
+      throw new PackageInstallationException(
+          "Failed to verify package installation", container.getContainerId(), List.of(pkg), e);
+    }
+  }
+
+  /**
+   * Logs successful package verification.
+   *
+   * @param pkg package name
+   * @param path binary path
+   */
+  private static void logPackageVerified(final String pkg, final String path) {
+    log.debug("✓ Package '{}' verified at: {}", pkg, path);
+  }
+
+  /**
+   * Throws exception for failed package verification.
+   *
+   * @param container target container
+   * @param pkg package name
+   * @param result exec result
+   * @throws PackageInstallationException always throws
+   */
+  private static void throwVerificationFailed(
+      final GenericContainer<?> container, final String pkg, final ExecResult result) {
+    log.warn("✗ Package '{}' verification failed: binary not found in PATH", pkg);
+    throw new PackageInstallationException(
+        "Package verification failed: '" + pkg + "' binary not found in PATH",
+        container.getContainerId(),
+        List.of(pkg),
+        result.getExitCode(),
+        result.getStdout(),
+        result.getStderr());
+  }
 }

@@ -5,66 +5,15 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.GenericContainer;
 
 import io.lettuce.core.RedisClient;
 import io.lettuce.core.RedisURI;
 import io.lettuce.core.api.StatefulRedisConnection;
+import lombok.extern.slf4j.Slf4j;
 
-/**
- * Thread-safe resolver mapping GenericContainer instances to their Redis roles.
- *
- * <p><strong>Features:</strong>
- *
- * <ul>
- *   <li>✅ Queries Redis INFO command to determine master/replica role
- *   <li>✅ ConcurrentHashMap caching for performance (1 query per container)
- *   <li>✅ Detects Sentinel containers (port 26379, INFO sentinel)
- *   <li>✅ Returns {@link ContainerRole#UNKNOWN} for stopped/failed containers
- *   <li>✅ Thread-safe (concurrent resolution supported)
- * </ul>
- *
- * <p><strong>Role Detection Algorithm:</strong>
- *
- * <table border="1">
- *   <caption>Role Detection Strategy</caption>
- *   <tr><th>Condition</th><th>Role</th></tr>
- *   <tr><td>Port 26379</td><td>SENTINEL_N (query INFO to find index)</td></tr>
- *   <tr><td>INFO role=master</td><td>MASTER</td></tr>
- *   <tr><td>INFO role=slave</td><td>REPLICA_N (index from cluster ordering)</td></tr>
- *   <tr><td>Container stopped</td><td>UNKNOWN</td></tr>
- *   <tr><td>Connection failed</td><td>UNKNOWN</td></tr>
- * </table>
- *
- * <p><strong>Thread Safety:</strong> ConcurrentHashMap ensures thread-safe caching. Multiple
- * threads can resolve roles concurrently without explicit synchronization.
- *
- * <p><strong>Usage Example:</strong>
- *
- * <pre>{@code
- * // Resolve container role
- * RoleResolver resolver = new RoleResolver(cluster);
- * ContainerRole role = resolver.resolve(container);
- *
- * if (role.isMaster()) {
- *     System.out.println("Master node");
- * } else if (role.isReplica()) {
- *     System.out.println("Replica #" + role.replicaIndex());
- * }
- *
- * // Clear cache (e.g., after failover)
- * resolver.clearCache();
- * }</pre>
- *
- * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
- */
+@Slf4j
 public final class RoleResolver {
-
-  private static final Logger LOGGER = LoggerFactory.getLogger(RoleResolver.class);
-
   private final Map<GenericContainer<?>, Integer> containerIndexMap;
   private final Map<GenericContainer<?>, ContainerRole> cache = new ConcurrentHashMap<>();
 
@@ -99,7 +48,7 @@ public final class RoleResolver {
    */
   public void clearCache() {
     cache.clear();
-    LOGGER.debug("Role cache cleared");
+    log.debug("Role cache cleared");
   }
 
   /**
@@ -111,7 +60,7 @@ public final class RoleResolver {
   public void clearCache(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container");
     cache.remove(container);
-    LOGGER.debug("Role cache cleared for container: {}", container.getContainerId());
+    log.debug("Role cache cleared for container: {}", container.getContainerId());
   }
 
   // ==================== Internal Role Detection ====================
@@ -130,7 +79,7 @@ public final class RoleResolver {
             + container.isRunning());
     if (!container.isRunning()) {
       System.err.println("[RoleResolver] Container NOT RUNNING: " + container.getContainerId());
-      LOGGER.warn("Container not running: {}", container.getContainerId());
+      log.warn("Container not running: {}", container.getContainerId());
       return ContainerRole.UNKNOWN;
     }
 
@@ -150,8 +99,7 @@ public final class RoleResolver {
               + " - Internal IP: "
               + internalIp);
       if (internalIp != null) {
-        LOGGER.debug(
-            "Using internal IP {} for container {}", internalIp, container.getContainerId());
+        log.debug("Using internal IP {} for container {}", internalIp, container.getContainerId());
         final ContainerRole role = resolveRedisRole(internalIp, 6379, container);
         System.err.println(
             "[RoleResolver] Container: "
@@ -171,8 +119,7 @@ public final class RoleResolver {
               + host
               + ":"
               + port);
-      LOGGER.debug(
-          "Using host:port {}:{} for container {}", host, port, container.getContainerId());
+      log.debug("Using host:port {}:{} for container {}", host, port, container.getContainerId());
       final ContainerRole role = resolveRedisRole(host, port, container);
       System.err.println(
           "[RoleResolver] Container: "
@@ -182,7 +129,7 @@ public final class RoleResolver {
       return role;
 
     } catch (Exception e) {
-      LOGGER.error("Failed to determine role for container: {}", container.getContainerId(), e);
+      log.error("Failed to determine role for container: {}", container.getContainerId(), e);
       return ContainerRole.UNKNOWN;
     }
   }
@@ -203,7 +150,7 @@ public final class RoleResolver {
           .map(network -> network.getIpAddress())
           .orElse(null);
     } catch (Exception e) {
-      LOGGER.debug("Failed to get internal IP for container: {}", container.getContainerId(), e);
+      log.debug("Failed to get internal IP for container: {}", container.getContainerId(), e);
       return null;
     }
   }
@@ -217,7 +164,7 @@ public final class RoleResolver {
   private ContainerRole resolveSentinelRole(final GenericContainer<?> container) {
     final Integer index = containerIndexMap.get(container);
     if (index == null) {
-      LOGGER.warn("Sentinel container not in index map: {}", container.getContainerId());
+      log.warn("Sentinel container not in index map: {}", container.getContainerId());
       return ContainerRole.UNKNOWN;
     }
     return ContainerRole.sentinelByIndex(index);
@@ -241,7 +188,7 @@ public final class RoleResolver {
             + port
             + " for container "
             + container.getContainerId());
-    LOGGER.debug(
+    log.debug(
         "Attempting to resolve role for container {} at {}:{}",
         container.getContainerId(),
         host,
@@ -257,15 +204,15 @@ public final class RoleResolver {
 
       if (info.contains("role:master")) {
         System.err.println("[RoleResolver] Detected MASTER");
-        LOGGER.info("Container is MASTER: {} ({}:{})", container.getContainerId(), host, port);
+        log.info("Container is MASTER: {} ({}:{})", container.getContainerId(), host, port);
         return ContainerRole.MASTER;
       } else if (info.contains("role:slave")) {
         System.err.println("[RoleResolver] Detected REPLICA");
-        LOGGER.info("Container is REPLICA: {} ({}:{})", container.getContainerId(), host, port);
+        log.info("Container is REPLICA: {} ({}:{})", container.getContainerId(), host, port);
         return resolveReplicaRole(container);
       } else {
         System.err.println("[RoleResolver] Unknown role in INFO: " + info);
-        LOGGER.warn("Unknown Redis role in INFO: {}", info);
+        log.warn("Unknown Redis role in INFO: {}", info);
         return ContainerRole.UNKNOWN;
       }
 
@@ -273,7 +220,7 @@ public final class RoleResolver {
       System.err.println(
           "[RoleResolver] CONNECTION FAILED to " + host + ":" + port + ": " + e.getMessage());
       e.printStackTrace(System.err);
-      LOGGER.error(
+      log.error(
           "Failed to query Redis INFO at {}:{} for container {}: {}",
           host,
           port,
@@ -292,10 +239,10 @@ public final class RoleResolver {
   private ContainerRole resolveReplicaRole(final GenericContainer<?> container) {
     final Integer index = containerIndexMap.get(container);
     if (index == null) {
-      LOGGER.warn("Replica container not in index map: {}", container.getContainerId());
+      log.warn("Replica container not in index map: {}", container.getContainerId());
       return ContainerRole.UNKNOWN;
     }
-    LOGGER.debug("Container is REPLICA_{}: {}", index, container.getContainerId());
+    log.debug("Container is REPLICA_{}: {}", index, container.getContainerId());
     return ContainerRole.replicaByIndex(index);
   }
 
@@ -309,7 +256,7 @@ public final class RoleResolver {
     try {
       return container.getExposedPorts().contains(26379);
     } catch (Exception e) {
-      LOGGER.debug("Failed to check if Sentinel container: {}", container.getContainerId(), e);
+      log.debug("Failed to check if Sentinel container: {}", container.getContainerId(), e);
       return false;
     }
   }

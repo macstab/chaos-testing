@@ -6,58 +6,9 @@ import java.util.Objects;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
-/**
- * Generic manager for Redis test containers (standalone or Sentinel).
- *
- * <p>Provides programmatic access to containers started by {@link RedisStandalone} or {@link
- * RedisSentinel} annotations. Supports both single-instance and multi-instance scenarios.
- *
- * <p><strong>Single Instance Usage (v1.x compatible):</strong>
- *
- * <pre>{@code
- * @RedisStandalone(id = "master")
- * class MyTest {
- *   @BeforeEach
- *   void setUp() {
- *     final var redis = RedisStandalone.INSTANCE.get("master");
- *     // redis.getHost(), redis.getPort()
- *   }
- * }
- * }</pre>
- *
- * <p><strong>Multi-Instance Usage (v2.0+):</strong>
- *
- * <pre>{@code
- * @RedisSentinel(id = "primary", replicas = 3)
- * @RedisSentinel(id = "secondary", replicas = 2)
- * class MultiClusterTest {
- *
- *   @Test
- *   void testAllClusters() {
- *     // Get all clusters in declaration order
- *     List<SentinelCluster> all = RedisSentinel.INSTANCE.getAll();
- *     assertThat(all).hasSize(2);
- *     // all.get(0) corresponds to id="primary"
- *     // all.get(1) corresponds to id="secondary"
- *   }
- *
- *   @Test
- *   void testSpecificCluster() {
- *     // Access by ID
- *     SentinelCluster primary = RedisSentinel.INSTANCE.get("primary");
- *     assertThat(primary.getReplicas()).hasSize(3);
- *   }
- * }
- * }</pre>
- *
- * <p><strong>Thread Safety:</strong> This class delegates to extension-managed ThreadLocal
- * contexts. Safe for parallel test execution across different test classes. NOT safe for concurrent
- * access within the same test class (undefined behavior).
- *
- * @param <T> container info type (RedisConnectionInfo or SentinelCluster)
- * @author Christian Schnapka - Macstab GmbH
- * @since 1.0
- */
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 public final class RedisManager<T> {
 
   private final Function<String, T> containerAccessor;

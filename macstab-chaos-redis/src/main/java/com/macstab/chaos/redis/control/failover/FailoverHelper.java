@@ -5,8 +5,6 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.util.ContainerIdFormatter;
@@ -15,51 +13,10 @@ import com.macstab.chaos.redis.control.role.RoleResolver;
 import com.macstab.chaos.redis.exception.ClusterTopologyException;
 import com.macstab.chaos.redis.exception.FailoverException;
 
-/**
- * Helper for simulating and testing Sentinel failover scenarios.
- *
- * <p><strong>Features:</strong>
- *
- * <ul>
- *   <li>✅ Trigger failover by killing master
- *   <li>✅ Wait for Sentinel to promote new master
- *   <li>✅ Verify new master is elected
- *   <li>✅ Measure failover duration
- *   <li>✅ Support manual failover (SENTINEL FAILOVER command)
- * </ul>
- *
- * <p><strong>Failover Workflow:</strong>
- *
- * <ol>
- *   <li>Kill current master container
- *   <li>Wait for Sentinel quorum to detect failure
- *   <li>Sentinel promotes replica to new master
- *   <li>Verify new master role via INFO replication
- *   <li>Return failover duration
- * </ol>
- *
- * <p><strong>Usage Example:</strong>
- *
- * <pre>{@code
- * // Setup
- * FailoverHelper helper = new FailoverHelper(controller, resolver, allContainers);
- *
- * // Trigger failover
- * Duration duration = helper.triggerFailover(masterContainer);
- * System.out.println("Failover completed in: " + duration.toMillis() + "ms");
- *
- * // Verify new master
- * GenericContainer<?> newMaster = helper.findMaster();
- * assertThat(newMaster).isNotEqualTo(masterContainer);
- * }</pre>
- *
- * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
- */
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 public final class FailoverHelper {
-
-  private static final Logger LOGGER = LoggerFactory.getLogger(FailoverHelper.class);
-
   private static final Duration DEFAULT_FAILOVER_TIMEOUT = Duration.ofSeconds(30);
   private static final Duration RETRY_INTERVAL = Duration.ofMillis(500);
 
@@ -121,23 +78,23 @@ public final class FailoverHelper {
     Objects.requireNonNull(timeout, "timeout");
 
     final String masterId = ContainerIdFormatter.truncate(masterContainer.getContainerId());
-    LOGGER.info("🔥 Triggering failover by killing master: {}", masterId);
+    log.info("🔥 Triggering failover by killing master: {}", masterId);
 
     // Diagnostic logging - non-failing
     try {
-      LOGGER.debug(
+      log.debug(
           "Pre-failover state: {} running containers, {} replicas available",
           countRunningContainers(),
           findReplicas().size());
     } catch (Exception e) {
-      LOGGER.debug("Unable to gather pre-failover diagnostics: {}", e.getMessage());
+      log.debug("Unable to gather pre-failover diagnostics: {}", e.getMessage());
     }
 
     final long startTime = System.currentTimeMillis();
 
     // Kill master (simulate crash)
     controller.kill(masterContainer);
-    LOGGER.debug("✓ Master killed: {}", masterId);
+    log.debug("✓ Master killed: {}", masterId);
 
     // Wait for new master election (cache cleared in loop)
     waitForNewMaster(masterContainer, timeout);
@@ -146,7 +103,7 @@ public final class FailoverHelper {
     final Duration failoverDuration = Duration.ofMillis(duration);
 
     final GenericContainer<?> newMaster = findMaster();
-    LOGGER.info(
+    log.info(
         "✓ Failover completed in {}ms. New master: {}",
         duration,
         ContainerIdFormatter.truncate(newMaster.getContainerId()));
@@ -169,7 +126,7 @@ public final class FailoverHelper {
             () -> {
               final int runningCount = countRunningContainers();
               final var roleDistribution = calculateRoleDistribution();
-              LOGGER.error(
+              log.error(
                   "✗ No master found. Running containers: {}, Role distribution: {}",
                   runningCount,
                   roleDistribution);
@@ -231,7 +188,7 @@ public final class FailoverHelper {
    */
   private void waitForNewMaster(
       final GenericContainer<?> oldMasterContainer, final Duration timeout) {
-    LOGGER.info(
+    log.info(
         "⏱ Waiting for new master election (timeout: {}, check interval: {}ms)",
         timeout,
         RETRY_INTERVAL.toMillis());
@@ -246,7 +203,7 @@ public final class FailoverHelper {
       retryCount++;
 
       if (retryCount % 10 == 0) {
-        LOGGER.debug(
+        log.debug(
             "Still waiting for master election... ({} checks, {}ms elapsed)",
             retryCount,
             System.currentTimeMillis() - startTime);
@@ -254,7 +211,7 @@ public final class FailoverHelper {
 
       if (isNewMasterElected(oldMasterContainer)) {
         final long elapsedMs = System.currentTimeMillis() - startTime;
-        LOGGER.info("✓ New master elected after {}ms ({} checks)", elapsedMs, retryCount);
+        log.info("✓ New master elected after {}ms ({} checks)", elapsedMs, retryCount);
         return;
       }
 
@@ -269,7 +226,7 @@ public final class FailoverHelper {
     }
 
     final Duration elapsed = Duration.ofMillis(System.currentTimeMillis() - startTime);
-    LOGGER.error(
+    log.error(
         "✗ Failover timeout: no new master elected after {} ({} checks). "
             + "Old master: {}, Running containers: {}",
         elapsed,

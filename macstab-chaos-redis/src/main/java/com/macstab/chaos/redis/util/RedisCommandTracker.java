@@ -17,77 +17,9 @@ import org.testcontainers.containers.GenericContainer;
 
 import io.lettuce.core.RedisClient;
 import io.lettuce.core.RedisURI;
+import lombok.extern.slf4j.Slf4j;
 
-/**
- * Tracks Redis commands in real-time using the MONITOR command.
- *
- * <p><strong>Purpose:</strong> Verify command routing in integration tests (e.g., reads go to
- * replicas, writes go to master).
- *
- * <p><strong>Design:</strong> Runs {@code redis-cli MONITOR} in a background thread and captures
- * all commands. Provides filtering to exclude replication traffic and count specific command types.
- *
- * <p><strong>Thread Safety:</strong> This class is thread-safe. Command capture and counting use
- * {@link CopyOnWriteArrayList} for safe concurrent access.
- *
- * <p><strong>Lifecycle:</strong>
- *
- * <ol>
- *   <li>Create tracker: {@code new RedisCommandTracker(container)}
- *   <li>Start monitoring: {@code tracker.start()}
- *   <li>Execute Redis commands from application
- *   <li>Stop monitoring: {@code tracker.stop()}
- *   <li>Query results: {@code tracker.countCommand("GET")}
- * </ol>
- *
- * <p><strong>Example:</strong>
- *
- * <pre>{@code
- * // Track commands on replica
- * RedisCommandTracker tracker = new RedisCommandTracker(replicaContainer);
- * tracker.start();
- *
- * // Execute 1000 reads
- * for (int i = 0; i < 1000; i++) {
- *   redisTemplate.opsForValue().get("key:" + i);
- * }
- *
- * tracker.stop();
- *
- * // Verify replica handled reads
- * long getCount = tracker.countCommand("GET");
- * assertThat(getCount).isGreaterThan(900);
- * }</pre>
- *
- * <p><strong>Filtering Replication Traffic:</strong>
- *
- * <p>By default, replication commands (source port :6379) are filtered out. This prevents false
- * positives when testing Sentinel routing:
- *
- * <pre>
- * Client command:      [0 172.17.0.1:54321] "GET" "key"  ✅ Tracked
- * Replication command: [0 172.18.0.2:6379] "SET" "key"   ❌ Filtered
- * </pre>
- *
- * <p><strong>Custom Filtering:</strong>
- *
- * <pre>{@code
- * // Track only GET and SET commands
- * RedisCommandTracker tracker = RedisCommandTracker.builder()
- *     .container(replicaContainer)
- *     .trackCommands(Set.of("GET", "SET"))
- *     .build();
- *
- * // Track all commands (no filtering)
- * RedisCommandTracker tracker = RedisCommandTracker.builder()
- *     .container(masterContainer)
- *     .filter(line -> true)
- *     .build();
- * }</pre>
- *
- * @author Christian Schnapka - Macstab GmbH
- * @see <a href="https://redis.io/commands/monitor">Redis MONITOR Command</a>
- */
+@Slf4j
 public final class RedisCommandTracker {
 
   private final GenericContainer<?> container;

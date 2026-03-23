@@ -6,38 +6,26 @@ import java.util.Objects;
 
 import com.macstab.chaos.core.util.ContainerIdFormatter;
 
-/**
- * Exception thrown when package installation fails in a container.
- *
- * <p><strong>Purpose:</strong> Provides comprehensive error context including container ID,
- * packages that failed to install, exit code, and stdout/stderr output.
- *
- * <p><strong>Design:</strong> Immutable exception with rich error information for debugging.
- *
- * <p><strong>Usage Example:</strong>
- *
- * <pre>{@code
- * try {
- *     PackageInstaller.install(container, List.of("nonexistent-package"), true);
- * } catch (PackageInstallationException e) {
- *     System.err.println("Failed to install: " + e.getPackages());
- *     System.err.println("Container: " + e.getContainerId());
- *     System.err.println("Exit code: " + e.getExitCode());
- *     System.err.println("Error output: " + e.getStderr());
- * }
- * }</pre>
- *
- * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
- */
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 public final class PackageInstallationException extends RuntimeException {
 
   private static final long serialVersionUID = 1L;
 
+  /** Container ID where installation failed (first 12 characters). */
   private final String containerId;
+
+  /** Packages that failed to install. */
   private final List<String> packages;
+
+  /** Process exit code (non-zero indicates failure). */
   private final int exitCode;
+
+  /** Standard output from package manager. */
   private final String stdout;
+
+  /** Standard error from package manager. */
   private final String stderr;
 
   /**

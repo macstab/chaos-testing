@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.GenericContainer;
 
 import com.github.dockerjava.api.model.Capability;
-import com.macstab.chaos.core.util.ContainerNetworkToolsInstaller;
+import com.macstab.chaos.core.util.PackageInstaller;
 import com.macstab.chaos.core.util.PackageManager;
 import com.macstab.chaos.network.control.NetworkChaosController;
 import com.macstab.chaos.redis.control.ControlFacade;
@@ -76,7 +76,7 @@ public class PackageManagerExamples {
 
     try {
       // Install network tools (auto-detects Debian, uses apt-get)
-      ContainerNetworkToolsInstaller.install(redis);
+      PackageInstaller.install(redis, "iproute2", "iptables");
 
       // Create network chaos controller
       NetworkChaosController chaos = new NetworkChaosController(List.of(redis));
@@ -106,7 +106,7 @@ public class PackageManagerExamples {
 
     try {
       // SAME CODE! Auto-detects Alpine, uses apk
-      ContainerNetworkToolsInstaller.install(redis);
+      PackageInstaller.install(redis, "iproute2", "iptables");
 
       // SAME CODE! Network chaos works!
       NetworkChaosController chaos = new NetworkChaosController(List.of(redis));
@@ -327,10 +327,10 @@ public class PackageManagerExamples {
     }
   }
 
-  // ==================== Example 10: Using ContainerNetworkToolsInstaller ====================
+  // ==================== Example 10: Using PackageInstaller ====================
 
   /**
-   * Example 10: The HIGH-LEVEL API - ContainerNetworkToolsInstaller.
+   * Example 10: The HIGH-LEVEL API - PackageInstaller.
    *
    * <p>This is what MOST users will use!
    */
@@ -345,7 +345,7 @@ public class PackageManagerExamples {
 
     try {
       // 🎯 HIGH-LEVEL API - Auto-detects everything!
-      ContainerNetworkToolsInstaller.install(redis);
+      PackageInstaller.install(redis, "iproute2", "iptables");
 
       // Now use network chaos
       ControlFacade control = ControlFacade.create(List.of(redis), java.util.Map.of(redis, 0));

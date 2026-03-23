@@ -14,12 +14,17 @@ java {
 }
 
 dependencies {
-    // Testcontainers (for container operations)
+    // Testcontainers (API dependency - users need this)
     api("org.testcontainers:testcontainers:1.20.4")
-
+    
+    // SLF4J (logging facade)
+    implementation("org.slf4j:slf4j-api:2.0.9")
+    
     // Test dependencies
     testImplementation("org.testcontainers:junit-jupiter:1.20.4")
     testImplementation("org.assertj:assertj-core:3.24.2")
+    testImplementation("org.mockito:mockito-core:5.8.0")
+    testImplementation("org.mockito:mockito-junit-jupiter:5.8.0")
     testRuntimeOnly("ch.qos.logback:logback-classic:1.4.14")
 }
 
@@ -36,13 +41,35 @@ tasks.withType<JavaCompile> {
 
 tasks.withType<Test> {
     useJUnitPlatform()
-
+    
     // Java 25 compatibility for Mockito/Byte Buddy
     jvmArgs(
         "--add-opens", "java.base/java.lang=ALL-UNNAMED",
         "--add-opens", "java.base/java.util=ALL-UNNAMED",
         "-Dnet.bytebuddy.experimental=true"
     )
+}
+
+// Version property file generation (for runtime access)
+tasks.register("generateVersionProperties") {
+    val outputDir = layout.buildDirectory.dir("generated/resources")
+    outputs.dir(outputDir)
+    
+    doLast {
+        val propsFile = outputDir.get().file("chaos-version.properties").asFile
+        propsFile.parentFile.mkdirs()
+        propsFile.writeText("version=${project.version}\n")
+    }
+}
+
+tasks.named("processResources") {
+    dependsOn("generateVersionProperties")
+}
+
+sourceSets {
+    main {
+        output.dir(tasks.named("generateVersionProperties"))
+    }
 }
 
 // Publishing configured in root build.gradle.kts

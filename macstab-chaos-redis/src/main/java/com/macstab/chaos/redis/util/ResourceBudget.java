@@ -4,53 +4,9 @@ package com.macstab.chaos.redis.util;
 import com.macstab.chaos.redis.annotation.RedisSentinel;
 import com.macstab.chaos.redis.annotation.RedisStandalone;
 
-/**
- * Resource budget constraints for multi-instance Redis test infrastructure.
- *
- * <p>Validates test class resource usage to prevent accidental resource exhaustion in CI
- * environments. Budget limits are based on typical CI runner constraints (7GB RAM, 2-4 CPUs).
- *
- * <p><strong>Limits:</strong>
- *
- * <ul>
- *   <li>Max Sentinel clusters: 3 per test class
- *   <li>Max Standalone instances: 5 per test class
- *   <li>Max total containers: 20 per test class
- *   <li>Max estimated memory: 100MB per test class
- * </ul>
- *
- * <p><strong>Why These Limits:</strong>
- *
- * <p>Each Sentinel cluster uses 1 master + N replicas + M sentinels (typically 6 containers @ 24MB
- * total). Three clusters = 18 containers @ 72MB. This leaves headroom for test application memory
- * (~500MB) and OS overhead.
- *
- * <p><strong>Performance Budget Table:</strong>
- *
- * <table border="1">
- *   <caption>Performance Budget for Sentinel Cluster Configurations</caption>
- *   <tr><th>Configuration</th><th>Containers</th><th>Startup</th><th>Memory</th><th>Status</th></tr>
- *   <tr><td>Single Sentinel</td><td>6</td><td>3-5s</td><td>24MB</td><td>✅ Optimal</td></tr>
- *   <tr><td>Dual Sentinel</td><td>12</td><td>5-7s</td><td>48MB</td><td>✅ Recommended</td></tr>
- *   <tr><td>Triple Sentinel</td><td>18</td><td>7-10s</td><td>72MB</td><td>⚠️ Max</td></tr>
- *   <tr><td>Quad Sentinel</td><td>24</td><td>12-16s</td><td>96MB</td><td>❌ Exceeds</td></tr>
- * </table>
- *
- * <p><strong>Usage:</strong> Validation happens automatically in {@code beforeAll()} extension
- * hooks. Users don't call this directly.
- *
- * <p><strong>Example Violation:</strong>
- *
- * <pre>{@code
- * @RedisSentinel(id = "c1", replicas = 5, sentinels = 7)  // 13 containers
- * @RedisSentinel(id = "c2", replicas = 5, sentinels = 7)  // 13 containers
- * @RedisSentinel(id = "c3", replicas = 5, sentinels = 7)  // 13 containers
- * class Test { }  // Throws: 39 containers exceeds limit (max: 20)
- * }</pre>
- *
- * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
- */
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 public final class ResourceBudget {
 
   /** Maximum number of Sentinel clusters per test class. */

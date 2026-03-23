@@ -435,7 +435,9 @@ public final class SentinelContainerExtension
 
     for (final GenericContainer<?> container : allContainers) {
       try {
-        com.macstab.chaos.core.util.ContainerNetworkToolsInstaller.installIfNeeded(container);
+        if (!com.macstab.chaos.core.util.PackageInstaller.isInstalled(container, "tc")) {
+          com.macstab.chaos.core.util.PackageInstaller.install(container, "iproute2", "iptables");
+        }
       } catch (final Exception e) {
         log.warn(
             "Failed to install network tools in cluster '{}' container {}: {}",

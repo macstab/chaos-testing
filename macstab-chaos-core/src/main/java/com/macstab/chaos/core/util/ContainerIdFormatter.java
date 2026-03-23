@@ -24,7 +24,7 @@ package com.macstab.chaos.core.util;
  * String truncated = ContainerIdFormatter.truncate(containerId);
  * // truncated = "06c27a7ed602"
  *
- * LOGGER.info("Starting container: {}", truncated);
+ * log.info("Starting container: {}", truncated);
  * // Output: "Starting container: 06c27a7ed602"
  * }</pre>
  *
@@ -39,6 +39,9 @@ package com.macstab.chaos.core.util;
  * @author Christian Schnapka - Macstab GmbH
  * @since 2.0
  */
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 public final class ContainerIdFormatter {
 
   /**

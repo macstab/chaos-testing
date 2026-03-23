@@ -7,31 +7,11 @@ import java.util.Objects;
 
 import com.macstab.chaos.core.util.ContainerIdFormatter;
 
-/**
- * Represents the current chaos engineering state of a container.
- *
- * <p><strong>Purpose:</strong> Track what network chaos is currently active on a container for
- * observability and debugging.
- *
- * <p><strong>Thread Safety:</strong> This class is immutable and thread-safe.
- *
- * <p><strong>Usage Example:</strong>
- *
- * <pre>{@code
- * NetworkChaosController chaos = new NetworkChaosController(containers);
- * chaos.injectLatency(redis, Duration.ofMillis(100));
- *
- * Optional<ChaosState> state = chaos.getChaosState(redis);
- * if (state.isPresent()) {
- *     System.out.println("Chaos type: " + state.get().getType());
- *     System.out.println("Applied at: " + state.get().getAppliedAt());
- *     System.out.println("Duration: " + state.get().getDurationSinceApplied());
- * }
- * }</pre>
- *
- * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
- */
+import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
+@Getter
 public final class ChaosState {
 
   private final ChaosType type;
@@ -99,33 +79,6 @@ public final class ChaosState {
         ChaosType.PARTITION,
         "Partitioned from " + ContainerIdFormatter.truncate(targetContainerId),
         Instant.now());
-  }
-
-  /**
-   * Gets the chaos type.
-   *
-   * @return chaos type
-   */
-  public ChaosType getType() {
-    return type;
-  }
-
-  /**
-   * Gets human-readable details about the chaos.
-   *
-   * @return details (e.g., "100ms latency", "30.0% packet loss")
-   */
-  public String getDetails() {
-    return details;
-  }
-
-  /**
-   * Gets when the chaos was applied.
-   *
-   * @return application timestamp
-   */
-  public Instant getAppliedAt() {
-    return appliedAt;
   }
 
   /**

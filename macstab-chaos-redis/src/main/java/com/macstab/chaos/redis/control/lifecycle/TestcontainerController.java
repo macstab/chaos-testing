@@ -4,8 +4,6 @@ package com.macstab.chaos.redis.control.lifecycle;
 import java.time.Duration;
 import java.util.Objects;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.exception.ContainerOperationException;
@@ -14,47 +12,10 @@ import com.macstab.chaos.core.util.ContainerIdFormatter;
 import io.lettuce.core.RedisClient;
 import io.lettuce.core.RedisURI;
 import io.lettuce.core.api.StatefulRedisConnection;
+import lombok.extern.slf4j.Slf4j;
 
-/**
- * Testcontainers-specific lifecycle controller.
- *
- * <p><strong>Features:</strong>
- *
- * <ul>
- *   <li>✅ Restart: Graceful stop (SIGTERM) + start + readiness wait
- *   <li>✅ Kill: Immediate termination (SIGKILL)
- *   <li>✅ Pause: Freeze container processes (Docker pause)
- *   <li>✅ Resume: Unfreeze container processes (Docker unpause)
- *   <li>✅ Readiness: PING command validation with retries
- * </ul>
- *
- * <p><strong>Thread Safety:</strong> Immutable singleton. Thread-safe for concurrent use.
- *
- * <p><strong>Usage Example:</strong>
- *
- * <pre>{@code
- * // Create controller
- * ContainerController controller = new TestcontainerController();
- *
- * // Restart replica
- * controller.restart(replicaContainer);
- *
- * // Kill master (simulate hard crash)
- * controller.kill(masterContainer);
- *
- * // Pause container (simulate network partition)
- * controller.pause(sentinelContainer);
- * Thread.sleep(5000);
- * controller.resume(sentinelContainer);
- * }</pre>
- *
- * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
- */
+@Slf4j
 public final class TestcontainerController implements ContainerController {
-
-  private static final Logger LOGGER = LoggerFactory.getLogger(TestcontainerController.class);
-
   private static final Duration DEFAULT_READINESS_TIMEOUT = Duration.ofSeconds(30);
   private static final Duration RETRY_INTERVAL = Duration.ofMillis(500);
 
@@ -63,13 +24,13 @@ public final class TestcontainerController implements ContainerController {
     Objects.requireNonNull(container, "container");
 
     final String containerId = container.getContainerId();
-    LOGGER.info("🔄 Restarting container: {}", ContainerIdFormatter.truncate(containerId));
+    log.info("🔄 Restarting container: {}", ContainerIdFormatter.truncate(containerId));
 
     try {
       // Graceful stop
       final long stopStart = System.currentTimeMillis();
       container.stop();
-      LOGGER.debug(
+      log.debug(
           "✓ Container stopped: {} ({}ms)",
           ContainerIdFormatter.truncate(containerId),
           System.currentTimeMillis() - stopStart);
@@ -77,19 +38,18 @@ public final class TestcontainerController implements ContainerController {
       // Start
       final long startStart = System.currentTimeMillis();
       container.start();
-      LOGGER.debug(
+      log.debug(
           "✓ Container started: {} ({}ms)",
           ContainerIdFormatter.truncate(containerId),
           System.currentTimeMillis() - startStart);
 
       // Wait for readiness
       waitForReady(container, DEFAULT_READINESS_TIMEOUT);
-      LOGGER.info(
+      log.info(
           "✓ Container restarted successfully: {}", ContainerIdFormatter.truncate(containerId));
 
     } catch (Exception e) {
-      LOGGER.error(
-          "✗ Failed to restart container: {}", ContainerIdFormatter.truncate(containerId), e);
+      log.error("✗ Failed to restart container: {}", ContainerIdFormatter.truncate(containerId), e);
       throw new ContainerOperationException(
           "restart", containerId, "Container failed to restart properly", e);
     }
@@ -100,15 +60,15 @@ public final class TestcontainerController implements ContainerController {
     Objects.requireNonNull(container, "container");
 
     final String containerId = container.getContainerId();
-    LOGGER.info("🔥 Killing container: {}", ContainerIdFormatter.truncate(containerId));
+    log.info("🔥 Killing container: {}", ContainerIdFormatter.truncate(containerId));
 
     try {
       // Docker kill (SIGKILL) - immediate termination
       container.getDockerClient().killContainerCmd(containerId).exec();
-      LOGGER.info("✓ Container killed: {}", ContainerIdFormatter.truncate(containerId));
+      log.info("✓ Container killed: {}", ContainerIdFormatter.truncate(containerId));
 
     } catch (Exception e) {
-      LOGGER.error("✗ Failed to kill container: {}", ContainerIdFormatter.truncate(containerId), e);
+      log.error("✗ Failed to kill container: {}", ContainerIdFormatter.truncate(containerId), e);
       throw new ContainerOperationException(
           "kill", containerId, "Container kill operation failed", e);
     }
@@ -119,16 +79,15 @@ public final class TestcontainerController implements ContainerController {
     Objects.requireNonNull(container, "container");
 
     final String containerId = container.getContainerId();
-    LOGGER.info("⏸ Pausing container: {}", ContainerIdFormatter.truncate(containerId));
+    log.info("⏸ Pausing container: {}", ContainerIdFormatter.truncate(containerId));
 
     try {
       // Docker pause - freeze all processes
       container.getDockerClient().pauseContainerCmd(containerId).exec();
-      LOGGER.info("✓ Container paused: {}", ContainerIdFormatter.truncate(containerId));
+      log.info("✓ Container paused: {}", ContainerIdFormatter.truncate(containerId));
 
     } catch (Exception e) {
-      LOGGER.error(
-          "✗ Failed to pause container: {}", ContainerIdFormatter.truncate(containerId), e);
+      log.error("✗ Failed to pause container: {}", ContainerIdFormatter.truncate(containerId), e);
       throw new ContainerOperationException(
           "pause", containerId, "Container pause operation failed", e);
     }
@@ -139,16 +98,15 @@ public final class TestcontainerController implements ContainerController {
     Objects.requireNonNull(container, "container");
 
     final String containerId = container.getContainerId();
-    LOGGER.info("▶ Resuming container: {}", ContainerIdFormatter.truncate(containerId));
+    log.info("▶ Resuming container: {}", ContainerIdFormatter.truncate(containerId));
 
     try {
       // Docker unpause - unfreeze processes
       container.getDockerClient().unpauseContainerCmd(containerId).exec();
-      LOGGER.info("✓ Container resumed: {}", ContainerIdFormatter.truncate(containerId));
+      log.info("✓ Container resumed: {}", ContainerIdFormatter.truncate(containerId));
 
     } catch (Exception e) {
-      LOGGER.error(
-          "✗ Failed to resume container: {}", ContainerIdFormatter.truncate(containerId), e);
+      log.error("✗ Failed to resume container: {}", ContainerIdFormatter.truncate(containerId), e);
       throw new ContainerOperationException(
           "resume", containerId, "Container resume operation failed", e);
     }
@@ -164,14 +122,14 @@ public final class TestcontainerController implements ContainerController {
     Objects.requireNonNull(container, "container");
     Objects.requireNonNull(timeout, "timeout");
 
-    LOGGER.debug("Waiting for container readiness: {}", container.getContainerId());
+    log.debug("Waiting for container readiness: {}", container.getContainerId());
 
     final long startTime = System.currentTimeMillis();
     final long timeoutMillis = timeout.toMillis();
 
     while (System.currentTimeMillis() - startTime < timeoutMillis) {
       if (isPingSuccessful(container)) {
-        LOGGER.debug("Container ready: {}", container.getContainerId());
+        log.debug("Container ready: {}", container.getContainerId());
         return;
       }
 
@@ -220,7 +178,7 @@ public final class TestcontainerController implements ContainerController {
       }
 
     } catch (Exception e) {
-      LOGGER.trace("PING failed for container: {}", container.getContainerId(), e);
+      log.trace("PING failed for container: {}", container.getContainerId(), e);
       return false;
     }
   }

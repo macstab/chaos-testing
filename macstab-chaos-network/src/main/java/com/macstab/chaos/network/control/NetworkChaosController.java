@@ -8,110 +8,15 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.util.ContainerIdFormatter;
 import com.macstab.chaos.network.exception.NetworkChaosException;
 
-/**
- * Network chaos engineering controller for Redis containers.
- *
- * <p><strong>Capabilities:</strong>
- *
- * <ul>
- *   <li>🐌 Latency injection (simulate slow networks, cross-region replication)
- *   <li>📉 Packet loss injection (simulate unreliable networks)
- *   <li>📊 Jitter injection (simulate variable latency)
- *   <li>🚧 Network partitioning (simulate split-brain scenarios)
- *   <li>🔄 Chaos reset (remove all injected faults)
- * </ul>
- *
- * <p><strong>Requirements:</strong>
- *
- * <ul>
- *   <li>Linux kernel (tc command uses Linux traffic control)
- *   <li>Container must have NET_ADMIN capability
- *   <li>Container must have iproute2 package (provides tc command)
- * </ul>
- *
- * <p><strong>Use Cases:</strong>
- *
- * <table border="1">
- *   <caption>Network Chaos Use Cases</caption>
- *   <tr><th>Scenario</th><th>Chaos Operation</th><th>What It Tests</th></tr>
- *   <tr>
- *     <td>Slow replica</td>
- *     <td>injectLatency(replica, 100ms)</td>
- *     <td>Does system fall back to master?</td>
- *   </tr>
- *   <tr>
- *     <td>Geographic replication</td>
- *     <td>injectLatency(replicaEU, 80ms)</td>
- *     <td>Is replication lag acceptable?</td>
- *   </tr>
- *   <tr>
- *     <td>Unreliable network</td>
- *     <td>injectPacketLoss(sentinel, 0.05)</td>
- *     <td>Can Sentinel still reach quorum?</td>
- *   </tr>
- *   <tr>
- *     <td>Network partition</td>
- *     <td>partitionFrom(replica, master)</td>
- *     <td>Does it prevent split-brain?</td>
- *   </tr>
- *   <tr>
- *     <td>Variable latency</td>
- *     <td>injectJitter(replica, 50ms)</td>
- *     <td>Does system handle variance?</td>
- *   </tr>
- * </table>
- *
- * <p><strong>Thread Safety:</strong> This class is thread-safe. All operations are atomic.
- *
- * <p><strong>Usage Example:</strong>
- *
- * <pre>{@code
- * // Create controller
- * NetworkChaosController chaos = new NetworkChaosController(allContainers);
- *
- * // Simulate slow replica (cross-region replication lag)
- * chaos.injectLatency(replicaEU, Duration.ofMillis(80));
- *
- * // Test if system handles slow replica
- * redisTemplate.opsForValue().get("key");
- *
- * // Verify: reads should fall back to master or handle timeout
- * // ...
- *
- * // Clean up
- * chaos.reset(replicaEU);
- * }</pre>
- *
- * <p><strong>Advanced Example (Network Partition):</strong>
- *
- * <pre>{@code
- * // Simulate split-brain scenario
- * chaos.partitionFrom(replica, master);
- *
- * // Replica cannot reach master (but clients can reach both)
- * // Test: Does Sentinel prevent replica from promoting itself?
- *
- * // Verify: only one master exists
- * assertThat(control.getMaster()).isNotNull();
- *
- * // Cleanup
- * chaos.reset(replica);
- * }</pre>
- *
- * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
- */
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 public final class NetworkChaosController {
-
-  private static final Logger LOGGER = LoggerFactory.getLogger(NetworkChaosController.class);
-
   /**
    * Default network interface for traffic control.
    *
@@ -200,7 +105,7 @@ public final class NetworkChaosController {
     final String containerId = container.getContainerId();
     final long delayMs = delay.toMillis();
 
-    LOGGER.info(
+    log.info(
         "🐌 Injecting {}ms latency to container: {}",
         delayMs,
         ContainerIdFormatter.truncate(containerId));
@@ -236,10 +141,10 @@ public final class NetworkChaosController {
 
       chaosApplied.put(containerId, true);
       chaosState.put(containerId, ChaosState.latency(delay));
-      LOGGER.info("✓ Latency injection successful: {}", ContainerIdFormatter.truncate(containerId));
+      log.info("✓ Latency injection successful: {}", ContainerIdFormatter.truncate(containerId));
 
     } catch (Exception e) {
-      LOGGER.error("✗ Failed to inject latency: {}", ContainerIdFormatter.truncate(containerId), e);
+      log.error("✗ Failed to inject latency: {}", ContainerIdFormatter.truncate(containerId), e);
       throw new NetworkChaosException("injectLatency", containerId, getErrorMessage(e), e);
     }
   }
@@ -277,7 +182,7 @@ public final class NetworkChaosController {
     final String containerId = container.getContainerId();
     final double lossPercent = lossPercentage * 100;
 
-    LOGGER.info(
+    log.info(
         "📉 Injecting {}% packet loss to container: {}",
         lossPercent, ContainerIdFormatter.truncate(containerId));
 
@@ -305,11 +210,11 @@ public final class NetworkChaosController {
 
       chaosApplied.put(containerId, true);
       chaosState.put(containerId, ChaosState.packetLoss(lossPercentage));
-      LOGGER.info(
+      log.info(
           "✓ Packet loss injection successful: {}", ContainerIdFormatter.truncate(containerId));
 
     } catch (Exception e) {
-      LOGGER.error(
+      log.error(
           "✗ Failed to inject packet loss: {}", ContainerIdFormatter.truncate(containerId), e);
       throw new NetworkChaosException("injectPacketLoss", containerId, getErrorMessage(e), e);
     }
@@ -354,7 +259,7 @@ public final class NetworkChaosController {
     final long delayMs = baseLatency.toMillis();
     final long jitterMs = jitter.toMillis();
 
-    LOGGER.info(
+    log.info(
         "📊 Injecting {}ms latency ±{}ms jitter to container: {}",
         delayMs,
         jitterMs,
@@ -387,10 +292,10 @@ public final class NetworkChaosController {
 
       chaosApplied.put(containerId, true);
       chaosState.put(containerId, ChaosState.jitter(baseLatency, jitter));
-      LOGGER.info("✓ Jitter injection successful: {}", ContainerIdFormatter.truncate(containerId));
+      log.info("✓ Jitter injection successful: {}", ContainerIdFormatter.truncate(containerId));
 
     } catch (Exception e) {
-      LOGGER.error("✗ Failed to inject jitter: {}", ContainerIdFormatter.truncate(containerId), e);
+      log.error("✗ Failed to inject jitter: {}", ContainerIdFormatter.truncate(containerId), e);
       throw new NetworkChaosException(
           "injectLatencyWithJitter", containerId, getErrorMessage(e), e);
     }
@@ -424,7 +329,7 @@ public final class NetworkChaosController {
     final String sourceId = source.getContainerId();
     final String targetIp = getContainerIp(target);
 
-    LOGGER.info(
+    log.info(
         "🚧 Creating network partition: {} cannot reach {}",
         ContainerIdFormatter.truncate(sourceId),
         ContainerIdFormatter.truncate(target.getContainerId()));
@@ -441,10 +346,10 @@ public final class NetworkChaosController {
 
       chaosApplied.put(sourceId, true);
       chaosState.put(sourceId, ChaosState.partition(target.getContainerId()));
-      LOGGER.info("✓ Network partition created: {}", ContainerIdFormatter.truncate(sourceId));
+      log.info("✓ Network partition created: {}", ContainerIdFormatter.truncate(sourceId));
 
     } catch (Exception e) {
-      LOGGER.error("✗ Failed to create partition: {}", ContainerIdFormatter.truncate(sourceId), e);
+      log.error("✗ Failed to create partition: {}", ContainerIdFormatter.truncate(sourceId), e);
       throw new NetworkChaosException("partitionFrom", sourceId, getErrorMessage(e), e);
     }
   }
@@ -474,18 +379,18 @@ public final class NetworkChaosController {
     final String containerId = container.getContainerId();
 
     if (!chaosApplied.containsKey(containerId)) {
-      LOGGER.debug(
+      log.debug(
           "No chaos applied to container, skipping reset: {}",
           ContainerIdFormatter.truncate(containerId));
       return;
     }
 
-    LOGGER.info(
+    log.info(
         "🔄 Resetting network chaos for container: {}", ContainerIdFormatter.truncate(containerId));
     resetInternal(container);
     chaosApplied.remove(containerId);
     chaosState.remove(containerId);
-    LOGGER.info("✓ Network chaos reset successful: {}", ContainerIdFormatter.truncate(containerId));
+    log.info("✓ Network chaos reset successful: {}", ContainerIdFormatter.truncate(containerId));
   }
 
   /**
@@ -503,7 +408,7 @@ public final class NetworkChaosController {
    * }</pre>
    */
   public void resetAll() {
-    LOGGER.info("🔄 Resetting network chaos for all containers");
+    log.info("🔄 Resetting network chaos for all containers");
     int resetCount = 0;
 
     for (final GenericContainer<?> container : allContainers) {
@@ -513,7 +418,7 @@ public final class NetworkChaosController {
           resetCount++;
         }
       } catch (Exception e) {
-        LOGGER.warn(
+        log.warn(
             "Failed to reset chaos for container: {}",
             ContainerIdFormatter.truncate(container.getContainerId()),
             e);
@@ -522,7 +427,7 @@ public final class NetworkChaosController {
 
     chaosApplied.clear();
     chaosState.clear();
-    LOGGER.info("✓ Network chaos reset for {} container(s)", resetCount);
+    log.info("✓ Network chaos reset for {} container(s)", resetCount);
   }
 
   /**
@@ -585,7 +490,7 @@ public final class NetworkChaosController {
       container.execInContainer("tc", "qdisc", "del", "dev", networkInterface, "root");
     } catch (Exception e) {
       // Ignore - tc fails if no rules exist (expected)
-      LOGGER.trace("tc qdisc del failed (expected if no rules): {}", e.getMessage());
+      log.trace("tc qdisc del failed (expected if no rules): {}", e.getMessage());
     }
 
     try {
@@ -593,7 +498,7 @@ public final class NetworkChaosController {
       container.execInContainer("iptables", "-F", "OUTPUT");
     } catch (Exception e) {
       // Ignore - iptables may not be available or no rules exist
-      LOGGER.trace("iptables flush failed (expected if no rules): {}", e.getMessage());
+      log.trace("iptables flush failed (expected if no rules): {}", e.getMessage());
     }
   }
 

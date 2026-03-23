@@ -4,6 +4,8 @@ package com.macstab.chaos.network.exception;
 import com.macstab.chaos.core.exception.ClusterException;
 import com.macstab.chaos.core.util.ContainerIdFormatter;
 
+import lombok.Getter;
+
 /**
  * Exception thrown when network chaos operations fail.
  *
@@ -39,6 +41,7 @@ import com.macstab.chaos.core.util.ContainerIdFormatter;
  * @author Christian Schnapka - Macstab GmbH
  * @since 2.0
  */
+@Getter
 public class NetworkChaosException extends ClusterException {
 
   private final String operation;
@@ -81,23 +84,5 @@ public class NetworkChaosException extends ClusterException {
             operation, ContainerIdFormatter.truncate(containerId), message));
     this.operation = operation;
     this.containerId = containerId;
-  }
-
-  /**
-   * Returns the operation name.
-   *
-   * @return operation (never null)
-   */
-  public String getOperation() {
-    return operation;
-  }
-
-  /**
-   * Returns the container ID.
-   *
-   * @return container ID (never null)
-   */
-  public String getContainerId() {
-    return containerId;
   }
 }

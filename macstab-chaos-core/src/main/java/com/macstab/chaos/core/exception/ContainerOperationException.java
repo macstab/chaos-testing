@@ -31,7 +31,10 @@ import com.macstab.chaos.core.util.ContainerIdFormatter;
  */
 public class ContainerOperationException extends ClusterException {
 
+  /** Operation name (e.g., "restart", "kill"). */
   private final String operation;
+
+  /** Container ID (first 12 characters). */
   private final String containerId;
 
   /**

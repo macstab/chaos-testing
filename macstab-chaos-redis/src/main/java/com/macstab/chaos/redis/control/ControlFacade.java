@@ -19,57 +19,9 @@ import com.macstab.chaos.redis.control.role.ContainerRole;
 import com.macstab.chaos.redis.control.role.RoleResolver;
 
 import io.lettuce.core.api.StatefulRedisConnection;
+import lombok.extern.slf4j.Slf4j;
 
-/**
- * Public facade for container control and connection inspection.
- *
- * <p><strong>Features:</strong>
- *
- * <ul>
- *   <li>✅ Connection inspection (identify container from Lettuce connection)
- *   <li>✅ Container lifecycle control (restart, kill, pause, resume)
- *   <li>✅ Failover simulation and testing
- *   <li>✅ Role-based container access (get master, get replica by index)
- *   <li>✅ Network chaos engineering (latency, packet loss, partitioning)
- *   <li>✅ Thread-safe (all components are thread-safe)
- * </ul>
- *
- * <p><strong>Unified API:</strong>
- *
- * <table border="1">
- *   <caption>ControlFacade API Overview</caption>
- *   <tr><th>Category</th><th>Methods</th></tr>
- *   <tr><td>Inspection</td><td>inspect(connection)</td></tr>
- *   <tr><td>Lifecycle</td><td>restart(), kill(), pause(), resume()</td></tr>
- *   <tr><td>Failover</td><td>triggerFailover(), findMaster()</td></tr>
- *   <tr><td>Role Access</td><td>getMaster(), getContainer(role)</td></tr>
- *   <tr><td>Network Chaos</td><td>network().injectLatency(), network().injectPacketLoss()</td></tr>
- * </table>
- *
- * <p><strong>Usage Example:</strong>
- *
- * <pre>{@code
- * // Create facade
- * ControlFacade control = ControlFacade.create(allContainers, containerIndexMap);
- *
- * // 1. Inspect connection
- * ConnectionInfo info = control.inspect(connection);
- * System.out.println("Connected to: " + info.role());
- *
- * // 2. Restart replica
- * control.restart(info.container());
- *
- * // 3. Trigger failover
- * Duration duration = control.triggerFailover();
- * System.out.println("Failover completed in: " + duration.toMillis() + "ms");
- *
- * // 4. Get new master
- * GenericContainer<?> newMaster = control.getMaster();
- * }</pre>
- *
- * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
- */
+@Slf4j
 public final class ControlFacade {
 
   private final ConnectionInspector inspector;

@@ -1,0 +1,33 @@
+/* (C)2026 Christian Schnapka / Macstab GmbH */
+package com.macstab.chaos.core.platform;
+
+/**
+ * System tools required by chaos modules.
+ *
+ * <p>Package names for these tools vary by distribution. Use {@link Platform#getPackageName(Tool)}
+ * to get the correct package name for the target platform.
+ *
+ * @author Christian Schnapka - Macstab GmbH
+ */
+public enum Tool {
+  /** curl - HTTP client (required for Toxiproxy API, port checks) */
+  CURL,
+
+  /** iptables - Linux firewall (required for port redirection) */
+  IPTABLES,
+
+  /** CA certificates bundle (required for HTTPS downloads) */
+  CA_CERTIFICATES,
+
+  /** Process utilities (ps, top, etc.) */
+  PROCPS,
+
+  /** IP routing utilities (ip, tc, etc.) */
+  IPROUTE,
+
+  /** Python interpreter */
+  PYTHON,
+
+  /** Stress testing utility */
+  STRESS_NG
+}

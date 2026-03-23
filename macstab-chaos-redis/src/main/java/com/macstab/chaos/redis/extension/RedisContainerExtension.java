@@ -384,7 +384,9 @@ public final class RedisContainerExtension
       // Auto-install network tools if network chaos is enabled
       if (annotation.enableNetworkChaos()) {
         try {
-          com.macstab.chaos.core.util.ContainerNetworkToolsInstaller.installIfNeeded(container);
+          if (!com.macstab.chaos.core.util.PackageInstaller.isInstalled(container, "tc")) {
+            com.macstab.chaos.core.util.PackageInstaller.install(container, "iproute2", "iptables");
+          }
         } catch (final Exception e) {
           log.warn(
               "Network chaos enabled but failed to install tools for '{}': {}",
@@ -447,6 +449,9 @@ public final class RedisContainerExtension
     if (annotation.enableNetworkChaos()) {
       container.withCreateContainerCmdModifier(
           cmd -> cmd.getHostConfig().withCapAdd(Capability.NET_ADMIN));
+
+      // Verify chaos dependencies are on classpath
+      verifyChaosDependencies();
     }
 
     return container;
@@ -625,6 +630,39 @@ public final class RedisContainerExtension
     @Override
     public void close() {
       CURRENT_CONTEXT.remove();
+    }
+  }
+
+  /**
+   * Verify cache chaos (Toxiproxy) dependency when enableNetworkChaos = true.
+   *
+   * <p>enableNetworkChaos requires Toxiproxy to proxy Redis traffic (client → Toxiproxy → Redis).
+   *
+   * @throws IllegalStateException if cache chaos module (Toxiproxy) is missing
+   */
+  private static void verifyChaosDependencies() {
+    // Check for cache module (contains Toxiproxy logic)
+    if (!isClassPresent("com.macstab.chaos.cache.ToxiproxyCacheChaos")) {
+      throw new IllegalStateException(
+          "enableNetworkChaos=true requires macstab-chaos-cache (Toxiproxy) on classpath.\n"
+              + "This proxies Redis traffic: client → Toxiproxy → Redis\n\n"
+              + "Add to your build.gradle.kts:\n"
+              + "    testImplementation(\"com.macstab:macstab-chaos-cache:${version}\")");
+    }
+  }
+
+  /**
+   * Check if class is present on classpath.
+   *
+   * @param className fully qualified class name
+   * @return true if class exists, false otherwise
+   */
+  private static boolean isClassPresent(final String className) {
+    try {
+      Class.forName(className, false, RedisContainerExtension.class.getClassLoader());
+      return true;
+    } catch (final ClassNotFoundException e) {
+      return false;
     }
   }
 }

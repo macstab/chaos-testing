@@ -7,53 +7,16 @@ import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.redis.control.role.ContainerRole;
 import com.macstab.chaos.redis.control.role.RoleResolver;
 
 import io.lettuce.core.api.StatefulRedisConnection;
+import lombok.extern.slf4j.Slf4j;
 
-/**
- * Lettuce-specific connection inspector with 3-tier inspection strategy.
- *
- * <p><strong>Features:</strong>
- *
- * <ul>
- *   <li>✅ Tier 1: Auto-detection via robust toString() parsing (multiple patterns)
- *   <li>✅ Tier 2: Explicit container hint (100% reliable)
- *   <li>✅ Tier 3: Manual inspection (full control)
- *   <li>✅ Resolves container role via {@link RoleResolver}
- *   <li>✅ Checks connection health with PING command
- *   <li>✅ Thread-safe (immutable after construction)
- * </ul>
- *
- * <p><strong>Thread Safety:</strong> Immutable after construction. Multiple threads can inspect
- * connections concurrently.
- *
- * <p><strong>Usage Example:</strong>
- *
- * <pre>{@code
- * // Tier 1: Auto-detection (easiest)
- * ConnectionInfo info = inspector.inspect(connection);
- *
- * // Tier 2: Explicit hint (if auto-detection fails)
- * GenericContainer<?> replica = cluster.getReplicaContainers().get(0);
- * ConnectionInfo info = inspector.inspect(connection, replica);
- *
- * // Tier 3: Manual (full control)
- * ConnectionInfo info = inspector.inspectManual(container, "Master node");
- * }</pre>
- *
- * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
- */
+@Slf4j
 public final class LettuceConnectionInspector implements ConnectionInspector {
-
-  private static final Logger LOGGER = LoggerFactory.getLogger(LettuceConnectionInspector.class);
-
   // Regex patterns for robust endpoint extraction (tried in order)
   private static final Pattern PATTERN_REDIS_URI = Pattern.compile("redis://([^:]+):(\\d+)");
   private static final Pattern PATTERN_REMOTE_ADDRESS =
@@ -108,12 +71,12 @@ public final class LettuceConnectionInspector implements ConnectionInspector {
               "%s (%s) - %s",
               role, endpoint.toConnectionString(), healthy ? "HEALTHY" : "UNHEALTHY");
 
-      LOGGER.debug("Inspected connection (auto-detect): {}", connectionInfo);
+      log.debug("Inspected connection (auto-detect): {}", connectionInfo);
 
       return new ConnectionInfo(role, container, connectionInfo, healthy);
 
     } catch (Exception e) {
-      LOGGER.error("Failed to inspect connection (auto-detect)", e);
+      log.error("Failed to inspect connection (auto-detect)", e);
       throw e instanceof IllegalStateException
           ? (IllegalStateException) e
           : new IllegalStateException("Connection inspection failed: " + e.getMessage(), e);
@@ -151,7 +114,7 @@ public final class LettuceConnectionInspector implements ConnectionInspector {
     final String connectionInfo =
         String.format("%s (user-provided container) - %s", role, healthy ? "HEALTHY" : "UNHEALTHY");
 
-    LOGGER.debug("Inspected connection (explicit hint): {}", connectionInfo);
+    log.debug("Inspected connection (explicit hint): {}", connectionInfo);
 
     return new ConnectionInfo(role, containerHint, connectionInfo, healthy);
   }
@@ -177,7 +140,7 @@ public final class LettuceConnectionInspector implements ConnectionInspector {
 
     final String fullDescription = String.format("%s (%s) - MANUAL", role, connectionDescription);
 
-    LOGGER.debug("Inspected manually: {}", fullDescription);
+    log.debug("Inspected manually: {}", fullDescription);
 
     return new ConnectionInfo(role, container, fullDescription, true);
   }
@@ -231,13 +194,13 @@ public final class LettuceConnectionInspector implements ConnectionInspector {
             final var remoteAddr = (java.net.InetSocketAddress) channel.remoteAddress();
             final String host = remoteAddr.getHostString();
             final int port = remoteAddr.getPort();
-            LOGGER.debug("Extracted endpoint from Netty channel: {}:{}", host, port);
+            log.debug("Extracted endpoint from Netty channel: {}:{}", host, port);
             return new RemoteEndpoint(host, port);
           }
         }
       }
     } catch (Exception e) {
-      LOGGER.trace("Failed to extract endpoint via channel writer", e);
+      log.trace("Failed to extract endpoint via channel writer", e);
     }
 
     // Strategy 2: Parse connection toString() with multiple patterns
@@ -246,21 +209,21 @@ public final class LettuceConnectionInspector implements ConnectionInspector {
     // Try pattern 1: redis://host:port (most specific)
     RemoteEndpoint endpoint = tryPattern(PATTERN_REDIS_URI, connectionString);
     if (endpoint != null) {
-      LOGGER.trace("Extracted endpoint using REDIS_URI pattern: {}", endpoint);
+      log.trace("Extracted endpoint using REDIS_URI pattern: {}", endpoint);
       return endpoint;
     }
 
     // Try pattern 2: remoteAddress=host:port
     endpoint = tryPattern(PATTERN_REMOTE_ADDRESS, connectionString);
     if (endpoint != null) {
-      LOGGER.trace("Extracted endpoint using REMOTE_ADDRESS pattern: {}", endpoint);
+      log.trace("Extracted endpoint using REMOTE_ADDRESS pattern: {}", endpoint);
       return endpoint;
     }
 
     // Try pattern 3: generic host:port (most lenient)
     endpoint = tryPattern(PATTERN_HOST_PORT, connectionString);
     if (endpoint != null) {
-      LOGGER.trace("Extracted endpoint using HOST_PORT pattern: {}", endpoint);
+      log.trace("Extracted endpoint using HOST_PORT pattern: {}", endpoint);
       return endpoint;
     }
 
@@ -292,7 +255,7 @@ public final class LettuceConnectionInspector implements ConnectionInspector {
         final int port = Integer.parseInt(matcher.group(2));
         return new RemoteEndpoint(host, port);
       } catch (Exception e) {
-        LOGGER.trace("Pattern matched but extraction failed: {}", e.getMessage());
+        log.trace("Pattern matched but extraction failed: {}", e.getMessage());
         return null;
       }
     }
@@ -375,7 +338,7 @@ public final class LettuceConnectionInspector implements ConnectionInspector {
       final String pong = connection.sync().ping();
       return "PONG".equalsIgnoreCase(pong);
     } catch (Exception e) {
-      LOGGER.warn("Health check failed: {}", e.getMessage());
+      log.warn("Health check failed: {}", e.getMessage());
       return false;
     }
   }

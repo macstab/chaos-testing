@@ -20,7 +20,7 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
 
 import com.github.dockerjava.api.model.Capability;
-import com.macstab.chaos.core.util.ContainerNetworkToolsInstaller;
+import com.macstab.chaos.core.util.PackageInstaller;
 import com.macstab.chaos.network.condition.DisabledOnNonLinuxHost;
 import com.macstab.chaos.network.control.NetworkChaosController;
 import com.macstab.chaos.network.exception.NetworkChaosException;
@@ -557,7 +557,7 @@ class NetworkChaosIntegrationTest {
    * @param container the container to install tools in
    */
   private static void installNetworkTools(final GenericContainer<?> container) {
-    ContainerNetworkToolsInstaller.install(container);
+    PackageInstaller.install(container, "iproute2", "iptables");
   }
 
   /**

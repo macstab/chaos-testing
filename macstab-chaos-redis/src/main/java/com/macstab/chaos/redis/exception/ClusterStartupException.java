@@ -3,34 +3,9 @@ package com.macstab.chaos.redis.exception;
 
 import java.util.List;
 
-/**
- * Exception thrown when one or more Redis clusters fail to start during test initialization.
- *
- * <p>This exception aggregates multiple cluster startup failures and provides detailed diagnostics.
- * It is thrown from {@code beforeAll()} extension hooks when parallel cluster startup encounters
- * errors.
- *
- * <p><strong>Failure Isolation Guarantee:</strong> When this exception is thrown, ALL successfully
- * started clusters have been cleaned up (containers stopped, networks removed). This prevents
- * resource leaks even when some clusters fail.
- *
- * <p><strong>Example Error Message:</strong>
- *
- * <pre>
- * ClusterStartupException: Failed to start 2 cluster(s):
- *   - Cluster 'cluster-a': Replica sync timeout after 30s (master: 172.18.0.5:6379)
- *   - Cluster 'cluster-c': Sentinel quorum not reached (only 2/3 sentinels healthy)
- *
- * All successfully started clusters have been cleaned up to prevent resource leaks.
- * Cleanup summary: Stopped cluster 'cluster-b' (6 containers, 1 network).
- * </pre>
- *
- * <p><strong>Usage:</strong> This exception is thrown automatically by the extension framework.
- * Users typically see it in JUnit test reports.
- *
- * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
- */
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
 public final class ClusterStartupException extends RuntimeException {
 
   private final List<ClusterStartupFailure> failures;
