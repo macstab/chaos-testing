@@ -6,49 +6,107 @@ import java.time.Duration;
 import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
-import com.macstab.chaos.core.exception.ChaosProviderNotFoundException;
 
 /**
- * CPU chaos injection interface.
+ * CPU-level chaos using cgroups throttling and stress-ng.
  *
- * <p>Provides CPU throttling and stress injection using Linux cgroups v2 ({@code cpu.max}) and
- * {@code stress-ng}.
+ * <p>Simulates CPU contention, saturation, and throttling using Linux cgroups v2 and stress-ng.
  *
- * <p><strong>Default Implementation:</strong> {@link com.macstab.chaos.core.defaults.NoOpCpuChaos}
- * throws {@link ChaosProviderNotFoundException} with helpful dependency message.
+ * <h2>How It Works</h2>
  *
- * <p><strong>Real Implementation:</strong> Add dependency to enable CPU chaos:
+ * <p><strong>CPU Throttling (cgroups v2):</strong>
+ *
+ * <pre>
+ * Write quota to: /sys/fs/cgroup/.../cpu.max
+ * Format: "&lt;quota_us&gt; &lt;period_us&gt;"
+ * Example: "50000 100000" = 50% (50ms per 100ms period)
+ * </pre>
+ *
+ * <p><strong>CPU Stress (stress-ng):</strong>
+ *
+ * <pre>
+ * Command: stress-ng --cpu &lt;workers&gt; --timeout &lt;duration&gt;
+ * Effect: Each worker consumes 100% of 1 CPU core
+ * </pre>
+ *
+ * <h2>Complete Example: Redis Under CPU Pressure</h2>
+ *
+ * <pre>{@code
+ * @Test
+ * void shouldHandleSlowCommandsUnderCpuPressure() {
+ *   CpuChaos chaos = new CpuChaosProvider();
+ *
+ *   // Baseline: Verify fast responses
+ *   long baseline = measureLatency(() -> redis.get("key"));
+ *   assertThat(baseline).isLessThan(5);  // <5ms
+ *
+ *   // Inject chaos: Throttle to 25% CPU
+ *   chaos.throttle(redis, 25);
+ *
+ *   // Verify: Commands slower but functional
+ *   long throttled = measureLatency(() -> redis.get("key"));
+ *   assertThat(throttled).isBetween(15, 25);  // ~4x slower
+ *
+ *   // Application should handle gracefully (not timeout)
+ *   assertThat(redis.get("key")).isNotNull();
+ *
+ *   chaos.reset(redis);
+ * }
+ * }</pre>
+ *
+ * <h2>Testing Patterns</h2>
+ *
+ * <h3>Pattern 1: CPU Throttling (Quota Limit)</h3>
+ *
+ * <pre>{@code
+ * @Test
+ * void testCpuThrottling() {
+ *   chaos.throttle(app, 50);  // 50% CPU limit
+ *
+ *   // Verify: Slower but functional
+ *   long duration = measureTaskTime();
+ *   assertThat(duration).isGreaterThan(baseline * 1.8);  // ~2x slower
+ * }
+ * }</pre>
+ *
+ * <h3>Pattern 2: CPU Saturation (stress-ng)</h3>
+ *
+ * <pre>{@code
+ * @Test
+ * void testCpuSaturation() {
+ *   chaos.stress(app, 4);  // 4 CPU workers (400% load)
+ *
+ *   // Application should queue work, not crash
+ *   assertThat(app.processRequest()).isSuccessful();
+ * }
+ * }</pre>
+ *
+ * <h2>Common Use Cases</h2>
+ *
+ * <ul>
+ *   <li>Noisy neighbor scenarios (throttle to 25-50%)
+ *   <li>Batch job CPU burst (stress for 30s)
+ *   <li>Redis slow commands (throttle AOF rewrite)
+ *   <li>Thread pool saturation (stress + observe queuing)
+ * </ul>
+ *
+ * <h2>Platform Requirements</h2>
+ *
+ * <ul>
+ *   <li>Linux kernel 3.10+ (cgroups v2)
+ *   <li>stress-ng (auto-installs if missing)
+ *   <li>Supported: Ubuntu, Debian, Alpine, Fedora, RHEL
+ * </ul>
+ *
+ * <h2>Implementation</h2>
  *
  * <pre>{@code
  * testImplementation("com.macstab.chaos:macstab-chaos-cpu:1.0.0")
+ * CpuChaos chaos = new CpuChaosProvider();
  * }</pre>
- *
- * <p><strong>Usage Example:</strong>
- *
- * <pre>{@code
- * // Via ChaosController facade
- * ChaosController chaos = new ChaosController(container);
- * chaos.cpu().throttle(50);           // Limit to 50% of 1 CPU core
- * chaos.cpu().stress(4);              // Spawn 4 CPU-bound workers
- *
- * // Direct instantiation (if implementation on classpath)
- * CpuChaos cpuChaos = ChaosProviderRegistry.getCpuChaos();
- * cpuChaos.throttle(container, 50);
- * }</pre>
- *
- * <p><strong>Implementation Details:</strong>
- *
- * <ul>
- *   <li><strong>CPU Throttling:</strong> Uses cgroups v2 {@code cpu.max} to limit CPU bandwidth
- *   <li><strong>CPU Stress:</strong> Spawns {@code stress-ng --cpu <workers>} processes
- *   <li><strong>Auto-Install:</strong> Installs {@code stress-ng} if not present (via {@link
- *       com.macstab.chaos.core.util.PackageInstaller})
- *   <li><strong>Kernel Requirement:</strong> Linux kernel 3.10+ (cgroups v2 support)
- * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ChaosProvider
- * @see com.macstab.chaos.core.facade.ChaosController
  */
 public interface CpuChaos extends ChaosProvider {
 

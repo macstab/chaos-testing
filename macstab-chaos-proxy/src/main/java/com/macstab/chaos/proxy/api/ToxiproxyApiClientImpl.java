@@ -44,9 +44,7 @@ public final class ToxiproxyApiClientImpl implements ToxiproxyApiClient {
     this.apiUrl = Objects.requireNonNull(apiUrl, "apiUrl must not be null");
   }
 
-  /**
-   * Create API client with default localhost URL.
-   */
+  /** Create API client with default localhost URL. */
   public ToxiproxyApiClientImpl() {
     this("http://localhost:8474");
   }
@@ -174,7 +172,7 @@ public final class ToxiproxyApiClientImpl implements ToxiproxyApiClient {
       final HttpCommandBuilder http = platform.getHttpCommandBuilder();
       final String url = String.format("%s/proxies/%s/toxics", apiUrl, proxyName);
       final String cmd = http.buildGetRequest(url);
-      
+
       // Fetch toxics list, then grep for toxic name
       final String grepCmd = String.format("%s | grep -q '\"name\":\"%s\"'", cmd, toxicName);
 
@@ -227,8 +225,7 @@ public final class ToxiproxyApiClientImpl implements ToxiproxyApiClient {
       if (e instanceof IOException) {
         throw (IOException) e;
       }
-      throw new IOException(
-          String.format("Failed to add toxic: %s/%s", proxyName, toxicName), e);
+      throw new IOException(String.format("Failed to add toxic: %s/%s", proxyName, toxicName), e);
     }
   }
 

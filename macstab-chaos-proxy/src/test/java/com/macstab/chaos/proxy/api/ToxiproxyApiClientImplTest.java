@@ -290,17 +290,13 @@ class ToxiproxyApiClientImplTest {
     void shouldValidateToxicityRange() {
       // WHEN / THEN - toxicity < 0
       assertThatThrownBy(
-              () ->
-                  apiClient.addToxic(
-                      container, shell, "redis", "latency", "latency", "{}", -0.1))
+              () -> apiClient.addToxic(container, shell, "redis", "latency", "latency", "{}", -0.1))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("toxicity must be in [0.0, 1.0]");
 
       // WHEN / THEN - toxicity > 1
       assertThatThrownBy(
-              () ->
-                  apiClient.addToxic(
-                      container, shell, "redis", "latency", "latency", "{}", 1.1))
+              () -> apiClient.addToxic(container, shell, "redis", "latency", "latency", "{}", 1.1))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("toxicity must be in [0.0, 1.0]");
     }
@@ -380,8 +376,7 @@ class ToxiproxyApiClientImplTest {
     void shouldValidateAttributes_addToxic() {
       // WHEN / THEN
       assertThatThrownBy(
-              () ->
-                  apiClient.addToxic(container, shell, "redis", "latency", "latency", null, 1.0))
+              () -> apiClient.addToxic(container, shell, "redis", "latency", "latency", null, 1.0))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("attributes");
     }

@@ -22,6 +22,7 @@ dependencies {
 
     // Testcontainers
     api("org.testcontainers:testcontainers:1.20.4")
+    testImplementation("org.testcontainers:junit-jupiter:1.20.4")
 
     // Test dependencies
     testImplementation("org.assertj:assertj-core:3.24.2")

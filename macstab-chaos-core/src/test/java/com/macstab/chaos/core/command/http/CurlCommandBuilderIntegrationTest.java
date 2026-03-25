@@ -3,18 +3,19 @@ package com.macstab.chaos.core.command.http;
 
 import static org.assertj.core.api.Assertions.*;
 
-import com.macstab.chaos.core.platform.Platform;
-import com.macstab.chaos.core.platform.PlatformDetector;
-import com.macstab.chaos.core.shell.Shell;
 import org.junit.jupiter.api.BeforeAll;
-import org.testcontainers.containers.Container.ExecResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.testcontainers.containers.Container.ExecResult;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
+
+import com.macstab.chaos.core.platform.Platform;
+import com.macstab.chaos.core.platform.PlatformDetector;
+import com.macstab.chaos.core.shell.Shell;
 
 /**
  * Integration tests for {@link CurlCommandBuilder}.

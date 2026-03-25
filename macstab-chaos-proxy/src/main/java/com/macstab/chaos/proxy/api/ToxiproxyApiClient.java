@@ -11,8 +11,8 @@ import com.macstab.chaos.proxy.internal.model.ProxyConfiguration;
 /**
  * Client for Toxiproxy HTTP API operations.
  *
- * <p>Encapsulates all HTTP communication with the Toxiproxy API server, including proxy
- * management, toxic configuration, and health checks.
+ * <p>Encapsulates all HTTP communication with the Toxiproxy API server, including proxy management,
+ * toxic configuration, and health checks.
  *
  * <p><strong>Thread-safety:</strong> Implementations must be thread-safe.
  *
@@ -60,8 +60,7 @@ public interface ToxiproxyApiClient {
    * @param proxyName proxy name
    * @throws IOException if deletion fails
    */
-  void deleteProxy(GenericContainer<?> container, Shell shell, String proxyName)
-      throws IOException;
+  void deleteProxy(GenericContainer<?> container, Shell shell, String proxyName) throws IOException;
 
   /**
    * Check if a toxic exists on a proxy.

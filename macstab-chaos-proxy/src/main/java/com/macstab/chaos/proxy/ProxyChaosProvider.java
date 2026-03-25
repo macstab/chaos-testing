@@ -7,8 +7,9 @@ import java.util.Objects;
 import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.api.ProxyChaos;
+import com.macstab.chaos.proxy.config.ToxiproxyConfig;
+import com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator;
 import com.macstab.chaos.proxy.internal.model.ProxyConfiguration;
-import com.macstab.chaos.proxy.internal.toxiproxy.ToxiproxyManager;
 
 /**
  * Provider for universal TCP proxy-based chaos injection.
@@ -41,7 +42,21 @@ import com.macstab.chaos.proxy.internal.toxiproxy.ToxiproxyManager;
  */
 public final class ProxyChaosProvider implements ProxyChaos {
 
-  private final ToxiproxyManager manager = new ToxiproxyManager();
+  private final ToxiproxyOrchestrator orchestrator;
+
+  /** Create provider with default configuration. */
+  public ProxyChaosProvider() {
+    this(ToxiproxyConfig.defaults());
+  }
+
+  /**
+   * Create provider with custom configuration.
+   *
+   * @param config Toxiproxy configuration
+   */
+  public ProxyChaosProvider(final ToxiproxyConfig config) {
+    this.orchestrator = new ToxiproxyOrchestrator(config);
+  }
 
   @Override
   public String createProxy(
@@ -57,7 +72,7 @@ public final class ProxyChaosProvider implements ProxyChaos {
     final ProxyConfiguration config =
         new ProxyConfiguration(proxyName, servicePort, proxyPort, hostname);
 
-    manager.createProxy(container, config);
+    orchestrator.createProxy(container, config);
 
     return hostname;
   }
@@ -74,7 +89,7 @@ public final class ProxyChaosProvider implements ProxyChaos {
       throw new IllegalArgumentException("latency must not be negative");
     }
 
-    manager.addToxic(
+    orchestrator.addToxic(
         container,
         proxyName,
         "latency",
@@ -104,7 +119,7 @@ public final class ProxyChaosProvider implements ProxyChaos {
           String.format("probability must be in [0.0, 1.0], got: %.2f", probability));
     }
 
-    manager.addToxic(
+    orchestrator.addToxic(
         container,
         proxyName,
         "timeout",
@@ -124,7 +139,7 @@ public final class ProxyChaosProvider implements ProxyChaos {
       throw new IllegalArgumentException("rateKBps must be positive");
     }
 
-    manager.addToxic(
+    orchestrator.addToxic(
         container,
         proxyName,
         "bandwidth",
@@ -145,7 +160,7 @@ public final class ProxyChaosProvider implements ProxyChaos {
       throw new IllegalArgumentException("delay must not be negative");
     }
 
-    manager.addToxic(
+    orchestrator.addToxic(
         container,
         proxyName,
         "slow_close",
@@ -157,7 +172,7 @@ public final class ProxyChaosProvider implements ProxyChaos {
   @Override
   public void reset(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
-    manager.reset(container);
+    orchestrator.reset(container);
   }
 
   @Override

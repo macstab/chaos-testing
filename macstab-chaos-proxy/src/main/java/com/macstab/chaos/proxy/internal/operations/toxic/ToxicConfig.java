@@ -20,7 +20,12 @@ package com.macstab.chaos.proxy.internal.operations.toxic;
  * @author Christian Schnapka - Macstab GmbH
  */
 public sealed interface ToxicConfig
-    permits LatencyToxic, TimeoutToxic, BandwidthToxic, SlowCloseToxic, LimitDataToxic, LegacyToxicConfig {
+    permits LatencyToxic,
+        TimeoutToxic,
+        BandwidthToxic,
+        SlowCloseToxic,
+        LimitDataToxic,
+        LegacyToxicConfig {
 
   /**
    * Get the toxic name (must be unique per proxy).

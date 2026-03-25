@@ -13,6 +13,7 @@ import com.macstab.chaos.core.platform.PlatformDetector;
 import com.macstab.chaos.core.shell.Shell;
 import com.macstab.chaos.proxy.api.ToxiproxyApiClient;
 import com.macstab.chaos.proxy.api.ToxiproxyApiClientImpl;
+import com.macstab.chaos.proxy.config.ToxiproxyConfig;
 import com.macstab.chaos.proxy.internal.model.ProxyConfiguration;
 import com.macstab.chaos.proxy.network.NetworkRedirect;
 import com.macstab.chaos.proxy.network.NetworkRedirectManager;
@@ -32,10 +33,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public final class ProxyOperationsManager implements ProxyOperations {
 
-  private static final String TOXIPROXY_API_URL = "http://localhost:8474";
-  private static final int PROXY_READY_TIMEOUT_MS = 2000;
-  private static final int POLL_INTERVAL_MS = 50;
-
+  private final ToxiproxyConfig config;
   private final ToxiproxyApiClient apiClient;
   private final NetworkRedirect networkRedirect;
 
@@ -43,22 +41,32 @@ public final class ProxyOperationsManager implements ProxyOperations {
   private Platform cachedPlatform;
   private GenericContainer<?> cachedContainer;
 
-  /** Create proxy operations manager with default components. */
-  public ProxyOperationsManager() {
-    this.apiClient = new ToxiproxyApiClientImpl(TOXIPROXY_API_URL);
+  /**
+   * Create proxy operations manager with configuration.
+   *
+   * @param config Toxiproxy configuration
+   */
+  public ProxyOperationsManager(final ToxiproxyConfig config) {
+    this.config = Objects.requireNonNull(config, "config must not be null");
+    this.apiClient = new ToxiproxyApiClientImpl(config.apiUrl());
     this.networkRedirect = new NetworkRedirectManager();
   }
 
   /**
    * Create proxy operations manager with custom components (for testing).
    *
+   * @param config Toxiproxy configuration
    * @param apiClient API client instance
    * @param networkRedirect network redirect instance
    */
   public ProxyOperationsManager(
-      final ToxiproxyApiClient apiClient, final NetworkRedirect networkRedirect) {
+      final ToxiproxyConfig config,
+      final ToxiproxyApiClient apiClient,
+      final NetworkRedirect networkRedirect) {
+    this.config = Objects.requireNonNull(config, "config must not be null");
     this.apiClient = Objects.requireNonNull(apiClient, "apiClient must not be null");
-    this.networkRedirect = Objects.requireNonNull(networkRedirect, "networkRedirect must not be null");
+    this.networkRedirect =
+        Objects.requireNonNull(networkRedirect, "networkRedirect must not be null");
   }
 
   @Override
@@ -263,7 +271,7 @@ public final class ProxyOperationsManager implements ProxyOperations {
       final GenericContainer<?> container, final Shell shell, final int proxyPort) {
 
     final String checkCmd = shell.buildPortCheckCommand(proxyPort);
-    final long deadline = System.currentTimeMillis() + PROXY_READY_TIMEOUT_MS;
+    final long deadline = System.currentTimeMillis() + config.proxyReadyTimeoutMs();
 
     while (System.currentTimeMillis() < deadline) {
       try {
@@ -274,11 +282,15 @@ public final class ProxyOperationsManager implements ProxyOperations {
       } catch (final Exception ignored) {
         // Continue polling
       }
-      sleep(POLL_INTERVAL_MS);
+      sleep(config.pollIntervalMs());
     }
 
     throw new ChaosOperationFailedException(
-        "Proxy port " + proxyPort + " did not become ready within " + PROXY_READY_TIMEOUT_MS + "ms");
+        "Proxy port "
+            + proxyPort
+            + " did not become ready within "
+            + config.proxyReadyTimeoutMs()
+            + "ms");
   }
 
   /**
@@ -365,9 +377,7 @@ public final class ProxyOperationsManager implements ProxyOperations {
 
   // ==================== Inner Classes ====================
 
-  /**
-   * Proxy status (exists in API, listening on port).
-   */
+  /** Proxy status (exists in API, listening on port). */
   private static final class ProxyStatus {
     private final boolean existsInApi;
     private final boolean listening;

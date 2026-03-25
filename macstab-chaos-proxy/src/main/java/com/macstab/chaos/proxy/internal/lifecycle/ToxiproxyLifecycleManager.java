@@ -12,6 +12,7 @@ import com.macstab.chaos.core.platform.PlatformDetector;
 import com.macstab.chaos.core.shell.Shell;
 import com.macstab.chaos.proxy.api.ToxiproxyApiClient;
 import com.macstab.chaos.proxy.api.ToxiproxyApiClientImpl;
+import com.macstab.chaos.proxy.config.ToxiproxyConfig;
 import com.macstab.chaos.proxy.internal.toxiproxy.ToxiproxyInstaller;
 
 import lombok.extern.slf4j.Slf4j;
@@ -28,11 +29,9 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public final class ToxiproxyLifecycleManager implements ToxiproxyLifecycle {
 
-  private static final String TOXIPROXY_API_URL = "http://localhost:8474";
   private static final String TOXIPROXY_BINARY = "toxiproxy-server";
-  private static final int STARTUP_TIMEOUT_MS = 10000;
-  private static final int POLL_INTERVAL_MS = 100;
 
+  private final ToxiproxyConfig config;
   private final ToxiproxyInstaller installer;
   private final ToxiproxyApiClient apiClient;
 
@@ -40,20 +39,29 @@ public final class ToxiproxyLifecycleManager implements ToxiproxyLifecycle {
   private Platform cachedPlatform;
   private GenericContainer<?> cachedContainer;
 
-  /** Create lifecycle manager with default components. */
-  public ToxiproxyLifecycleManager() {
+  /**
+   * Create lifecycle manager with default configuration.
+   *
+   * @param config Toxiproxy configuration
+   */
+  public ToxiproxyLifecycleManager(final ToxiproxyConfig config) {
+    this.config = Objects.requireNonNull(config, "config must not be null");
     this.installer = new ToxiproxyInstaller();
-    this.apiClient = new ToxiproxyApiClientImpl(TOXIPROXY_API_URL);
+    this.apiClient = new ToxiproxyApiClientImpl(config.apiUrl());
   }
 
   /**
    * Create lifecycle manager with custom components (for testing).
    *
+   * @param config Toxiproxy configuration
    * @param installer installer instance
    * @param apiClient API client instance
    */
   public ToxiproxyLifecycleManager(
-      final ToxiproxyInstaller installer, final ToxiproxyApiClient apiClient) {
+      final ToxiproxyConfig config,
+      final ToxiproxyInstaller installer,
+      final ToxiproxyApiClient apiClient) {
+    this.config = Objects.requireNonNull(config, "config must not be null");
     this.installer = Objects.requireNonNull(installer, "installer must not be null");
     this.apiClient = Objects.requireNonNull(apiClient, "apiClient must not be null");
   }
@@ -90,7 +98,8 @@ public final class ToxiproxyLifecycleManager implements ToxiproxyLifecycle {
       final Platform platform = getPlatform(container);
       final Shell shell = platform.getDefaultShell();
 
-      final String killCmd = "pkill -f " + TOXIPROXY_BINARY + " || true";
+      final var processBuilder = platform.getProcessCommandBuilder();
+      final String killCmd = processBuilder.buildKillAllProcessesCommand(TOXIPROXY_BINARY);
       shell.exec(container, killCmd);
 
       log.info("Stopped Toxiproxy server");
@@ -146,18 +155,18 @@ public final class ToxiproxyLifecycleManager implements ToxiproxyLifecycle {
    * @throws ChaosOperationFailedException if timeout reached
    */
   private void waitForApiReady(final GenericContainer<?> container) {
-    final long deadline = System.currentTimeMillis() + STARTUP_TIMEOUT_MS;
+    final long deadline = System.currentTimeMillis() + config.startupTimeoutMs();
 
     while (System.currentTimeMillis() < deadline) {
       if (isHealthy(container)) {
         return;
       }
 
-      sleep(POLL_INTERVAL_MS);
+      sleep(config.pollIntervalMs());
     }
 
     throw new ChaosOperationFailedException(
-        "Toxiproxy did not start within " + STARTUP_TIMEOUT_MS + "ms");
+        "Toxiproxy did not start within " + config.startupTimeoutMs() + "ms");
   }
 
   /**

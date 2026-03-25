@@ -12,6 +12,7 @@ import com.macstab.chaos.core.platform.PlatformDetector;
 import com.macstab.chaos.core.shell.Shell;
 import com.macstab.chaos.proxy.api.ToxiproxyApiClient;
 import com.macstab.chaos.proxy.api.ToxiproxyApiClientImpl;
+import com.macstab.chaos.proxy.config.ToxiproxyConfig;
 import com.macstab.chaos.proxy.internal.operations.toxic.ToxicConfig;
 
 import lombok.extern.slf4j.Slf4j;
@@ -29,25 +30,31 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public final class ToxicOperationsManager implements ToxicOperations {
 
-  private static final String TOXIPROXY_API_URL = "http://localhost:8474";
-
+  private final ToxiproxyConfig config;
   private final ToxiproxyApiClient apiClient;
 
   // Platform caching
   private Platform cachedPlatform;
   private GenericContainer<?> cachedContainer;
 
-  /** Create toxic operations manager with default components. */
-  public ToxicOperationsManager() {
-    this.apiClient = new ToxiproxyApiClientImpl(TOXIPROXY_API_URL);
+  /**
+   * Create toxic operations manager with configuration.
+   *
+   * @param config Toxiproxy configuration
+   */
+  public ToxicOperationsManager(final ToxiproxyConfig config) {
+    this.config = Objects.requireNonNull(config, "config must not be null");
+    this.apiClient = new ToxiproxyApiClientImpl(config.apiUrl());
   }
 
   /**
    * Create toxic operations manager with custom components (for testing).
    *
+   * @param config Toxiproxy configuration
    * @param apiClient API client instance
    */
-  public ToxicOperationsManager(final ToxiproxyApiClient apiClient) {
+  public ToxicOperationsManager(final ToxiproxyConfig config, final ToxiproxyApiClient apiClient) {
+    this.config = Objects.requireNonNull(config, "config must not be null");
     this.apiClient = Objects.requireNonNull(apiClient, "apiClient must not be null");
   }
 

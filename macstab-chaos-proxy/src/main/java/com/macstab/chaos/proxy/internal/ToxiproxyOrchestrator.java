@@ -65,9 +65,9 @@ public final class ToxiproxyOrchestrator {
    */
   public ToxiproxyOrchestrator(final ToxiproxyConfig config) {
     this.config = Objects.requireNonNull(config, "config must not be null");
-    this.lifecycle = new ToxiproxyLifecycleManager();
-    this.proxyOps = new ProxyOperationsManager();
-    this.toxicOps = new ToxicOperationsManager();
+    this.lifecycle = new ToxiproxyLifecycleManager(config);
+    this.proxyOps = new ProxyOperationsManager(config);
+    this.toxicOps = new ToxicOperationsManager(config);
     this.networkRedirect = new NetworkRedirectManager();
   }
 
@@ -125,7 +125,8 @@ public final class ToxiproxyOrchestrator {
     try {
       lifecycle.ensureRunning(container);
 
-      final LegacyToxicConfig toxic = new LegacyToxicConfig(toxicName, toxicType, attributes, toxicity);
+      final LegacyToxicConfig toxic =
+          new LegacyToxicConfig(toxicName, toxicType, attributes, toxicity);
       toxicOps.addToxic(container, proxyName, toxic);
 
     } catch (final Exception e) {

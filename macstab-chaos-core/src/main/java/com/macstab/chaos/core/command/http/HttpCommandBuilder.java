@@ -22,8 +22,8 @@ package com.macstab.chaos.core.command.http;
  * <p><strong>Security:</strong> Implementations must properly escape shell metacharacters to
  * prevent injection vulnerabilities.
  *
- * <p><strong>Exit Codes:</strong> Commands return 0 on success, non-zero on failure. Specific
- * codes vary by tool; callers should check {@code exitCode == 0}.
+ * <p><strong>Exit Codes:</strong> Commands return 0 on success, non-zero on failure. Specific codes
+ * vary by tool; callers should check {@code exitCode == 0}.
  *
  * <p><strong>Example Usage:</strong>
  *
@@ -65,8 +65,8 @@ public interface HttpCommandBuilder {
    *   <li>Non-zero = failure (HTTP 4xx/5xx, network errors, DNS failures, etc.)
    * </ul>
    *
-   * <p><strong>Note:</strong> Specific exit codes vary by tool implementation. Callers should
-   * check {@code exitCode == 0} for success, not specific error codes.
+   * <p><strong>Note:</strong> Specific exit codes vary by tool implementation. Callers should check
+   * {@code exitCode == 0} for success, not specific error codes.
    *
    * @param url target URL (must not be null)
    * @return shell command string

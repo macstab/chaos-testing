@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -106,7 +107,10 @@ class CurlCommandBuilderTest {
       final String cmd = builder.buildDeleteRequest("http://localhost/resource/1");
 
       // THEN
-      assertThat(cmd).contains("curl").contains("-X DELETE").contains("'http://localhost/resource/1'");
+      assertThat(cmd)
+          .contains("curl")
+          .contains("-X DELETE")
+          .contains("'http://localhost/resource/1'");
     }
   }
 
