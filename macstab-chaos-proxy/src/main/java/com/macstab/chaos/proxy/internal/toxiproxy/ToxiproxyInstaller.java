@@ -25,7 +25,7 @@ import lombok.extern.slf4j.Slf4j;
  * @author Christian Schnapka - Macstab GmbH
  */
 @Slf4j
-final class ToxiproxyInstaller {
+public final class ToxiproxyInstaller {
 
   private static final String TOXIPROXY_VERSION = "v2.9.0";
   private static final String TOXIPROXY_BINARY = "toxiproxy-server";
@@ -37,7 +37,7 @@ final class ToxiproxyInstaller {
    *
    * @param container container
    */
-  void install(final GenericContainer<?> container) {
+  public void install(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
 
     if (isAlreadyInstalled(container)) {
@@ -48,12 +48,12 @@ final class ToxiproxyInstaller {
     try {
       final Platform platform = PlatformDetector.detect(container);
       installDependencies(container, platform);
-      
+
       final ContainerArchitecture arch = ContainerArchitecture.detect(container);
       final String downloadUrl = buildDownloadUrl(arch);
-      
+
       downloadAndInstallBinary(container, downloadUrl);
-      
+
       log.debug("Installed Toxiproxy {} ({})", TOXIPROXY_VERSION, arch.getBinaryName());
 
     } catch (final Exception e) {
@@ -63,9 +63,7 @@ final class ToxiproxyInstaller {
 
   // ==================== Private Helper Methods ====================
 
-  /**
-   * Check if Toxiproxy is already installed.
-   */
+  /** Check if Toxiproxy is already installed. */
   private boolean isAlreadyInstalled(final GenericContainer<?> container) {
     try {
       final ExecResult result = container.execInContainer("which", TOXIPROXY_BINARY);
@@ -75,9 +73,7 @@ final class ToxiproxyInstaller {
     }
   }
 
-  /**
-   * Install required dependencies using platform-specific package names.
-   */
+  /** Install required dependencies using platform-specific package names. */
   private void installDependencies(final GenericContainer<?> container, final Platform platform) {
     // Get platform-specific package names
     final String caCertsPackage = platform.getPackageName(Tool.CA_CERTIFICATES);
@@ -86,23 +82,19 @@ final class ToxiproxyInstaller {
 
     // ca-certificates has no binary, skip verification
     PackageInstaller.install(container, List.of(caCertsPackage), false);
-    
+
     // curl and iptables have binaries, verify installation
     PackageInstaller.install(container, curlPackage, iptablesPackage);
   }
 
-  /**
-   * Build download URL for architecture.
-   */
+  /** Build download URL for architecture. */
   private String buildDownloadUrl(final ContainerArchitecture arch) {
     return String.format(TOXIPROXY_DOWNLOAD_URL_TEMPLATE, TOXIPROXY_VERSION, arch.getBinaryName());
   }
 
-  /**
-   * Download and install Toxiproxy binary.
-   */
-  private void downloadAndInstallBinary(final GenericContainer<?> container, final String downloadUrl)
-      throws Exception {
+  /** Download and install Toxiproxy binary. */
+  private void downloadAndInstallBinary(
+      final GenericContainer<?> container, final String downloadUrl) throws Exception {
 
     final String downloadCmd =
         String.format(
@@ -117,9 +109,7 @@ final class ToxiproxyInstaller {
     }
   }
 
-  /**
-   * Handle installation error.
-   */
+  /** Handle installation error. */
   private void handleInstallationError(final Exception e) {
     if (e instanceof ChaosOperationFailedException) {
       throw (ChaosOperationFailedException) e;

@@ -378,7 +378,7 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
   private void ensureToxiproxyRunning(final GenericContainer<?> container) {
     try {
       // Check if already running
-      final var result = container.execInContainer("curl", "-s", TOXIPROXY_API + "/proxies);
+      final var result = container.execInContainer("curl", "-s", TOXIPROXY_API + "/proxies");
       if (result.getExitCode() == 0) {
         return;
       }

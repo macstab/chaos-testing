@@ -9,6 +9,8 @@ import java.util.Objects;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.command.http.CurlCommandBuilder;
+import com.macstab.chaos.core.command.http.HttpCommandBuilder;
 import com.macstab.chaos.core.command.network.IptablesCommandBuilder;
 import com.macstab.chaos.core.command.network.NetworkCommandBuilder;
 import com.macstab.chaos.core.command.process.ProcFsCommandBuilder;
@@ -34,6 +36,7 @@ public abstract class AbstractLinuxPlatform implements Platform {
 
   private final NetworkCommandBuilder networkCommandBuilder = new IptablesCommandBuilder();
   private final ProcessCommandBuilder processCommandBuilder = new ProcFsCommandBuilder();
+  private final HttpCommandBuilder httpCommandBuilder = new CurlCommandBuilder();
 
   // Default Linux tool mappings (most distributions)
   private static final Map<Tool, ToolMapping> DEFAULT_TOOLS = createDefaultTools();
@@ -152,6 +155,11 @@ public abstract class AbstractLinuxPlatform implements Platform {
   @Override
   public ProcessCommandBuilder getProcessCommandBuilder() {
     return processCommandBuilder;
+  }
+
+  @Override
+  public HttpCommandBuilder getHttpCommandBuilder() {
+    return httpCommandBuilder;
   }
 
   @Override

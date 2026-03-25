@@ -71,7 +71,8 @@ public final class ToxiproxyCacheChaos implements CacheChaos {
               Shell.SH,
               Shell.FLAG_C,
               String.format(
-                  CURL_POST_JSON + " -d '{\"type\":\"timeout\",\"attributes\":{\"timeout\":0},\"toxicity\":%.2f}' 2>&1",
+                  CURL_POST_JSON
+                      + " -d '{\"type\":\"timeout\",\"attributes\":{\"timeout\":0},\"toxicity\":%.2f}' 2>&1",
                   String.format("%s/proxies/%s/toxics", TOXIPROXY_API, REDIS_PROXY_NAME),
                   rate));
 
@@ -84,7 +85,8 @@ public final class ToxiproxyCacheChaos implements CacheChaos {
         throw new ChaosOperationFailedException(
             String.format(
                 "Failed to inject cache misses (exit %d): %s",
-                result.getExitCode(), result.getStdout().isEmpty() ? result.getStderr() : result.getStdout()));
+                result.getExitCode(),
+                result.getStdout().isEmpty() ? result.getStderr() : result.getStdout()));
       }
 
       log.info("Injected {:.0%} cache misses for pattern: {}", rate, keyPattern);
@@ -140,8 +142,7 @@ public final class ToxiproxyCacheChaos implements CacheChaos {
     try {
       // Calculate number of keys to delete (use REDIS_PORT, not REDIS_INTERNAL_PORT)
       final var dbsize =
-          container.execInContainer(
-              "redis-cli", "-p", String.valueOf(REDIS_PORT), "DBSIZE");
+          container.execInContainer("redis-cli", "-p", String.valueOf(REDIS_PORT), "DBSIZE");
 
       if (dbsize.getExitCode() != 0) {
         throw new ChaosOperationFailedException(
@@ -369,8 +370,7 @@ public final class ToxiproxyCacheChaos implements CacheChaos {
       }
 
       if (!proxyReady) {
-        throw new ChaosOperationFailedException(
-            "Redis proxy did not become ready within 2000ms");
+        throw new ChaosOperationFailedException("Redis proxy did not become ready within 2000ms");
       }
 
       log.info(

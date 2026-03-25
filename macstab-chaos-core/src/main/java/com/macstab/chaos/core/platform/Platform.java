@@ -5,6 +5,7 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.command.http.HttpCommandBuilder;
 import com.macstab.chaos.core.command.network.NetworkCommandBuilder;
 import com.macstab.chaos.core.command.process.ProcessCommandBuilder;
 import com.macstab.chaos.core.shell.Shell;
@@ -88,6 +89,17 @@ public interface Platform {
    * @return process command builder
    */
   ProcessCommandBuilder getProcessCommandBuilder();
+
+  /**
+   * Get HTTP command builder for this platform.
+   *
+   * <p>Provides platform-specific HTTP commands (curl, wget, PowerShell, fetch).
+   *
+   * <p>Implementation may use fallback chain (e.g., curl → wget on Alpine).
+   *
+   * @return HTTP command builder
+   */
+  HttpCommandBuilder getHttpCommandBuilder();
 
   /**
    * Check if container has specific command available.

@@ -115,7 +115,7 @@ class ProxyChaosProviderDistributionTest {
 
     @ParameterizedTest
     @ValueSource(doubles = {0.5})
-//    @ValueSource(doubles = {0.0, 0.1, 0.5, 0.9, 1.0})
+    //    @ValueSource(doubles = {0.0, 0.1, 0.5, 0.9, 1.0})
     @DisplayName("should handle various timeout rates")
     void shouldHandleVariousTimeoutRates(double rate) throws Exception {
       container = createDebianRedisContainer();
@@ -158,9 +158,9 @@ class ProxyChaosProviderDistributionTest {
      *   <li>Actual: 50-150ms (includes baseline variance + random timeout variance)
      * </ul>
      *
-     * <p><strong>Random variance note:</strong> At 1ms timeout with 20% probability, actual
-     * failure rate can be 15-25% due to randomness. Higher failure rate → lower average latency.
-     * This is expected behavior (Toxiproxy uses random distribution).
+     * <p><strong>Random variance note:</strong> At 1ms timeout with 20% probability, actual failure
+     * rate can be 15-25% due to randomness. Higher failure rate → lower average latency. This is
+     * expected behavior (Toxiproxy uses random distribution).
      */
     @Test
     @DisplayName("should combine multiple toxics")
@@ -181,7 +181,7 @@ class ProxyChaosProviderDistributionTest {
       // Latency: ~100ms added, but 20% requests fail instantly → average ~80ms
       // Wider range (50-150ms) accounts for random variance in timeout probability
       assertThat(latency - baseline).isBetween(50L, 150L);
-      
+
       // Failure rate: ~20% (with random variance: 15-25% is normal)
       assertThat(failureRate).isBetween(0.05, 0.35);
     }

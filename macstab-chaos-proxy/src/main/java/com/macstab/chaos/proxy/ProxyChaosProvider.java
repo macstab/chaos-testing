@@ -95,7 +95,8 @@ public final class ProxyChaosProvider implements ProxyChaos {
     Objects.requireNonNull(timeout, "timeout must not be null");
 
     if (timeout.isNegative() || timeout.isZero()) {
-      throw new IllegalArgumentException("timeout must be positive (use Duration.ofMillis(1) for instant close)");
+      throw new IllegalArgumentException(
+          "timeout must be positive (use Duration.ofMillis(1) for instant close)");
     }
 
     if (probability < 0.0 || probability > 1.0) {

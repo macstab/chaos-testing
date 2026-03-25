@@ -7,7 +7,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.time.Duration;
 import java.util.List;
 
-import com.macstab.chaos.core.util.PackageInstaller;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -18,6 +17,7 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
 
 import com.github.dockerjava.api.model.Capability;
+import com.macstab.chaos.core.util.PackageInstaller;
 
 /**
  * Comprehensive integration tests for {@link ToxiproxyCacheChaos}.
@@ -86,12 +86,12 @@ class ToxiproxyCacheChaosDistributionTest {
 
       // Measure baseline latency
       final long baseline = measureLatency(container, 10);
-      
+
       chaos.slowResponse(container, Duration.ofMillis(200));
 
       // Measure latency after adding 200ms
       final long withLatency = measureLatency(container, 10);
-      
+
       // Validate latency increased by ~200ms (allow 50ms tolerance)
       assertThat(withLatency - baseline).isBetween(150L, 250L);
     }
@@ -130,7 +130,7 @@ class ToxiproxyCacheChaosDistributionTest {
       // Validate eviction happened
       final var dbsize = container.execInContainer("redis-cli", "-p", "6379", "DBSIZE");
       final int remaining = Integer.parseInt(dbsize.getStdout().trim());
-      assertThat(remaining).isEqualTo(100-percentage);
+      assertThat(remaining).isEqualTo(100 - percentage);
     }
 
     @Test
@@ -147,7 +147,7 @@ class ToxiproxyCacheChaosDistributionTest {
       // Validate both chaos applied
       final double missRate = measureMissRate(container, 50);
       final long latency = measureLatency(container, 10);
-      
+
       assertThat(missRate).isBetween(0.15, 0.45);
       assertThat(latency - baseline).isBetween(50L, 150L);
     }
@@ -243,11 +243,11 @@ class ToxiproxyCacheChaosDistributionTest {
       chaos = new ToxiproxyCacheChaos();
 
       final long baseline = measureLatency(container, 5);
-      
+
       chaos.slowResponse(container, Duration.ofSeconds(5));
 
       final long withLatency = measureLatency(container, 5);
-      
+
       // Validate latency increased by ~5000ms (allow 500ms tolerance)
       assertThat(withLatency - baseline).isBetween(4500L, 5500L);
     }
@@ -317,9 +317,9 @@ class ToxiproxyCacheChaosDistributionTest {
   private boolean isToxiproxyRunning(GenericContainer<?> container) throws Exception {
     PackageInstaller.install(container, List.of("procps"), false);
     // Simple check: ps + grep without filtering grep itself
-    final var psCheck = container.execInContainer(
-        "sh", "-c", "ps aux | grep toxiproxy-server | grep -v grep");
-    
+    final var psCheck =
+        container.execInContainer("sh", "-c", "ps aux | grep toxiproxy-server | grep -v grep");
+
     return psCheck.getExitCode() == 0;
   }
 
@@ -327,33 +327,38 @@ class ToxiproxyCacheChaosDistributionTest {
   private double measureMissRate(GenericContainer<?> container, int attempts) throws Exception {
     // Set a test key
     container.execInContainer("redis-cli", "-p", "6379", "SET", "test:key", "value");
-    
+
     int failures = 0;
     for (int i = 0; i < attempts; i++) {
       // GET through proxy (timeout toxic causes failures)
-      final var result = container.execInContainer(
-          "sh", "-c", 
-          "redis-cli -p 16379 --raw GET test:key 2>&1 | grep -q 'timeout\\|error\\|refused' && echo fail || echo ok");
-      
+      final var result =
+          container.execInContainer(
+              "sh",
+              "-c",
+              "redis-cli -p 16379 --raw GET test:key 2>&1 | grep -q 'timeout\\|error\\|refused' && echo fail || echo ok");
+
       if ("fail".equals(result.getStdout().trim())) {
         failures++;
       }
     }
-    
+
     return (double) failures / attempts;
   }
 
-  /** Measure average GET latency in milliseconds. Uses proxy port if available, direct otherwise. */
+  /**
+   * Measure average GET latency in milliseconds. Uses proxy port if available, direct otherwise.
+   */
   private long measureLatency(GenericContainer<?> container, int attempts) throws Exception {
     // Set a test key via direct port
     container.execInContainer("redis-cli", "-p", "6379", "SET", "test:latency", "value");
-    
+
     // Check if proxy is available (port 16379)
-    final var proxyCheck = container.execInContainer(
-        "sh", "-c", "timeout 1 redis-cli -p 16379 PING 2>/dev/null || echo NOTAVAIL");
+    final var proxyCheck =
+        container.execInContainer(
+            "sh", "-c", "timeout 1 redis-cli -p 16379 PING 2>/dev/null || echo NOTAVAIL");
     final boolean useProxy = !"NOTAVAIL".equals(proxyCheck.getStdout().trim());
     final int port = useProxy ? 16379 : 6379;
-    
+
     long totalMs = 0;
     for (int i = 0; i < attempts; i++) {
       final long start = System.currentTimeMillis();
@@ -361,7 +366,7 @@ class ToxiproxyCacheChaosDistributionTest {
       final long end = System.currentTimeMillis();
       totalMs += (end - start);
     }
-    
+
     return totalMs / attempts;
   }
 }

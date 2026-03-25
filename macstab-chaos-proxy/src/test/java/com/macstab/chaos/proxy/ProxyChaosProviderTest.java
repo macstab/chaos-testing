@@ -82,8 +82,7 @@ class ProxyChaosProviderTest {
       final var provider = new ProxyChaosProvider();
       final var container = new GenericContainer<>("redis:7.4");
 
-      assertThatThrownBy(
-              () -> provider.addLatency(container, "proxy", Duration.ofMillis(-100)))
+      assertThatThrownBy(() -> provider.addLatency(container, "proxy", Duration.ofMillis(-100)))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("latency");
     }
@@ -138,8 +137,7 @@ class ProxyChaosProviderTest {
       final var provider = new ProxyChaosProvider();
       final var container = new GenericContainer<>("redis:7.4");
 
-      assertThatThrownBy(
-              () -> provider.slowClose(container, "proxy", Duration.ofMillis(-100)))
+      assertThatThrownBy(() -> provider.slowClose(container, "proxy", Duration.ofMillis(-100)))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("delay");
     }
