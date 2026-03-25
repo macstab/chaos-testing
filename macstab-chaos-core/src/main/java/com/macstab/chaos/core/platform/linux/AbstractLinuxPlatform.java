@@ -2,13 +2,12 @@
 package com.macstab.chaos.core.platform.linux;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 import org.testcontainers.containers.GenericContainer;
-
-import java.util.HashMap;
-import java.util.Map;
 
 import com.macstab.chaos.core.command.network.IptablesCommandBuilder;
 import com.macstab.chaos.core.command.network.NetworkCommandBuilder;

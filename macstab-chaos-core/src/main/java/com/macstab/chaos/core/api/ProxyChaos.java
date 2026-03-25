@@ -31,11 +31,11 @@ public interface ProxyChaos {
   /**
    * Create a transparent proxy for a TCP service.
    *
-   * <p>Sets up iptables PREROUTING redirect and starts Toxiproxy listening on proxyPort,
-   * forwarding to localhost:servicePort.
+   * <p>Sets up iptables PREROUTING redirect and starts Toxiproxy listening on proxyPort, forwarding
+   * to localhost:servicePort.
    *
-   * <p><strong>IMPORTANT:</strong> Clients must connect using the returned hostname (not
-   * localhost) to hit the proxy.
+   * <p><strong>IMPORTANT:</strong> Clients must connect using the returned hostname (not localhost)
+   * to hit the proxy.
    *
    * @param container container running the service
    * @param proxyName unique proxy name (used for toxic management)

@@ -17,11 +17,15 @@ dependencies {
     // Testcontainers (API dependency - users need this)
     api("org.testcontainers:testcontainers:1.20.4")
     
+    // JUnit 5 (API dependency - needed for extensions)
+    api("org.junit.jupiter:junit-jupiter-api:5.10.1")
+    
     // SLF4J (logging facade)
     implementation("org.slf4j:slf4j-api:2.0.9")
     
     // Test dependencies
     testImplementation("org.testcontainers:junit-jupiter:1.20.4")
+    testImplementation("org.junit.jupiter:junit-jupiter-engine:5.10.1")
     testImplementation("org.assertj:assertj-core:3.24.2")
     testImplementation("org.mockito:mockito-core:5.8.0")
     testImplementation("org.mockito:mockito-junit-jupiter:5.8.0")

@@ -1,14 +1,14 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.core.facade;
 
-import lombok.extern.slf4j.Slf4j;
-
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.Objects;
 import java.util.random.RandomGenerator;
 import java.util.random.RandomGeneratorFactory;
+
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Generic probabilistic wrapper for chaos providers.

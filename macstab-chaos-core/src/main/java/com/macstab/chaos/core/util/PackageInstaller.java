@@ -8,8 +8,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
-import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Container.ExecResult;
+import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.exception.PackageInstallationException;
 
@@ -204,8 +204,7 @@ public final class PackageInstaller {
     if (e instanceof PackageInstallationException) {
       throw (PackageInstallationException) e;
     }
-    throw new PackageInstallationException(
-        "Failed to install packages", containerId, packages, e);
+    throw new PackageInstallationException("Failed to install packages", containerId, packages, e);
   }
 
   /**
@@ -277,7 +276,7 @@ public final class PackageInstaller {
   private static void verifyPackage(final GenericContainer<?> container, final String pkg) {
     try {
       final ExecResult result = container.execInContainer("which", pkg);
-      
+
       if (result.getExitCode() == 0) {
         logPackageVerified(pkg, result.getStdout().trim());
       } else {

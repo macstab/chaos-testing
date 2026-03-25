@@ -16,8 +16,7 @@ public final class PsCommandBuilder implements ProcessCommandBuilder {
   public String buildFindProcessCommand(final String processName) {
     Objects.requireNonNull(processName, "processName must not be null");
 
-    return String.format(
-        "ps aux | grep '%s' | grep -v grep | awk '{print $2}'", processName);
+    return String.format("ps aux | grep '%s' | grep -v grep | awk '{print $2}'", processName);
   }
 
   @Override

@@ -50,8 +50,7 @@ public final class PlatformDetector {
     // Strategy 2: Fallback to package manager detection
     final Platform packageManager = detectViaPackageManager(container);
     if (packageManager != null) {
-      log.debug(
-          "Detected platform via package manager: {}", packageManager.getDistribution());
+      log.debug("Detected platform via package manager: {}", packageManager.getDistribution());
       return packageManager;
     }
 

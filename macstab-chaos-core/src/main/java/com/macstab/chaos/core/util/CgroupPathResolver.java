@@ -5,10 +5,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
 
-import lombok.extern.slf4j.Slf4j;
 import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
+
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Resolve cgroups v2 path for container.
