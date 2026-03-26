@@ -8,9 +8,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-import org.junit.jupiter.api.extension.ExtendWith;
-
-import com.macstab.chaos.redis.extension.RedisContainerExtension;
+import com.macstab.chaos.core.annotation.ChaosTest;
 import com.macstab.chaos.redis.extension.RedisContainerExtension.RedisConnectionInfo;
 
 /**
@@ -58,33 +56,15 @@ import com.macstab.chaos.redis.extension.RedisContainerExtension.RedisConnection
  * @see RedisStandalones
  * @since 1.0
  */
+@ChaosTest
 @Repeatable(RedisStandalones.class)
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
-@ExtendWith(RedisContainerExtension.class)
 public @interface RedisStandalone {
 
-  /**
-   * Manager instance for programmatic access.
-   *
-   * <p><strong>Single Instance Usage:</strong>
-   *
-   * <pre>{@code
-   * RedisConnectionInfo info = RedisStandalone.INSTANCE.get("instance-id");
-   * }</pre>
-   *
-   * <p><strong>Multi-Instance Usage:</strong>
-   *
-   * <pre>{@code
-   * List<RedisConnectionInfo> all = RedisStandalone.INSTANCE.getAll();
-   * }</pre>
-   *
-   * @since 1.0
-   */
-  RedisManager<RedisConnectionInfo> INSTANCE =
-      new RedisManager<>(
-          RedisContainerExtension::getContainer, RedisContainerExtension::getAllContainers);
+  // TODO: RedisManager programmatic access - to be implemented with ChaosTestingExtension
+  // RedisManager<RedisConnectionInfo> INSTANCE = ...
 
   /**
    * Container ID (unique within test class).

@@ -8,10 +8,8 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-import org.junit.jupiter.api.extension.ExtendWith;
-
+import com.macstab.chaos.core.annotation.ChaosTest;
 import com.macstab.chaos.network.condition.DisabledOnNonLinuxHost;
-import com.macstab.chaos.redis.extension.SentinelContainerExtension;
 import com.macstab.chaos.redis.extension.SentinelContainerExtension.SentinelCluster;
 
 /**
@@ -76,35 +74,17 @@ import com.macstab.chaos.redis.extension.SentinelContainerExtension.SentinelClus
  * @see RedisSentinels
  * @since 1.0
  */
+@ChaosTest
 @Repeatable(RedisSentinels.class)
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
-@ExtendWith(SentinelContainerExtension.class)
 @DisabledOnNonLinuxHost(
     "Redis Sentinel tests require native Docker networking (Linux host or dev container)")
 public @interface RedisSentinel {
 
-  /**
-   * Manager instance for programmatic access.
-   *
-   * <p><strong>Single Instance Usage:</strong>
-   *
-   * <pre>{@code
-   * SentinelCluster cluster = RedisSentinel.INSTANCE.get("cluster-id");
-   * }</pre>
-   *
-   * <p><strong>Multi-Instance Usage:</strong>
-   *
-   * <pre>{@code
-   * List<SentinelCluster> all = RedisSentinel.INSTANCE.getAll();
-   * }</pre>
-   *
-   * @since 1.0
-   */
-  RedisManager<SentinelCluster> INSTANCE =
-      new RedisManager<>(
-          SentinelContainerExtension::getCluster, SentinelContainerExtension::getAllClusters);
+  // TODO: RedisManager programmatic access - to be implemented with ChaosTestingExtension
+  // RedisManager<SentinelCluster> INSTANCE = ...
 
   /**
    * Cluster ID (unique within test class).
