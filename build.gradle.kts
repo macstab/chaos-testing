@@ -113,7 +113,7 @@ subprojects {
     }
 
     jacoco {
-        toolVersion = "0.8.11"
+        toolVersion = "0.8.14"
     }
 
     // Verification task to check coverage thresholds
