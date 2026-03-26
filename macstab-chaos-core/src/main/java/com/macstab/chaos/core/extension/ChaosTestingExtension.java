@@ -3,6 +3,8 @@ package com.macstab.chaos.core.extension;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Parameter;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -154,7 +156,10 @@ public final class ChaosTestingExtension
     final Class<?> testClass = context.getRequiredTestClass();
     final Resources resourcesAnnotation = testClass.getAnnotation(Resources.class);
 
-    for (final Annotation annotation : testClass.getAnnotations()) {
+    // Extract all container annotations (including repeatable ones)
+    final List<Annotation> containerAnnotations = extractContainerAnnotations(testClass);
+
+    for (final Annotation annotation : containerAnnotations) {
       final ChaosPlugin<?> plugin = PLUGINS.get(annotation.annotationType());
 
       if (plugin != null) {
@@ -185,6 +190,8 @@ public final class ChaosTestingExtension
     }
 
     context.getStore(NAMESPACE).put(CONTAINERS_KEY, containers);
+    log.debug("beforeAll: stored {} containers in context {}",
+        containers.size(), context.getUniqueId());
   }
 
   @Override
@@ -223,6 +230,25 @@ public final class ChaosTestingExtension
     final Parameter parameter = parameterContext.getParameter();
     final Class<?> parameterType = parameter.getType();
 
+    // Support List<T> parameters
+    if (List.class.isAssignableFrom(parameterType)) {
+      final Type genericType = parameter.getParameterizedType();
+      if (genericType instanceof ParameterizedType) {
+        final ParameterizedType pType = (ParameterizedType) genericType;
+        final Type[] typeArgs = pType.getActualTypeArguments();
+        if (typeArgs.length == 1 && typeArgs[0] instanceof Class) {
+          final Class<?> elementType = (Class<?>) typeArgs[0];
+          for (final ChaosPlugin<?> plugin : PLUGINS.values()) {
+            if (plugin.supportedParameterTypes().contains(elementType)) {
+              return true;
+            }
+          }
+        }
+      }
+      return false;
+    }
+
+    // Support single instance parameters
     for (final ChaosPlugin<?> plugin : PLUGINS.values()) {
       if (plugin.supportedParameterTypes().contains(parameterType)) {
         return true;
@@ -237,19 +263,55 @@ public final class ChaosTestingExtension
       final ParameterContext parameterContext, final ExtensionContext extensionContext)
       throws ParameterResolutionException {
 
-    final Class<?> parameterType = parameterContext.getParameter().getType();
+    final Parameter parameter = parameterContext.getParameter();
+    final Class<?> parameterType = parameter.getType();
 
+    // Get containers from ExtensionContext.store (populated in beforeAll)
     @SuppressWarnings("unchecked")
     final List<ContainerInstance> containers =
         (List<ContainerInstance>) extensionContext.getStore(NAMESPACE).get(CONTAINERS_KEY);
+
+    log.debug("resolveParameter: parameterType={}, containers={}, context={}",
+        parameterType.getSimpleName(),
+        containers == null ? "null" : containers.size(),
+        extensionContext.getUniqueId());
 
     if (containers == null || containers.isEmpty()) {
       throw new ParameterResolutionException(
           "No containers found. Did you add container annotation to test class?");
     }
 
+    // Resolve List<T> parameters
+    if (List.class.isAssignableFrom(parameterType)) {
+      final Type genericType = parameter.getParameterizedType();
+      if (genericType instanceof ParameterizedType) {
+        final ParameterizedType pType = (ParameterizedType) genericType;
+        final Type[] typeArgs = pType.getActualTypeArguments();
+        if (typeArgs.length == 1 && typeArgs[0] instanceof Class) {
+          final Class<?> elementType = (Class<?>) typeArgs[0];
+          final List<Object> matchingInstances = new ArrayList<>();
+          
+          for (final ContainerInstance instance : containers) {
+            if (elementType.isAssignableFrom(instance.connectionInfo.getClass())) {
+              matchingInstances.add(instance.connectionInfo);
+            }
+          }
+          
+          if (matchingInstances.isEmpty()) {
+            throw new ParameterResolutionException(
+                String.format(
+                    "No container connection info found for List<%s>",
+                    elementType.getSimpleName()));
+          }
+          
+          return matchingInstances;
+        }
+      }
+    }
+
+    // Resolve single instance parameters
     for (final ContainerInstance instance : containers) {
-      if (instance.connectionInfo.getClass().equals(parameterType)) {
+      if (parameterType.isAssignableFrom(instance.connectionInfo.getClass())) {
         return instance.connectionInfo;
       }
     }
@@ -257,7 +319,7 @@ public final class ChaosTestingExtension
     throw new ParameterResolutionException(
         String.format(
             "No container connection info found for parameter type: %s",
-            parameterType.getName()));
+            parameterType.getSimpleName()));
   }
 
   @SuppressWarnings({"rawtypes", "unchecked"})
@@ -419,6 +481,48 @@ public final class ChaosTestingExtension
    * @param annotation container annotation
    * @return container id (default: "default")
    */
+  /**
+   * Extracts all container annotations from test class (handles repeatable annotations).
+   *
+   * @param testClass test class
+   * @return list of container annotations
+   */
+  private List<Annotation> extractContainerAnnotations(final Class<?> testClass) {
+    final List<Annotation> result = new ArrayList<>();
+    
+    for (final Annotation annotation : testClass.getAnnotations()) {
+      final Class<? extends Annotation> annotationType = annotation.annotationType();
+      
+      // Direct plugin annotation
+      if (PLUGINS.containsKey(annotationType)) {
+        result.add(annotation);
+        continue;
+      }
+      
+      // Check if this is a container for repeatable annotations
+      try {
+        final java.lang.reflect.Method valueMethod = annotationType.getMethod("value");
+        final Class<?> returnType = valueMethod.getReturnType();
+        
+        if (returnType.isArray()) {
+          final Class<?> componentType = returnType.getComponentType();
+          if (Annotation.class.isAssignableFrom(componentType) && 
+              PLUGINS.containsKey(componentType)) {
+            // This is a container annotation (e.g., @RedisStandalones)
+            final Annotation[] repeated = (Annotation[]) valueMethod.invoke(annotation);
+            for (final Annotation repeatedAnnotation : repeated) {
+              result.add(repeatedAnnotation);
+            }
+          }
+        }
+      } catch (final Exception e) {
+        // Not a container annotation, skip
+      }
+    }
+    
+    return result;
+  }
+
   private String extractId(final Annotation annotation) {
     try {
       final java.lang.reflect.Method idMethod = annotation.annotationType().getMethod("id");
