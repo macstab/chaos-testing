@@ -215,4 +215,44 @@ class ChaosControllerLazyLoadingTest {
     assertThat(controller.memory()).isNotNull();
     assertThat(controller.network()).isNotNull();
   }
+
+  @Test
+  @DisplayName("Probabilistic controller should wrap all providers")
+  void probabilisticController_shouldWrapAllProviders() {
+    @SuppressWarnings("resource")
+    GenericContainer<?> container = mock(GenericContainer.class);
+    ChaosController controller = new ChaosController(container).withProbability(0.5, 42);
+    
+    // Call all 10 getters to trigger probabilistic wrapping paths
+    assertThat(controller.cpu()).isNotNull();
+    assertThat(controller.memory()).isNotNull();
+    assertThat(controller.disk()).isNotNull();
+    assertThat(controller.process()).isNotNull();
+    assertThat(controller.network()).isNotNull();
+    assertThat(controller.time()).isNotNull();
+    assertThat(controller.dns()).isNotNull();
+    assertThat(controller.connection()).isNotNull();
+    assertThat(controller.cache()).isNotNull();
+    assertThat(controller.filesystem()).isNotNull();
+  }
+
+  @Test
+  @DisplayName("Probabilistic getters should return wrapped instances")
+  void probabilisticGetters_shouldReturnWrappedInstances() {
+    @SuppressWarnings("resource")
+    GenericContainer<?> container = mock(GenericContainer.class);
+    ChaosController deterministic = new ChaosController(container);
+    ChaosController probabilistic = new ChaosController(container).withProbability(0.5, 42);
+    
+    // Deterministic returns direct instances
+    var detCpu = deterministic.cpu();
+    
+    // Probabilistic returns wrapped instances (proxies)
+    var probCpu = probabilistic.cpu();
+    
+    assertThat(detCpu).isNotNull();
+    assertThat(probCpu).isNotNull();
+    // Wrapped instances are proxies, so class differs
+    assertThat(probCpu.getClass()).isNotEqualTo(detCpu.getClass());
+  }
 }
