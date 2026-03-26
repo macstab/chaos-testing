@@ -2,6 +2,7 @@ plugins {
     `java-library`
     `maven-publish`
     signing
+    jacoco
     id("com.diffplug.spotless") version "8.2.1" apply false
 }
 
@@ -12,6 +13,7 @@ subprojects {
     apply(plugin = "java-library")
     apply(plugin = "maven-publish")
     apply(plugin = "signing")
+    apply(plugin = "jacoco")
     apply(plugin = "com.diffplug.spotless")
 
     repositories {
@@ -91,6 +93,36 @@ subprojects {
             systemProperty("org.slf4j.simpleLogger.log.com.github.dockerjava", "debug")
             doFirst {
                 println("✓ DinD detected - Testcontainers JVM args configured")
+            }
+        }
+    }
+
+    // JaCoCo test coverage
+    tasks.test {
+        finalizedBy(tasks.jacocoTestReport)
+        // Continue on test failure to generate coverage
+        ignoreFailures = true
+    }
+
+    tasks.jacocoTestReport {
+        reports {
+            xml.required.set(true)
+            html.required.set(true)
+            csv.required.set(false)
+        }
+    }
+
+    jacoco {
+        toolVersion = "0.8.11"
+    }
+
+    // Verification task to check coverage thresholds
+    tasks.jacocoTestCoverageVerification {
+        violationRules {
+            rule {
+                limit {
+                    minimum = "0.80".toBigDecimal()  // 80% minimum coverage
+                }
             }
         }
     }

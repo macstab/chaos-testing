@@ -103,9 +103,9 @@ class MultiInstanceStandaloneTest {
     // ASSERT: Each instance has valid toString (host:port format)
     instances.forEach(
         instance -> {
+          final String expected = String.format("StandaloneRedis[host=%s, port=%d]", instance.host(), instance.port());
           final String str = instance.toString();
-          assertThat(str).contains(":");
-          assertThat(str).contains(String.valueOf(instance.port()));
+          assertThat(str).isEqualTo(expected);
         });
   }
 }

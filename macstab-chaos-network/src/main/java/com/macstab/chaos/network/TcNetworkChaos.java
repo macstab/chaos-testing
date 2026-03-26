@@ -6,6 +6,7 @@ import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 
+import lombok.extern.slf4j.Slf4j;
 import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.api.NetworkChaos;
@@ -20,6 +21,7 @@ import com.macstab.chaos.core.util.PackageInstaller;
  *
  * @author Christian Schnapka - Macstab GmbH
  */
+@Slf4j
 public final class TcNetworkChaos implements NetworkChaos {
   private static final String INTERFACE = "eth0";
   private static final Set<String> activeContainers = new HashSet<>();

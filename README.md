@@ -169,26 +169,75 @@ chaos.partitionFrom(containerA, containerB);
 
 **Problem:** Testing Redis Sentinel requires 50-100 lines of Testcontainers boilerplate. No chaos testing support.
 
-**Solution:** Single annotation starts complete Sentinel cluster with optional network chaos.
+**Solution:** Single annotation starts complete Redis infrastructure with programmatic access.
+
+#### Simple Standalone Redis
 
 ```java
-@RedisSentinel(replicas = 2, sentinels = 3, enableNetworkChaos = true)
-@Test
-void testSentinelFailover(SentinelCluster cluster) {
-    // Cluster ready: 1 master + 2 replicas + 3 sentinels
-    // Network chaos enabled: tc + iptables installed
+@RedisStandalone(id = "cache", version = "7.4")
+class MyTest {
+    @Test
+    void testCache() {
+        // Type-safe programmatic access
+        StandaloneRedis cache = RedisStandalone.INSTANCE.get("cache");
+        
+        // Connect with Jedis
+        try (Jedis jedis = new Jedis(cache.host(), cache.port())) {
+            jedis.set("key", "value");
+            assertThat(jedis.get("key")).isEqualTo("value");
+        }
+    }
+}
+```
+
+#### Multi-Instance Redis
+
+```java
+@RedisStandalone(id = "cache", version = "7.4")
+@RedisStandalone(id = "session", version = "7.2")
+@RedisStandalone(id = "rate-limiter", version = "7.4")
+class MultiInstanceTest {
     
-    // Inject 100ms latency to replica
-    cluster.getControl().network().injectLatency(
-        cluster.getReplicas().get(0), 
-        Duration.ofMillis(100)
-    );
+    // Option 1: List parameter injection (all instances)
+    @Test
+    void testAll(List<StandaloneRedis> all) {
+        assertThat(all).hasSize(3);
+        // Test data isolation across instances
+    }
     
-    // Trigger failover
-    FailoverHelper.triggerFailover(cluster);
-    
-    // Verify promotion under network chaos
-    FailoverHelper.waitForPromotion(cluster, Duration.ofSeconds(30));
+    // Option 2: Programmatic access (specific instance)
+    @Test
+    void testCache() {
+        StandaloneRedis cache = RedisStandalone.INSTANCE.get("cache");
+        // Test cache-specific logic
+    }
+}
+```
+
+#### Redis Sentinel Cluster
+
+```java
+@RedisSentinel(id = "cluster", replicas = 2, sentinels = 3)
+class SentinelTest {
+    @Test
+    void testFailover(SentinelRedis cluster) {
+        // Cluster ready: 1 master + 2 replicas + 3 sentinels
+        
+        // Connect via JedisSentinelPool
+        Set<String> sentinels = cluster.sentinels().stream()
+            .map(endpoint -> endpoint.host() + ":" + endpoint.port())
+            .collect(Collectors.toSet());
+        
+        JedisSentinelPool pool = new JedisSentinelPool(
+            cluster.masterName(), 
+            sentinels
+        );
+        
+        // Test with automatic failover
+        try (Jedis jedis = pool.getResource()) {
+            jedis.set("key", "value");
+        }
+    }
 }
 ```
 
