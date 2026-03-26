@@ -310,16 +310,33 @@ public final class ChaosTestingExtension
     }
 
     // Resolve single instance parameters
+    Object matchedInstance = null;
+    int matchCount = 0;
+    
     for (final ContainerInstance instance : containers) {
       if (parameterType.isAssignableFrom(instance.connectionInfo.getClass())) {
-        return instance.connectionInfo;
+        matchedInstance = instance.connectionInfo;
+        matchCount++;
       }
     }
-
-    throw new ParameterResolutionException(
-        String.format(
-            "No container connection info found for parameter type: %s",
-            parameterType.getSimpleName()));
+    
+    if (matchCount == 0) {
+      throw new ParameterResolutionException(
+          String.format(
+              "No container connection info found for parameter type: %s",
+              parameterType.getSimpleName()));
+    }
+    
+    if (matchCount > 1) {
+      throw new ParameterResolutionException(
+          String.format(
+              "Multiple containers found for parameter type %s (found: %d). Use List<%s> for multiple instances or specify ID programmatically via INSTANCE.get(\"id\")",
+              parameterType.getSimpleName(),
+              matchCount,
+              parameterType.getSimpleName()));
+    }
+    
+    return matchedInstance;
   }
 
   @SuppressWarnings({"rawtypes", "unchecked"})
