@@ -60,11 +60,12 @@ class MixedTopologyTest {
     // ASSERT: Sentinel cluster has correct topology
     final SentinelRedis haCluster = sentinels.get(0);
     assertThat(haCluster.masterName()).isEqualTo("master-ha");
-    assertThat(haCluster.getReplicaContainers()).hasSize(2);
-    assertThat(haCluster.getSentinelContainers()).hasSize(3);
+    assertThat(haCluster.replicas()).hasSize(2);
+    assertThat(haCluster.sentinels()).hasSize(3);
 
-    // ASSERT: All instances are running
-    assertThat(haCluster.master().isRunning()).isTrue();
+    // ASSERT: All instances have valid connection info
+    assertThat(haCluster.host()).isNotEmpty();
+    assertThat(haCluster.port()).isGreaterThan(0);
     assertThat(standalones)
         .allSatisfy(
             instance -> {

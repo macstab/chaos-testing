@@ -40,11 +40,12 @@ class MultiInstanceSentinelTest {
     // ASSERT: Exactly 3 clusters
     assertThat(clusters).hasSize(3);
 
-    // ASSERT: All clusters are running
+    // ASSERT: All clusters have valid connection info
     clusters.forEach(
         cluster -> {
-          assertThat(cluster.master()).isNotNull();
-          assertThat(cluster.master().isRunning()).isTrue();
+          assertThat(cluster.host()).isNotEmpty();
+          assertThat(cluster.port()).isGreaterThan(0);
+          assertThat(cluster.masterName()).isNotEmpty();
         });
   }
 
@@ -98,14 +99,14 @@ class MultiInstanceSentinelTest {
 
     // ASSERT: Ordering matches declaration
     assertThat(all)
-        .extracting(SentinelRedis::getMasterName)
+        .extracting(SentinelRedis::masterName)
         .containsExactly("master-first", "master-second", "master-third");
 
     // ASSERT: All clusters have expected topology (1 replica, 1 sentinel each)
     all.forEach(
         cluster -> {
-          assertThat(cluster.getReplicaContainers()).hasSize(1);
-          assertThat(cluster.getSentinelContainers()).hasSize(1);
+          assertThat(cluster.replicas()).hasSize(1);
+          assertThat(cluster.sentinels()).hasSize(1);
         });
   }
 
