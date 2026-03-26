@@ -90,6 +90,14 @@ public final class ChaosTestingExtension
   private static final Map<Class<? extends Annotation>, ChaosPlugin<?>> PLUGINS =
       new HashMap<>();
 
+  // ThreadLocal storage for programmatic access (by annotation type)
+  private static final ThreadLocal<Map<Class<? extends Annotation>, Map<String, Object>>>
+      CONNECTION_INFO_BY_ANNOTATION = ThreadLocal.withInitial(HashMap::new);
+
+  // ThreadLocal storage for unified access (by base interface type)
+  private static final ThreadLocal<Map<Class<?>, Map<String, Object>>>
+      CONNECTION_INFO_BY_BASE_TYPE = ThreadLocal.withInitial(HashMap::new);
+
   static {
     discoverPlugins();
   }
@@ -184,19 +192,26 @@ public final class ChaosTestingExtension
     log.debug("ChaosTestingExtension.afterAll() for test class: {}",
         context.getRequiredTestClass().getSimpleName());
 
-    @SuppressWarnings("unchecked")
-    final List<ContainerInstance> containers =
-        (List<ContainerInstance>) context.getStore(NAMESPACE).get(CONTAINERS_KEY);
+    try {
+      @SuppressWarnings("unchecked")
+      final List<ContainerInstance> containers =
+          (List<ContainerInstance>) context.getStore(NAMESPACE).get(CONTAINERS_KEY);
 
-    if (containers != null) {
-      for (final ContainerInstance instance : containers) {
-        try {
-          log.info("Stopping container: {}", instance.annotation.annotationType().getSimpleName());
-          instance.container.stop();
-        } catch (final Exception e) {
-          log.warn("Failed to stop container: {}", instance.annotation.annotationType().getSimpleName(), e);
+      if (containers != null) {
+        for (final ContainerInstance instance : containers) {
+          try {
+            log.info("Stopping container: {}", instance.annotation.annotationType().getSimpleName());
+            instance.container.stop();
+          } catch (final Exception e) {
+            log.warn("Failed to stop container: {}", instance.annotation.annotationType().getSimpleName(), e);
+          }
         }
       }
+    } finally {
+      // CRITICAL: Always clear ThreadLocal to prevent memory leaks
+      CONNECTION_INFO_BY_ANNOTATION.remove();
+      CONNECTION_INFO_BY_BASE_TYPE.remove();
+      log.debug("Cleared ThreadLocal connection info registry");
     }
   }
 
@@ -275,6 +290,9 @@ public final class ChaosTestingExtension
                 plugin.getClass().getSimpleName(),
                 annotation.annotationType().getSimpleName()));
       }
+
+      // Store connection info for programmatic access
+      storeConnectionInfo(annotation, connectionInfo);
 
       return new ContainerInstance(container, annotation, connectionInfo);
 
@@ -370,6 +388,164 @@ public final class ChaosTestingExtension
             e);
       }
     }
+  }
+
+  /**
+   * Stores connection info for programmatic access.
+   *
+   * @param annotation container annotation
+   * @param connectionInfo connection info object
+   */
+  private void storeConnectionInfo(final Annotation annotation, final Object connectionInfo) {
+    final Class<? extends Annotation> annotationType = annotation.annotationType();
+    final String id = extractId(annotation);
+
+    // Store by annotation type
+    CONNECTION_INFO_BY_ANNOTATION.get()
+        .computeIfAbsent(annotationType, k -> new HashMap<>())
+        .put(id, connectionInfo);
+
+    // Store by base interface types
+    for (final Class<?> baseType : getBaseTypes(connectionInfo.getClass())) {
+      CONNECTION_INFO_BY_BASE_TYPE.get()
+          .computeIfAbsent(baseType, k -> new HashMap<>())
+          .put(id, connectionInfo);
+    }
+  }
+
+  /**
+   * Extracts container id from annotation.
+   *
+   * @param annotation container annotation
+   * @return container id (default: "default")
+   */
+  private String extractId(final Annotation annotation) {
+    try {
+      final java.lang.reflect.Method idMethod = annotation.annotationType().getMethod("id");
+      return (String) idMethod.invoke(annotation);
+    } catch (final Exception e) {
+      return "default";
+    }
+  }
+
+  /**
+   * Gets all base interfaces and classes (excluding Object and Annotation).
+   *
+   * @param clazz connection info class
+   * @return set of base types
+   */
+  private List<Class<?>> getBaseTypes(final Class<?> clazz) {
+    final List<Class<?>> baseTypes = new ArrayList<>();
+    
+    // Add all interfaces (recursively)
+    for (final Class<?> iface : clazz.getInterfaces()) {
+      if (!iface.equals(Annotation.class)) {
+        baseTypes.add(iface);
+        baseTypes.addAll(getBaseTypes(iface));
+      }
+    }
+    
+    // Add superclass (if not Object)
+    final Class<?> superclass = clazz.getSuperclass();
+    if (superclass != null && !superclass.equals(Object.class)) {
+      baseTypes.add(superclass);
+      baseTypes.addAll(getBaseTypes(superclass));
+    }
+    
+    return baseTypes;
+  }
+
+  /**
+   * Gets connection info by annotation type and id (for programmatic access).
+   *
+   * @param annotationType annotation class
+   * @param id container id
+   * @return connection info object
+   * @throws IllegalStateException if no extension active
+   * @throws java.util.NoSuchElementException if container not found
+   */
+  public static Object getConnectionInfo(
+      final Class<? extends Annotation> annotationType, final String id) {
+    
+    final Map<String, Object> byId = CONNECTION_INFO_BY_ANNOTATION.get().get(annotationType);
+    
+    if (byId == null) {
+      throw new java.util.NoSuchElementException(
+          String.format("No containers found for @%s", annotationType.getSimpleName()));
+    }
+    
+    final Object connectionInfo = byId.get(id);
+    
+    if (connectionInfo == null) {
+      throw new java.util.NoSuchElementException(
+          String.format(
+              "No container found for @%s(id=\"%s\")",
+              annotationType.getSimpleName(), id));
+    }
+    
+    return connectionInfo;
+  }
+
+  /**
+   * Gets all connection info objects for annotation type.
+   *
+   * @param annotationType annotation class
+   * @return list of connection info objects (empty if none)
+   */
+  public static List<Object> getAllConnectionInfo(
+      final Class<? extends Annotation> annotationType) {
+    
+    final Map<String, Object> byId = CONNECTION_INFO_BY_ANNOTATION.get().get(annotationType);
+    
+    if (byId == null) {
+      return List.of();
+    }
+    
+    return new ArrayList<>(byId.values());
+  }
+
+  /**
+   * Gets all connection info objects implementing base type (unified access).
+   *
+   * @param baseType base interface class
+   * @return list of connection info objects (empty if none)
+   */
+  public static List<Object> getAllConnectionInfoByBaseType(final Class<?> baseType) {
+    final Map<String, Object> byId = CONNECTION_INFO_BY_BASE_TYPE.get().get(baseType);
+    
+    if (byId == null) {
+      return List.of();
+    }
+    
+    return new ArrayList<>(byId.values());
+  }
+
+  /**
+   * Gets connection info by base type and id (unified access).
+   *
+   * @param baseType base interface class
+   * @param id container id
+   * @return connection info object
+   * @throws java.util.NoSuchElementException if container not found
+   */
+  public static Object getConnectionInfoByBaseType(final Class<?> baseType, final String id) {
+    final Map<String, Object> byId = CONNECTION_INFO_BY_BASE_TYPE.get().get(baseType);
+    
+    if (byId == null) {
+      throw new java.util.NoSuchElementException(
+          String.format("No containers found implementing %s", baseType.getSimpleName()));
+    }
+    
+    final Object connectionInfo = byId.get(id);
+    
+    if (connectionInfo == null) {
+      throw new java.util.NoSuchElementException(
+          String.format(
+              "No container found implementing %s with id=\"%s\"",
+              baseType.getSimpleName(), id));
+    }
+    
+    return connectionInfo;
   }
 
   private static final class ContainerInstance {

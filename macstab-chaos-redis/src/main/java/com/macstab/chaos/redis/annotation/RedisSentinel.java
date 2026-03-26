@@ -9,6 +9,9 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 import com.macstab.chaos.core.annotation.ChaosTest;
+import com.macstab.chaos.core.api.ChaosContainers;
+import com.macstab.chaos.core.api.ContainerManager;
+import com.macstab.chaos.redis.api.SentinelRedis;
 import com.macstab.chaos.network.condition.DisabledOnNonLinuxHost;
 import com.macstab.chaos.redis.extension.SentinelContainerExtension.SentinelCluster;
 
@@ -83,8 +86,31 @@ import com.macstab.chaos.redis.extension.SentinelContainerExtension.SentinelClus
     "Redis Sentinel tests require native Docker networking (Linux host or dev container)")
 public @interface RedisSentinel {
 
-  // TODO: RedisManager programmatic access - to be implemented with ChaosTestingExtension
-  // RedisManager<SentinelCluster> INSTANCE = ...
+  /**
+   * Programmatic access to sentinel Redis clusters.
+   *
+   * <p><strong>Single Instance:</strong>
+   *
+   * <pre>{@code
+   * SentinelRedis cluster = RedisSentinel.INSTANCE.get("session");
+   * JedisSentinelPool pool = new JedisSentinelPool(
+   *   cluster.masterName(),
+   *   toSet(cluster.sentinels())
+   * );
+   * }</pre>
+   *
+   * <p><strong>Multiple Instances:</strong>
+   *
+   * <pre>{@code
+   * List<SentinelRedis> all = RedisSentinel.INSTANCE.getAll();
+   * }</pre>
+   *
+   * @since 2.0
+   */
+  ContainerManager<SentinelRedis> INSTANCE =
+      new ContainerManager<>(
+          id -> ChaosContainers.get(RedisSentinel.class, id),
+          () -> ChaosContainers.getAll(RedisSentinel.class));
 
   /**
    * Cluster ID (unique within test class).

@@ -9,7 +9,9 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 import com.macstab.chaos.core.annotation.ChaosTest;
-import com.macstab.chaos.redis.extension.RedisContainerExtension.RedisConnectionInfo;
+import com.macstab.chaos.core.api.ChaosContainers;
+import com.macstab.chaos.core.api.ContainerManager;
+import com.macstab.chaos.redis.api.StandaloneRedis;
 
 /**
  * Starts a standalone Redis container for integration tests using Testcontainers.
@@ -63,8 +65,28 @@ import com.macstab.chaos.redis.extension.RedisContainerExtension.RedisConnection
 @Documented
 public @interface RedisStandalone {
 
-  // TODO: RedisManager programmatic access - to be implemented with ChaosTestingExtension
-  // RedisManager<RedisConnectionInfo> INSTANCE = ...
+  /**
+   * Programmatic access to standalone Redis containers.
+   *
+   * <p><strong>Single Instance:</strong>
+   *
+   * <pre>{@code
+   * StandaloneRedis cache = RedisStandalone.INSTANCE.get("cache");
+   * Jedis jedis = new Jedis(cache.host(), cache.port());
+   * }</pre>
+   *
+   * <p><strong>Multiple Instances:</strong>
+   *
+   * <pre>{@code
+   * List<StandaloneRedis> all = RedisStandalone.INSTANCE.getAll();
+   * }</pre>
+   *
+   * @since 2.0
+   */
+  ContainerManager<StandaloneRedis> INSTANCE =
+      new ContainerManager<>(
+          id -> ChaosContainers.get(RedisStandalone.class, id),
+          () -> ChaosContainers.getAll(RedisStandalone.class));
 
   /**
    * Container ID (unique within test class).

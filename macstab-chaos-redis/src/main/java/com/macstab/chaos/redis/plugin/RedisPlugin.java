@@ -11,7 +11,7 @@ import org.testcontainers.utility.DockerImageName;
 import com.github.dockerjava.api.model.Capability;
 import com.macstab.chaos.core.extension.ChaosPlugin;
 import com.macstab.chaos.redis.annotation.RedisStandalone;
-import com.macstab.chaos.redis.extension.RedisContainerExtension.RedisConnectionInfo;
+import com.macstab.chaos.redis.api.StandaloneRedis;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -80,13 +80,13 @@ public final class RedisPlugin implements ChaosPlugin<RedisStandalone> {
       final GenericContainer<?> container,
       final RedisStandalone annotation) {
     
-    return new RedisConnectionInfo(
+    return new StandaloneRedis(
         container.getHost(),
         container.getMappedPort(6379));
   }
 
   @Override
   public Set<Class<?>> supportedParameterTypes() {
-    return Set.of(RedisConnectionInfo.class);
+    return Set.of(StandaloneRedis.class);
   }
 }
