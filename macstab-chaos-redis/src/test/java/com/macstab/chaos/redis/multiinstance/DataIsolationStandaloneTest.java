@@ -10,7 +10,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import com.macstab.chaos.redis.annotation.RedisStandalone;
-import com.macstab.chaos.redis.extension.RedisContainerExtension.RedisConnectionInfo;
+import com.macstab.chaos.redis.api.StandaloneRedis;
 
 import io.lettuce.core.RedisClient;
 import io.lettuce.core.api.StatefulRedisConnection;
@@ -41,7 +41,7 @@ import io.lettuce.core.api.sync.RedisCommands;
 class DataIsolationStandaloneTest {
 
   @AfterEach
-  void cleanup(final List<RedisConnectionInfo> instances) {
+  void cleanup(final List<StandaloneRedis> instances) {
     // Clean up all data after each test to prevent cross-contamination
     instances.forEach(
         instance -> {
@@ -56,9 +56,9 @@ class DataIsolationStandaloneTest {
   @DisplayName("Should isolate data between cache, session, and rate-limiter instances")
   void shouldIsolateDataBetweenInstances() {
     // ARRANGE: Get all instances
-    final RedisConnectionInfo cache = RedisStandalone.INSTANCE.get("cache");
-    final RedisConnectionInfo session = RedisStandalone.INSTANCE.get("session");
-    final RedisConnectionInfo rateLimiter = RedisStandalone.INSTANCE.get("rate-limiter");
+    final StandaloneRedis cache = RedisStandalone.INSTANCE.get("cache");
+    final StandaloneRedis session = RedisStandalone.INSTANCE.get("session");
+    final StandaloneRedis rateLimiter = RedisStandalone.INSTANCE.get("rate-limiter");
 
     try (final RedisClient cacheClient = createClient(cache);
         final RedisClient sessionClient = createClient(session);
@@ -100,10 +100,10 @@ class DataIsolationStandaloneTest {
 
   @Test
   @DisplayName("Should allow same keys with different values in each instance")
-  void shouldAllowSameKeysWithDifferentValues(final List<RedisConnectionInfo> instances) {
-    final RedisConnectionInfo cache = instances.get(0);
-    final RedisConnectionInfo session = instances.get(1);
-    final RedisConnectionInfo rateLimiter = instances.get(2);
+  void shouldAllowSameKeysWithDifferentValues(final List<StandaloneRedis> instances) {
+    final StandaloneRedis cache = instances.get(0);
+    final StandaloneRedis session = instances.get(1);
+    final StandaloneRedis rateLimiter = instances.get(2);
 
     try (final RedisClient cacheClient = createClient(cache);
         final RedisClient sessionClient = createClient(session);
@@ -136,9 +136,9 @@ class DataIsolationStandaloneTest {
   @Test
   @DisplayName("Should support different Redis data structures in each instance")
   void shouldSupportDifferentDataStructures() {
-    final RedisConnectionInfo cache = RedisStandalone.INSTANCE.get("cache");
-    final RedisConnectionInfo session = RedisStandalone.INSTANCE.get("session");
-    final RedisConnectionInfo rateLimiter = RedisStandalone.INSTANCE.get("rate-limiter");
+    final StandaloneRedis cache = RedisStandalone.INSTANCE.get("cache");
+    final StandaloneRedis session = RedisStandalone.INSTANCE.get("session");
+    final StandaloneRedis rateLimiter = RedisStandalone.INSTANCE.get("rate-limiter");
 
     try (final RedisClient cacheClient = createClient(cache);
         final RedisClient sessionClient = createClient(session);
@@ -179,10 +179,10 @@ class DataIsolationStandaloneTest {
 
   @Test
   @DisplayName("Should handle high-volume writes to each instance independently")
-  void shouldHandleHighVolumeWrites(final List<RedisConnectionInfo> instances) {
-    final RedisConnectionInfo cache = instances.get(0);
-    final RedisConnectionInfo session = instances.get(1);
-    final RedisConnectionInfo rateLimiter = instances.get(2);
+  void shouldHandleHighVolumeWrites(final List<StandaloneRedis> instances) {
+    final StandaloneRedis cache = instances.get(0);
+    final StandaloneRedis session = instances.get(1);
+    final StandaloneRedis rateLimiter = instances.get(2);
 
     try (final RedisClient cacheClient = createClient(cache);
         final RedisClient sessionClient = createClient(session);
@@ -222,8 +222,8 @@ class DataIsolationStandaloneTest {
   @Test
   @DisplayName("Should work with different Redis versions (7.4 and 7.2)")
   void shouldWorkWithDifferentVersions() {
-    final RedisConnectionInfo cache = RedisStandalone.INSTANCE.get("cache"); // 7.4
-    final RedisConnectionInfo session = RedisStandalone.INSTANCE.get("session"); // 7.2
+    final StandaloneRedis cache = RedisStandalone.INSTANCE.get("cache"); // 7.4
+    final StandaloneRedis session = RedisStandalone.INSTANCE.get("session"); // 7.2
 
     try (final RedisClient cacheClient = createClient(cache);
         final RedisClient sessionClient = createClient(session);
@@ -253,8 +253,8 @@ class DataIsolationStandaloneTest {
 
   // ==================== Helper Methods ====================
 
-  private RedisClient createClient(final RedisConnectionInfo info) {
-    final String uri = String.format("redis://%s:%d", info.getHost(), info.getPort());
+  private RedisClient createClient(final StandaloneRedis info) {
+    final String uri = String.format("redis://%s:%d", info.host(), info.port());
     return RedisClient.create(uri);
   }
 }

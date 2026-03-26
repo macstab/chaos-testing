@@ -9,7 +9,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import com.macstab.chaos.redis.annotation.RedisStandalone;
-import com.macstab.chaos.redis.extension.RedisContainerExtension.RedisConnectionInfo;
+import com.macstab.chaos.redis.api.StandaloneRedis;
 
 /**
  * Meta-test validating multi-instance standalone Redis support.
@@ -19,7 +19,7 @@ import com.macstab.chaos.redis.extension.RedisContainerExtension.RedisConnection
  * <ul>
  *   <li>Multiple {@code @RedisStandalone} annotations
  *   <li>Parallel instance startup
- *   <li>Parameter injection via {@code List<RedisConnectionInfo>}
+ *   <li>Parameter injection via {@code List<StandaloneRedis>}
  *   <li>Programmatic access via {@code RedisStandalone.INSTANCE.get(id)}
  *   <li>Ordering guarantees (declaration order)
  * </ul>
@@ -33,37 +33,37 @@ import com.macstab.chaos.redis.extension.RedisContainerExtension.RedisConnection
 class MultiInstanceStandaloneTest {
 
   @Test
-  @DisplayName("Should inject all 3 instances via List<RedisConnectionInfo> parameter")
-  void shouldInjectAllInstances(final List<RedisConnectionInfo> instances) {
+  @DisplayName("Should inject all 3 instances via List<StandaloneRedis> parameter")
+  void shouldInjectAllInstances(final List<StandaloneRedis> instances) {
     // ASSERT: Exactly 3 instances
     assertThat(instances).hasSize(3);
 
     // ASSERT: All instances have valid connection info
     instances.forEach(
         instance -> {
-          assertThat(instance.getHost()).isNotEmpty();
-          assertThat(instance.getPort()).isGreaterThan(0);
+          assertThat(instance.host()).isNotEmpty();
+          assertThat(instance.port()).isGreaterThan(0);
         });
   }
 
   @Test
-  @DisplayName("Should maintain annotation declaration order in List<RedisConnectionInfo>")
-  void shouldMaintainDeclarationOrder(final List<RedisConnectionInfo> instances) {
+  @DisplayName("Should maintain annotation declaration order in List<StandaloneRedis>")
+  void shouldMaintainDeclarationOrder(final List<StandaloneRedis> instances) {
     // ASSERT: Order matches declaration (cache, session, rate-limiter)
     assertThat(instances).hasSize(3);
 
     // All instances should have different ports (distinct containers)
-    assertThat(instances.get(0).getPort()).isNotEqualTo(instances.get(1).getPort());
-    assertThat(instances.get(1).getPort()).isNotEqualTo(instances.get(2).getPort());
+    assertThat(instances.get(0).port()).isNotEqualTo(instances.get(1).port());
+    assertThat(instances.get(1).port()).isNotEqualTo(instances.get(2).port());
   }
 
   @Test
   @DisplayName("Should access individual instances by ID programmatically")
   void shouldAccessByIdProgrammatically() {
     // ACT: Get instances by ID
-    final RedisConnectionInfo cache = RedisStandalone.INSTANCE.get("cache");
-    final RedisConnectionInfo session = RedisStandalone.INSTANCE.get("session");
-    final RedisConnectionInfo rateLimiter = RedisStandalone.INSTANCE.get("rate-limiter");
+    final StandaloneRedis cache = RedisStandalone.INSTANCE.get("cache");
+    final StandaloneRedis session = RedisStandalone.INSTANCE.get("session");
+    final StandaloneRedis rateLimiter = RedisStandalone.INSTANCE.get("rate-limiter");
 
     // ASSERT: All instances exist
     assertThat(cache).isNotNull();
@@ -71,41 +71,41 @@ class MultiInstanceStandaloneTest {
     assertThat(rateLimiter).isNotNull();
 
     // ASSERT: They are distinct instances (different ports)
-    assertThat(cache.getPort()).isNotEqualTo(session.getPort());
-    assertThat(session.getPort()).isNotEqualTo(rateLimiter.getPort());
+    assertThat(cache.port()).isNotEqualTo(session.port());
+    assertThat(session.port()).isNotEqualTo(rateLimiter.port());
 
     // ASSERT: All are accessible
-    assertThat(cache.getHost()).isNotEmpty();
-    assertThat(session.getHost()).isNotEmpty();
-    assertThat(rateLimiter.getHost()).isNotEmpty();
+    assertThat(cache.host()).isNotEmpty();
+    assertThat(session.host()).isNotEmpty();
+    assertThat(rateLimiter.host()).isNotEmpty();
   }
 
   @Test
   @DisplayName("Should access all instances via INSTANCE.getAll()")
   void shouldGetAllProgrammatically() {
     // ACT: Get all instances
-    final List<RedisConnectionInfo> all = RedisStandalone.INSTANCE.getAll();
+    final List<StandaloneRedis> all = RedisStandalone.INSTANCE.getAll();
 
     // ASSERT: Size matches annotation count
     assertThat(all).hasSize(3);
 
     // ASSERT: All have valid ports
-    assertThat(all).allMatch(instance -> instance.getPort() > 0);
+    assertThat(all).allMatch(instance -> instance.port() > 0);
 
     // ASSERT: All are unique (different ports)
-    final long uniquePorts = all.stream().map(RedisConnectionInfo::getPort).distinct().count();
+    final long uniquePorts = all.stream().map(StandaloneRedis::getPort).distinct().count();
     assertThat(uniquePorts).isEqualTo(3);
   }
 
   @Test
   @DisplayName("Should provide string representation for connection info")
-  void shouldProvideStringRepresentation(final List<RedisConnectionInfo> instances) {
+  void shouldProvideStringRepresentation(final List<StandaloneRedis> instances) {
     // ASSERT: Each instance has valid toString (host:port format)
     instances.forEach(
         instance -> {
           final String str = instance.toString();
           assertThat(str).contains(":");
-          assertThat(str).contains(String.valueOf(instance.getPort()));
+          assertThat(str).contains(String.valueOf(instance.port()));
         });
   }
 }
