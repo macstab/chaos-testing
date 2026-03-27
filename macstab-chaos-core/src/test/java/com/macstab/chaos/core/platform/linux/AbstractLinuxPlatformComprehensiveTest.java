@@ -24,6 +24,22 @@ class AbstractLinuxPlatformComprehensiveTest {
     }
   }
 
+  /** Platform whose overrides shadow all tools with null — forces UnsupportedOperationException. */
+  static class NoMappingPlatform extends AbstractLinuxPlatform {
+    @Override
+    public String getDistribution() { return "no-mapping"; }
+
+    @Override
+    protected java.util.Map<com.macstab.chaos.core.platform.Tool, ToolMapping> getToolOverrides() {
+      // HashMap allows null values; getOrDefault returns null when key is present with null value
+      java.util.Map<com.macstab.chaos.core.platform.Tool, ToolMapping> map = new java.util.HashMap<>();
+      for (com.macstab.chaos.core.platform.Tool t : com.macstab.chaos.core.platform.Tool.values()) {
+        map.put(t, null);
+      }
+      return map;
+    }
+  }
+
   @Nested
   @DisplayName("getType()")
   class GetTypeTest {
@@ -365,6 +381,34 @@ class AbstractLinuxPlatformComprehensiveTest {
       Platform platform = new TestLinuxPlatform();
       assertThat(platform.getPackageName(Tool.STRESS_NG)).isEqualTo("stress-ng");
       assertThat(platform.getBinaryName(Tool.STRESS_NG)).isEqualTo("stress-ng");
+    }
+
+    @Test
+    @DisplayName("getBinaryName() falls back to packageName when binaryName is null (CA_CERTIFICATES)")
+    void getBinaryName_shouldFallbackToPackageName_whenBinaryNameNull() {
+      // CA_CERTIFICATES has ToolMapping("ca-certificates", null) → binaryName() is null
+      // getBinaryName() must return packageName as fallback
+      Platform platform = new TestLinuxPlatform();
+      assertThat(platform.getBinaryName(Tool.CA_CERTIFICATES)).isEqualTo("ca-certificates");
+    }
+
+    @Test
+    @DisplayName("getPackageName() throws UnsupportedOperationException for unmapped tool (via override)")
+    void getPackageName_shouldThrow_whenToolNotMapped() {
+      // Subclass that overrides ALL defaults with an empty map and removes CURL
+      Platform platform = new NoMappingPlatform();
+      assertThatThrownBy(() -> platform.getPackageName(Tool.CURL))
+          .isInstanceOf(UnsupportedOperationException.class)
+          .hasMessageContaining("CURL");
+    }
+
+    @Test
+    @DisplayName("getBinaryName() throws UnsupportedOperationException for unmapped tool (via override)")
+    void getBinaryName_shouldThrow_whenToolNotMapped() {
+      Platform platform = new NoMappingPlatform();
+      assertThatThrownBy(() -> platform.getBinaryName(Tool.CURL))
+          .isInstanceOf(UnsupportedOperationException.class)
+          .hasMessageContaining("CURL");
     }
   }
 

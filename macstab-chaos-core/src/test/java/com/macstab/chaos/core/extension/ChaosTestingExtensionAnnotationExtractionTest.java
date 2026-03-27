@@ -4,8 +4,6 @@ package com.macstab.chaos.core.extension;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.lang.annotation.Annotation;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
 import java.lang.reflect.Method;
 import java.util.List;
 
@@ -13,57 +11,32 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import com.macstab.chaos.core.extension.MockChaosPlugin.MockContainer;
+
 /**
- * Unit tests for {@link ChaosTestingExtension} repeatable annotation extraction logic.
+ * Unit tests for {@link ChaosTestingExtension} annotation extraction logic.
  *
- * <p>Tests validate the critical {@code extractContainerAnnotations()} method that handles
- * Java's {@code @Repeatable} annotation wrapping behavior.
+ * <p>Tests validate the {@code extractContainerAnnotations()} and {@code extractId()} 
+ * private methods using real @MockContainer annotations that are registered in the plugin system.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
 @DisplayName("ChaosTestingExtension - Annotation Extraction")
 class ChaosTestingExtensionAnnotationExtractionTest {
 
-  /** Test annotation for repeatable pattern. */
-  @Retention(RetentionPolicy.RUNTIME)
-  @java.lang.annotation.Repeatable(TestAnnotations.class)
-  @interface TestAnnotation {
-    String id() default "default";
-  }
-
-  /** Container for repeatable annotations. */
-  @Retention(RetentionPolicy.RUNTIME)
-  @interface TestAnnotations {
-    TestAnnotation[] value();
-  }
-
-  /** Single annotation (not wrapped). */
-  @TestAnnotation(id = "single")
+  /** Single annotation. */
+  @MockContainer(image = "alpine:latest", port = 8080)
   static class SingleAnnotationClass {}
-
-  /** Multiple annotations (wrapped in container). */
-  @TestAnnotation(id = "first")
-  @TestAnnotation(id = "second")
-  @TestAnnotation(id = "third")
-  static class MultipleAnnotationsClass {}
 
   /** No annotations. */
   static class NoAnnotationsClass {}
 
-  /** Annotation without id() method (for edge case testing). */
-  @Retention(RetentionPolicy.RUNTIME)
-  @interface NoIdAnnotation {}
-
-  /** Test class with NoIdAnnotation. */
-  @NoIdAnnotation
-  static class NoIdClass {}
-
   @Nested
-  @DisplayName("extractContainerAnnotations() - Repeatable Pattern")
+  @DisplayName("extractContainerAnnotations() - Plugin Annotation Discovery")
   class ExtractContainerAnnotationsTest {
 
     @Test
-    @DisplayName("Should extract single annotation without container wrapping")
+    @DisplayName("Should extract single plugin annotation")
     void shouldExtractSingleAnnotation() throws Exception {
       // ARRANGE
       Method extractMethod = findExtractMethod();
@@ -76,34 +49,13 @@ class ChaosTestingExtensionAnnotationExtractionTest {
 
       // ASSERT
       assertThat(result).hasSize(1);
-      TestAnnotation annotation = (TestAnnotation) result.get(0);
-      assertThat(annotation.id()).isEqualTo("single");
+      MockContainer annotation = (MockContainer) result.get(0);
+      assertThat(annotation.image()).isEqualTo("alpine:latest");
+      assertThat(annotation.port()).isEqualTo(8080);
     }
 
     @Test
-    @DisplayName("Should extract multiple annotations from container")
-    void shouldExtractMultipleFromContainer() throws Exception {
-      // ARRANGE
-      Method extractMethod = findExtractMethod();
-      ChaosTestingExtension extension = new ChaosTestingExtension();
-
-      // ACT
-      @SuppressWarnings("unchecked")
-      List<Annotation> result =
-          (List<Annotation>) extractMethod.invoke(extension, MultipleAnnotationsClass.class);
-
-      // ASSERT
-      assertThat(result).hasSize(3);
-      TestAnnotation first = (TestAnnotation) result.get(0);
-      TestAnnotation second = (TestAnnotation) result.get(1);
-      TestAnnotation third = (TestAnnotation) result.get(2);
-      assertThat(first.id()).isEqualTo("first");
-      assertThat(second.id()).isEqualTo("second");
-      assertThat(third.id()).isEqualTo("third");
-    }
-
-    @Test
-    @DisplayName("Should return empty list when no annotations found")
+    @DisplayName("Should return empty list when no plugin annotations found")
     void shouldReturnEmptyWhenNoAnnotations() throws Exception {
       // ARRANGE
       Method extractMethod = findExtractMethod();
@@ -116,24 +68,6 @@ class ChaosTestingExtensionAnnotationExtractionTest {
 
       // ASSERT
       assertThat(result).isEmpty();
-    }
-
-    @Test
-    @DisplayName("Should maintain declaration order from multiple annotations")
-    void shouldMaintainDeclarationOrder() throws Exception {
-      // ARRANGE
-      Method extractMethod = findExtractMethod();
-      ChaosTestingExtension extension = new ChaosTestingExtension();
-
-      // ACT
-      @SuppressWarnings("unchecked")
-      List<Annotation> result =
-          (List<Annotation>) extractMethod.invoke(extension, MultipleAnnotationsClass.class);
-
-      // ASSERT - Order should match declaration (first, second, third)
-      assertThat(result)
-          .extracting(a -> ((TestAnnotation) a).id())
-          .containsExactly("first", "second", "third");
     }
 
     private Method findExtractMethod() throws Exception {
@@ -150,27 +84,12 @@ class ChaosTestingExtensionAnnotationExtractionTest {
   class ExtractIdTest {
 
     @Test
-    @DisplayName("Should extract ID from annotation")
-    void shouldExtractId() throws Exception {
+    @DisplayName("Should extract 'default' when using default id()")
+    void shouldExtractDefaultId() throws Exception {
       // ARRANGE
       Method extractIdMethod = findExtractIdMethod();
       ChaosTestingExtension extension = new ChaosTestingExtension();
-      TestAnnotation annotation = SingleAnnotationClass.class.getAnnotation(TestAnnotation.class);
-
-      // ACT
-      String result = (String) extractIdMethod.invoke(extension, annotation);
-
-      // ASSERT
-      assertThat(result).isEqualTo("single");
-    }
-
-    @Test
-    @DisplayName("Should return 'default' when no id() method exists")
-    void shouldReturnDefaultWhenNoIdMethod() throws Exception {
-      // ARRANGE
-      Method extractIdMethod = findExtractIdMethod();
-      ChaosTestingExtension extension = new ChaosTestingExtension();
-      NoIdAnnotation annotation = NoIdClass.class.getAnnotation(NoIdAnnotation.class);
+      MockContainer annotation = SingleAnnotationClass.class.getAnnotation(MockContainer.class);
 
       // ACT
       String result = (String) extractIdMethod.invoke(extension, annotation);

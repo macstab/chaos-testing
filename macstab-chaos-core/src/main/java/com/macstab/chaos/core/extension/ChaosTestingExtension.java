@@ -177,10 +177,11 @@ public final class ChaosTestingExtension
 
         instance.container.start();
 
-        log.info("Container started: {} -> {}:{}",
+        log.info("Container started: {} -> {}{}",
             annotation.annotationType().getSimpleName(),
             instance.container.getHost(),
-            instance.container.getFirstMappedPort());
+            instance.container.getExposedPorts().isEmpty()
+                ? "" : ":" + instance.container.getFirstMappedPort());
       }
     }
 

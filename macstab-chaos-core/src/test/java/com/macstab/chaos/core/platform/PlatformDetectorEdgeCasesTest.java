@@ -4,6 +4,9 @@ package com.macstab.chaos.core.platform;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -390,20 +393,17 @@ class PlatformDetectorEdgeCasesTest {
       GenericContainer<?> container = mock(GenericContainer.class);
       when(container.isRunning()).thenReturn(true);
 
-      // IOException on os-release
-      when(container.execInContainer("cat", "/etc/os-release"))
-          .thenThrow(new IOException("Test exception"));
+      // IOException on first os-release call, then returns exit-code-1 result on second call
+      ExecResult osReleaseCheckResult = mock(ExecResult.class);
+      when(osReleaseCheckResult.getExitCode()).thenReturn(1);
+      doThrow(new IOException("Test exception"))
+          .doReturn(osReleaseCheckResult)
+          .when(container).execInContainer("cat", "/etc/os-release");
 
       // Fallback to apt-get succeeds
       ExecResult aptResult = mock(ExecResult.class);
       when(aptResult.getExitCode()).thenReturn(0);
-      when(container.execInContainer("which", "apt-get")).thenReturn(aptResult);
-
-      ExecResult osReleaseCheckResult = mock(ExecResult.class);
-      when(osReleaseCheckResult.getExitCode()).thenReturn(1);
-      when(container.execInContainer("cat", "/etc/os-release"))
-          .thenThrow(new IOException("Test"))
-          .thenReturn(osReleaseCheckResult);
+      when(container.execInContainer(eq("which"), eq("apt-get"))).thenReturn(aptResult);
 
       // ACT
       Platform platform = PlatformDetector.detect(container);
@@ -451,7 +451,7 @@ class PlatformDetectorEdgeCasesTest {
       // No package managers found
       ExecResult notFoundResult = mock(ExecResult.class);
       when(notFoundResult.getExitCode()).thenReturn(1);
-      when(container.execInContainer("which", any(String.class))).thenReturn(notFoundResult);
+      when(container.execInContainer(eq("which"), any(String.class))).thenReturn(notFoundResult);
 
       // ACT & ASSERT
       assertThatThrownBy(() -> PlatformDetector.detect(container))

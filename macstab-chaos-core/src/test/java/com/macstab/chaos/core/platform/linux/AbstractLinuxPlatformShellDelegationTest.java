@@ -68,7 +68,7 @@ class AbstractLinuxPlatformShellDelegationTest {
     // Mock bash detection
     ExecResult bashResult = mock(ExecResult.class);
     when(bashResult.getExitCode()).thenReturn(0);
-    when(container.execInContainer("which", "bash")).thenReturn(bashResult);
+    when(container.execInContainer("which", "/bin/bash")).thenReturn(bashResult);
     
     // Mock command execution
     ExecResult execResult = mock(ExecResult.class);
@@ -96,7 +96,7 @@ class AbstractLinuxPlatformShellDelegationTest {
     // Mock bash detection
     ExecResult bashResult = mock(ExecResult.class);
     when(bashResult.getExitCode()).thenReturn(0);
-    when(container.execInContainer("which", "bash")).thenReturn(bashResult);
+    when(container.execInContainer("which", "/bin/bash")).thenReturn(bashResult);
     
     // Check availability - triggers lazy detection
     boolean available = shell.isAvailable(container);
@@ -117,7 +117,7 @@ class AbstractLinuxPlatformShellDelegationTest {
     // Mock bash detection
     ExecResult bashResult = mock(ExecResult.class);
     when(bashResult.getExitCode()).thenReturn(0);
-    when(container.execInContainer("which", "bash")).thenReturn(bashResult);
+    when(container.execInContainer("which", "/bin/bash")).thenReturn(bashResult);
     
     // Trigger lazy init via exec
     ExecResult execResult = mock(ExecResult.class);
@@ -166,5 +166,83 @@ class AbstractLinuxPlatformShellDelegationTest {
     assertThat(shell1).isNotNull();
     assertThat(shell2).isNotNull();
     assertThat(shell1).isNotSameAs(shell2);
+  }
+
+  // ── delegate != null paths ──────────────────────────────────────────────
+
+  @Test
+  @DisplayName("getType() returns delegate type after lazy init (BASH)")
+  void shellGetType_afterInit_returnsBash() throws Exception {
+    Shell shell = initWithBash();
+    assertThat(shell.getType()).isEqualTo(ShellType.BASH);
+  }
+
+  @Test
+  @DisplayName("getBinary() returns delegate binary after lazy init (/bin/bash)")
+  void shellGetBinary_afterInit_returnsBashBinary() throws Exception {
+    Shell shell = initWithBash();
+    assertThat(shell.getBinary()).isEqualTo("/bin/bash");
+  }
+
+  @Test
+  @DisplayName("buildPortCheckCommand() delegates to bash after lazy init")
+  void shellBuildPortCheckCommand_afterInit_delegatesToBash() throws Exception {
+    Shell shell = initWithBash();
+    String cmd = shell.buildPortCheckCommand(9090);
+    assertThat(cmd).contains("9090");
+    // After init delegate is BashShell — its buildPortCheckCommand uses /dev/tcp or curl
+    assertThat(cmd).isNotNull();
+  }
+
+  @Test
+  @DisplayName("supportsDevTcp() returns false when delegate is sh (BusyboxShell)")
+  void shellSupportsDevTcp_shDelegate_returnsFalse() throws Exception {
+    Platform platform = new TestLinuxPlatform();
+    Shell shell = platform.getDefaultShell();
+
+    @SuppressWarnings("resource")
+    GenericContainer<?> container = mock(GenericContainer.class);
+    when(container.isRunning()).thenReturn(true);
+
+    // bash NOT found
+    ExecResult bashNotFound = mock(ExecResult.class);
+    when(bashNotFound.getExitCode()).thenReturn(1);
+    when(container.execInContainer("which", "/bin/bash")).thenReturn(bashNotFound);
+
+    // sh IS found
+    ExecResult shFound = mock(ExecResult.class);
+    when(shFound.getExitCode()).thenReturn(0);
+    when(container.execInContainer("which", "/bin/sh")).thenReturn(shFound);
+
+    // exec to trigger lazy init (sh invocation)
+    ExecResult execResult = mock(ExecResult.class);
+    when(execResult.getExitCode()).thenReturn(0);
+    when(container.execInContainer(anyString(), anyString(), anyString())).thenReturn(execResult);
+    shell.exec(container, "test");
+
+    // sh/busybox does not support /dev/tcp
+    assertThat(shell.supportsDevTcp()).isFalse();
+  }
+
+  // ── helper ──────────────────────────────────────────────────────────────
+
+  private Shell initWithBash() throws Exception {
+    Platform platform = new TestLinuxPlatform();
+    Shell shell = platform.getDefaultShell();
+
+    @SuppressWarnings("resource")
+    GenericContainer<?> container = mock(GenericContainer.class);
+    when(container.isRunning()).thenReturn(true);
+
+    ExecResult bashOk = mock(ExecResult.class);
+    when(bashOk.getExitCode()).thenReturn(0);
+    when(container.execInContainer("which", "/bin/bash")).thenReturn(bashOk);
+
+    ExecResult execOk = mock(ExecResult.class);
+    when(execOk.getExitCode()).thenReturn(0);
+    when(container.execInContainer(anyString(), anyString(), anyString())).thenReturn(execOk);
+
+    shell.exec(container, "init");
+    return shell;
   }
 }
