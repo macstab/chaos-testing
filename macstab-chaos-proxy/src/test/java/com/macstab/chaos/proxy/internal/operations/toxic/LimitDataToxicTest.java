@@ -31,10 +31,10 @@ class LimitDataToxicTest {
   }
 
   @Test
-  @DisplayName("should fail on zero bytes")
-  void shouldFailOnZeroBytes() {
-    assertThatThrownBy(() -> LimitDataToxic.builder().name("limit-data").bytes(0).build())
-        .isInstanceOf(IllegalArgumentException.class);
+  @DisplayName("should allow zero bytes (closes connection immediately)")
+  void shouldAllowZeroBytes() {
+    LimitDataToxic toxic = LimitDataToxic.builder().name("limit-data").bytes(0).build();
+    assertThat(toxic.bytes()).isEqualTo(0);
   }
 
   @Test

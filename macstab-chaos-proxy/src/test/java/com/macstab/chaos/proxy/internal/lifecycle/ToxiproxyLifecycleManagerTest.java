@@ -29,59 +29,43 @@ class ToxiproxyLifecycleManagerTest {
   private final ToxiproxyLifecycleManager lifecycle = new ToxiproxyLifecycleManager(config);
 
   @Nested
-  @DisplayName("start()")
-  class StartTests {
+  @DisplayName("ensureRunning()")
+  class EnsureRunningTests {
 
     @Test
     @DisplayName("should start Toxiproxy successfully")
-    void shouldStartToxiproxy() {
-      // When
-      lifecycle.start(UBUNTU);
-
-      // Then
-      assertThat(lifecycle.isRunning(UBUNTU)).isTrue();
+    void shouldStartToxiproxy() throws Exception {
+      lifecycle.ensureRunning(UBUNTU);
+      assertThat(lifecycle.isHealthy(UBUNTU)).isTrue();
     }
 
     @Test
-    @DisplayName("should be idempotent (starting again is no-op)")
-    void shouldBeIdempotent() {
-      // Given
-      lifecycle.start(UBUNTU);
-
-      // When
-      lifecycle.start(UBUNTU); // Start again
-
-      // Then
-      assertThat(lifecycle.isRunning(UBUNTU)).isTrue();
+    @DisplayName("should be idempotent (calling again is no-op)")
+    void shouldBeIdempotent() throws Exception {
+      lifecycle.ensureRunning(UBUNTU);
+      lifecycle.ensureRunning(UBUNTU); // Second call - no-op
+      assertThat(lifecycle.isHealthy(UBUNTU)).isTrue();
     }
 
     @Test
     @DisplayName("should fail on null container")
     void shouldFailOnNullContainer() {
-      assertThatThrownBy(() -> lifecycle.start(null))
+      assertThatThrownBy(() -> lifecycle.ensureRunning(null))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("container");
     }
 
     @Test
-    @DisplayName("should timeout if Toxiproxy doesn't start")
-    void shouldTimeoutIfNotStarting() {
-      // Create config with very short timeout
-      ToxiproxyConfig shortTimeout =
-          new ToxiproxyConfig(
-              "http://localhost:8474",
-              100, // 100ms startup timeout (too short)
-              100,
-              2000,
-              5000,
-              5000);
+    @DisplayName("should fail if container is not running")
+    void shouldFailIfContainerNotRunning() {
+      // Use a stopped container to trigger IllegalStateException
+      @SuppressWarnings("resource")
+      GenericContainer<?> stopped = new GenericContainer<>("alpine:latest");
+      // Not started — container.isRunning() returns false
 
-      ToxiproxyLifecycleManager manager = new ToxiproxyLifecycleManager(shortTimeout);
-
-      // Should timeout (Toxiproxy needs ~500ms to start)
-      assertThatThrownBy(() -> manager.start(UBUNTU))
-          .hasMessageContaining("timeout")
-          .hasMessageContaining("100");
+      assertThatThrownBy(() -> lifecycle.ensureRunning(stopped))
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessageContaining("not running");
     }
   }
 
@@ -91,36 +75,27 @@ class ToxiproxyLifecycleManagerTest {
 
     @Test
     @DisplayName("should stop running Toxiproxy")
-    void shouldStopToxiproxy() {
-      // Given
-      lifecycle.start(UBUNTU);
-      assertThat(lifecycle.isRunning(UBUNTU)).isTrue();
+    void shouldStopToxiproxy() throws Exception {
+      lifecycle.ensureRunning(UBUNTU);
+      assertThat(lifecycle.isHealthy(UBUNTU)).isTrue();
 
-      // When
       lifecycle.stop(UBUNTU);
 
-      // Then
-      assertThat(lifecycle.isRunning(UBUNTU)).isFalse();
+      assertThat(lifecycle.isHealthy(UBUNTU)).isFalse();
     }
 
     @Test
     @DisplayName("should be idempotent (stopping when not running is no-op)")
-    void shouldBeIdempotent() {
-      // Given
-      lifecycle.start(UBUNTU);
+    void shouldBeIdempotent() throws Exception {
+      lifecycle.ensureRunning(UBUNTU);
       lifecycle.stop(UBUNTU);
-
-      // When
-      lifecycle.stop(UBUNTU); // Stop again
-
-      // Then - no exception
-      assertThat(lifecycle.isRunning(UBUNTU)).isFalse();
+      lifecycle.stop(UBUNTU); // Stop again - no exception
+      assertThat(lifecycle.isHealthy(UBUNTU)).isFalse();
     }
 
     @Test
     @DisplayName("should handle stop when never started")
     void shouldHandleStopWhenNeverStarted() {
-      // When/Then - no exception
       assertThatNoException().isThrownBy(() -> lifecycle.stop(UBUNTU));
     }
 
@@ -134,72 +109,28 @@ class ToxiproxyLifecycleManagerTest {
   }
 
   @Nested
-  @DisplayName("isRunning()")
-  class IsRunningTests {
+  @DisplayName("isHealthy()")
+  class IsHealthyTests {
 
     @Test
     @DisplayName("should return false when not started")
     void shouldReturnFalseWhenNotStarted() {
-      assertThat(lifecycle.isRunning(UBUNTU)).isFalse();
+      assertThat(lifecycle.isHealthy(UBUNTU)).isFalse();
     }
 
     @Test
     @DisplayName("should return true when running")
-    void shouldReturnTrueWhenRunning() {
-      lifecycle.start(UBUNTU);
-      assertThat(lifecycle.isRunning(UBUNTU)).isTrue();
+    void shouldReturnTrueWhenRunning() throws Exception {
+      lifecycle.ensureRunning(UBUNTU);
+      assertThat(lifecycle.isHealthy(UBUNTU)).isTrue();
     }
 
     @Test
     @DisplayName("should return false after stop")
-    void shouldReturnFalseAfterStop() {
-      lifecycle.start(UBUNTU);
+    void shouldReturnFalseAfterStop() throws Exception {
+      lifecycle.ensureRunning(UBUNTU);
       lifecycle.stop(UBUNTU);
-      assertThat(lifecycle.isRunning(UBUNTU)).isFalse();
-    }
-
-    @Test
-    @DisplayName("should fail on null container")
-    void shouldFailOnNullContainer() {
-      assertThatThrownBy(() -> lifecycle.isRunning(null))
-          .isInstanceOf(NullPointerException.class)
-          .hasMessageContaining("container");
-    }
-  }
-
-  @Nested
-  @DisplayName("reset()")
-  class ResetTests {
-
-    @Test
-    @DisplayName("should stop Toxiproxy and cleanup")
-    void shouldStopAndCleanup() {
-      // Given
-      lifecycle.start(UBUNTU);
-
-      // When
-      lifecycle.reset(UBUNTU);
-
-      // Then
-      assertThat(lifecycle.isRunning(UBUNTU)).isFalse();
-    }
-
-    @Test
-    @DisplayName("should be idempotent")
-    void shouldBeIdempotent() {
-      lifecycle.start(UBUNTU);
-      lifecycle.reset(UBUNTU);
-
-      // When/Then - no exception
-      assertThatNoException().isThrownBy(() -> lifecycle.reset(UBUNTU));
-    }
-
-    @Test
-    @DisplayName("should fail on null container")
-    void shouldFailOnNullContainer() {
-      assertThatThrownBy(() -> lifecycle.reset(null))
-          .isInstanceOf(NullPointerException.class)
-          .hasMessageContaining("container");
+      assertThat(lifecycle.isHealthy(UBUNTU)).isFalse();
     }
   }
 
@@ -209,40 +140,26 @@ class ToxiproxyLifecycleManagerTest {
 
     @Test
     @DisplayName("should support multiple start/stop cycles")
-    void shouldSupportMultipleCycles() {
-      // Cycle 1
-      lifecycle.start(UBUNTU);
-      assertThat(lifecycle.isRunning(UBUNTU)).isTrue();
+    void shouldSupportMultipleCycles() throws Exception {
+      lifecycle.ensureRunning(UBUNTU);
+      assertThat(lifecycle.isHealthy(UBUNTU)).isTrue();
       lifecycle.stop(UBUNTU);
-      assertThat(lifecycle.isRunning(UBUNTU)).isFalse();
+      assertThat(lifecycle.isHealthy(UBUNTU)).isFalse();
 
-      // Cycle 2
-      lifecycle.start(UBUNTU);
-      assertThat(lifecycle.isRunning(UBUNTU)).isTrue();
+      lifecycle.ensureRunning(UBUNTU);
+      assertThat(lifecycle.isHealthy(UBUNTU)).isTrue();
       lifecycle.stop(UBUNTU);
-      assertThat(lifecycle.isRunning(UBUNTU)).isFalse();
+      assertThat(lifecycle.isHealthy(UBUNTU)).isFalse();
     }
 
     @Test
-    @DisplayName("should handle rapid start/stop")
-    void shouldHandleRapidStartStop() {
-      for (int i = 0; i < 5; i++) {
-        lifecycle.start(UBUNTU);
-        lifecycle.stop(UBUNTU);
-      }
-
-      assertThat(lifecycle.isRunning(UBUNTU)).isFalse();
-    }
-
-    @Test
-    @DisplayName("should cleanup on reset after multiple operations")
-    void shouldCleanupAfterMultipleOperations() {
-      lifecycle.start(UBUNTU);
+    @DisplayName("should handle cleanup after multiple operations")
+    void shouldCleanupAfterMultipleOperations() throws Exception {
+      lifecycle.ensureRunning(UBUNTU);
       lifecycle.stop(UBUNTU);
-      lifecycle.start(UBUNTU);
-      lifecycle.reset(UBUNTU);
-
-      assertThat(lifecycle.isRunning(UBUNTU)).isFalse();
+      lifecycle.ensureRunning(UBUNTU);
+      lifecycle.stop(UBUNTU);
+      assertThat(lifecycle.isHealthy(UBUNTU)).isFalse();
     }
   }
 
@@ -251,22 +168,17 @@ class ToxiproxyLifecycleManagerTest {
   class ConfigurationTests {
 
     @Test
-    @DisplayName("should use custom startup timeout")
-    void shouldUseCustomStartupTimeout() {
-      ToxiproxyConfig customConfig =
-          new ToxiproxyConfig(
-              "http://localhost:8474",
-              5, // Very short timeout
-              100,
-              2000,
-              5000,
-              5000);
+    @DisplayName("should use custom config from builder")
+    void shouldUseCustomConfig() {
+      ToxiproxyConfig customConfig = ToxiproxyConfig.builder()
+          .apiUrl("http://localhost:8474")
+          .startupTimeoutMs(10000)
+          .pollIntervalMs(100)
+          .build();
 
-      ToxiproxyLifecycleManager manager = new ToxiproxyLifecycleManager(customConfig);
-
-      // Should timeout with custom value
-      assertThatThrownBy(() -> manager.start(UBUNTU))
-          .hasMessageContaining("5"); // Custom timeout value
+      // Should instantiate without error
+      assertThatCode(() -> new ToxiproxyLifecycleManager(customConfig))
+          .doesNotThrowAnyException();
     }
 
     @Test

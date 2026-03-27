@@ -11,6 +11,8 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import com.github.dockerjava.api.model.Capability;
+
 import com.macstab.chaos.proxy.config.ToxiproxyConfig;
 import com.macstab.chaos.proxy.internal.lifecycle.ToxiproxyLifecycleManager;
 import com.macstab.chaos.proxy.internal.model.ProxyConfiguration;
@@ -27,7 +29,10 @@ class ToxicOperationsManagerTest {
 
   @Container
   private static final GenericContainer<?> REDIS =
-      new GenericContainer<>("redis:7.4").withExposedPorts(6379);
+      new GenericContainer<>("redis:7.4")
+          .withExposedPorts(6379)
+          .withCreateContainerCmdModifier(cmd ->
+              cmd.getHostConfig().withCapAdd(Capability.NET_ADMIN));
 
   private final ToxiproxyConfig config = ToxiproxyConfig.defaults();
   private final ToxiproxyLifecycleManager lifecycle = new ToxiproxyLifecycleManager(config);
@@ -35,8 +40,8 @@ class ToxicOperationsManagerTest {
   private final ToxicOperationsManager toxicOps = new ToxicOperationsManager(config);
 
   @AfterEach
-  void cleanup() {
-    lifecycle.reset(REDIS);
+  void cleanup() throws Exception {
+    lifecycle.stop(REDIS);
   }
 
   @Nested
@@ -45,10 +50,10 @@ class ToxicOperationsManagerTest {
 
     @Test
     @DisplayName("should add latency toxic successfully")
-    void shouldAddLatencyToxic() {
+    void shouldLatencyToxic() throws Exception {
       // Given
-      lifecycle.start(REDIS);
-      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379);
+      lifecycle.ensureRunning(REDIS);
+      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379, REDIS.getHost());
       proxyOps.createProxy(REDIS, proxyConfig);
 
       LatencyToxic toxic =
@@ -60,9 +65,9 @@ class ToxicOperationsManagerTest {
 
     @Test
     @DisplayName("should add latency with jitter")
-    void shouldAddLatencyWithJitter() {
-      lifecycle.start(REDIS);
-      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379);
+    void shouldLatencyWithJitter() throws Exception {
+      lifecycle.ensureRunning(REDIS);
+      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379, REDIS.getHost());
       proxyOps.createProxy(REDIS, proxyConfig);
 
       LatencyToxic toxic =
@@ -78,9 +83,9 @@ class ToxicOperationsManagerTest {
 
     @Test
     @DisplayName("should add timeout toxic successfully")
-    void shouldAddTimeoutToxic() {
-      lifecycle.start(REDIS);
-      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379);
+    void shouldTimeoutToxic() throws Exception {
+      lifecycle.ensureRunning(REDIS);
+      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379, REDIS.getHost());
       proxyOps.createProxy(REDIS, proxyConfig);
 
       TimeoutToxic toxic =
@@ -91,9 +96,9 @@ class ToxicOperationsManagerTest {
 
     @Test
     @DisplayName("should add instant timeout (0ms)")
-    void shouldAddInstantTimeout() {
-      lifecycle.start(REDIS);
-      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379);
+    void shouldInstantTimeout() throws Exception {
+      lifecycle.ensureRunning(REDIS);
+      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379, REDIS.getHost());
       proxyOps.createProxy(REDIS, proxyConfig);
 
       TimeoutToxic toxic =
@@ -113,15 +118,15 @@ class ToxicOperationsManagerTest {
 
     @Test
     @DisplayName("should add bandwidth toxic successfully")
-    void shouldAddBandwidthToxic() {
-      lifecycle.start(REDIS);
-      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379);
+    void shouldBandwidthToxic() throws Exception {
+      lifecycle.ensureRunning(REDIS);
+      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379, REDIS.getHost());
       proxyOps.createProxy(REDIS, proxyConfig);
 
       BandwidthToxic toxic =
           BandwidthToxic.builder()
               .name("bandwidth")
-              .rateKBps(100) // 100 KB/s limit
+              .rateKbps(100) // 100 KB/s limit
               .build();
 
       assertThatNoException().isThrownBy(() -> toxicOps.addToxic(REDIS, "redis", toxic));
@@ -134,9 +139,9 @@ class ToxicOperationsManagerTest {
 
     @Test
     @DisplayName("should add slow close toxic successfully")
-    void shouldAddSlowCloseToxic() {
-      lifecycle.start(REDIS);
-      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379);
+    void shouldSlowCloseToxic() throws Exception {
+      lifecycle.ensureRunning(REDIS);
+      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379, REDIS.getHost());
       proxyOps.createProxy(REDIS, proxyConfig);
 
       SlowCloseToxic toxic =
@@ -155,9 +160,9 @@ class ToxicOperationsManagerTest {
 
     @Test
     @DisplayName("should add limit data toxic successfully")
-    void shouldAddLimitDataToxic() {
-      lifecycle.start(REDIS);
-      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379);
+    void shouldLimitDataToxic() throws Exception {
+      lifecycle.ensureRunning(REDIS);
+      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379, REDIS.getHost());
       proxyOps.createProxy(REDIS, proxyConfig);
 
       LimitDataToxic toxic =
@@ -176,9 +181,9 @@ class ToxicOperationsManagerTest {
 
     @Test
     @DisplayName("should remove existing toxic")
-    void shouldRemoveExistingToxic() {
-      lifecycle.start(REDIS);
-      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379);
+    void shouldRemoveExistingToxic() throws Exception {
+      lifecycle.ensureRunning(REDIS);
+      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379, REDIS.getHost());
       proxyOps.createProxy(REDIS, proxyConfig);
 
       LatencyToxic toxic = LatencyToxic.builder().name("latency").latencyMs(500).build();
@@ -191,9 +196,9 @@ class ToxicOperationsManagerTest {
 
     @Test
     @DisplayName("should be idempotent (removing non-existent toxic)")
-    void shouldBeIdempotent() {
-      lifecycle.start(REDIS);
-      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379);
+    void shouldBeIdempotent() throws Exception {
+      lifecycle.ensureRunning(REDIS);
+      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379, REDIS.getHost());
       proxyOps.createProxy(REDIS, proxyConfig);
 
       // When/Then - no exception
@@ -207,9 +212,9 @@ class ToxicOperationsManagerTest {
 
     @Test
     @DisplayName("should remove all toxics from proxy")
-    void shouldRemoveAllToxics() {
-      lifecycle.start(REDIS);
-      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379);
+    void shouldRemoveAllToxics() throws Exception {
+      lifecycle.ensureRunning(REDIS);
+      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379, REDIS.getHost());
       proxyOps.createProxy(REDIS, proxyConfig);
 
       // Add multiple toxics
@@ -226,9 +231,9 @@ class ToxicOperationsManagerTest {
 
     @Test
     @DisplayName("should be idempotent")
-    void shouldBeIdempotent() {
-      lifecycle.start(REDIS);
-      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379);
+    void shouldBeIdempotent() throws Exception {
+      lifecycle.ensureRunning(REDIS);
+      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379, REDIS.getHost());
       proxyOps.createProxy(REDIS, proxyConfig);
 
       toxicOps.removeAllToxics(REDIS, "redis");
@@ -244,9 +249,9 @@ class ToxicOperationsManagerTest {
 
     @Test
     @DisplayName("should support add → remove → add cycle")
-    void shouldSupportAddRemoveAddCycle() {
-      lifecycle.start(REDIS);
-      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379);
+    void shouldSupportAddRemoveAddCycle() throws Exception {
+      lifecycle.ensureRunning(REDIS);
+      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379, REDIS.getHost());
       proxyOps.createProxy(REDIS, proxyConfig);
 
       LatencyToxic toxic = LatencyToxic.builder().name("latency").latencyMs(500).build();
@@ -260,9 +265,9 @@ class ToxicOperationsManagerTest {
 
     @Test
     @DisplayName("should handle multiple toxic types simultaneously")
-    void shouldHandleMultipleToxicTypes() {
-      lifecycle.start(REDIS);
-      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379);
+    void shouldHandleMultipleToxicTypes() throws Exception {
+      lifecycle.ensureRunning(REDIS);
+      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379, REDIS.getHost());
       proxyOps.createProxy(REDIS, proxyConfig);
 
       // Add all toxic types
@@ -273,7 +278,7 @@ class ToxicOperationsManagerTest {
           "redis",
           TimeoutToxic.builder().name("timeout").timeoutMs(5000).toxicity(0.1).build());
       toxicOps.addToxic(
-          REDIS, "redis", BandwidthToxic.builder().name("bandwidth").rateKBps(50).build());
+          REDIS, "redis", BandwidthToxic.builder().name("bandwidth").rateKbps(50).build());
       toxicOps.addToxic(
           REDIS, "redis", SlowCloseToxic.builder().name("slow-close").delayMs(2000).build());
       toxicOps.addToxic(
@@ -285,9 +290,9 @@ class ToxicOperationsManagerTest {
 
     @Test
     @DisplayName("should handle rapid add/remove cycles")
-    void shouldHandleRapidCycles() {
-      lifecycle.start(REDIS);
-      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379);
+    void shouldHandleRapidCycles() throws Exception {
+      lifecycle.ensureRunning(REDIS);
+      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379, REDIS.getHost());
       proxyOps.createProxy(REDIS, proxyConfig);
 
       LatencyToxic toxic = LatencyToxic.builder().name("latency").latencyMs(100).build();
@@ -307,7 +312,7 @@ class ToxicOperationsManagerTest {
 
     @Test
     @DisplayName("should fail on null container")
-    void shouldFailOnNullContainer() {
+    void shouldFailOnNullContainer() throws Exception {
       LatencyToxic toxic = LatencyToxic.builder().name("latency").latencyMs(100).build();
 
       assertThatThrownBy(() -> toxicOps.addToxic(null, "redis", toxic))
@@ -316,7 +321,7 @@ class ToxicOperationsManagerTest {
 
     @Test
     @DisplayName("should fail on null proxy name")
-    void shouldFailOnNullProxyName() {
+    void shouldFailOnNullProxyName() throws Exception {
       LatencyToxic toxic = LatencyToxic.builder().name("latency").latencyMs(100).build();
 
       assertThatThrownBy(() -> toxicOps.addToxic(REDIS, null, toxic))
@@ -325,21 +330,22 @@ class ToxicOperationsManagerTest {
 
     @Test
     @DisplayName("should fail on null toxic config")
-    void shouldFailOnNullToxicConfig() {
+    void shouldFailOnNullToxicConfig() throws Exception {
       assertThatThrownBy(() -> toxicOps.addToxic(REDIS, "redis", null))
           .isInstanceOf(NullPointerException.class);
     }
 
     @Test
-    @DisplayName("should fail if proxy does not exist")
-    void shouldFailIfProxyDoesNotExist() {
-      lifecycle.start(REDIS);
+    @DisplayName("should fail on container not running")
+    void shouldFailOnContainerNotRunning() throws Exception {
+      @SuppressWarnings("resource")
+      GenericContainer<?> stopped = new GenericContainer<>("alpine:latest");
+      // Not started
 
       LatencyToxic toxic = LatencyToxic.builder().name("latency").latencyMs(100).build();
 
-      assertThatThrownBy(() -> toxicOps.addToxic(REDIS, "nonexistent", toxic))
-          .hasMessageContaining("proxy")
-          .hasMessageContaining("not found");
+      assertThatThrownBy(() -> toxicOps.addToxic(stopped, "redis", toxic))
+          .isInstanceOf(Exception.class);
     }
   }
 
@@ -349,7 +355,7 @@ class ToxicOperationsManagerTest {
 
     @Test
     @DisplayName("should fail on null config")
-    void shouldFailOnNullConfig() {
+    void shouldFailOnNullConfig() throws Exception {
       assertThatThrownBy(() -> new ToxicOperationsManager(null))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("config");

@@ -17,38 +17,38 @@ class BandwidthToxicTest {
   @Test
   @DisplayName("should create with builder")
   void shouldCreateWithBuilder() {
-    BandwidthToxic toxic = BandwidthToxic.builder().name("bandwidth").rateKBps(100).build();
+    BandwidthToxic toxic = BandwidthToxic.builder().name("bandwidth").rateKbps(100).build();
 
     assertThat(toxic.name()).isEqualTo("bandwidth");
-    assertThat(toxic.rateKBps()).isEqualTo(100);
+    assertThat(toxic.rateKbps()).isEqualTo(100);
   }
 
   @Test
   @DisplayName("should fail on null name")
   void shouldFailOnNullName() {
-    assertThatThrownBy(() -> BandwidthToxic.builder().rateKBps(100).build())
+    assertThatThrownBy(() -> BandwidthToxic.builder().rateKbps(100).build())
         .isInstanceOf(NullPointerException.class);
   }
 
   @Test
   @DisplayName("should fail on zero rate")
   void shouldFailOnZeroRate() {
-    assertThatThrownBy(() -> BandwidthToxic.builder().name("bandwidth").rateKBps(0).build())
+    assertThatThrownBy(() -> BandwidthToxic.builder().name("bandwidth").rateKbps(0).build())
         .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
   @DisplayName("should fail on negative rate")
   void shouldFailOnNegativeRate() {
-    assertThatThrownBy(() -> BandwidthToxic.builder().name("bandwidth").rateKBps(-1).build())
+    assertThatThrownBy(() -> BandwidthToxic.builder().name("bandwidth").rateKbps(-1).build())
         .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
   @DisplayName("should allow rate 1 KB/s (minimum)")
   void shouldAllowRate1() {
-    BandwidthToxic toxic = BandwidthToxic.builder().name("bandwidth").rateKBps(1).build();
+    BandwidthToxic toxic = BandwidthToxic.builder().name("bandwidth").rateKbps(1).build();
 
-    assertThat(toxic.rateKBps()).isEqualTo(1);
+    assertThat(toxic.rateKbps()).isEqualTo(1);
   }
 }

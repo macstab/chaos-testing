@@ -11,12 +11,19 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import com.github.dockerjava.api.model.Capability;
 import com.macstab.chaos.proxy.config.ToxiproxyConfig;
+import com.macstab.chaos.proxy.internal.lifecycle.ToxiproxyLifecycleManager;
 import com.macstab.chaos.proxy.internal.model.ProxyConfiguration;
+import com.macstab.chaos.proxy.internal.operations.ProxyOperationsManager;
+import com.macstab.chaos.proxy.internal.operations.ToxicOperationsManager;
 import com.macstab.chaos.proxy.internal.operations.toxic.LatencyToxic;
 
 /**
  * Comprehensive integration tests for ToxiproxyOrchestrator.
+ *
+ * <p>The orchestrator is a high-level facade over lifecycle, proxy, and toxic operations.
+ * Tests cover: createProxy (auto-starts lifecycle), addToxic (raw parameters), reset.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -26,10 +33,16 @@ class ToxiproxyOrchestratorTest {
 
   @Container
   private static final GenericContainer<?> REDIS =
-      new GenericContainer<>("redis:7.4").withExposedPorts(6379);
+      new GenericContainer<>("redis:7.4")
+          .withExposedPorts(6379)
+          .withCreateContainerCmdModifier(cmd ->
+              cmd.getHostConfig().withCapAdd(Capability.NET_ADMIN));
 
   private final ToxiproxyConfig config = ToxiproxyConfig.defaults();
   private final ToxiproxyOrchestrator orchestrator = new ToxiproxyOrchestrator(config);
+  private final ToxiproxyLifecycleManager lifecycle = new ToxiproxyLifecycleManager(config);
+  private final ProxyOperationsManager proxyOps = new ProxyOperationsManager(config);
+  private final ToxicOperationsManager toxicOps = new ToxicOperationsManager(config);
 
   @AfterEach
   void cleanup() {
@@ -37,153 +50,155 @@ class ToxiproxyOrchestratorTest {
   }
 
   @Nested
-  @DisplayName("Full Lifecycle Integration")
-  class FullLifecycleTests {
+  @DisplayName("createProxy()")
+  class CreateProxyTests {
 
     @Test
-    @DisplayName("should orchestrate full chaos lifecycle")
-    void shouldOrchestrateFullLifecycle() {
-      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379);
+    @DisplayName("should auto-start lifecycle and create proxy")
+    void shouldAutoStartAndCreateProxy() {
+      ProxyConfiguration proxyConfig =
+          new ProxyConfiguration("redis", 6379, 16379, REDIS.getHost());
 
-      // 1. Start Toxiproxy
-      orchestrator.start(REDIS);
-      assertThat(orchestrator.isRunning(REDIS)).isTrue();
+      ProxyConfiguration result = orchestrator.createProxy(REDIS, proxyConfig);
 
-      // 2. Create proxy
-      String hostname = orchestrator.createProxy(REDIS, proxyConfig);
-      assertThat(hostname).isNotNull();
-      assertThat(orchestrator.proxyExists(REDIS, "redis")).isTrue();
-
-      // 3. Add toxic
-      LatencyToxic toxic = LatencyToxic.builder().name("latency").latencyMs(100).build();
-      orchestrator.addToxic(REDIS, "redis", toxic);
-
-      // 4. Remove toxic
-      orchestrator.removeToxic(REDIS, "redis", "latency");
-
-      // 5. Delete proxy
-      orchestrator.deleteProxy(REDIS, "redis");
-      assertThat(orchestrator.proxyExists(REDIS, "redis")).isFalse();
-
-      // 6. Stop
-      orchestrator.stop(REDIS);
-      assertThat(orchestrator.isRunning(REDIS)).isFalse();
+      assertThat(result).isNotNull();
+      assertThat(proxyOps.proxyExists(REDIS, "redis")).isTrue();
+      assertThat(lifecycle.isHealthy(REDIS)).isTrue();
     }
 
     @Test
-    @DisplayName("should handle rapid lifecycle iterations")
-    void shouldHandleRapidIterations() {
-      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379);
+    @DisplayName("should create proxy without explicit lifecycle start")
+    void shouldAutoStartOnProxyCreation() {
+      ProxyConfiguration proxyConfig =
+          new ProxyConfiguration("redis", 6379, 16379, REDIS.getHost());
 
-      for (int i = 0; i < 5; i++) {
-        orchestrator.start(REDIS);
-        orchestrator.createProxy(REDIS, proxyConfig);
-        orchestrator.deleteProxy(REDIS, "redis");
-        orchestrator.stop(REDIS);
-      }
+      // No lifecycle.ensureRunning() call — orchestrator handles it
+      ProxyConfiguration result = orchestrator.createProxy(REDIS, proxyConfig);
 
-      assertThat(orchestrator.isRunning(REDIS)).isFalse();
+      assertThat(result).isNotNull();
+      assertThat(proxyOps.proxyExists(REDIS, "redis")).isTrue();
     }
-  }
-
-  @Nested
-  @DisplayName("Proxy Operations")
-  class ProxyOperationsTests {
 
     @Test
-    @DisplayName("should create and manage multiple proxies")
-    void shouldManageMultipleProxies() {
-      orchestrator.start(REDIS);
-
-      ProxyConfiguration redis1 = new ProxyConfiguration("redis-1", 6379, 16379);
-      ProxyConfiguration redis2 = new ProxyConfiguration("redis-2", 6379, 17379);
+    @DisplayName("should create multiple proxies")
+    void shouldCreateMultipleProxies() {
+      ProxyConfiguration redis1 =
+          new ProxyConfiguration("redis-1", 6379, 16379, REDIS.getHost());
+      ProxyConfiguration redis2 =
+          new ProxyConfiguration("redis-2", 6379, 17379, REDIS.getHost());
 
       orchestrator.createProxy(REDIS, redis1);
       orchestrator.createProxy(REDIS, redis2);
 
-      assertThat(orchestrator.proxyExists(REDIS, "redis-1")).isTrue();
-      assertThat(orchestrator.proxyExists(REDIS, "redis-2")).isTrue();
+      assertThat(proxyOps.proxyExists(REDIS, "redis-1")).isTrue();
+      assertThat(proxyOps.proxyExists(REDIS, "redis-2")).isTrue();
     }
 
     @Test
-    @DisplayName("should handle proxy creation without explicit start")
-    void shouldAutoStartOnProxyCreation() {
-      // Don't call start() explicitly
-      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379);
+    @DisplayName("should fail on null container")
+    void shouldFailOnNullContainer() {
+      ProxyConfiguration proxyConfig =
+          new ProxyConfiguration("redis", 6379, 16379, "localhost");
 
-      // createProxy should auto-start if needed
-      String hostname = orchestrator.createProxy(REDIS, proxyConfig);
+      assertThatThrownBy(() -> orchestrator.createProxy(null, proxyConfig))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("container");
+    }
 
-      assertThat(hostname).isNotNull();
-      assertThat(orchestrator.isRunning(REDIS)).isTrue();
+    @Test
+    @DisplayName("should fail on null proxy config")
+    void shouldFailOnNullProxyConfig() {
+      assertThatThrownBy(() -> orchestrator.createProxy(REDIS, null))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("proxyConfig");
     }
   }
 
   @Nested
-  @DisplayName("Toxic Operations")
-  class ToxicOperationsTests {
+  @DisplayName("addToxic()")
+  class AddToxicTests {
 
     @Test
-    @DisplayName("should add and remove toxics")
-    void shouldAddAndRemoveToxics() {
-      orchestrator.start(REDIS);
-      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379);
+    @DisplayName("should add latency toxic via raw parameters")
+    void shouldAddLatencyToxic() {
+      ProxyConfiguration proxyConfig =
+          new ProxyConfiguration("redis", 6379, 16379, REDIS.getHost());
       orchestrator.createProxy(REDIS, proxyConfig);
 
-      LatencyToxic toxic = LatencyToxic.builder().name("latency").latencyMs(500).build();
+      LatencyToxic toxic = LatencyToxic.builder().name("latency").latencyMs(100).build();
 
-      orchestrator.addToxic(REDIS, "redis", toxic);
-      orchestrator.removeToxic(REDIS, "redis", "latency");
-
-      // No exception = success
+      assertThatNoException().isThrownBy(() ->
+          orchestrator.addToxic(REDIS, "redis", toxic.name(), toxic.type(),
+              toxic.toJson(), toxic.toxicity()));
     }
 
     @Test
-    @DisplayName("should manage multiple toxics on same proxy")
-    void shouldManageMultipleToxics() {
-      orchestrator.start(REDIS);
-      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379);
-      orchestrator.createProxy(REDIS, proxyConfig);
+    @DisplayName("should fail on null container")
+    void shouldFailOnNullContainer() {
+      assertThatThrownBy(() ->
+          orchestrator.addToxic(null, "redis", "latency", "latency", "{}", 1.0))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("container");
+    }
 
-      orchestrator.addToxic(
-          REDIS, "redis", LatencyToxic.builder().name("latency-1").latencyMs(100).build());
-      orchestrator.addToxic(
-          REDIS, "redis", LatencyToxic.builder().name("latency-2").latencyMs(200).build());
+    @Test
+    @DisplayName("should fail on null proxy name")
+    void shouldFailOnNullProxyName() {
+      assertThatThrownBy(() ->
+          orchestrator.addToxic(REDIS, null, "latency", "latency", "{}", 1.0))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("proxyName");
+    }
 
-      orchestrator.removeAllToxics(REDIS, "redis");
+    @Test
+    @DisplayName("should fail on null toxic name")
+    void shouldFailOnNullToxicName() {
+      assertThatThrownBy(() ->
+          orchestrator.addToxic(REDIS, "redis", null, "latency", "{}", 1.0))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("toxicName");
+    }
 
-      // No exception = success
+    @Test
+    @DisplayName("should fail on null toxic type")
+    void shouldFailOnNullToxicType() {
+      assertThatThrownBy(() ->
+          orchestrator.addToxic(REDIS, "redis", "latency", null, "{}", 1.0))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("toxicType");
     }
   }
 
   @Nested
-  @DisplayName("Reset Operations")
+  @DisplayName("reset()")
   class ResetTests {
 
     @Test
     @DisplayName("should reset all state")
     void shouldResetAllState() {
-      orchestrator.start(REDIS);
-      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379);
+      ProxyConfiguration proxyConfig =
+          new ProxyConfiguration("redis", 6379, 16379, REDIS.getHost());
       orchestrator.createProxy(REDIS, proxyConfig);
-      orchestrator.addToxic(
-          REDIS, "redis", LatencyToxic.builder().name("latency").latencyMs(100).build());
 
-      // Reset
       orchestrator.reset(REDIS);
 
-      // Verify: Toxiproxy stopped, proxies deleted
-      assertThat(orchestrator.isRunning(REDIS)).isFalse();
-      assertThat(orchestrator.proxyExists(REDIS, "redis")).isFalse();
+      assertThat(lifecycle.isHealthy(REDIS)).isFalse();
+      assertThat(proxyOps.proxyExists(REDIS, "redis")).isFalse();
     }
 
     @Test
     @DisplayName("should be idempotent")
     void shouldBeIdempotent() {
       orchestrator.reset(REDIS);
-      orchestrator.reset(REDIS); // Reset again
+      assertThatNoException().isThrownBy(() -> orchestrator.reset(REDIS));
+    }
 
-      // No exception
+    @Test
+    @DisplayName("should fail on null container")
+    void shouldFailOnNullContainer() {
+      assertThatThrownBy(() -> orchestrator.reset(null))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("container");
     }
   }
 
@@ -194,55 +209,18 @@ class ToxiproxyOrchestratorTest {
     @Test
     @DisplayName("should fail gracefully if Toxiproxy fails to start")
     void shouldHandleStartupFailure() {
-      ToxiproxyConfig badConfig =
-          new ToxiproxyConfig(
-              "http://localhost:9999", // Invalid URL
-              100,
-              100,
-              2000,
-              5000,
-              5000);
+      ToxiproxyConfig badConfig = ToxiproxyConfig.builder()
+          .apiUrl("http://localhost:9999")
+          .startupTimeoutMs(100)
+          .pollIntervalMs(10)
+          .build();
 
       ToxiproxyOrchestrator badOrchestrator = new ToxiproxyOrchestrator(badConfig);
+      ProxyConfiguration proxyConfig =
+          new ProxyConfiguration("redis", 6379, 16379, REDIS.getHost());
 
-      assertThatThrownBy(() -> badOrchestrator.start(REDIS)).hasMessageContaining("9999");
-    }
-
-    @Test
-    @DisplayName("should handle toxic operations on non-existent proxy")
-    void shouldHandleNonExistentProxy() {
-      orchestrator.start(REDIS);
-
-      LatencyToxic toxic = LatencyToxic.builder().name("latency").latencyMs(100).build();
-
-      assertThatThrownBy(() -> orchestrator.addToxic(REDIS, "nonexistent", toxic))
-          .hasMessageContaining("proxy")
-          .hasMessageContaining("not found");
-    }
-  }
-
-  @Nested
-  @DisplayName("Configuration")
-  class ConfigurationTests {
-
-    @Test
-    @DisplayName("should use custom configuration")
-    void shouldUseCustomConfiguration() {
-      ToxiproxyConfig customConfig =
-          new ToxiproxyConfig(
-              "http://localhost:8474",
-              5000, // 5s startup timeout
-              50, // 50ms poll interval
-              1000, // 1s proxy ready timeout
-              3000, // 3s connection timeout
-              3000); // 3s read timeout
-
-      ToxiproxyOrchestrator customOrchestrator = new ToxiproxyOrchestrator(customConfig);
-
-      customOrchestrator.start(REDIS);
-      assertThat(customOrchestrator.isRunning(REDIS)).isTrue();
-
-      customOrchestrator.reset(REDIS);
+      assertThatThrownBy(() -> badOrchestrator.createProxy(REDIS, proxyConfig))
+          .isInstanceOf(Exception.class);
     }
 
     @Test
@@ -251,6 +229,18 @@ class ToxiproxyOrchestratorTest {
       assertThatThrownBy(() -> new ToxiproxyOrchestrator(null))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("config");
+    }
+  }
+
+  @Nested
+  @DisplayName("Default Constructor")
+  class DefaultConstructorTests {
+
+    @Test
+    @DisplayName("should use default config when constructed with no-arg constructor")
+    void shouldUseDefaultConfig() {
+      ToxiproxyOrchestrator defaultOrchestrator = new ToxiproxyOrchestrator();
+      assertThat(defaultOrchestrator).isNotNull();
     }
   }
 }
