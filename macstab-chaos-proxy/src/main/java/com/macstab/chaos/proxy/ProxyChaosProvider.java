@@ -12,6 +12,7 @@ import com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator;
 import com.macstab.chaos.proxy.internal.model.ProxyConfiguration;
 import com.macstab.chaos.proxy.internal.operations.toxic.BandwidthToxic;
 import com.macstab.chaos.proxy.internal.operations.toxic.LatencyToxic;
+import com.macstab.chaos.proxy.internal.operations.toxic.LimitDataToxic;
 import com.macstab.chaos.proxy.internal.operations.toxic.SlowCloseToxic;
 import com.macstab.chaos.proxy.internal.operations.toxic.TimeoutToxic;
 
@@ -22,7 +23,47 @@ import com.macstab.chaos.proxy.internal.operations.toxic.TimeoutToxic;
  * Clients connect via the address returned by {@link #createProxy} — traffic routes through
  * Toxiproxy, which applies the configured faults.
  *
- * <p><strong>Example usage:</strong>
+ * <!-- ═══════════════════════════════════════════════════════════════════ -->
+ * <h2>⚠️ CRITICAL: deleteProxy vs reset — You Must Read This</h2>
+ * <!-- ═══════════════════════════════════════════════════════════════════ -->
+ *
+ * <p><strong>One Toxiproxy process handles ALL proxies inside a container.</strong>
+ * When multiple modules create proxies on the same container (e.g., cache chaos creates
+ * {@code "redis"}, database chaos creates {@code "postgres"}), they share the same Toxiproxy
+ * process. Cleanup must be done carefully:
+ *
+ * <ul>
+ *   <li>⛔ {@link #reset} is <strong>nuclear</strong>: kills Toxiproxy and removes
+ *       <strong>all</strong> iptables rules. Every proxy from every module is gone.
+ *       Only use in {@code @AfterAll}.</li>
+ *   <li>✅ {@link #deleteProxy} is <strong>surgical</strong>: removes one named proxy
+ *       and its iptables rule. Everything else stays intact.
+ *       Use in {@code @AfterEach}.</li>
+ * </ul>
+ *
+ * <pre>{@code
+ * // ✅ CORRECT — remove only your proxy after each test
+ * @AfterEach
+ * void cleanup() {
+ *     chaos.deleteProxy(container, "redis");   // only "redis" removed
+ * }
+ *
+ * // ✅ CORRECT — nuclear cleanup when container is done
+ * @AfterAll
+ * static void teardown() {
+ *     chaos.reset(container);                  // kills everything — intentional
+ * }
+ *
+ * // ❌ WRONG — wipes ALL proxies, breaking other modules
+ * @AfterEach
+ * void cleanup() {
+ *     chaos.reset(container);   // kills "postgres" proxy too. Don't.
+ * }
+ * }</pre>
+ *
+ * <!-- ═══════════════════════════════════════════════════════════════════ -->
+ * <h2>Quick Start</h2>
+ * <!-- ═══════════════════════════════════════════════════════════════════ -->
  *
  * <pre>{@code
  * ProxyChaos chaos = new ProxyChaosProvider();
@@ -32,11 +73,8 @@ import com.macstab.chaos.proxy.internal.operations.toxic.TimeoutToxic;
  *
  * Jedis client = new Jedis(hostname, 6379);  // Connect via hostname, NOT localhost
  *
- * // Remove just latency, keep the proxy active
- * chaos.removeToxic(container, "redis", "latency");
- *
- * // Or remove everything and reset
- * chaos.reset(container);
+ * chaos.removeToxic(container, "redis", "latency");  // Remove just latency
+ * chaos.deleteProxy(container, "redis");             // Remove proxy cleanly
  * }</pre>
  *
  * @author Christian Schnapka - Macstab GmbH
@@ -194,6 +232,53 @@ public final class ProxyChaosProvider implements ProxyChaos {
     orchestrator.removeAllToxics(container, proxyName);
   }
 
+  /**
+   * ✅ Delete one proxy and its iptables rule — safe for {@code @AfterEach}.
+   *
+   * <p>Removes only the named proxy. The Toxiproxy process and all other proxies stay alive.
+   * Use this for per-test cleanup when other modules may be sharing the same container.
+   *
+   * @param container target container
+   * @param proxyName name of the proxy to delete
+   * @see #reset(GenericContainer) for nuclear full cleanup
+   */
+  @Override
+  public void deleteProxy(final GenericContainer<?> container, final String proxyName) {
+    Objects.requireNonNull(container, "container must not be null");
+    Objects.requireNonNull(proxyName, "proxyName must not be null");
+
+    orchestrator.deleteProxy(container, proxyName);
+  }
+
+  @Override
+  public void addLimitData(
+      final GenericContainer<?> container, final String proxyName, final long bytes) {
+
+    Objects.requireNonNull(container, "container must not be null");
+    Objects.requireNonNull(proxyName, "proxyName must not be null");
+
+    if (bytes < 0) {
+      throw new IllegalArgumentException("bytes must be >= 0, got: " + bytes);
+    }
+
+    final LimitDataToxic toxic = LimitDataToxic.builder()
+        .name("limit_data")
+        .bytes(bytes)
+        .build();
+
+    orchestrator.addToxic(container, proxyName, toxic);
+  }
+
+  /**
+   * ⛔ Nuclear reset — kills Toxiproxy and removes ALL iptables rules.
+   *
+   * <p>This destroys <strong>every proxy in the container</strong> — not just the ones you
+   * created. Only use in {@code @AfterAll} when the container itself is being discarded.
+   * For per-test cleanup, use {@link #deleteProxy} instead.
+   *
+   * @param container target container (no-op if not running)
+   * @see #deleteProxy(GenericContainer, String) for surgical single-proxy removal
+   */
   @Override
   public void reset(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");

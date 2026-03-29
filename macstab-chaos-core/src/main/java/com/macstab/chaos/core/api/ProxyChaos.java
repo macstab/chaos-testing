@@ -12,6 +12,45 @@ import org.testcontainers.containers.GenericContainer;
  * HTTP, etc.) without modifying the service or application code. Uses Toxiproxy + iptables to
  * intercept and manipulate TCP traffic.
  *
+ * <!-- ═══════════════════════════════════════════════════════════════════ -->
+ * <h2>⚠️ CRITICAL: deleteProxy vs reset — You Must Read This</h2>
+ * <!-- ═══════════════════════════════════════════════════════════════════ -->
+ *
+ * <p><strong>One Toxiproxy process handles ALL proxies inside a container.</strong> Multiple
+ * modules (cache chaos, database chaos, custom) each create their own named proxy on the same
+ * running instance. This is intentional — but cleanup must be done precisely:
+ *
+ * <ul>
+ *   <li>⛔ {@link #reset} is <strong>nuclear</strong>. It kills the Toxiproxy process and
+ *       flushes <strong>all</strong> iptables rules. Every proxy from every module is
+ *       destroyed — not just yours. Only call this in {@code @AfterAll} when the container
+ *       itself is done.</li>
+ *   <li>✅ {@link #deleteProxy} is <strong>surgical</strong>. It removes one named proxy and
+ *       its iptables rule. The Toxiproxy process and all other proxies stay alive. Use this
+ *       in {@code @AfterEach}.</li>
+ * </ul>
+ *
+ * <pre>{@code
+ * // ✅ CORRECT — per-test: remove only your proxy
+ * @AfterEach
+ * void cleanup() {
+ *     chaos.deleteProxy(container, "redis");   // only "redis" proxy removed
+ * }
+ *
+ * // ✅ CORRECT — final teardown: container is done anyway
+ * @AfterAll
+ * static void teardown() {
+ *     chaos.reset(container);                  // kills everything — intentional
+ * }
+ *
+ * // ❌ WRONG — destroys ALL proxies, including those from other modules
+ * @AfterEach
+ * void cleanup() {
+ *     chaos.reset(container);   // <-- kills your postgres proxy too. Don't.
+ * }
+ * }</pre>
+ *
+ * <!-- ═══════════════════════════════════════════════════════════════════ -->
  * <h2>Architecture: Transparent TCP Interception</h2>
  *
  * <pre>
@@ -683,6 +722,71 @@ public interface ProxyChaos {
    * @param proxyName proxy name
    */
   void removeAllToxics(GenericContainer<?> container, String proxyName);
+
+  /**
+   * Delete a single proxy and its iptables redirect rule.
+   *
+   * <p>This is the <strong>targeted cleanup</strong> method. It removes only the named proxy
+   * and the corresponding iptables rule — all other proxies and the Toxiproxy process itself
+   * remain active.
+   *
+   * <h3>⚠️ deleteProxy vs reset — Critical Difference</h3>
+   *
+   * <table border="1">
+   *   <caption>Cleanup Method Comparison</caption>
+   *   <tr><th>Method</th><th>Proxies removed</th><th>Toxiproxy process</th><th>Use in</th></tr>
+   *   <tr><td>{@code deleteProxy}</td><td>One (by name)</td><td>Stays running</td>
+   *       <td>{@code @AfterEach}, module cleanup</td></tr>
+   *   <tr><td>{@code reset}</td><td><strong>ALL</strong></td><td><strong>Killed</strong></td>
+   *       <td>{@code @AfterAll} only</td></tr>
+   * </table>
+   *
+   * <p>A single Toxiproxy process serves all proxies in a container. If multiple modules
+   * (cache, database, custom) each create their own proxy on the same container, calling
+   * {@link #reset} from one module destroys every other module's proxy. Use
+   * {@code deleteProxy} for module-level cleanup.
+   *
+   * <h3>Example: Safe per-test cleanup</h3>
+   *
+   * <pre>{@code
+   * @AfterEach
+   * void cleanup() {
+   *     chaos.deleteProxy(redis, "redis");   // ✅ only removes "redis" proxy
+   *     // chaos.reset(redis);               // ❌ would kill ALL proxies
+   * }
+   *
+   * @AfterAll
+   * static void teardown() {
+   *     chaos.reset(redis);                  // ✅ container is done, safe to nuke
+   * }
+   * }</pre>
+   *
+   * @param container target container
+   * @param proxyName name of the proxy to delete
+   */
+  void deleteProxy(GenericContainer<?> container, String proxyName);
+
+  /**
+   * Close connections after a fixed number of bytes have been transmitted.
+   *
+   * <p>Simulates partial reads, truncated responses, and broken protocol framing. The client
+   * receives an incomplete response — exercising error handling for mid-stream disconnects.
+   *
+   * <p><strong>Example:</strong>
+   *
+   * <pre>{@code
+   * // Close connections after 1KB — truncates most Redis responses mid-body
+   * chaos.addLimitData(redis, "redis", 1024);
+   *
+   * // Close connections immediately on first data (bytes=0)
+   * chaos.addLimitData(redis, "redis", 0);
+   * }</pre>
+   *
+   * @param container target container
+   * @param proxyName proxy name
+   * @param bytes byte threshold (0 = instant close on first data)
+   */
+  void addLimitData(GenericContainer<?> container, String proxyName, long bytes);
 
   /**
    * Check if proxy chaos is supported on this container's platform.
