@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -33,8 +35,27 @@ import com.macstab.chaos.core.exception.ChaosOperationFailedException;
 /**
  * Unit tests for {@link RedisCacheChaosProvider}.
  *
- * <p>All Toxiproxy interactions mocked via {@link ProxyChaos}.
- * Redis CLI operations use {@link GenericContainer#execInContainer} stubbed per test.
+ * <h2>Test Strategy</h2>
+ *
+ * <p><strong>TCP-level faults</strong> ({@code slowResponse}, {@code injectConnectionFailures},
+ * {@code limitThroughput}, {@code truncateResponses}, {@code removeFault},
+ * {@code removeAllFaults}): verify delegation to {@link ProxyChaos} mock. No real containers.
+ *
+ * <p><strong>Data-level faults</strong> ({@code forceEviction}, {@code limitMemory},
+ * {@code setEvictionPolicy}, {@code disconnectClients}, {@code flushAll}): stub
+ * {@link GenericContainer#execInContainer} via {@link TestExecResults}; verify happy path,
+ * failure path ({@link ChaosOperationFailedException}), and guard conditions.
+ *
+ * <p><strong>Every public method</strong> is covered for:
+ * <ul>
+ *   <li>Null container → {@link NullPointerException}</li>
+ *   <li>Stopped container → {@link IllegalStateException}</li>
+ *   <li>Invalid arguments → {@link IllegalArgumentException}</li>
+ *   <li>Happy path delegation / exec</li>
+ *   <li>Exec failure → {@link ChaosOperationFailedException} (data-level ops only)</li>
+ * </ul>
+ *
+ * <p>{@link RedisChaosConfig} validation is tested inline in {@link ConfigTests}.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -51,6 +72,7 @@ class RedisCacheChaosProviderTest {
   void setUp() {
     config = RedisChaosConfig.defaults();
     chaos = new RedisCacheChaosProvider(config, proxy);
+    // lenient: not all tests call isRunning (config tests, NPE tests)
     lenient().when(container.isRunning()).thenReturn(true);
   }
 
@@ -61,8 +83,8 @@ class RedisCacheChaosProviderTest {
   class SlowResponseTests {
 
     @Test
-    @DisplayName("should delegate to proxy.addLatency")
-    void shouldDelegateToProxy() {
+    @DisplayName("should ensure proxy then delegate to proxy.addLatency")
+    void shouldEnsureProxyAndDelegate() {
       final Duration delay = Duration.ofMillis(200);
       chaos.slowResponse(container, delay);
       verify(proxy).createProxy(container, config.proxyName(), config.redisPort(), config.proxyPort());
@@ -70,17 +92,26 @@ class RedisCacheChaosProviderTest {
     }
 
     @Test
+    @DisplayName("should accept zero delay (no latency)")
+    void shouldAcceptZeroDelay() {
+      chaos.slowResponse(container, Duration.ZERO);
+      verify(proxy).addLatency(container, config.proxyName(), Duration.ZERO);
+    }
+
+    @Test
     @DisplayName("should reject null container")
     void shouldRejectNullContainer() {
       assertThatThrownBy(() -> chaos.slowResponse(null, Duration.ofMillis(100)))
-          .isInstanceOf(NullPointerException.class);
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("container");
     }
 
     @Test
     @DisplayName("should reject null delay")
     void shouldRejectNullDelay() {
       assertThatThrownBy(() -> chaos.slowResponse(container, null))
-          .isInstanceOf(NullPointerException.class);
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("delay");
     }
 
     @Test
@@ -89,13 +120,6 @@ class RedisCacheChaosProviderTest {
       assertThatThrownBy(() -> chaos.slowResponse(container, Duration.ofMillis(-1)))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("negative");
-    }
-
-    @Test
-    @DisplayName("should accept zero delay")
-    void shouldAcceptZeroDelay() {
-      chaos.slowResponse(container, Duration.ZERO);
-      verify(proxy).addLatency(container, config.proxyName(), Duration.ZERO);
     }
 
     @Test
@@ -113,8 +137,8 @@ class RedisCacheChaosProviderTest {
   class InjectConnectionFailuresTests {
 
     @Test
-    @DisplayName("should delegate to proxy.addTimeout")
-    void shouldDelegateToProxy() {
+    @DisplayName("should ensure proxy then delegate to proxy.addTimeout")
+    void shouldEnsureProxyAndDelegate() {
       chaos.injectConnectionFailures(container, 0.3);
       verify(proxy).createProxy(container, config.proxyName(), config.redisPort(), config.proxyPort());
       verify(proxy).addTimeout(eq(container), eq(config.proxyName()), any(Duration.class), eq(0.3));
@@ -122,7 +146,7 @@ class RedisCacheChaosProviderTest {
 
     @ParameterizedTest
     @ValueSource(doubles = {-0.01, 1.01, -1.0, 2.0})
-    @DisplayName("should reject invalid rates")
+    @DisplayName("should reject out-of-range rates")
     void shouldRejectInvalidRates(final double rate) {
       assertThatThrownBy(() -> chaos.injectConnectionFailures(container, rate))
           .isInstanceOf(IllegalArgumentException.class)
@@ -131,10 +155,26 @@ class RedisCacheChaosProviderTest {
 
     @ParameterizedTest
     @ValueSource(doubles = {0.0, 0.3, 0.5, 1.0})
-    @DisplayName("should accept valid rates")
+    @DisplayName("should accept boundary and typical rates")
     void shouldAcceptValidRates(final double rate) {
       chaos.injectConnectionFailures(container, rate);
       verify(proxy).addTimeout(eq(container), eq(config.proxyName()), any(Duration.class), eq(rate));
+    }
+
+    @Test
+    @DisplayName("should reject null container")
+    void shouldRejectNullContainer() {
+      assertThatThrownBy(() -> chaos.injectConnectionFailures(null, 0.3))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("container");
+    }
+
+    @Test
+    @DisplayName("should reject stopped container")
+    void shouldRejectStoppedContainer() {
+      when(container.isRunning()).thenReturn(false);
+      assertThatThrownBy(() -> chaos.injectConnectionFailures(container, 0.3))
+          .isInstanceOf(IllegalStateException.class);
     }
   }
 
@@ -143,8 +183,8 @@ class RedisCacheChaosProviderTest {
   class LimitThroughputTests {
 
     @Test
-    @DisplayName("should delegate to proxy.limitBandwidth")
-    void shouldDelegateToProxy() {
+    @DisplayName("should ensure proxy then delegate to proxy.limitBandwidth")
+    void shouldEnsureProxyAndDelegate() {
       chaos.limitThroughput(container, 10L);
       verify(proxy).createProxy(container, config.proxyName(), config.redisPort(), config.proxyPort());
       verify(proxy).limitBandwidth(container, config.proxyName(), 10L);
@@ -158,6 +198,22 @@ class RedisCacheChaosProviderTest {
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("positive");
     }
+
+    @Test
+    @DisplayName("should reject null container")
+    void shouldRejectNullContainer() {
+      assertThatThrownBy(() -> chaos.limitThroughput(null, 10L))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("container");
+    }
+
+    @Test
+    @DisplayName("should reject stopped container")
+    void shouldRejectStoppedContainer() {
+      when(container.isRunning()).thenReturn(false);
+      assertThatThrownBy(() -> chaos.limitThroughput(container, 10L))
+          .isInstanceOf(IllegalStateException.class);
+    }
   }
 
   @Nested
@@ -165,15 +221,15 @@ class RedisCacheChaosProviderTest {
   class TruncateResponsesTests {
 
     @Test
-    @DisplayName("should delegate to proxy.addLimitData")
-    void shouldDelegateToProxy() {
+    @DisplayName("should ensure proxy then delegate to proxy.addLimitData")
+    void shouldEnsureProxyAndDelegate() {
       chaos.truncateResponses(container, 1024L);
       verify(proxy).createProxy(container, config.proxyName(), config.redisPort(), config.proxyPort());
       verify(proxy).addLimitData(container, config.proxyName(), 1024L);
     }
 
     @Test
-    @DisplayName("should accept zero bytes (instant close)")
+    @DisplayName("should accept zero bytes (instant close on first data)")
     void shouldAcceptZeroBytes() {
       chaos.truncateResponses(container, 0L);
       verify(proxy).addLimitData(container, config.proxyName(), 0L);
@@ -186,38 +242,84 @@ class RedisCacheChaosProviderTest {
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining(">= 0");
     }
+
+    @Test
+    @DisplayName("should reject null container")
+    void shouldRejectNullContainer() {
+      assertThatThrownBy(() -> chaos.truncateResponses(null, 100L))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("container");
+    }
+
+    @Test
+    @DisplayName("should reject stopped container")
+    void shouldRejectStoppedContainer() {
+      when(container.isRunning()).thenReturn(false);
+      assertThatThrownBy(() -> chaos.truncateResponses(container, 100L))
+          .isInstanceOf(IllegalStateException.class);
+    }
   }
 
   @Nested
-  @DisplayName("removeFault / removeAllFaults")
+  @DisplayName("removeFault")
   class RemoveFaultTests {
 
     @Test
-    @DisplayName("removeFault should delegate to proxy.removeToxic")
-    void removeFaultShouldDelegate() {
+    @DisplayName("should delegate to proxy.removeToxic")
+    void shouldDelegate() {
       chaos.removeFault(container, "latency");
       verify(proxy).removeToxic(container, config.proxyName(), "latency");
     }
 
     @Test
-    @DisplayName("removeAllFaults should delegate to proxy.removeAllToxics")
-    void removeAllFaultsShouldDelegate() {
+    @DisplayName("should reject null faultName")
+    void shouldRejectNullFaultName() {
+      assertThatThrownBy(() -> chaos.removeFault(container, null))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("faultName");
+    }
+
+    @Test
+    @DisplayName("should reject null container")
+    void shouldRejectNullContainer() {
+      assertThatThrownBy(() -> chaos.removeFault(null, "latency"))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("container");
+    }
+
+    @Test
+    @DisplayName("should reject stopped container")
+    void shouldRejectStoppedContainer() {
+      when(container.isRunning()).thenReturn(false);
+      assertThatThrownBy(() -> chaos.removeFault(container, "latency"))
+          .isInstanceOf(IllegalStateException.class);
+    }
+  }
+
+  @Nested
+  @DisplayName("removeAllFaults")
+  class RemoveAllFaultsTests {
+
+    @Test
+    @DisplayName("should delegate to proxy.removeAllToxics")
+    void shouldDelegate() {
       chaos.removeAllFaults(container);
       verify(proxy).removeAllToxics(container, config.proxyName());
     }
 
     @Test
-    @DisplayName("removeFault should reject null faultName")
-    void shouldRejectNullFaultName() {
-      assertThatThrownBy(() -> chaos.removeFault(container, null))
-          .isInstanceOf(NullPointerException.class);
+    @DisplayName("should reject null container")
+    void shouldRejectNullContainer() {
+      assertThatThrownBy(() -> chaos.removeAllFaults(null))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("container");
     }
 
     @Test
-    @DisplayName("removeFault should reject stopped container")
+    @DisplayName("should reject stopped container")
     void shouldRejectStoppedContainer() {
       when(container.isRunning()).thenReturn(false);
-      assertThatThrownBy(() -> chaos.removeFault(container, "latency"))
+      assertThatThrownBy(() -> chaos.removeAllFaults(container))
           .isInstanceOf(IllegalStateException.class);
     }
   }
@@ -229,29 +331,28 @@ class RedisCacheChaosProviderTest {
   class ForceEvictionTests {
 
     @ParameterizedTest
+    @ValueSource(ints = {1, 25, 50, 75, 100})
+    @DisplayName("should exec eviction command for valid percentages")
+    void shouldAcceptValidPercentages(final int pct) throws Exception {
+      stubExecSuccess();
+      chaos.forceEviction(container, pct);
+    }
+
+    @ParameterizedTest
     @ValueSource(ints = {0, -1, 101, 200})
-    @DisplayName("should reject invalid percentage")
+    @DisplayName("should reject invalid percentage range")
     void shouldRejectInvalidPercentage(final int pct) {
       assertThatThrownBy(() -> chaos.forceEviction(container, pct))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("[1, 100]");
     }
 
-    @ParameterizedTest
-    @ValueSource(ints = {1, 25, 50, 75, 100})
-    @DisplayName("should accept valid percentages")
-    void shouldAcceptValidPercentages(final int pct) throws Exception {
-      stubExecSuccess();
-      chaos.forceEviction(container, pct);
-    }
-
     @Test
-    @DisplayName("should throw ChaosOperationFailedException on exec failure")
-    void shouldThrowOnExecFailure() throws Exception {
-      stubExecFailure("redis-cli: connection refused");
-      assertThatThrownBy(() -> chaos.forceEviction(container, 50))
-          .isInstanceOf(ChaosOperationFailedException.class)
-          .hasMessageContaining("force eviction");
+    @DisplayName("should reject null container")
+    void shouldRejectNullContainer() {
+      assertThatThrownBy(() -> chaos.forceEviction(null, 50))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("container");
     }
 
     @Test
@@ -261,11 +362,43 @@ class RedisCacheChaosProviderTest {
       assertThatThrownBy(() -> chaos.forceEviction(container, 50))
           .isInstanceOf(IllegalStateException.class);
     }
+
+    @Test
+    @DisplayName("should throw ChaosOperationFailedException on non-zero exec exit")
+    void shouldThrowOnExecFailure() throws Exception {
+      stubExecFailure("redis-cli: connection refused");
+      assertThatThrownBy(() -> chaos.forceEviction(container, 50))
+          .isInstanceOf(ChaosOperationFailedException.class)
+          .hasMessageContaining("force eviction");
+    }
+
+    @Test
+    @DisplayName("should wrap unexpected exec exception in ChaosOperationFailedException")
+    void shouldWrapUnexpectedException() throws Exception {
+      stubExecThrows(new RuntimeException("Docker daemon died"));
+      assertThatThrownBy(() -> chaos.forceEviction(container, 50))
+          .isInstanceOf(ChaosOperationFailedException.class)
+          .hasMessageContaining("force eviction");
+    }
   }
 
   @Nested
   @DisplayName("limitMemory")
   class LimitMemoryTests {
+
+    @Test
+    @DisplayName("should accept zero (remove limit)")
+    void shouldAcceptZero() throws Exception {
+      stubExecSuccess();
+      chaos.limitMemory(container, 0L);
+    }
+
+    @Test
+    @DisplayName("should accept positive byte limit")
+    void shouldAcceptPositiveBytes() throws Exception {
+      stubExecSuccess();
+      chaos.limitMemory(container, 64 * 1024 * 1024L);
+    }
 
     @Test
     @DisplayName("should reject negative bytes")
@@ -276,21 +409,23 @@ class RedisCacheChaosProviderTest {
     }
 
     @Test
-    @DisplayName("should accept zero (remove limit)")
-    void shouldAcceptZero() throws Exception {
-      stubExecSuccess();
-      chaos.limitMemory(container, 0L);
+    @DisplayName("should reject null container")
+    void shouldRejectNullContainer() {
+      assertThatThrownBy(() -> chaos.limitMemory(null, 1024L))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("container");
     }
 
     @Test
-    @DisplayName("should accept positive bytes")
-    void shouldAcceptPositiveBytes() throws Exception {
-      stubExecSuccess();
-      chaos.limitMemory(container, 64 * 1024 * 1024L);
+    @DisplayName("should reject stopped container")
+    void shouldRejectStoppedContainer() {
+      when(container.isRunning()).thenReturn(false);
+      assertThatThrownBy(() -> chaos.limitMemory(container, 1024L))
+          .isInstanceOf(IllegalStateException.class);
     }
 
     @Test
-    @DisplayName("should throw ChaosOperationFailedException on exec failure")
+    @DisplayName("should throw ChaosOperationFailedException on non-zero exec exit")
     void shouldThrowOnExecFailure() throws Exception {
       stubExecFailure("ERR: CONFIG not allowed");
       assertThatThrownBy(() -> chaos.limitMemory(container, 1024L))
@@ -304,29 +439,46 @@ class RedisCacheChaosProviderTest {
   class SetEvictionPolicyTests {
 
     @Test
-    @DisplayName("should reject null policy")
-    void shouldRejectNull() {
-      assertThatThrownBy(() -> chaos.setEvictionPolicy(container, null))
-          .isInstanceOf(NullPointerException.class);
-    }
-
-    @Test
-    @DisplayName("should reject blank policy")
-    void shouldRejectBlank() {
-      assertThatThrownBy(() -> chaos.setEvictionPolicy(container, "  "))
-          .isInstanceOf(IllegalArgumentException.class)
-          .hasMessageContaining("blank");
-    }
-
-    @Test
-    @DisplayName("should accept valid policy")
+    @DisplayName("should exec policy command for valid policy")
     void shouldAcceptValidPolicy() throws Exception {
       stubExecSuccess();
       chaos.setEvictionPolicy(container, "allkeys-lru");
     }
 
     @Test
-    @DisplayName("should throw ChaosOperationFailedException on exec failure")
+    @DisplayName("should reject null policy")
+    void shouldRejectNullPolicy() {
+      assertThatThrownBy(() -> chaos.setEvictionPolicy(container, null))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("policy");
+    }
+
+    @Test
+    @DisplayName("should reject blank policy")
+    void shouldRejectBlankPolicy() {
+      assertThatThrownBy(() -> chaos.setEvictionPolicy(container, "  "))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("blank");
+    }
+
+    @Test
+    @DisplayName("should reject null container")
+    void shouldRejectNullContainer() {
+      assertThatThrownBy(() -> chaos.setEvictionPolicy(null, "allkeys-lru"))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("container");
+    }
+
+    @Test
+    @DisplayName("should reject stopped container")
+    void shouldRejectStoppedContainer() {
+      when(container.isRunning()).thenReturn(false);
+      assertThatThrownBy(() -> chaos.setEvictionPolicy(container, "allkeys-lru"))
+          .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    @DisplayName("should throw ChaosOperationFailedException on non-zero exec exit")
     void shouldThrowOnExecFailure() throws Exception {
       stubExecFailure("ERR Unknown policy");
       assertThatThrownBy(() -> chaos.setEvictionPolicy(container, "bad-policy"))
@@ -340,10 +492,18 @@ class RedisCacheChaosProviderTest {
   class DisconnectClientsTests {
 
     @Test
-    @DisplayName("should exec disconnect command")
-    void shouldExecCommand() throws Exception {
+    @DisplayName("should exec CLIENT KILL command")
+    void shouldExecClientKillCommand() throws Exception {
       stubExecSuccess();
       chaos.disconnectClients(container);
+    }
+
+    @Test
+    @DisplayName("should reject null container")
+    void shouldRejectNullContainer() {
+      assertThatThrownBy(() -> chaos.disconnectClients(null))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("container");
     }
 
     @Test
@@ -353,6 +513,15 @@ class RedisCacheChaosProviderTest {
       assertThatThrownBy(() -> chaos.disconnectClients(container))
           .isInstanceOf(IllegalStateException.class);
     }
+
+    @Test
+    @DisplayName("should throw ChaosOperationFailedException on non-zero exec exit")
+    void shouldThrowOnExecFailure() throws Exception {
+      stubExecFailure("NOPERM no permissions");
+      assertThatThrownBy(() -> chaos.disconnectClients(container))
+          .isInstanceOf(ChaosOperationFailedException.class)
+          .hasMessageContaining("disconnect clients");
+    }
   }
 
   @Nested
@@ -361,7 +530,7 @@ class RedisCacheChaosProviderTest {
 
     @Test
     @DisplayName("should exec FLUSHALL command")
-    void shouldExecCommand() throws Exception {
+    void shouldExecFlushAllCommand() throws Exception {
       stubExecSuccess();
       chaos.flushAll(container);
     }
@@ -370,13 +539,22 @@ class RedisCacheChaosProviderTest {
     @DisplayName("should reject null container")
     void shouldRejectNullContainer() {
       assertThatThrownBy(() -> chaos.flushAll(null))
-          .isInstanceOf(NullPointerException.class);
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("container");
     }
 
     @Test
-    @DisplayName("should throw ChaosOperationFailedException on exec failure")
+    @DisplayName("should reject stopped container")
+    void shouldRejectStoppedContainer() {
+      when(container.isRunning()).thenReturn(false);
+      assertThatThrownBy(() -> chaos.flushAll(container))
+          .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    @DisplayName("should throw ChaosOperationFailedException on non-zero exec exit")
     void shouldThrowOnExecFailure() throws Exception {
-      stubExecFailure("NOPERM this user has no permissions");
+      stubExecFailure("NOPERM no permissions for FLUSHALL");
       assertThatThrownBy(() -> chaos.flushAll(container))
           .isInstanceOf(ChaosOperationFailedException.class)
           .hasMessageContaining("flush all");
@@ -390,7 +568,7 @@ class RedisCacheChaosProviderTest {
   class ResetTests {
 
     @Test
-    @DisplayName("should delegate to proxy.deleteProxy (surgical, not nuclear)")
+    @DisplayName("should call proxy.deleteProxy — surgical, not nuclear")
     void shouldCallDeleteProxy() {
       chaos.reset(container);
       verify(proxy).deleteProxy(container, config.proxyName());
@@ -398,7 +576,7 @@ class RedisCacheChaosProviderTest {
     }
 
     @Test
-    @DisplayName("should no-op when container stopped")
+    @DisplayName("should no-op silently when container is stopped")
     void shouldNoOpWhenStopped() {
       when(container.isRunning()).thenReturn(false);
       chaos.reset(container);
@@ -407,38 +585,52 @@ class RedisCacheChaosProviderTest {
 
     @Test
     @DisplayName("should reject null container")
-    void shouldRejectNull() {
+    void shouldRejectNullContainer() {
       assertThatThrownBy(() -> chaos.reset(null))
-          .isInstanceOf(NullPointerException.class);
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("container");
     }
   }
 
   @Nested
-  @DisplayName("isSupported / installTools")
-  class SupportTests {
+  @DisplayName("isSupported")
+  class IsSupportedTests {
 
     @Test
-    @DisplayName("isSupported should return true")
-    void isSupportedShouldBeTrue() {
+    @DisplayName("should always return true (Redis implementation is supported)")
+    void shouldReturnTrue() {
       assertThat(chaos.isSupported()).isTrue();
     }
+  }
+
+  @Nested
+  @DisplayName("installTools")
+  class InstallToolsTests {
 
     @Test
-    @DisplayName("installTools should be no-op (tools installed on demand)")
-    void installToolsShouldBeNoOp() {
+    @DisplayName("should be a no-op — tools installed lazily by proxy on first createProxy call")
+    void shouldBeNoOp() {
       chaos.installTools(container);
       verifyNoMoreInteractions(proxy);
     }
+
+    @Test
+    @DisplayName("should reject null container")
+    void shouldRejectNullContainer() {
+      assertThatThrownBy(() -> chaos.installTools(null))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("container");
+    }
   }
 
   @Nested
-  @DisplayName("deprecated injectMisses")
+  @DisplayName("injectMisses (deprecated)")
   class DeprecatedInjectMissesTests {
 
     @Test
-    @DisplayName("should delegate to injectConnectionFailures")
+    @DisplayName("should delegate to injectConnectionFailures — TCP drop, not RESP miss")
     @SuppressWarnings("deprecation")
-    void shouldDelegate() {
+    void shouldDelegateToInjectConnectionFailures() {
       chaos.injectMisses(container, "user:*", 0.3);
       verify(proxy).addTimeout(eq(container), eq(config.proxyName()), any(Duration.class), eq(0.3));
     }
@@ -451,8 +643,8 @@ class RedisCacheChaosProviderTest {
   class ConfigTests {
 
     @Test
-    @DisplayName("defaults should have correct values")
-    void defaultsShouldBeCorrect() {
+    @DisplayName("defaults should match documented values")
+    void defaultsShouldMatchDocumentedValues() {
       final RedisChaosConfig defaults = RedisChaosConfig.defaults();
       assertThat(defaults.redisPort()).isEqualTo(6379);
       assertThat(defaults.proxyPort()).isEqualTo(16379);
@@ -460,8 +652,8 @@ class RedisCacheChaosProviderTest {
     }
 
     @Test
-    @DisplayName("builder should override values")
-    void builderShouldOverride() {
+    @DisplayName("builder should fully override all values")
+    void builderShouldOverrideAllValues() {
       final RedisChaosConfig custom = RedisChaosConfig.builder()
           .redisPort(6380)
           .proxyPort(16380)
@@ -503,17 +695,29 @@ class RedisCacheChaosProviderTest {
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("blank");
     }
+
+    @Test
+    @DisplayName("should reject null proxyName")
+    void shouldRejectNullProxyName() {
+      assertThatThrownBy(() -> RedisChaosConfig.builder().proxyName(null).build())
+          .isInstanceOf(NullPointerException.class);
+    }
   }
 
   // ==================== Test Helpers ====================
 
   private void stubExecSuccess() throws Exception {
-    org.mockito.Mockito.doReturn(TestExecResults.success())
+    doReturn(TestExecResults.success())
         .when(container).execInContainer(anyString(), anyString(), anyString());
   }
 
   private void stubExecFailure(final String stderr) throws Exception {
-    org.mockito.Mockito.doReturn(TestExecResults.failure(stderr))
+    doReturn(TestExecResults.failure(stderr))
+        .when(container).execInContainer(anyString(), anyString(), anyString());
+  }
+
+  private void stubExecThrows(final Exception ex) throws Exception {
+    doThrow(ex)
         .when(container).execInContainer(anyString(), anyString(), anyString());
   }
 }

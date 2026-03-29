@@ -293,7 +293,7 @@ public interface CacheChaos extends ChaosProvider {
   /**
    * Set the cache eviction policy.
    *
-   * <p>Common Redis policies:
+   * <p>Common eviction policies (Redis):
    * <ul>
    *   <li>{@code noeviction} — return error when limit reached (default)</li>
    *   <li>{@code allkeys-lru} — evict least-recently used among all keys</li>
@@ -301,6 +301,7 @@ public interface CacheChaos extends ChaosProvider {
    *   <li>{@code allkeys-lfu} — evict least-frequently used among all keys</li>
    *   <li>{@code allkeys-random} — evict random keys</li>
    * </ul>
+   * <p>Policy identifiers are backend-specific — consult your cache backend documentation.
    *
    * @param container target container
    * @param policy    backend-specific eviction policy identifier
@@ -338,6 +339,9 @@ public interface CacheChaos extends ChaosProvider {
    * Use this in {@code @AfterEach}.
    *
    * <p>No-op if the container is not running.
+   *
+   * <p>The proxy name removed is determined by the implementation's configuration
+   * (e.g., {@code "redis_cache"} for {@code RedisCacheChaosProvider}).
    *
    * @param container target container
    */

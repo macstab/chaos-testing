@@ -126,6 +126,8 @@ public final class RedisCacheChaosProvider implements CacheChaos {
     }
     validateRunning(container);
     ensureProxy(container);
+    // Duration.ofMillis(1) not ZERO: ProxyChaosProvider rejects zero timeout (instant close
+    // with 0ms hang is expressed as 1ms so Toxiproxy accepts the toxic without error).
     proxy.addTimeout(container, config.proxyName(), Duration.ofMillis(1), rate);
     log.info("Injecting {}% TCP connection failures on Redis cache",
         String.format("%.0f", rate * 100));
