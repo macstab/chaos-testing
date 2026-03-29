@@ -11,20 +11,21 @@ import org.junit.jupiter.api.Test;
 import com.macstab.chaos.core.api.CacheChaos;
 
 /**
- * Verify ServiceLoader registration for {@link ToxiproxyCacheChaos}.
+ * Verify ServiceLoader registration for {@link CacheChaosProvider}.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
 class ServiceLoaderRegistrationTest {
 
   @Test
-  @DisplayName("should load ToxiproxyCacheChaos via ServiceLoader")
-  void shouldLoadToxiproxyCacheChaosViaServiceLoader() {
+  @DisplayName("should load CacheChaosProvider via ServiceLoader")
+  void shouldLoadCacheChaosProviderViaServiceLoader() {
     final ServiceLoader<CacheChaos> loader = ServiceLoader.load(CacheChaos.class);
 
     final CacheChaos chaos = loader.findFirst().orElse(null);
 
     assertThat(chaos).isNotNull();
-    assertThat(chaos).isInstanceOf(ToxiproxyCacheChaos.class);
+    assertThat(chaos).isInstanceOf(CacheChaosProvider.class);
+    assertThat(chaos.isSupported()).isTrue();
   }
 }

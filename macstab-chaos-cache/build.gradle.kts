@@ -16,9 +16,14 @@ java {
 dependencies {
     // Core API (interfaces)
     api(project(":macstab-chaos-core"))
-    
+
+    // Proxy module — delegates all Toxiproxy management to it
+    implementation(project(":macstab-chaos-proxy"))
+
     // Test dependencies
     testImplementation("org.testcontainers:junit-jupiter:1.20.4")
+    testImplementation("org.mockito:mockito-core:5.8.0")
+    testImplementation("org.mockito:mockito-junit-jupiter:5.8.0")
     testImplementation("org.assertj:assertj-core:3.24.2")
     testImplementation("org.awaitility:awaitility:4.2.2")
     testRuntimeOnly("ch.qos.logback:logback-classic:1.4.14")

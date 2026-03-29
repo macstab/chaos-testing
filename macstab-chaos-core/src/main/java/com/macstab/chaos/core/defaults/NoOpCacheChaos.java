@@ -9,41 +9,79 @@ import com.macstab.chaos.core.api.CacheChaos;
 
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * No-op fallback for {@link CacheChaos} — returned when no real implementation is on the classpath.
+ *
+ * @author Christian Schnapka - Macstab GmbH
+ */
 @Slf4j
 public final class NoOpCacheChaos implements CacheChaos {
 
-  /** No-op injectMisses implementation. */
-  @Override
-  public void injectMisses(
-      final GenericContainer<?> container, final String keyPattern, final double rate) {
-    // No-op
-  }
-
-  /** No-op slowResponse implementation. */
   @Override
   public void slowResponse(final GenericContainer<?> container, final Duration delay) {
     // No-op
   }
 
-  /** No-op forceEviction implementation. */
+  @Override
+  public void injectConnectionFailures(final GenericContainer<?> container, final double rate) {
+    // No-op
+  }
+
+  @Override
+  public void limitThroughput(final GenericContainer<?> container, final long rateKBps) {
+    // No-op
+  }
+
+  @Override
+  public void truncateResponses(final GenericContainer<?> container, final long bytes) {
+    // No-op
+  }
+
+  @Override
+  public void removeFault(final GenericContainer<?> container, final String faultName) {
+    // No-op
+  }
+
+  @Override
+  public void removeAllFaults(final GenericContainer<?> container) {
+    // No-op
+  }
+
   @Override
   public void forceEviction(final GenericContainer<?> container, final int percentage) {
     // No-op
   }
 
-  /** No-op reset implementation. */
+  @Override
+  public void limitMemory(final GenericContainer<?> container, final long bytes) {
+    // No-op
+  }
+
+  @Override
+  public void setEvictionPolicy(final GenericContainer<?> container, final String policy) {
+    // No-op
+  }
+
+  @Override
+  public void disconnectClients(final GenericContainer<?> container) {
+    // No-op
+  }
+
+  @Override
+  public void flushAll(final GenericContainer<?> container) {
+    // No-op
+  }
+
   @Override
   public void reset(final GenericContainer<?> container) {
     // No-op
   }
 
-  /** Always returns false (not supported). */
   @Override
   public boolean isSupported() {
     return false;
   }
 
-  /** No-op installTools implementation. */
   @Override
   public void installTools(final GenericContainer<?> container) {
     // No-op

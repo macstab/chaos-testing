@@ -233,4 +233,77 @@ class ToxiproxyOrchestratorTest {
       assertThat(defaultOrchestrator).isNotNull();
     }
   }
+
+  @Nested
+  @DisplayName("deleteProxy()")
+  class DeleteProxyTests {
+
+    @Test
+    @DisplayName("should delete proxy and allow recreation")
+    void shouldDeleteProxy_andAllowRecreation() {
+      // GIVEN — create proxy
+      final ProxyConfiguration proxyConfig =
+          new ProxyConfiguration("redis", 6379, 16379, REDIS.getHost());
+      orchestrator.createProxy(REDIS, proxyConfig);
+      assertThat(proxyOps.proxyExists(ContainerContext.of(REDIS), "redis")).isTrue();
+
+      // WHEN — delete proxy
+      orchestrator.deleteProxy(REDIS, "redis");
+
+      // THEN — proxy gone from Toxiproxy API
+      assertThat(proxyOps.proxyExists(ContainerContext.of(REDIS), "redis")).isFalse();
+
+      // AND — can recreate cleanly
+      assertThatNoException().isThrownBy(
+          () -> orchestrator.createProxy(REDIS, proxyConfig));
+    }
+
+    @Test
+    @DisplayName("should leave Toxiproxy running after deleting one proxy")
+    void shouldLeaveLifecycleRunning_afterDelete() {
+      // GIVEN
+      final ProxyConfiguration proxyConfig =
+          new ProxyConfiguration("redis", 6379, 16379, REDIS.getHost());
+      orchestrator.createProxy(REDIS, proxyConfig);
+
+      // WHEN
+      orchestrator.deleteProxy(REDIS, "redis");
+
+      // THEN — Toxiproxy process still alive
+      assertThat(lifecycle.isHealthy(ContainerContext.of(REDIS))).isTrue();
+    }
+
+    @Test
+    @DisplayName("should delete one proxy without affecting others")
+    void shouldDeleteOneProxy_leavingOthersIntact() {
+      // GIVEN — two proxies
+      orchestrator.createProxy(REDIS,
+          new ProxyConfiguration("redis-1", 6379, 16379, REDIS.getHost()));
+      orchestrator.createProxy(REDIS,
+          new ProxyConfiguration("redis-2", 6379, 17379, REDIS.getHost()));
+
+      // WHEN — delete only redis-1
+      orchestrator.deleteProxy(REDIS, "redis-1");
+
+      // THEN — redis-2 still exists
+      assertThat(proxyOps.proxyExists(ContainerContext.of(REDIS), "redis-1")).isFalse();
+      assertThat(proxyOps.proxyExists(ContainerContext.of(REDIS), "redis-2")).isTrue();
+    }
+
+    @Test
+    @DisplayName("should throw NullPointerException on null container")
+    void shouldThrowNpe_onNullContainer() {
+      assertThatThrownBy(() -> orchestrator.deleteProxy(null, "redis"))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("container");
+    }
+
+    @Test
+    @DisplayName("should throw NullPointerException on null proxyName")
+    void shouldThrowNpe_onNullProxyName() {
+      assertThatThrownBy(() -> orchestrator.deleteProxy(REDIS, null))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("proxyName");
+    }
+  }
 }

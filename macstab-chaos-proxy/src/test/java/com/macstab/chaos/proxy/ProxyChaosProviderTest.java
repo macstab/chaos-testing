@@ -354,6 +354,74 @@ class ProxyChaosProviderTest {
   }
 
   @Nested
+  @DisplayName("deleteProxy — validation")
+  class DeleteProxyValidationTests {
+
+    @Test
+    @DisplayName("should reject null container")
+    void shouldRejectNullContainer() {
+      final var provider = new ProxyChaosProvider();
+      assertThatThrownBy(() -> provider.deleteProxy(null, "redis"))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("container");
+    }
+
+    @Test
+    @DisplayName("should reject null proxyName")
+    void shouldRejectNullProxyName() {
+      final var provider = new ProxyChaosProvider();
+      final var container = new GenericContainer<>("redis:7.4");
+      assertThatThrownBy(() -> provider.deleteProxy(container, null))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("proxyName");
+    }
+  }
+
+  @Nested
+  @DisplayName("addLimitData — validation")
+  class AddLimitDataValidationTests {
+
+    @Test
+    @DisplayName("should reject null container")
+    void shouldRejectNullContainer() {
+      final var provider = new ProxyChaosProvider();
+      assertThatThrownBy(() -> provider.addLimitData(null, "redis", 1024))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("container");
+    }
+
+    @Test
+    @DisplayName("should reject null proxyName")
+    void shouldRejectNullProxyName() {
+      final var provider = new ProxyChaosProvider();
+      final var container = new GenericContainer<>("redis:7.4");
+      assertThatThrownBy(() -> provider.addLimitData(container, null, 1024))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("proxyName");
+    }
+
+    @Test
+    @DisplayName("should reject negative bytes")
+    void shouldRejectNegativeBytes() {
+      final var provider = new ProxyChaosProvider();
+      final var container = new GenericContainer<>("redis:7.4");
+      assertThatThrownBy(() -> provider.addLimitData(container, "redis", -1))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("bytes must be >= 0");
+    }
+
+    @Test
+    @DisplayName("should accept zero bytes (instant close)")
+    void shouldAcceptZeroBytes() {
+      // zero is valid — closes connection immediately on first data
+      final var provider = new ProxyChaosProvider();
+      final var container = new GenericContainer<>("redis:7.4");
+      assertThatThrownBy(() -> provider.addLimitData(container, "redis", 0))
+          .isNotInstanceOf(IllegalArgumentException.class);
+    }
+  }
+
+  @Nested
   @DisplayName("General Behavior")
   class GeneralBehaviorTests {
 
