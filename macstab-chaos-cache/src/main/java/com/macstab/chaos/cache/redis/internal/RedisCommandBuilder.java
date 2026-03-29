@@ -1,15 +1,16 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
-package com.macstab.chaos.cache.internal;
+package com.macstab.chaos.cache.redis.internal;
 
 /**
  * Builds redis-cli shell commands for cache chaos operations.
  *
  * <p>All methods return shell command strings suitable for execution via
- * {@link com.macstab.chaos.core.util.Shell#exec}. Commands target a specific Redis port so
- * the cache module can address Redis directly — bypassing the Toxiproxy layer when needed
- * (e.g., for eviction operations that must always succeed).
+ * {@link com.macstab.chaos.core.util.Shell#exec}. Commands always target the real Redis port
+ * directly — bypassing the Toxiproxy layer so data-level operations work regardless of active
+ * TCP fault injection.
  *
- * <p><strong>INTERNAL USE ONLY</strong> — implementation detail of {@code CacheChaosProvider}.
+ * <p><strong>INTERNAL USE ONLY</strong> — implementation detail of
+ * {@link com.macstab.chaos.cache.redis.RedisCacheChaosProvider}.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -24,8 +25,6 @@ public final class RedisCommandBuilder {
    * Build command to evict a percentage of all keys via SCAN + DEL pipeline.
    *
    * <p>Uses a single shell pipeline: scan all keys → take {@code percentage}% → pipe to DEL.
-   * Always targets the real Redis port (not the proxy port) so eviction bypasses any active
-   * Toxiproxy fault injection.
    *
    * @param redisPort Redis listen port inside the container
    * @param percentage percentage of keys to evict (1–100)
@@ -64,8 +63,7 @@ public final class RedisCommandBuilder {
   /**
    * Build command to kill all connected clients via {@code CLIENT KILL}.
    *
-   * <p>Uses {@code CLIENT KILL ID} on each client returned by {@code CLIENT LIST} to kill
-   * all connections except the command connection itself.
+   * <p>Extracts client IDs from {@code CLIENT LIST} and kills each one individually.
    *
    * @param redisPort Redis listen port inside the container
    * @return shell command string
@@ -80,8 +78,6 @@ public final class RedisCommandBuilder {
 
   /**
    * Build command to flush all keys from all Redis databases via {@code FLUSHALL}.
-   *
-   * <p>Wipes the entire cache. Use only in controlled test teardown scenarios.
    *
    * @param redisPort Redis listen port inside the container
    * @return shell command string

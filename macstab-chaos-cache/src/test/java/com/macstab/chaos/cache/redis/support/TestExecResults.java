@@ -1,5 +1,5 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
-package com.macstab.chaos.cache.support;
+package com.macstab.chaos.cache.redis.support;
 
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -7,7 +7,7 @@ import static org.mockito.Mockito.mock;
 import org.testcontainers.containers.Container.ExecResult;
 
 /**
- * Test support factory for {@link ExecResult} mocks used in cache module tests.
+ * Test support factory for {@link ExecResult} mocks used in Redis cache module tests.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -20,6 +20,11 @@ public final class TestExecResults {
   /** Create a successful result (exit code 0, empty output). */
   public static ExecResult success() {
     return of(0, "", "");
+  }
+
+  /** Create a successful result with stdout content. */
+  public static ExecResult success(final String stdout) {
+    return of(0, stdout, "");
   }
 
   /** Create a failed result (exit code 1) with a stderr message. */

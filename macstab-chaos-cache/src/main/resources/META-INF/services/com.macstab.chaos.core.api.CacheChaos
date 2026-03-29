@@ -1,1 +1,1 @@
-com.macstab.chaos.cache.CacheChaosProvider
+com.macstab.chaos.cache.redis.RedisCacheChaosProvider

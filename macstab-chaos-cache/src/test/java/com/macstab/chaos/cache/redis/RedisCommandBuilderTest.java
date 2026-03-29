@@ -1,5 +1,5 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
-package com.macstab.chaos.cache;
+package com.macstab.chaos.cache.redis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -7,7 +7,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import com.macstab.chaos.cache.internal.RedisCommandBuilder;
+import com.macstab.chaos.cache.redis.internal.RedisCommandBuilder;
 
 /**
  * Unit tests for {@link RedisCommandBuilder}.
@@ -105,7 +105,7 @@ class RedisCommandBuilderTest {
   class FlushAllCommandTests {
 
     @Test
-    @DisplayName("should include FLUSHALL")
+    @DisplayName("should include FLUSHALL and port")
     void shouldIncludeFlushAll() {
       final String cmd = RedisCommandBuilder.buildFlushAllCommand(6379);
       assertThat(cmd).contains("FLUSHALL").contains("6379");
@@ -117,7 +117,7 @@ class RedisCommandBuilderTest {
   class DbSizeCommandTests {
 
     @Test
-    @DisplayName("should include DBSIZE")
+    @DisplayName("should include DBSIZE and port")
     void shouldIncludeDbSize() {
       final String cmd = RedisCommandBuilder.buildDbSizeCommand(6379);
       assertThat(cmd).contains("DBSIZE").contains("6379");

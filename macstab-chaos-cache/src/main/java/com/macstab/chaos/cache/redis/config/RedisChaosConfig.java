@@ -1,10 +1,10 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
-package com.macstab.chaos.cache.config;
+package com.macstab.chaos.cache.redis.config;
 
 import java.util.Objects;
 
 /**
- * Configuration for cache chaos injection.
+ * Configuration for Redis cache chaos injection.
  *
  * <p>Centralizes Redis port assignments and proxy naming so callers never hardcode magic numbers.
  * All values have sensible defaults; override only when a non-standard Redis setup is used.
@@ -14,8 +14,8 @@ import java.util.Objects;
  * <!-- ═══════════════════════════════════════════════════════════════════ -->
  *
  * <pre>
- * Redis port:   6379  (standard Redis listen port)
- * Proxy port:   16379 (Toxiproxy intercept port, convention: servicePort + 10000)
+ * Redis port:   6379   (standard Redis listen port)
+ * Proxy port:   16379  (Toxiproxy intercept port, convention: servicePort + 10000)
  * Proxy name:   "redis_cache"
  * </pre>
  *
@@ -25,8 +25,8 @@ import java.util.Objects;
  *
  * <pre>{@code
  * // Recommended — works for standard Redis setup
- * CacheChaosConfig config = CacheChaosConfig.defaults();
- * CacheChaos chaos = new CacheChaosProvider(config);
+ * RedisChaosConfig config = RedisChaosConfig.defaults();
+ * CacheChaos chaos = new RedisCacheChaosProvider(config);
  * }</pre>
  *
  * <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -34,19 +34,20 @@ import java.util.Objects;
  * <!-- ═══════════════════════════════════════════════════════════════════ -->
  *
  * <pre>{@code
- * // Non-standard Redis port (e.g., Redis Cluster member, custom setup)
- * CacheChaosConfig config = CacheChaosConfig.builder()
+ * // Non-standard Redis port (e.g., Redis Cluster member, Sentinel setup)
+ * RedisChaosConfig config = RedisChaosConfig.builder()
  *     .redisPort(6380)
  *     .proxyPort(16380)
- *     .proxyName("redis_cache_2")
+ *     .proxyName("redis_primary")
  *     .build();
  *
- * CacheChaos chaos = new CacheChaosProvider(config);
+ * CacheChaos chaos = new RedisCacheChaosProvider(config);
  * }</pre>
  *
+ * @see com.macstab.chaos.cache.redis.RedisCacheChaosProvider
  * @author Christian Schnapka - Macstab GmbH
  */
-public final class CacheChaosConfig {
+public final class RedisChaosConfig {
 
   private static final int DEFAULT_REDIS_PORT = 6379;
   private static final int DEFAULT_PROXY_PORT = 16379;
@@ -56,7 +57,7 @@ public final class CacheChaosConfig {
   private final int proxyPort;
   private final String proxyName;
 
-  private CacheChaosConfig(final Builder builder) {
+  private RedisChaosConfig(final Builder builder) {
     this.redisPort = builder.redisPort;
     this.proxyPort = builder.proxyPort;
     this.proxyName = Objects.requireNonNull(builder.proxyName, "proxyName must not be null");
@@ -79,7 +80,7 @@ public final class CacheChaosConfig {
    *
    * @return default configuration
    */
-  public static CacheChaosConfig defaults() {
+  public static RedisChaosConfig defaults() {
     return builder().build();
   }
 
@@ -104,10 +105,9 @@ public final class CacheChaosConfig {
   }
 
   /**
-   * Toxiproxy proxy name.
+   * Toxiproxy proxy name used for toxic management.
    *
-   * <p>Used as the named proxy in Toxiproxy and as the key for toxic management.
-   * Must be unique per container when multiple cache modules share the same container.
+   * <p>Must be unique per container when multiple modules share the same container.
    *
    * @return proxy name (default: "redis_cache")
    */
@@ -135,7 +135,7 @@ public final class CacheChaosConfig {
     }
   }
 
-  /** Builder for {@link CacheChaosConfig}. */
+  /** Builder for {@link RedisChaosConfig}. */
   public static final class Builder {
 
     private int redisPort = DEFAULT_REDIS_PORT;
@@ -181,8 +181,8 @@ public final class CacheChaosConfig {
      * @return immutable configuration
      * @throws IllegalArgumentException if ports are invalid or equal
      */
-    public CacheChaosConfig build() {
-      return new CacheChaosConfig(this);
+    public RedisChaosConfig build() {
+      return new RedisChaosConfig(this);
     }
   }
 }

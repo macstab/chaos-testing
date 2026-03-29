@@ -1,26 +1,26 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
-package com.macstab.chaos.cache;
+package com.macstab.chaos.cache.redis;
 
 import java.time.Duration;
 import java.util.Objects;
 
 import org.testcontainers.containers.GenericContainer;
 
-import com.macstab.chaos.cache.config.CacheChaosConfig;
-import com.macstab.chaos.cache.internal.RedisCommandBuilder;
+import com.macstab.chaos.cache.redis.config.RedisChaosConfig;
+import com.macstab.chaos.cache.redis.internal.RedisCommandBuilder;
 import com.macstab.chaos.core.api.CacheChaos;
+import com.macstab.chaos.core.api.ProxyChaos;
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
 import com.macstab.chaos.core.util.Shell;
 import com.macstab.chaos.proxy.ProxyChaosProvider;
-import com.macstab.chaos.core.api.ProxyChaos;
 
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Cache chaos provider for Redis containers.
+ * Redis implementation of {@link CacheChaos}.
  *
  * <p>Delegates ALL Toxiproxy lifecycle management to {@link ProxyChaosProvider}. This class
- * contains only Redis-specific logic (port configuration, redis-cli operations, validation).
+ * contains only Redis-specific logic: port configuration, redis-cli operations, and validation.
  *
  * <!-- ═══════════════════════════════════════════════════════════════════ -->
  * <h2>⚠️ CRITICAL: reset() is targeted, not nuclear</h2>
@@ -30,20 +30,20 @@ import lombok.extern.slf4j.Slf4j;
  * only the Redis proxy and its iptables rule. The Toxiproxy process and all other proxies on the
  * container (e.g., a Postgres proxy from another module) stay alive. Safe for {@code @AfterEach}.
  *
- * <p>For full nuclear teardown (kill Toxiproxy + all iptables), use the underlying
- * {@link ProxyChaosProvider#reset(GenericContainer)} directly from your {@code @AfterAll}.
+ * <p>For full nuclear teardown, call {@link ProxyChaosProvider#reset(GenericContainer)}
+ * directly in {@code @AfterAll}.
  *
  * <!-- ═══════════════════════════════════════════════════════════════════ -->
  * <h2>Architecture</h2>
  * <!-- ═══════════════════════════════════════════════════════════════════ -->
  *
  * <pre>
- * CacheChaosProvider
- *     ├── ProxyChaosProvider   ← Toxiproxy install, lifecycle, iptables, toxic management
- *     └── RedisCommandBuilder  ← redis-cli commands (eviction, memory, clients, flush)
+ * RedisCacheChaosProvider
+ *     ├── ProxyChaosProvider      ← Toxiproxy: install, lifecycle, iptables, toxics
+ *     └── RedisCommandBuilder     ← redis-cli: eviction, memory, clients, flush
  * </pre>
  *
- * <p>TCP-level faults route through Toxiproxy ({@link ProxyChaos}).
+ * <p>TCP-level faults route through {@link ProxyChaos}.
  * Redis-level faults use {@link Shell#exec} with {@link RedisCommandBuilder} commands.
  *
  * <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -57,7 +57,7 @@ import lombok.extern.slf4j.Slf4j;
  *     .withCreateContainerCmdModifier(cmd ->
  *         cmd.getHostConfig().withCapAdd(Capability.NET_ADMIN));
  *
- * CacheChaos chaos = new CacheChaosProvider();
+ * CacheChaos chaos = new RedisCacheChaosProvider();
  *
  * @AfterEach void cleanup() { chaos.reset(redis); }  // surgical — safe for @AfterEach
  *
@@ -67,37 +67,37 @@ import lombok.extern.slf4j.Slf4j;
  * }
  * }</pre>
  *
- * @see CacheChaosConfig
+ * @see RedisChaosConfig
  * @see com.macstab.chaos.proxy.ProxyChaosProvider
  * @author Christian Schnapka - Macstab GmbH
  */
 @Slf4j
-public final class CacheChaosProvider implements CacheChaos {
+public final class RedisCacheChaosProvider implements CacheChaos {
 
-  private final CacheChaosConfig config;
+  private final RedisChaosConfig config;
   private final ProxyChaos proxy;
 
   /** Create provider with default configuration. */
-  public CacheChaosProvider() {
-    this(CacheChaosConfig.defaults(), new ProxyChaosProvider());
+  public RedisCacheChaosProvider() {
+    this(RedisChaosConfig.defaults(), new ProxyChaosProvider());
   }
 
   /**
    * Create provider with custom configuration.
    *
-   * @param config cache chaos configuration (ports, proxy name)
+   * @param config Redis chaos configuration (ports, proxy name)
    */
-  public CacheChaosProvider(final CacheChaosConfig config) {
+  public RedisCacheChaosProvider(final RedisChaosConfig config) {
     this(config, new ProxyChaosProvider());
   }
 
   /**
    * Create provider with custom configuration and proxy (for testing).
    *
-   * @param config cache chaos configuration
-   * @param proxy proxy chaos provider (inject mock for unit tests)
+   * @param config Redis chaos configuration
+   * @param proxy  proxy chaos provider (inject mock for unit tests)
    */
-  public CacheChaosProvider(final CacheChaosConfig config, final ProxyChaos proxy) {
+  public RedisCacheChaosProvider(final RedisChaosConfig config, final ProxyChaos proxy) {
     this.config = Objects.requireNonNull(config, "config must not be null");
     this.proxy = Objects.requireNonNull(proxy, "proxy must not be null");
   }
@@ -114,7 +114,7 @@ public final class CacheChaosProvider implements CacheChaos {
     validateRunning(container);
     ensureProxy(container);
     proxy.addLatency(container, config.proxyName(), delay);
-    log.info("Added {}ms latency to cache responses", delay.toMillis());
+    log.info("Added {}ms latency to Redis cache responses", delay.toMillis());
   }
 
   @Override
@@ -126,9 +126,9 @@ public final class CacheChaosProvider implements CacheChaos {
     }
     validateRunning(container);
     ensureProxy(container);
-    // timeout=1ms, not zero — ProxyChaosProvider rejects Duration.ZERO
     proxy.addTimeout(container, config.proxyName(), Duration.ofMillis(1), rate);
-    log.info("Injecting {}% TCP connection failures on cache", String.format("%.0f", rate * 100));
+    log.info("Injecting {}% TCP connection failures on Redis cache",
+        String.format("%.0f", rate * 100));
   }
 
   @Override
@@ -140,7 +140,7 @@ public final class CacheChaosProvider implements CacheChaos {
     validateRunning(container);
     ensureProxy(container);
     proxy.limitBandwidth(container, config.proxyName(), rateKBps);
-    log.info("Limited cache throughput to {} KB/s", rateKBps);
+    log.info("Limited Redis cache throughput to {} KB/s", rateKBps);
   }
 
   @Override
@@ -152,7 +152,7 @@ public final class CacheChaosProvider implements CacheChaos {
     validateRunning(container);
     ensureProxy(container);
     proxy.addLimitData(container, config.proxyName(), bytes);
-    log.info("Truncating cache responses after {} bytes", bytes);
+    log.info("Truncating Redis cache responses after {} bytes", bytes);
   }
 
   @Override
@@ -161,7 +161,7 @@ public final class CacheChaosProvider implements CacheChaos {
     Objects.requireNonNull(faultName, "faultName must not be null");
     validateRunning(container);
     proxy.removeToxic(container, config.proxyName(), faultName);
-    log.info("Removed cache fault '{}'", faultName);
+    log.info("Removed Redis cache fault '{}'", faultName);
   }
 
   @Override
@@ -169,7 +169,7 @@ public final class CacheChaosProvider implements CacheChaos {
     Objects.requireNonNull(container, "container must not be null");
     validateRunning(container);
     proxy.removeAllToxics(container, config.proxyName());
-    log.info("Removed all cache faults (proxy stays active)");
+    log.info("Removed all Redis cache faults (proxy stays active)");
   }
 
   // ==================== Redis-Level Faults (via redis-cli) ====================
@@ -182,10 +182,10 @@ public final class CacheChaosProvider implements CacheChaos {
           String.format("percentage must be in [1, 100], got: %d", percentage));
     }
     validateRunning(container);
-    execRedisCommand(container,
+    execRedis(container,
         RedisCommandBuilder.buildForceEvictionCommand(config.redisPort(), percentage),
         "force eviction");
-    log.info("Evicted ~{}% of cache keys", percentage);
+    log.info("Evicted ~{}% of Redis cache keys", percentage);
   }
 
   @Override
@@ -195,7 +195,7 @@ public final class CacheChaosProvider implements CacheChaos {
       throw new IllegalArgumentException("bytes must be >= 0, got: " + bytes);
     }
     validateRunning(container);
-    execRedisCommand(container,
+    execRedis(container,
         RedisCommandBuilder.buildSetMemoryLimitCommand(config.redisPort(), bytes),
         "set memory limit");
     log.info("Set Redis maxmemory to {} bytes", bytes);
@@ -209,7 +209,7 @@ public final class CacheChaosProvider implements CacheChaos {
       throw new IllegalArgumentException("policy must not be blank");
     }
     validateRunning(container);
-    execRedisCommand(container,
+    execRedis(container,
         RedisCommandBuilder.buildSetEvictionPolicyCommand(config.redisPort(), policy),
         "set eviction policy");
     log.info("Set Redis eviction policy to '{}'", policy);
@@ -219,7 +219,7 @@ public final class CacheChaosProvider implements CacheChaos {
   public void disconnectClients(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
     validateRunning(container);
-    execRedisCommand(container,
+    execRedis(container,
         RedisCommandBuilder.buildDisconnectClientsCommand(config.redisPort()),
         "disconnect clients");
     log.info("Disconnected all Redis clients");
@@ -229,7 +229,7 @@ public final class CacheChaosProvider implements CacheChaos {
   public void flushAll(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
     validateRunning(container);
-    execRedisCommand(container,
+    execRedis(container,
         RedisCommandBuilder.buildFlushAllCommand(config.redisPort()),
         "flush all");
     log.info("Flushed all Redis databases");
@@ -240,8 +240,8 @@ public final class CacheChaosProvider implements CacheChaos {
   /**
    * ✅ Targeted reset — removes only the Redis proxy and its iptables rule.
    *
-   * <p>The Toxiproxy process and all other proxies stay alive. Safe for {@code @AfterEach}.
-   * No-op if the container is not running.
+   * <p>The Toxiproxy process and all other proxies on the container stay alive.
+   * Safe for {@code @AfterEach}. No-op if the container is not running.
    */
   @Override
   public void reset(final GenericContainer<?> container) {
@@ -250,7 +250,7 @@ public final class CacheChaosProvider implements CacheChaos {
       return;
     }
     proxy.deleteProxy(container, config.proxyName());
-    log.info("Reset cache chaos (deleted proxy '{}')", config.proxyName());
+    log.info("Reset Redis cache chaos (deleted proxy '{}')", config.proxyName());
   }
 
   @Override
@@ -269,9 +269,7 @@ public final class CacheChaosProvider implements CacheChaos {
   /**
    * Ensure the Redis Toxiproxy proxy exists for this container.
    *
-   * <p>Delegates to {@link ProxyChaos#createProxy} which is idempotent — safe to call on every
-   * fault injection. Platform detection happens exactly once per operation inside
-   * {@code ToxiproxyOrchestrator}.
+   * <p>{@link ProxyChaos#createProxy} is idempotent — safe to call before every fault injection.
    */
   private void ensureProxy(final GenericContainer<?> container) {
     proxy.createProxy(container, config.proxyName(), config.redisPort(), config.proxyPort());
@@ -285,13 +283,13 @@ public final class CacheChaosProvider implements CacheChaos {
   }
 
   /**
-   * Execute a redis-cli command and throw on non-zero exit.
+   * Execute a redis-cli command and throw {@link ChaosOperationFailedException} on non-zero exit.
    *
-   * @param container target container
-   * @param command shell command string
-   * @param operationName human-readable name for error messages
+   * @param container     target container
+   * @param command       shell command string from {@link RedisCommandBuilder}
+   * @param operationName human-readable label for error messages
    */
-  private void execRedisCommand(
+  private void execRedis(
       final GenericContainer<?> container,
       final String command,
       final String operationName) {
@@ -299,10 +297,11 @@ public final class CacheChaosProvider implements CacheChaos {
     try {
       final var result = Shell.exec(container, command);
       if (result.getExitCode() != 0) {
+        final String output = result.getStdout().isBlank()
+            ? result.getStderr()
+            : result.getStdout();
         throw new ChaosOperationFailedException(
-            String.format("Failed to %s (exit %d): %s",
-                operationName, result.getExitCode(),
-                result.getStdout().isEmpty() ? result.getStderr() : result.getStdout()));
+            String.format("Failed to %s (exit %d): %s", operationName, result.getExitCode(), output));
       }
     } catch (final ChaosOperationFailedException e) {
       throw e;

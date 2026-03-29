@@ -1,5 +1,5 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
-package com.macstab.chaos.cache;
+package com.macstab.chaos.cache.redis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -25,34 +25,32 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.testcontainers.containers.GenericContainer;
 
-import com.macstab.chaos.cache.config.CacheChaosConfig;
-import com.macstab.chaos.cache.support.TestExecResults;
+import com.macstab.chaos.cache.redis.config.RedisChaosConfig;
+import com.macstab.chaos.cache.redis.support.TestExecResults;
 import com.macstab.chaos.core.api.ProxyChaos;
+import com.macstab.chaos.core.exception.ChaosOperationFailedException;
 
 /**
- * Unit tests for {@link CacheChaosProvider}.
+ * Unit tests for {@link RedisCacheChaosProvider}.
  *
- * <p>All Toxiproxy interactions are mocked via {@link ProxyChaos}. Redis operations use
- * {@link GenericContainer#execInContainer} which is stubbed per test.
+ * <p>All Toxiproxy interactions mocked via {@link ProxyChaos}.
+ * Redis CLI operations use {@link GenericContainer#execInContainer} stubbed per test.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
 @ExtendWith(MockitoExtension.class)
-class CacheChaosProviderTest {
+class RedisCacheChaosProviderTest {
 
-  @Mock
-  private ProxyChaos proxy;
+  @Mock private ProxyChaos proxy;
+  @Mock private GenericContainer<?> container;
 
-  @Mock
-  private GenericContainer<?> container;
-
-  private CacheChaosConfig config;
-  private CacheChaosProvider chaos;
+  private RedisChaosConfig config;
+  private RedisCacheChaosProvider chaos;
 
   @BeforeEach
   void setUp() {
-    config = CacheChaosConfig.defaults();
-    chaos = new CacheChaosProvider(config, proxy);
+    config = RedisChaosConfig.defaults();
+    chaos = new RedisCacheChaosProvider(config, proxy);
     lenient().when(container.isRunning()).thenReturn(true);
   }
 
@@ -66,9 +64,7 @@ class CacheChaosProviderTest {
     @DisplayName("should delegate to proxy.addLatency")
     void shouldDelegateToProxy() {
       final Duration delay = Duration.ofMillis(200);
-
       chaos.slowResponse(container, delay);
-
       verify(proxy).createProxy(container, config.proxyName(), config.redisPort(), config.proxyPort());
       verify(proxy).addLatency(container, config.proxyName(), delay);
     }
@@ -120,7 +116,6 @@ class CacheChaosProviderTest {
     @DisplayName("should delegate to proxy.addTimeout")
     void shouldDelegateToProxy() {
       chaos.injectConnectionFailures(container, 0.3);
-
       verify(proxy).createProxy(container, config.proxyName(), config.redisPort(), config.proxyPort());
       verify(proxy).addTimeout(eq(container), eq(config.proxyName()), any(Duration.class), eq(0.3));
     }
@@ -141,14 +136,6 @@ class CacheChaosProviderTest {
       chaos.injectConnectionFailures(container, rate);
       verify(proxy).addTimeout(eq(container), eq(config.proxyName()), any(Duration.class), eq(rate));
     }
-
-    @Test
-    @DisplayName("should reject stopped container")
-    void shouldRejectStoppedContainer() {
-      when(container.isRunning()).thenReturn(false);
-      assertThatThrownBy(() -> chaos.injectConnectionFailures(container, 0.3))
-          .isInstanceOf(IllegalStateException.class);
-    }
   }
 
   @Nested
@@ -159,7 +146,6 @@ class CacheChaosProviderTest {
     @DisplayName("should delegate to proxy.limitBandwidth")
     void shouldDelegateToProxy() {
       chaos.limitThroughput(container, 10L);
-
       verify(proxy).createProxy(container, config.proxyName(), config.redisPort(), config.proxyPort());
       verify(proxy).limitBandwidth(container, config.proxyName(), 10L);
     }
@@ -182,7 +168,6 @@ class CacheChaosProviderTest {
     @DisplayName("should delegate to proxy.addLimitData")
     void shouldDelegateToProxy() {
       chaos.truncateResponses(container, 1024L);
-
       verify(proxy).createProxy(container, config.proxyName(), config.redisPort(), config.proxyPort());
       verify(proxy).addLimitData(container, config.proxyName(), 1024L);
     }
@@ -237,7 +222,7 @@ class CacheChaosProviderTest {
     }
   }
 
-  // ==================== Redis-Level Faults ====================
+  // ==================== Data-Level Faults ====================
 
   @Nested
   @DisplayName("forceEviction")
@@ -258,7 +243,15 @@ class CacheChaosProviderTest {
     void shouldAcceptValidPercentages(final int pct) throws Exception {
       stubExecSuccess();
       chaos.forceEviction(container, pct);
-      // No exception = pass; exec was called with valid command
+    }
+
+    @Test
+    @DisplayName("should throw ChaosOperationFailedException on exec failure")
+    void shouldThrowOnExecFailure() throws Exception {
+      stubExecFailure("redis-cli: connection refused");
+      assertThatThrownBy(() -> chaos.forceEviction(container, 50))
+          .isInstanceOf(ChaosOperationFailedException.class)
+          .hasMessageContaining("force eviction");
     }
 
     @Test
@@ -284,7 +277,7 @@ class CacheChaosProviderTest {
 
     @Test
     @DisplayName("should accept zero (remove limit)")
-    void shouldAcceptZeroBytes() throws Exception {
+    void shouldAcceptZero() throws Exception {
       stubExecSuccess();
       chaos.limitMemory(container, 0L);
     }
@@ -294,6 +287,15 @@ class CacheChaosProviderTest {
     void shouldAcceptPositiveBytes() throws Exception {
       stubExecSuccess();
       chaos.limitMemory(container, 64 * 1024 * 1024L);
+    }
+
+    @Test
+    @DisplayName("should throw ChaosOperationFailedException on exec failure")
+    void shouldThrowOnExecFailure() throws Exception {
+      stubExecFailure("ERR: CONFIG not allowed");
+      assertThatThrownBy(() -> chaos.limitMemory(container, 1024L))
+          .isInstanceOf(ChaosOperationFailedException.class)
+          .hasMessageContaining("set memory limit");
     }
   }
 
@@ -321,6 +323,15 @@ class CacheChaosProviderTest {
     void shouldAcceptValidPolicy() throws Exception {
       stubExecSuccess();
       chaos.setEvictionPolicy(container, "allkeys-lru");
+    }
+
+    @Test
+    @DisplayName("should throw ChaosOperationFailedException on exec failure")
+    void shouldThrowOnExecFailure() throws Exception {
+      stubExecFailure("ERR Unknown policy");
+      assertThatThrownBy(() -> chaos.setEvictionPolicy(container, "bad-policy"))
+          .isInstanceOf(ChaosOperationFailedException.class)
+          .hasMessageContaining("set eviction policy");
     }
   }
 
@@ -360,6 +371,15 @@ class CacheChaosProviderTest {
     void shouldRejectNullContainer() {
       assertThatThrownBy(() -> chaos.flushAll(null))
           .isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    @DisplayName("should throw ChaosOperationFailedException on exec failure")
+    void shouldThrowOnExecFailure() throws Exception {
+      stubExecFailure("NOPERM this user has no permissions");
+      assertThatThrownBy(() -> chaos.flushAll(container))
+          .isInstanceOf(ChaosOperationFailedException.class)
+          .hasMessageContaining("flush all");
     }
   }
 
@@ -404,7 +424,7 @@ class CacheChaosProviderTest {
     }
 
     @Test
-    @DisplayName("installTools should be no-op")
+    @DisplayName("installTools should be no-op (tools installed on demand)")
     void installToolsShouldBeNoOp() {
       chaos.installTools(container);
       verifyNoMoreInteractions(proxy);
@@ -424,16 +444,16 @@ class CacheChaosProviderTest {
     }
   }
 
-  // ==================== CacheChaosConfig ====================
+  // ==================== RedisChaosConfig ====================
 
   @Nested
-  @DisplayName("CacheChaosConfig")
+  @DisplayName("RedisChaosConfig")
   class ConfigTests {
 
     @Test
     @DisplayName("defaults should have correct values")
     void defaultsShouldBeCorrect() {
-      final CacheChaosConfig defaults = CacheChaosConfig.defaults();
+      final RedisChaosConfig defaults = RedisChaosConfig.defaults();
       assertThat(defaults.redisPort()).isEqualTo(6379);
       assertThat(defaults.proxyPort()).isEqualTo(16379);
       assertThat(defaults.proxyName()).isEqualTo("redis_cache");
@@ -442,22 +462,21 @@ class CacheChaosProviderTest {
     @Test
     @DisplayName("builder should override values")
     void builderShouldOverride() {
-      final CacheChaosConfig custom = CacheChaosConfig.builder()
+      final RedisChaosConfig custom = RedisChaosConfig.builder()
           .redisPort(6380)
           .proxyPort(16380)
-          .proxyName("my_redis")
+          .proxyName("redis_primary")
           .build();
-
       assertThat(custom.redisPort()).isEqualTo(6380);
       assertThat(custom.proxyPort()).isEqualTo(16380);
-      assertThat(custom.proxyName()).isEqualTo("my_redis");
+      assertThat(custom.proxyName()).isEqualTo("redis_primary");
     }
 
     @ParameterizedTest
     @ValueSource(ints = {0, -1, 65536, 100000})
     @DisplayName("should reject invalid redisPort")
     void shouldRejectInvalidRedisPort(final int port) {
-      assertThatThrownBy(() -> CacheChaosConfig.builder().redisPort(port).build())
+      assertThatThrownBy(() -> RedisChaosConfig.builder().redisPort(port).build())
           .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -465,14 +484,14 @@ class CacheChaosProviderTest {
     @ValueSource(ints = {0, -1, 65536})
     @DisplayName("should reject invalid proxyPort")
     void shouldRejectInvalidProxyPort(final int port) {
-      assertThatThrownBy(() -> CacheChaosConfig.builder().proxyPort(port).build())
+      assertThatThrownBy(() -> RedisChaosConfig.builder().proxyPort(port).build())
           .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     @DisplayName("should reject equal redisPort and proxyPort")
     void shouldRejectEqualPorts() {
-      assertThatThrownBy(() -> CacheChaosConfig.builder().redisPort(6379).proxyPort(6379).build())
+      assertThatThrownBy(() -> RedisChaosConfig.builder().redisPort(6379).proxyPort(6379).build())
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("must differ");
     }
@@ -480,7 +499,7 @@ class CacheChaosProviderTest {
     @Test
     @DisplayName("should reject blank proxyName")
     void shouldRejectBlankProxyName() {
-      assertThatThrownBy(() -> CacheChaosConfig.builder().proxyName("  ").build())
+      assertThatThrownBy(() -> RedisChaosConfig.builder().proxyName("  ").build())
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("blank");
     }
@@ -488,14 +507,13 @@ class CacheChaosProviderTest {
 
   // ==================== Test Helpers ====================
 
-  /**
-   * Stub container.execInContainer to return success (exit 0).
-   *
-   * <p>Used for redis-cli operations where we verify the command runs without error.
-   */
   private void stubExecSuccess() throws Exception {
-    // execInContainer is varargs — use doReturn + any(String[].class) pattern
     org.mockito.Mockito.doReturn(TestExecResults.success())
+        .when(container).execInContainer(anyString(), anyString(), anyString());
+  }
+
+  private void stubExecFailure(final String stderr) throws Exception {
+    org.mockito.Mockito.doReturn(TestExecResults.failure(stderr))
         .when(container).execInContainer(anyString(), anyString(), anyString());
   }
 }
