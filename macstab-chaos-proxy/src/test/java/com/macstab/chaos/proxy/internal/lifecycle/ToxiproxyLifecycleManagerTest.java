@@ -11,9 +11,10 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import com.macstab.chaos.proxy.config.ToxiproxyConfig;
+import com.macstab.chaos.proxy.internal.ContainerContext;
 
 /**
- * Comprehensive tests for ToxiproxyLifecycleManager.
+ * Comprehensive tests for {@link ToxiproxyLifecycleManager}.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -35,37 +36,52 @@ class ToxiproxyLifecycleManagerTest {
     @Test
     @DisplayName("should start Toxiproxy successfully")
     void shouldStartToxiproxy() throws Exception {
-      lifecycle.ensureRunning(UBUNTU);
-      assertThat(lifecycle.isHealthy(UBUNTU)).isTrue();
+      // GIVEN
+      final ContainerContext ctx = ContainerContext.of(UBUNTU);
+
+      // WHEN
+      lifecycle.ensureRunning(ctx);
+
+      // THEN
+      assertThat(lifecycle.isHealthy(ctx)).isTrue();
     }
 
     @Test
-    @DisplayName("should be idempotent (calling again is no-op)")
+    @DisplayName("should be idempotent — calling twice is a no-op")
     void shouldBeIdempotent() throws Exception {
-      lifecycle.ensureRunning(UBUNTU);
-      lifecycle.ensureRunning(UBUNTU); // Second call - no-op
-      assertThat(lifecycle.isHealthy(UBUNTU)).isTrue();
+      final ContainerContext ctx = ContainerContext.of(UBUNTU);
+
+      lifecycle.ensureRunning(ctx);
+      lifecycle.ensureRunning(ctx);
+
+      assertThat(lifecycle.isHealthy(ctx)).isTrue();
     }
 
     @Test
-    @DisplayName("should fail on null container")
-    void shouldFailOnNullContainer() {
-      assertThatThrownBy(() -> lifecycle.ensureRunning(null))
-          .isInstanceOf(NullPointerException.class)
-          .hasMessageContaining("container");
+    @DisplayName("should throw NullPointerException when ctx is null")
+    void shouldThrowNpe_whenCtxIsNull() {
+      assertThatNullPointerException()
+          .isThrownBy(() -> lifecycle.ensureRunning(null))
+          .withMessage("ctx must not be null");
     }
 
     @Test
-    @DisplayName("should fail if container is not running")
-    void shouldFailIfContainerNotRunning() {
-      // Use a stopped container to trigger IllegalStateException
-      @SuppressWarnings("resource")
-      GenericContainer<?> stopped = new GenericContainer<>("alpine:latest");
-      // Not started — container.isRunning() returns false
+    @DisplayName("should throw IllegalStateException when container is not running")
+    void shouldThrow_whenContainerNotRunning() {
+      // GIVEN — a ctx whose container reports isRunning() = false
+      // Use mock to control isRunning() without starting a real container
+      final GenericContainer<?> stopped = org.mockito.Mockito.mock(GenericContainer.class);
+      org.mockito.Mockito.when(stopped.isRunning()).thenReturn(false);
+      final com.macstab.chaos.core.platform.Platform platform =
+          org.mockito.Mockito.mock(com.macstab.chaos.core.platform.Platform.class);
+      final com.macstab.chaos.core.shell.Shell shell =
+          org.mockito.Mockito.mock(com.macstab.chaos.core.shell.Shell.class);
+      final ContainerContext ctx = ContainerContext.of(stopped, platform, shell);
 
-      assertThatThrownBy(() -> lifecycle.ensureRunning(stopped))
+      // WHEN / THEN
+      assertThatThrownBy(() -> lifecycle.ensureRunning(ctx))
           .isInstanceOf(IllegalStateException.class)
-          .hasMessageContaining("not running");
+          .hasMessageContaining("must be running");
     }
   }
 
@@ -74,37 +90,33 @@ class ToxiproxyLifecycleManagerTest {
   class StopTests {
 
     @Test
-    @DisplayName("should stop running Toxiproxy")
+    @DisplayName("should stop Toxiproxy and become unhealthy")
     void shouldStopToxiproxy() throws Exception {
-      lifecycle.ensureRunning(UBUNTU);
-      assertThat(lifecycle.isHealthy(UBUNTU)).isTrue();
+      // GIVEN
+      final ContainerContext ctx = ContainerContext.of(UBUNTU);
+      lifecycle.ensureRunning(ctx);
+      assertThat(lifecycle.isHealthy(ctx)).isTrue();
 
-      lifecycle.stop(UBUNTU);
+      // WHEN
+      lifecycle.stop(ctx);
 
-      assertThat(lifecycle.isHealthy(UBUNTU)).isFalse();
-    }
-
-    @Test
-    @DisplayName("should be idempotent (stopping when not running is no-op)")
-    void shouldBeIdempotent() throws Exception {
-      lifecycle.ensureRunning(UBUNTU);
-      lifecycle.stop(UBUNTU);
-      lifecycle.stop(UBUNTU); // Stop again - no exception
-      assertThat(lifecycle.isHealthy(UBUNTU)).isFalse();
+      // THEN
+      assertThat(lifecycle.isHealthy(ctx)).isFalse();
     }
 
     @Test
     @DisplayName("should handle stop when never started")
-    void shouldHandleStopWhenNeverStarted() {
-      assertThatNoException().isThrownBy(() -> lifecycle.stop(UBUNTU));
+    void shouldHandleStopWhenNeverStarted() throws Exception {
+      final ContainerContext ctx = ContainerContext.of(UBUNTU);
+      assertThatNoException().isThrownBy(() -> lifecycle.stop(ctx));
     }
 
     @Test
-    @DisplayName("should fail on null container")
-    void shouldFailOnNullContainer() {
-      assertThatThrownBy(() -> lifecycle.stop(null))
-          .isInstanceOf(NullPointerException.class)
-          .hasMessageContaining("container");
+    @DisplayName("should throw NullPointerException when ctx is null")
+    void shouldThrowNpe_whenCtxIsNull() {
+      assertThatNullPointerException()
+          .isThrownBy(() -> lifecycle.stop(null))
+          .withMessage("ctx must not be null");
     }
   }
 
@@ -114,52 +126,58 @@ class ToxiproxyLifecycleManagerTest {
 
     @Test
     @DisplayName("should return false when not started")
-    void shouldReturnFalseWhenNotStarted() {
-      assertThat(lifecycle.isHealthy(UBUNTU)).isFalse();
+    void shouldReturnFalse_whenNotStarted() {
+      final ContainerContext ctx = ContainerContext.of(UBUNTU);
+      assertThat(lifecycle.isHealthy(ctx)).isFalse();
     }
 
     @Test
     @DisplayName("should return true when running")
-    void shouldReturnTrueWhenRunning() throws Exception {
-      lifecycle.ensureRunning(UBUNTU);
-      assertThat(lifecycle.isHealthy(UBUNTU)).isTrue();
+    void shouldReturnTrue_whenRunning() throws Exception {
+      final ContainerContext ctx = ContainerContext.of(UBUNTU);
+      lifecycle.ensureRunning(ctx);
+      assertThat(lifecycle.isHealthy(ctx)).isTrue();
     }
 
     @Test
     @DisplayName("should return false after stop")
-    void shouldReturnFalseAfterStop() throws Exception {
-      lifecycle.ensureRunning(UBUNTU);
-      lifecycle.stop(UBUNTU);
-      assertThat(lifecycle.isHealthy(UBUNTU)).isFalse();
+    void shouldReturnFalse_afterStop() throws Exception {
+      final ContainerContext ctx = ContainerContext.of(UBUNTU);
+      lifecycle.ensureRunning(ctx);
+      lifecycle.stop(ctx);
+      assertThat(lifecycle.isHealthy(ctx)).isFalse();
+    }
+
+    @Test
+    @DisplayName("should throw NullPointerException when ctx is null")
+    void shouldThrowNpe_whenCtxIsNull() {
+      assertThatNullPointerException()
+          .isThrownBy(() -> lifecycle.isHealthy(null))
+          .withMessage("ctx must not be null");
     }
   }
 
   @Nested
-  @DisplayName("Lifecycle Scenarios")
-  class LifecycleScenarios {
+  @DisplayName("Lifecycle cycles")
+  class LifecycleCycleTests {
 
     @Test
     @DisplayName("should support multiple start/stop cycles")
     void shouldSupportMultipleCycles() throws Exception {
-      lifecycle.ensureRunning(UBUNTU);
-      assertThat(lifecycle.isHealthy(UBUNTU)).isTrue();
-      lifecycle.stop(UBUNTU);
-      assertThat(lifecycle.isHealthy(UBUNTU)).isFalse();
+      // GIVEN
+      final ContainerContext ctx = ContainerContext.of(UBUNTU);
 
-      lifecycle.ensureRunning(UBUNTU);
-      assertThat(lifecycle.isHealthy(UBUNTU)).isTrue();
-      lifecycle.stop(UBUNTU);
-      assertThat(lifecycle.isHealthy(UBUNTU)).isFalse();
-    }
+      // Cycle 1
+      lifecycle.ensureRunning(ctx);
+      assertThat(lifecycle.isHealthy(ctx)).isTrue();
+      lifecycle.stop(ctx);
+      assertThat(lifecycle.isHealthy(ctx)).isFalse();
 
-    @Test
-    @DisplayName("should handle cleanup after multiple operations")
-    void shouldCleanupAfterMultipleOperations() throws Exception {
-      lifecycle.ensureRunning(UBUNTU);
-      lifecycle.stop(UBUNTU);
-      lifecycle.ensureRunning(UBUNTU);
-      lifecycle.stop(UBUNTU);
-      assertThat(lifecycle.isHealthy(UBUNTU)).isFalse();
+      // Cycle 2
+      lifecycle.ensureRunning(ctx);
+      assertThat(lifecycle.isHealthy(ctx)).isTrue();
+      lifecycle.stop(ctx);
+      assertThat(lifecycle.isHealthy(ctx)).isFalse();
     }
   }
 
@@ -168,25 +186,24 @@ class ToxiproxyLifecycleManagerTest {
   class ConfigurationTests {
 
     @Test
-    @DisplayName("should use custom config from builder")
-    void shouldUseCustomConfig() {
-      ToxiproxyConfig customConfig = ToxiproxyConfig.builder()
+    @DisplayName("should accept custom configuration")
+    void shouldAcceptCustomConfig() {
+      final ToxiproxyConfig customConfig = ToxiproxyConfig.builder()
           .apiUrl("http://localhost:8474")
           .startupTimeoutMs(10000)
           .pollIntervalMs(100)
           .build();
 
-      // Should instantiate without error
       assertThatCode(() -> new ToxiproxyLifecycleManager(customConfig))
           .doesNotThrowAnyException();
     }
 
     @Test
-    @DisplayName("should fail on null config")
-    void shouldFailOnNullConfig() {
-      assertThatThrownBy(() -> new ToxiproxyLifecycleManager(null))
-          .isInstanceOf(NullPointerException.class)
-          .hasMessageContaining("config");
+    @DisplayName("should throw NullPointerException on null config")
+    void shouldThrowNpe_onNullConfig() {
+      assertThatNullPointerException()
+          .isThrownBy(() -> new ToxiproxyLifecycleManager(null))
+          .withMessage("config must not be null");
     }
   }
 }

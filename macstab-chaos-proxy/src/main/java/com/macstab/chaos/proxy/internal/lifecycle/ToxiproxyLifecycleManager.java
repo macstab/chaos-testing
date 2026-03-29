@@ -4,15 +4,11 @@ package com.macstab.chaos.proxy.internal.lifecycle;
 import java.io.IOException;
 import java.util.Objects;
 
-import org.testcontainers.containers.GenericContainer;
-
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
-import com.macstab.chaos.core.platform.Platform;
-import com.macstab.chaos.core.platform.PlatformDetector;
-import com.macstab.chaos.core.shell.Shell;
 import com.macstab.chaos.proxy.api.ToxiproxyApiClient;
 import com.macstab.chaos.proxy.api.ToxiproxyApiClientImpl;
 import com.macstab.chaos.proxy.config.ToxiproxyConfig;
+import com.macstab.chaos.proxy.internal.ContainerContext;
 import com.macstab.chaos.proxy.internal.toxiproxy.ToxiproxyInstaller;
 
 import lombok.extern.slf4j.Slf4j;
@@ -20,9 +16,9 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * Default implementation of Toxiproxy lifecycle management.
  *
- * <p>Handles installation, startup, health monitoring, and shutdown of Toxiproxy server.
- *
- * <p>Caches platform detection per container for performance.
+ * <p>Receives a pre-resolved {@link ContainerContext} on every call — no platform detection
+ * inside this class. Platform is detected exactly once per operation by
+ * {@link com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator}.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -31,16 +27,18 @@ public final class ToxiproxyLifecycleManager implements ToxiproxyLifecycle {
 
   private static final String TOXIPROXY_BINARY = "toxiproxy-server";
 
+  /** Bind address for Toxiproxy server — all interfaces inside the container. */
+  private static final String TOXIPROXY_BIND_ADDRESS = "0.0.0.0";
+
+  /** Background process suffix — redirect output and detach from shell. */
+  private static final String BACKGROUND_PROCESS_SUFFIX = ">/dev/null 2>&1 &";
+
   private final ToxiproxyConfig config;
   private final ToxiproxyInstaller installer;
   private final ToxiproxyApiClient apiClient;
 
-  // Platform caching
-  private Platform cachedPlatform;
-  private GenericContainer<?> cachedContainer;
-
   /**
-   * Create lifecycle manager with default configuration.
+   * Create lifecycle manager with default components.
    *
    * @param config Toxiproxy configuration
    */
@@ -67,102 +65,93 @@ public final class ToxiproxyLifecycleManager implements ToxiproxyLifecycle {
   }
 
   @Override
-  public void ensureRunning(final GenericContainer<?> container) throws IOException {
-    Objects.requireNonNull(container, "container must not be null");
+  public void ensureRunning(final ContainerContext ctx) throws IOException {
+    Objects.requireNonNull(ctx, "ctx must not be null");
 
-    if (!container.isRunning()) {
-      throw new IllegalStateException("Container is not running");
+    if (!ctx.container().isRunning()) {
+      throw new IllegalStateException("Container must be running");
     }
 
-    if (isHealthy(container)) {
+    if (apiClient.isApiReady(ctx)) {
       log.debug("Toxiproxy already running");
       return;
     }
 
     log.debug("Starting Toxiproxy server");
-    installer.install(container);
-    startToxiproxyServer(container);
-    waitForApiReady(container);
+    installer.install(ctx);
+    startToxiproxyServer(ctx);
+    waitForApiReady(ctx);
     log.info("Started Toxiproxy server");
   }
 
   @Override
-  public void stop(final GenericContainer<?> container) throws IOException {
-    Objects.requireNonNull(container, "container must not be null");
+  public void stop(final ContainerContext ctx) throws IOException {
+    Objects.requireNonNull(ctx, "ctx must not be null");
 
-    if (!container.isRunning()) {
-      throw new IllegalStateException("Container is not running");
+    if (!ctx.container().isRunning()) {
+      throw new IllegalStateException("Container must be running");
     }
 
     try {
-      final Platform platform = getPlatform(container);
-      final Shell shell = platform.getDefaultShell();
-
-      final var processBuilder = platform.getProcessCommandBuilder();
+      final var processBuilder = ctx.platform().getProcessCommandBuilder();
       final String killCmd = processBuilder.buildKillAllProcessesCommand(TOXIPROXY_BINARY);
-      shell.exec(container, killCmd);
-
+      ctx.shell().exec(ctx.container(), killCmd);
       log.info("Stopped Toxiproxy server");
-
     } catch (final Exception e) {
       throw new IOException("Failed to stop Toxiproxy", e);
     }
   }
 
   @Override
-  public boolean isHealthy(final GenericContainer<?> container) {
-    Objects.requireNonNull(container, "container must not be null");
+  public boolean isHealthy(final ContainerContext ctx) {
+    Objects.requireNonNull(ctx, "ctx must not be null");
 
-    if (!container.isRunning()) {
+    if (!ctx.container().isRunning()) {
       return false;
     }
 
     try {
-      final Platform platform = getPlatform(container);
-      final Shell shell = platform.getDefaultShell();
-      return apiClient.isApiReady(container, shell);
+      return apiClient.isApiReady(ctx);
     } catch (final Exception e) {
       log.trace("Health check failed: {}", e.getMessage());
       return false;
     }
   }
 
-  // ==================== Private Implementation ====================
+  // ==================== Private Helpers ====================
 
   /**
-   * Start Toxiproxy server process in background.
+   * Start Toxiproxy server process in the background.
    *
-   * @param container target container
-   * @throws ChaosOperationFailedException if start fails
+   * @param ctx resolved container context
+   * @throws ChaosOperationFailedException if the start command fails
    */
-  private void startToxiproxyServer(final GenericContainer<?> container) {
+  private void startToxiproxyServer(final ContainerContext ctx) {
     try {
-      final Platform platform = getPlatform(container);
-      final Shell shell = platform.getDefaultShell();
-
-      final String startCmd = TOXIPROXY_BINARY + " -host 0.0.0.0 >/dev/null 2>&1 &";
-      shell.exec(container, startCmd);
-
+      final String startCmd = String.format(
+          "%s -host %s %s", TOXIPROXY_BINARY, TOXIPROXY_BIND_ADDRESS, BACKGROUND_PROCESS_SUFFIX);
+      ctx.shell().exec(ctx.container(), startCmd);
     } catch (final Exception e) {
       throw new ChaosOperationFailedException("Failed to start Toxiproxy", e);
     }
   }
 
   /**
-   * Wait for Toxiproxy API to become ready.
+   * Poll until Toxiproxy API becomes ready or timeout is reached.
    *
-   * @param container target container
-   * @throws ChaosOperationFailedException if timeout reached
+   * <p>Reuses the same {@link ContainerContext} for every poll — no repeated platform detection.
+   *
+   * @param ctx resolved container context
+   * @throws ChaosOperationFailedException if the API does not become ready within configured timeout
    */
-  private void waitForApiReady(final GenericContainer<?> container) {
+  private void waitForApiReady(final ContainerContext ctx) {
     final long deadline = System.currentTimeMillis() + config.startupTimeoutMs();
 
     while (System.currentTimeMillis() < deadline) {
-      if (isHealthy(container)) {
+      if (apiClient.isApiReady(ctx)) {
         return;
       }
-
-      sleep(config.pollIntervalMs());
+      sleepOrThrow(config.pollIntervalMs());
     }
 
     throw new ChaosOperationFailedException(
@@ -170,30 +159,18 @@ public final class ToxiproxyLifecycleManager implements ToxiproxyLifecycle {
   }
 
   /**
-   * Sleep for specified milliseconds, ignoring interrupts.
+   * Sleep for the given duration. Restores interrupt flag and throws if interrupted.
    *
    * @param millis milliseconds to sleep
+   * @throws ChaosOperationFailedException if the thread is interrupted
    */
-  private void sleep(final int millis) {
+  private void sleepOrThrow(final int millis) {
     try {
       Thread.sleep(millis);
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
+      throw new ChaosOperationFailedException(
+          "Interrupted while waiting for Toxiproxy startup", e);
     }
-  }
-
-  /**
-   * Get platform for container, using cache when available.
-   *
-   * @param container target container
-   * @return platform instance
-   */
-  private Platform getPlatform(final GenericContainer<?> container) {
-    if (cachedPlatform == null || cachedContainer != container) {
-      cachedPlatform = PlatformDetector.detect(container);
-      cachedContainer = container;
-      log.trace("Platform detected and cached for container: {}", container.getDockerImageName());
-    }
-    return cachedPlatform;
   }
 }

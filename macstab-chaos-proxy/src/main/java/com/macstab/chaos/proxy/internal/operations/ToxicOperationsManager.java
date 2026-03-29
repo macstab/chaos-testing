@@ -2,143 +2,107 @@
 package com.macstab.chaos.proxy.internal.operations;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Objects;
 
-import org.testcontainers.containers.GenericContainer;
-
-import com.macstab.chaos.core.exception.ChaosOperationFailedException;
-import com.macstab.chaos.core.platform.Platform;
-import com.macstab.chaos.core.platform.PlatformDetector;
-import com.macstab.chaos.core.shell.Shell;
 import com.macstab.chaos.proxy.api.ToxiproxyApiClient;
 import com.macstab.chaos.proxy.api.ToxiproxyApiClientImpl;
 import com.macstab.chaos.proxy.config.ToxiproxyConfig;
+import com.macstab.chaos.proxy.internal.ContainerContext;
 import com.macstab.chaos.proxy.internal.operations.toxic.ToxicConfig;
 
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Default implementation of toxic operations.
+ * Default implementation of toxic CRUD operations.
  *
- * <p>Manages toxic lifecycle including creation, deletion, and existence checks through the
- * Toxiproxy API.
- *
- * <p>Caches platform detection per container for performance.
+ * <p>Receives a pre-resolved {@link ContainerContext} on every call — no platform detection
+ * inside this class.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
 @Slf4j
 public final class ToxicOperationsManager implements ToxicOperations {
 
-  private final ToxiproxyConfig config;
   private final ToxiproxyApiClient apiClient;
 
-  // Platform caching
-  private Platform cachedPlatform;
-  private GenericContainer<?> cachedContainer;
-
   /**
-   * Create toxic operations manager with configuration.
+   * Create toxic operations manager with default components.
    *
    * @param config Toxiproxy configuration
    */
   public ToxicOperationsManager(final ToxiproxyConfig config) {
-    this.config = Objects.requireNonNull(config, "config must not be null");
+    Objects.requireNonNull(config, "config must not be null");
     this.apiClient = new ToxiproxyApiClientImpl(config.apiUrl());
   }
 
   /**
    * Create toxic operations manager with custom components (for testing).
    *
-   * @param config Toxiproxy configuration
+   * @param config Toxiproxy configuration (validated; apiUrl carried by apiClient)
    * @param apiClient API client instance
    */
   public ToxicOperationsManager(final ToxiproxyConfig config, final ToxiproxyApiClient apiClient) {
-    this.config = Objects.requireNonNull(config, "config must not be null");
+    Objects.requireNonNull(config, "config must not be null");
     this.apiClient = Objects.requireNonNull(apiClient, "apiClient must not be null");
   }
 
   @Override
   public void addToxic(
-      final GenericContainer<?> container, final String proxyName, final ToxicConfig config)
+      final ContainerContext ctx, final String proxyName, final ToxicConfig config)
       throws IOException {
 
-    Objects.requireNonNull(container, "container must not be null");
+    Objects.requireNonNull(ctx, "ctx must not be null");
     Objects.requireNonNull(proxyName, "proxyName must not be null");
     Objects.requireNonNull(config, "config must not be null");
 
-    validateContainerRunning(container);
-
-    try {
-      final Platform platform = getPlatform(container);
-      final Shell shell = platform.getDefaultShell();
-
-      if (apiClient.toxicExists(container, shell, proxyName, config.name())) {
-        log.debug("Toxic '{}' already exists on proxy '{}', skipping", config.name(), proxyName);
-        return;
-      }
-
-      apiClient.addToxic(
-          container,
-          shell,
-          proxyName,
-          config.name(),
-          config.type(),
-          config.toJson(),
-          config.toxicity());
-
-      log.info(
-          "Added toxic '{}' to proxy '{}' (type={}, toxicity={})",
-          config.name(),
-          proxyName,
-          config.type(),
-          config.toxicity());
-
-    } catch (final Exception e) {
-      throw handleToxicError("Failed to add toxic: " + config.name(), e);
+    if (!ctx.container().isRunning()) {
+      throw new IllegalStateException("Container must be running");
     }
+
+    if (apiClient.toxicExists(ctx, proxyName, config.name())) {
+      log.debug("Toxic '{}' already exists on proxy '{}', skipping", config.name(), proxyName);
+      return;
+    }
+
+    apiClient.addToxic(ctx, proxyName, config.name(), config.type(), config.toJson(),
+        config.toxicity());
+
+    log.info("Added toxic '{}' to proxy '{}' (type={}, toxicity={})",
+        config.name(), proxyName, config.type(), config.toxicity());
   }
 
   @Override
   public void removeToxic(
-      final GenericContainer<?> container, final String proxyName, final String toxicName)
+      final ContainerContext ctx, final String proxyName, final String toxicName)
       throws IOException {
 
-    Objects.requireNonNull(container, "container must not be null");
+    Objects.requireNonNull(ctx, "ctx must not be null");
     Objects.requireNonNull(proxyName, "proxyName must not be null");
     Objects.requireNonNull(toxicName, "toxicName must not be null");
 
-    validateContainerRunning(container);
-
-    try {
-      final Platform platform = getPlatform(container);
-      final Shell shell = platform.getDefaultShell();
-
-      // Toxiproxy API handles non-existent toxics gracefully
-      log.info("Removed toxic '{}' from proxy '{}'", toxicName, proxyName);
-
-    } catch (final Exception e) {
-      throw new IOException("Failed to remove toxic: " + toxicName, e);
+    if (!ctx.container().isRunning()) {
+      throw new IllegalStateException("Container must be running");
     }
+
+    apiClient.deleteToxic(ctx, proxyName, toxicName);
+    log.info("Removed toxic '{}' from proxy '{}'", toxicName, proxyName);
   }
 
   @Override
   public boolean toxicExists(
-      final GenericContainer<?> container, final String proxyName, final String toxicName) {
+      final ContainerContext ctx, final String proxyName, final String toxicName) {
 
-    Objects.requireNonNull(container, "container must not be null");
+    Objects.requireNonNull(ctx, "ctx must not be null");
     Objects.requireNonNull(proxyName, "proxyName must not be null");
     Objects.requireNonNull(toxicName, "toxicName must not be null");
 
-    if (!container.isRunning()) {
+    if (!ctx.container().isRunning()) {
       return false;
     }
 
     try {
-      final Platform platform = getPlatform(container);
-      final Shell shell = platform.getDefaultShell();
-      return apiClient.toxicExists(container, shell, proxyName, toxicName);
-
+      return apiClient.toxicExists(ctx, proxyName, toxicName);
     } catch (final Exception e) {
       log.trace("Failed to check toxic existence: {}", e.getMessage());
       return false;
@@ -146,59 +110,23 @@ public final class ToxicOperationsManager implements ToxicOperations {
   }
 
   @Override
-  public void removeAllToxics(final GenericContainer<?> container, final String proxyName)
+  public void removeAllToxics(final ContainerContext ctx, final String proxyName)
       throws IOException {
 
-    Objects.requireNonNull(container, "container must not be null");
+    Objects.requireNonNull(ctx, "ctx must not be null");
     Objects.requireNonNull(proxyName, "proxyName must not be null");
 
-    validateContainerRunning(container);
-
-    // Note: Toxiproxy has no "delete all toxics" API endpoint
-    // In practice, deleting the proxy removes all toxics
-    log.info("All toxics removed from proxy '{}' (via proxy deletion)", proxyName);
-  }
-
-  // ==================== Private Implementation ====================
-
-  /**
-   * Validate container is running.
-   *
-   * @param container target container
-   * @throws IllegalStateException if container is not running
-   */
-  private void validateContainerRunning(final GenericContainer<?> container) {
-    if (!container.isRunning()) {
+    if (!ctx.container().isRunning()) {
       throw new IllegalStateException("Container must be running");
     }
-  }
 
-  /**
-   * Handle toxic operation error.
-   *
-   * @param message error message
-   * @param e exception
-   * @return IOException wrapping the error
-   */
-  private IOException handleToxicError(final String message, final Exception e) {
-    if (e instanceof ChaosOperationFailedException) {
-      return new IOException(message, e);
-    }
-    return new IOException(message, e);
-  }
+    final List<String> toxicNames = apiClient.listToxics(ctx, proxyName);
 
-  /**
-   * Get platform for container, using cache when available.
-   *
-   * @param container target container
-   * @return platform instance
-   */
-  private Platform getPlatform(final GenericContainer<?> container) {
-    if (cachedPlatform == null || cachedContainer != container) {
-      cachedPlatform = PlatformDetector.detect(container);
-      cachedContainer = container;
-      log.trace("Platform detected and cached for container: {}", container.getDockerImageName());
+    for (final String toxicName : toxicNames) {
+      apiClient.deleteToxic(ctx, proxyName, toxicName);
+      log.debug("Deleted toxic '{}' from proxy '{}'", toxicName, proxyName);
     }
-    return cachedPlatform;
+
+    log.info("Removed {} toxic(s) from proxy '{}'", toxicNames.size(), proxyName);
   }
 }

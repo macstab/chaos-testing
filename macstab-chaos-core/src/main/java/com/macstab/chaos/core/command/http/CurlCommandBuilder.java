@@ -95,6 +95,32 @@ public final class CurlCommandBuilder implements HttpCommandBuilder {
   }
 
   @Override
+  public String buildDownloadRequest(final String url, final String outputPath) {
+    Objects.requireNonNull(url, "url must not be null");
+    Objects.requireNonNull(outputPath, "outputPath must not be null");
+
+    final StringBuilder cmd = new StringBuilder("curl");
+
+    if (config.isSilent()) {
+      cmd.append(" -s");
+    }
+
+    // Always follow redirects for downloads (GitHub releases redirect)
+    cmd.append(" -L");
+
+    final long timeoutSeconds = config.getConnectionTimeout().toSeconds();
+    if (timeoutSeconds > 0) {
+      cmd.append(" --max-time ").append(timeoutSeconds);
+    }
+
+    cmd.append(" -o ").append(escapeShellArg(outputPath));
+    cmd.append(" ").append(escapeShellArg(url));
+    cmd.append(" 2>&1");
+
+    return cmd.toString();
+  }
+
+  @Override
   public boolean isAvailable() {
     try {
       // Try: which curl (POSIX systems)

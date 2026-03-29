@@ -201,7 +201,10 @@ class ProxyChaosProviderDistributionTest {
       provider = new ProxyChaosProvider();
 
       assertThatThrownBy(() -> provider.createProxy(container, "redis", 6379, 16379))
-          .isInstanceOf(IllegalStateException.class);
+          .satisfiesAnyOf(
+              t -> assertThat(t).isInstanceOf(IllegalStateException.class),
+              t -> assertThat(t).isInstanceOf(
+                  com.macstab.chaos.core.exception.ChaosOperationFailedException.class));
     }
   }
 

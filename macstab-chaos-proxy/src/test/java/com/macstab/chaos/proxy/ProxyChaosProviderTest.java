@@ -185,6 +185,175 @@ class ProxyChaosProviderTest {
   }
 
   @Nested
+  @DisplayName("Overflow guards")
+  class OverflowGuardTests {
+
+    @Test
+    @DisplayName("should reject rateKBps exceeding Integer.MAX_VALUE in limitBandwidth")
+    void shouldRejectOverflowRateKBps() {
+      final var provider = new ProxyChaosProvider();
+      final var container = new GenericContainer<>("redis:7.4");
+      final long overflow = (long) Integer.MAX_VALUE + 1;
+
+      assertThatThrownBy(() -> provider.limitBandwidth(container, "proxy", overflow))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("exceeds maximum supported value");
+    }
+
+    @Test
+    @DisplayName("should reject Duration exceeding Integer.MAX_VALUE ms in addLatency")
+    void shouldRejectOverflowLatency() {
+      final var provider = new ProxyChaosProvider();
+      final var container = new GenericContainer<>("redis:7.4");
+      final Duration overflow = Duration.ofMillis((long) Integer.MAX_VALUE + 1);
+
+      assertThatThrownBy(() -> provider.addLatency(container, "proxy", overflow))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("exceeds maximum supported value");
+    }
+
+    @Test
+    @DisplayName("should reject Duration exceeding Integer.MAX_VALUE ms in addTimeout")
+    void shouldRejectOverflowTimeout() {
+      final var provider = new ProxyChaosProvider();
+      final var container = new GenericContainer<>("redis:7.4");
+      final Duration overflow = Duration.ofMillis((long) Integer.MAX_VALUE + 1);
+
+      assertThatThrownBy(() -> provider.addTimeout(container, "proxy", overflow, 1.0))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("exceeds maximum supported value");
+    }
+
+    @Test
+    @DisplayName("should reject Duration exceeding Integer.MAX_VALUE ms in slowClose")
+    void shouldRejectOverflowSlowClose() {
+      final var provider = new ProxyChaosProvider();
+      final var container = new GenericContainer<>("redis:7.4");
+      final Duration overflow = Duration.ofMillis((long) Integer.MAX_VALUE + 1);
+
+      assertThatThrownBy(() -> provider.slowClose(container, "proxy", overflow))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("exceeds maximum supported value");
+    }
+  }
+
+  @Nested
+  @DisplayName("removeToxic / removeAllToxics — validation")
+  class RemoveToxicValidationTests {
+
+    @Test
+    @DisplayName("should reject null container in removeToxic")
+    void shouldRejectNullContainer_removeToxic() {
+      final var provider = new ProxyChaosProvider();
+
+      assertThatThrownBy(() -> provider.removeToxic(null, "proxy", "latency"))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("container");
+    }
+
+    @Test
+    @DisplayName("should reject null proxyName in removeToxic")
+    void shouldRejectNullProxyName_removeToxic() {
+      final var provider = new ProxyChaosProvider();
+      final var container = new GenericContainer<>("redis:7.4");
+
+      assertThatThrownBy(() -> provider.removeToxic(container, null, "latency"))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("proxyName");
+    }
+
+    @Test
+    @DisplayName("should reject null toxicName in removeToxic")
+    void shouldRejectNullToxicName_removeToxic() {
+      final var provider = new ProxyChaosProvider();
+      final var container = new GenericContainer<>("redis:7.4");
+
+      assertThatThrownBy(() -> provider.removeToxic(container, "proxy", null))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("toxicName");
+    }
+
+    @Test
+    @DisplayName("should reject null container in removeAllToxics")
+    void shouldRejectNullContainer_removeAllToxics() {
+      final var provider = new ProxyChaosProvider();
+
+      assertThatThrownBy(() -> provider.removeAllToxics(null, "proxy"))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("container");
+    }
+
+    @Test
+    @DisplayName("should reject null proxyName in removeAllToxics")
+    void shouldRejectNullProxyName_removeAllToxics() {
+      final var provider = new ProxyChaosProvider();
+      final var container = new GenericContainer<>("redis:7.4");
+
+      assertThatThrownBy(() -> provider.removeAllToxics(container, null))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("proxyName");
+    }
+  }
+
+  @Nested
+  @DisplayName("limitBandwidth / slowClose — validation")
+  class AdditionalValidationTests {
+
+    @Test
+    @DisplayName("should reject null container in limitBandwidth")
+    void shouldRejectNullContainer_limitBandwidth() {
+      final var provider = new ProxyChaosProvider();
+
+      assertThatThrownBy(() -> provider.limitBandwidth(null, "proxy", 100))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("container");
+    }
+
+    @Test
+    @DisplayName("should reject null proxyName in limitBandwidth")
+    void shouldRejectNullProxyName_limitBandwidth() {
+      final var provider = new ProxyChaosProvider();
+      final var container = new GenericContainer<>("redis:7.4");
+
+      assertThatThrownBy(() -> provider.limitBandwidth(container, null, 100))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("proxyName");
+    }
+
+    @Test
+    @DisplayName("should reject null container in slowClose")
+    void shouldRejectNullContainer_slowClose() {
+      final var provider = new ProxyChaosProvider();
+
+      assertThatThrownBy(() -> provider.slowClose(null, "proxy", Duration.ofSeconds(1)))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("container");
+    }
+
+    @Test
+    @DisplayName("should reject null proxyName in slowClose")
+    void shouldRejectNullProxyName_slowClose() {
+      final var provider = new ProxyChaosProvider();
+      final var container = new GenericContainer<>("redis:7.4");
+
+      assertThatThrownBy(() -> provider.slowClose(container, null, Duration.ofSeconds(1)))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("proxyName");
+    }
+
+    @Test
+    @DisplayName("should reject null delay in slowClose")
+    void shouldRejectNullDelay_slowClose() {
+      final var provider = new ProxyChaosProvider();
+      final var container = new GenericContainer<>("redis:7.4");
+
+      assertThatThrownBy(() -> provider.slowClose(container, "proxy", null))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("delay");
+    }
+  }
+
+  @Nested
   @DisplayName("General Behavior")
   class GeneralBehaviorTests {
 

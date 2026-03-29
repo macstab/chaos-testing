@@ -10,37 +10,41 @@ import com.macstab.chaos.core.api.ProxyChaos;
 import com.macstab.chaos.proxy.config.ToxiproxyConfig;
 import com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator;
 import com.macstab.chaos.proxy.internal.model.ProxyConfiguration;
+import com.macstab.chaos.proxy.internal.operations.toxic.BandwidthToxic;
+import com.macstab.chaos.proxy.internal.operations.toxic.LatencyToxic;
+import com.macstab.chaos.proxy.internal.operations.toxic.SlowCloseToxic;
+import com.macstab.chaos.proxy.internal.operations.toxic.TimeoutToxic;
 
 /**
  * Provider for universal TCP proxy-based chaos injection.
  *
- * <p>Enables application-level fault injection for any TCP service without modifying the service
- * itself. Supports latency, timeouts, bandwidth limits, connection issues, and more.
- *
- * <p><strong>Architecture:</strong> Uses iptables PREROUTING to transparently redirect traffic.
- * Clients must connect via container hostname (not localhost) to hit the proxy.
+ * <p>Enables transparent fault injection into any TCP service without modifying application code.
+ * Clients connect via the address returned by {@link #createProxy} — traffic routes through
+ * Toxiproxy, which applies the configured faults.
  *
  * <p><strong>Example usage:</strong>
  *
  * <pre>{@code
  * ProxyChaos chaos = new ProxyChaosProvider();
  *
- * // Create proxy for Redis
  * String hostname = chaos.createProxy(container, "redis", 6379, 16379);
- *
- * // Add 200ms latency
  * chaos.addLatency(container, "redis", Duration.ofMillis(200));
  *
- * // Connect using hostname (not localhost!)
- * Jedis client = new Jedis(hostname, 6379);
+ * Jedis client = new Jedis(hostname, 6379);  // Connect via hostname, NOT localhost
  *
- * // Cleanup
+ * // Remove just latency, keep the proxy active
+ * chaos.removeToxic(container, "redis", "latency");
+ *
+ * // Or remove everything and reset
  * chaos.reset(container);
  * }</pre>
  *
  * @author Christian Schnapka - Macstab GmbH
  */
 public final class ProxyChaosProvider implements ProxyChaos {
+
+  /** Maximum value that fits in an {@code int} without overflow — used for duration validation. */
+  private static final long MAX_INT_MS = Integer.MAX_VALUE;
 
   private final ToxiproxyOrchestrator orchestrator;
 
@@ -68,12 +72,13 @@ public final class ProxyChaosProvider implements ProxyChaos {
     Objects.requireNonNull(container, "container must not be null");
     Objects.requireNonNull(proxyName, "proxyName must not be null");
 
-    final String hostname = getContainerHostname(container);
+    // container.getHost() returns the address from the test JVM perspective — correct for
+    // test-side client connections. Works on Docker Desktop (macOS/Windows), Linux, devcontainers.
+    final String hostname = container.getHost();
     final ProxyConfiguration config =
         new ProxyConfiguration(proxyName, servicePort, proxyPort, hostname);
 
     orchestrator.createProxy(container, config);
-
     return hostname;
   }
 
@@ -89,13 +94,12 @@ public final class ProxyChaosProvider implements ProxyChaos {
       throw new IllegalArgumentException("latency must not be negative");
     }
 
-    orchestrator.addToxic(
-        container,
-        proxyName,
-        "latency",
-        "latency",
-        String.format("{\"latency\":%d}", latency.toMillis()),
-        1.0);
+    final LatencyToxic toxic = LatencyToxic.builder()
+        .name("latency")
+        .latencyMs(toIntMs(latency, "latency"))
+        .build();
+
+    orchestrator.addToxic(container, proxyName, toxic);
   }
 
   @Override
@@ -113,19 +117,18 @@ public final class ProxyChaosProvider implements ProxyChaos {
       throw new IllegalArgumentException(
           "timeout must be positive (use Duration.ofMillis(1) for instant close)");
     }
-
     if (probability < 0.0 || probability > 1.0) {
       throw new IllegalArgumentException(
           String.format("probability must be in [0.0, 1.0], got: %.2f", probability));
     }
 
-    orchestrator.addToxic(
-        container,
-        proxyName,
-        "timeout",
-        "timeout",
-        String.format("{\"timeout\":%d}", timeout.toMillis()),
-        probability);
+    final TimeoutToxic toxic = TimeoutToxic.builder()
+        .name("timeout")
+        .timeoutMs(toIntMs(timeout, "timeout"))
+        .toxicity(probability)
+        .build();
+
+    orchestrator.addToxic(container, proxyName, toxic);
   }
 
   @Override
@@ -138,14 +141,18 @@ public final class ProxyChaosProvider implements ProxyChaos {
     if (rateKBps <= 0) {
       throw new IllegalArgumentException("rateKBps must be positive");
     }
+    if (rateKBps > Integer.MAX_VALUE) {
+      throw new IllegalArgumentException(
+          String.format("rateKBps exceeds maximum supported value (%d), got: %d",
+              Integer.MAX_VALUE, rateKBps));
+    }
 
-    orchestrator.addToxic(
-        container,
-        proxyName,
-        "bandwidth",
-        "bandwidth",
-        String.format("{\"rate\":%d}", rateKBps * 1024), // Convert KB/s to bytes/s
-        1.0);
+    final BandwidthToxic toxic = BandwidthToxic.builder()
+        .name("bandwidth")
+        .rateKbps((int) rateKBps)
+        .build();
+
+    orchestrator.addToxic(container, proxyName, toxic);
   }
 
   @Override
@@ -160,13 +167,31 @@ public final class ProxyChaosProvider implements ProxyChaos {
       throw new IllegalArgumentException("delay must not be negative");
     }
 
-    orchestrator.addToxic(
-        container,
-        proxyName,
-        "slow_close",
-        "slow_close",
-        String.format("{\"delay\":%d}", delay.toMillis()),
-        1.0);
+    final SlowCloseToxic toxic = SlowCloseToxic.builder()
+        .name("slow_close")
+        .delayMs(toIntMs(delay, "delay"))
+        .build();
+
+    orchestrator.addToxic(container, proxyName, toxic);
+  }
+
+  @Override
+  public void removeToxic(
+      final GenericContainer<?> container, final String proxyName, final String toxicName) {
+
+    Objects.requireNonNull(container, "container must not be null");
+    Objects.requireNonNull(proxyName, "proxyName must not be null");
+    Objects.requireNonNull(toxicName, "toxicName must not be null");
+
+    orchestrator.removeToxic(container, proxyName, toxicName);
+  }
+
+  @Override
+  public void removeAllToxics(final GenericContainer<?> container, final String proxyName) {
+    Objects.requireNonNull(container, "container must not be null");
+    Objects.requireNonNull(proxyName, "proxyName must not be null");
+
+    orchestrator.removeAllToxics(container, proxyName);
   }
 
   @Override
@@ -177,18 +202,30 @@ public final class ProxyChaosProvider implements ProxyChaos {
 
   @Override
   public boolean isSupported() {
-    return true; // Proxy chaos works on all Linux containers
+    return true;
   }
 
-  private String getContainerHostname(final GenericContainer<?> container) {
-    try {
-      final var result = container.execInContainer("hostname");
-      if (result.getExitCode() != 0) {
-        throw new IllegalStateException("Failed to get container hostname: " + result.getStderr());
-      }
-      return result.getStdout().trim();
-    } catch (final Exception e) {
-      throw new IllegalStateException("Failed to get container hostname", e);
+  // ==================== Private Helpers ====================
+
+  /**
+   * Convert a {@link Duration} to milliseconds as {@code int}, with overflow guard.
+   *
+   * <p>Toxiproxy toxic configs use {@code int} milliseconds. {@link Duration#toMillis()} returns
+   * {@code long}. Values exceeding {@link Integer#MAX_VALUE} (~24.8 days) are rejected to prevent
+   * silent truncation.
+   *
+   * @param duration duration to convert
+   * @param paramName parameter name for error messages
+   * @return milliseconds as {@code int}
+   * @throws IllegalArgumentException if the duration exceeds {@link Integer#MAX_VALUE} milliseconds
+   */
+  private static int toIntMs(final Duration duration, final String paramName) {
+    final long ms = duration.toMillis();
+    if (ms > MAX_INT_MS) {
+      throw new IllegalArgumentException(
+          String.format("%s exceeds maximum supported value (%dms), got: %dms",
+              paramName, MAX_INT_MS, ms));
     }
+    return (int) ms;
   }
 }

@@ -5,66 +5,47 @@ import java.io.IOException;
 import java.util.Objects;
 
 import org.testcontainers.containers.Container.ExecResult;
-import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.command.network.NetworkCommandBuilder;
-import com.macstab.chaos.core.platform.Platform;
-import com.macstab.chaos.core.platform.PlatformDetector;
-import com.macstab.chaos.core.shell.Shell;
+import com.macstab.chaos.proxy.internal.ContainerContext;
 
 import lombok.extern.slf4j.Slf4j;
 
 /**
  * Implementation of network port redirection using iptables.
  *
- * <p>Caches platform detection per container for performance. Platform is detected once per
- * container and reused for all subsequent operations.
- *
- * <p><strong>Thread-safety:</strong> Platform is immutable, safe to cache. Container reference is
- * checked on each call to invalidate cache when container changes.
+ * <p>Receives a pre-resolved {@link ContainerContext} — no platform detection or caching inside
+ * this class.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
 @Slf4j
 public final class NetworkRedirectManager implements NetworkRedirect {
 
-  // Platform caching (lazy initialization)
-  private Platform cachedPlatform;
-  private GenericContainer<?> cachedContainer;
-
   @Override
   public void setupRedirect(
-      final GenericContainer<?> container,
-      final Shell shell,
-      final int servicePort,
-      final int proxyPort)
-      throws IOException {
+      final ContainerContext ctx, final int servicePort, final int proxyPort) throws IOException {
 
-    Objects.requireNonNull(container, "container must not be null");
-    Objects.requireNonNull(shell, "shell must not be null");
+    Objects.requireNonNull(ctx, "ctx must not be null");
     validatePort(servicePort, "servicePort");
     validatePort(proxyPort, "proxyPort");
 
     try {
-      final Platform platform = getPlatform(container);
-      final NetworkCommandBuilder network = platform.getNetworkCommandBuilder();
+      final NetworkCommandBuilder network = ctx.platform().getNetworkCommandBuilder();
       final String redirectCmd = network.buildAddRedirectCommand(servicePort, proxyPort);
-
-      final ExecResult result = shell.exec(container, redirectCmd);
+      final ExecResult result = ctx.shell().exec(ctx.container(), redirectCmd);
 
       if (result.getExitCode() != 0) {
         throw new IOException(
-            String.format(
-                "Failed to setup port redirect %d → %d: %s",
+            String.format("Failed to setup port redirect %d → %d: %s",
                 servicePort, proxyPort, result.getStderr()));
       }
 
       log.debug("Setup port redirect: {} → {}", servicePort, proxyPort);
 
+    } catch (final IOException e) {
+      throw e;
     } catch (final Exception e) {
-      if (e instanceof IOException) {
-        throw (IOException) e;
-      }
       throw new IOException(
           String.format("Failed to setup redirect %d → %d", servicePort, proxyPort), e);
     }
@@ -72,55 +53,42 @@ public final class NetworkRedirectManager implements NetworkRedirect {
 
   @Override
   public void removeRedirect(
-      final GenericContainer<?> container,
-      final Shell shell,
-      final int servicePort,
-      final int proxyPort)
-      throws IOException {
+      final ContainerContext ctx, final int servicePort, final int proxyPort) throws IOException {
 
-    Objects.requireNonNull(container, "container must not be null");
-    Objects.requireNonNull(shell, "shell must not be null");
+    Objects.requireNonNull(ctx, "ctx must not be null");
     validatePort(servicePort, "servicePort");
     validatePort(proxyPort, "proxyPort");
 
     try {
-      final Platform platform = getPlatform(container);
-      final NetworkCommandBuilder network = platform.getNetworkCommandBuilder();
+      final NetworkCommandBuilder network = ctx.platform().getNetworkCommandBuilder();
       final String removeCmd = network.buildRemoveRedirectCommand(servicePort, proxyPort);
-
-      final ExecResult result = shell.exec(container, removeCmd);
+      final ExecResult result = ctx.shell().exec(ctx.container(), removeCmd);
 
       if (result.getExitCode() != 0) {
         throw new IOException(
-            String.format(
-                "Failed to remove port redirect %d → %d: %s",
+            String.format("Failed to remove port redirect %d → %d: %s",
                 servicePort, proxyPort, result.getStderr()));
       }
 
       log.debug("Removed port redirect: {} → {}", servicePort, proxyPort);
 
+    } catch (final IOException e) {
+      throw e;
     } catch (final Exception e) {
-      if (e instanceof IOException) {
-        throw (IOException) e;
-      }
       throw new IOException(
           String.format("Failed to remove redirect %d → %d", servicePort, proxyPort), e);
     }
   }
 
   @Override
-  public void clearAllRedirects(final GenericContainer<?> container, final Shell shell)
-      throws IOException {
+  public void clearAllRedirects(final ContainerContext ctx) throws IOException {
 
-    Objects.requireNonNull(container, "container must not be null");
-    Objects.requireNonNull(shell, "shell must not be null");
+    Objects.requireNonNull(ctx, "ctx must not be null");
 
     try {
-      final Platform platform = getPlatform(container);
-      final NetworkCommandBuilder network = platform.getNetworkCommandBuilder();
+      final NetworkCommandBuilder network = ctx.platform().getNetworkCommandBuilder();
       final String clearCmd = network.buildClearRedirectsCommand();
-
-      final ExecResult result = shell.exec(container, clearCmd);
+      final ExecResult result = ctx.shell().exec(ctx.container(), clearCmd);
 
       if (result.getExitCode() != 0) {
         log.warn("Failed to clear redirects (may not exist): {}", result.getStderr());
@@ -128,33 +96,14 @@ public final class NetworkRedirectManager implements NetworkRedirect {
         log.debug("Cleared all port redirects");
       }
 
+    } catch (final IOException e) {
+      throw e;
     } catch (final Exception e) {
-      if (e instanceof IOException) {
-        throw (IOException) e;
-      }
       throw new IOException("Failed to clear redirects", e);
     }
   }
 
   // ==================== Private Helpers ====================
-
-  /**
-   * Get platform for container, using cache when available.
-   *
-   * <p>Platform is detected once per container and cached. Cache is invalidated when container
-   * reference changes.
-   *
-   * @param container target container
-   * @return platform instance (cached or newly detected)
-   */
-  private Platform getPlatform(final GenericContainer<?> container) {
-    if (cachedPlatform == null || cachedContainer != container) {
-      cachedPlatform = PlatformDetector.detect(container);
-      cachedContainer = container;
-      log.trace("Platform detected and cached for container: {}", container.getDockerImageName());
-    }
-    return cachedPlatform;
-  }
 
   /**
    * Validate port is in valid range.

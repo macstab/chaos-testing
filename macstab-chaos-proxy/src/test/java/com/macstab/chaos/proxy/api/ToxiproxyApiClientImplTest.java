@@ -17,8 +17,9 @@ import org.testcontainers.containers.GenericContainer;
 import com.macstab.chaos.core.command.http.CurlCommandBuilder;
 import com.macstab.chaos.core.command.http.HttpCommandBuilder;
 import com.macstab.chaos.core.platform.Platform;
-import com.macstab.chaos.core.platform.PlatformDetector;
 import com.macstab.chaos.core.shell.Shell;
+import com.macstab.chaos.proxy.support.TestExecResults;
+import com.macstab.chaos.proxy.internal.ContainerContext;
 import com.macstab.chaos.proxy.internal.model.ProxyConfiguration;
 
 /**
@@ -34,6 +35,8 @@ class ToxiproxyApiClientImplTest {
   private Shell shell;
   private Platform platform;
   private HttpCommandBuilder httpBuilder;
+  /** Pre-built context — available in all tests without triggering Mockito side-effects. */
+  private ContainerContext ctx;
 
   @BeforeEach
   void setUp() {
@@ -43,353 +46,359 @@ class ToxiproxyApiClientImplTest {
     platform = mock(Platform.class);
     httpBuilder = new CurlCommandBuilder();
 
-    // Mock container.isRunning() for PlatformDetector
     when(container.isRunning()).thenReturn(true);
-
-    // Mock platform to return HttpCommandBuilder
     when(platform.getHttpCommandBuilder()).thenReturn(httpBuilder);
+    when(platform.getDefaultShell()).thenReturn(shell);
+
+    // Build context after all stubs are in place — avoids Mockito UnfinishedStubbingException
+    ctx = ContainerContext.of(container, platform, shell);
   }
 
+  // ==================== Tests ====================
+
   @Nested
-  @DisplayName("API Health Check")
-  class ApiHealthCheckTests {
+  @DisplayName("isApiReady")
+  class IsApiReadyTests {
 
     @Test
-    @DisplayName("should return true when API responds successfully")
+    @DisplayName("should return true when API responds with exit code 0")
     void shouldReturnTrue_whenApiResponds() throws Exception {
-      // GIVEN
-      try (var detector = mockStatic(PlatformDetector.class)) {
-        detector.when(() -> PlatformDetector.detect(container)).thenReturn(platform);
-        final ExecResult result = mockExecResult(0, "{}", "");
-        when(shell.exec(eq(container), anyString())).thenReturn(result);
+      final ExecResult execResult1 = TestExecResults.of(0, "{}", "");
+      when(shell.exec(eq(container), anyString()))
+          .thenReturn(execResult1);
 
-        // WHEN
-        final boolean ready = apiClient.isApiReady(container, shell);
+      assertThat(apiClient.isApiReady(ctx)).isTrue();
+      verify(shell).exec(eq(container), contains("/proxies"));
 
-        // THEN
-        assertThat(ready).isTrue();
-        verify(shell).exec(eq(container), contains("/proxies"));
-      }
     }
 
     @Test
-    @DisplayName("should return false when API returns error")
+    @DisplayName("should return false when API returns non-zero exit code")
     void shouldReturnFalse_whenApiReturnsError() throws Exception {
-      // GIVEN
-      try (var detector = mockStatic(PlatformDetector.class)) {
-        detector.when(() -> PlatformDetector.detect(container)).thenReturn(platform);
-        final ExecResult result = mockExecResult(1, "", "Connection refused");
-        when(shell.exec(eq(container), anyString())).thenReturn(result);
+      final ExecResult execResult2 = TestExecResults.of(1, "", "Connection refused");
+      when(shell.exec(eq(container), anyString()))
+          .thenReturn(execResult2);
 
-        // WHEN
-        final boolean ready = apiClient.isApiReady(container, shell);
+      assertThat(apiClient.isApiReady(ctx)).isFalse();
 
-        // THEN
-        assertThat(ready).isFalse();
-      }
     }
 
     @Test
-    @DisplayName("should return false when shell execution throws exception")
-    void shouldReturnFalse_whenShellThrowsException() throws Exception {
-      // GIVEN
+    @DisplayName("should return false when shell throws exception")
+    void shouldReturnFalse_whenShellThrows() throws Exception {
       when(shell.exec(any(), any())).thenThrow(new IOException("Network error"));
 
-      // WHEN
-      final boolean ready = apiClient.isApiReady(container, shell);
+      assertThat(apiClient.isApiReady(ctx)).isFalse();
 
-      // THEN
-      assertThat(ready).isFalse();
+    }
+
+    @Test
+    @DisplayName("should throw NullPointerException when ctx is null")
+    void shouldThrowNpe_whenCtxIsNull() {
+      assertThatNullPointerException()
+          .isThrownBy(() -> apiClient.isApiReady(null))
+          .withMessage("ctx must not be null");
     }
   }
 
   @Nested
-  @DisplayName("Proxy Existence Check")
-  class ProxyExistenceCheckTests {
+  @DisplayName("proxyExists")
+  class ProxyExistsTests {
 
     @Test
     @DisplayName("should return true when proxy exists")
     void shouldReturnTrue_whenProxyExists() throws Exception {
-      // GIVEN
-      try (var detector = mockStatic(PlatformDetector.class)) {
-        detector.when(() -> PlatformDetector.detect(container)).thenReturn(platform);
-        final ExecResult result = mockExecResult(0, "{\"name\":\"redis\"}", "");
-        when(shell.exec(eq(container), anyString())).thenReturn(result);
+      final ExecResult execResult3 = TestExecResults.of(0, "{\"name\":\"redis\"}", "");
+      when(shell.exec(eq(container), anyString()))
+          .thenReturn(execResult3);
 
-        // WHEN
-        final boolean exists = apiClient.proxyExists(container, shell, "redis");
+      assertThat(apiClient.proxyExists(ctx, "redis")).isTrue();
+      verify(shell).exec(eq(container), contains("/proxies/redis"));
 
-        // THEN
-        assertThat(exists).isTrue();
-        verify(shell).exec(eq(container), contains("/proxies/redis"));
-      }
     }
 
     @Test
     @DisplayName("should return false when proxy does not exist")
     void shouldReturnFalse_whenProxyDoesNotExist() throws Exception {
-      // GIVEN
-      try (var detector = mockStatic(PlatformDetector.class)) {
-        detector.when(() -> PlatformDetector.detect(container)).thenReturn(platform);
-        final ExecResult result = mockExecResult(1, "", "404 Not Found");
-        when(shell.exec(eq(container), anyString())).thenReturn(result);
+      final ExecResult execResult4 = TestExecResults.of(1, "", "404 Not Found");
+      when(shell.exec(eq(container), anyString()))
+          .thenReturn(execResult4);
 
-        // WHEN
-        final boolean exists = apiClient.proxyExists(container, shell, "nonexistent");
+      assertThat(apiClient.proxyExists(ctx, "nonexistent")).isFalse();
 
-        // THEN
-        assertThat(exists).isFalse();
-      }
     }
 
     @Test
-    @DisplayName("should throw IOException when shell execution fails")
+    @DisplayName("should throw IOException when shell throws unexpected exception")
     void shouldThrowIOException_whenShellFails() throws Exception {
-      // GIVEN
-      try (var detector = mockStatic(PlatformDetector.class)) {
-        detector.when(() -> PlatformDetector.detect(container)).thenReturn(platform);
-        when(shell.exec(any(), any())).thenThrow(new RuntimeException("Command failed"));
+      when(shell.exec(any(), any())).thenThrow(new RuntimeException("Command failed"));
 
-        // WHEN / THEN
-        assertThatThrownBy(() -> apiClient.proxyExists(container, shell, "redis"))
-            .isInstanceOf(IOException.class)
-            .hasMessageContaining("Failed to check if proxy exists");
-      }
+      assertThatThrownBy(() -> apiClient.proxyExists(ctx, "redis"))
+          .isInstanceOf(IOException.class)
+          .hasMessageContaining("Failed to check if proxy exists");
+
+    }
+
+    @Test
+    @DisplayName("should throw NullPointerException when proxyName is null")
+    void shouldThrowNpe_whenProxyNameIsNull() {
+      assertThatNullPointerException()
+          .isThrownBy(() -> apiClient.proxyExists(ctx, null))
+          .withMessage("proxyName must not be null");
+
     }
   }
 
   @Nested
-  @DisplayName("Proxy Creation")
-  class ProxyCreationTests {
+  @DisplayName("createProxy")
+  class CreateProxyTests {
 
     @Test
     @DisplayName("should create proxy successfully")
     void shouldCreateProxy_successfully() throws Exception {
-      // GIVEN
-      try (var detector = mockStatic(PlatformDetector.class)) {
-        detector.when(() -> PlatformDetector.detect(container)).thenReturn(platform);
-        final ProxyConfiguration config = new ProxyConfiguration("redis", 6379, 16379, "localhost");
-        final ExecResult result = mockExecResult(0, "{\"name\":\"redis\"}", "");
-        when(shell.exec(eq(container), anyString())).thenReturn(result);
+      final ProxyConfiguration config =
+          new ProxyConfiguration("redis", 6379, 16379, "localhost");
+      final ExecResult execResult5 = TestExecResults.of(0, "{\"name\":\"redis\"}", "");
+      when(shell.exec(eq(container), anyString()))
+          .thenReturn(execResult5);
 
-        // WHEN
-        apiClient.createProxy(container, shell, config);
+      apiClient.createProxy(ctx, config);
 
-        // THEN
-        verify(shell).exec(eq(container), contains("/proxies"));
-        verify(shell).exec(eq(container), contains("redis"));
-      }
+      verify(shell).exec(eq(container), contains("/proxies"));
+
     }
 
     @Test
     @DisplayName("should throw IOException when creation fails")
     void shouldThrowIOException_whenCreationFails() throws Exception {
-      // GIVEN
-      try (var detector = mockStatic(PlatformDetector.class)) {
-        detector.when(() -> PlatformDetector.detect(container)).thenReturn(platform);
-        final ProxyConfiguration config = new ProxyConfiguration("redis", 6379, 16379, "localhost");
-        final ExecResult result = mockExecResult(1, "", "Proxy already exists");
-        when(shell.exec(eq(container), anyString())).thenReturn(result);
+      final ProxyConfiguration config =
+          new ProxyConfiguration("redis", 6379, 16379, "localhost");
+      final ExecResult execResult6 = TestExecResults.of(1, "", "Proxy already exists");
+      when(shell.exec(eq(container), anyString()))
+          .thenReturn(execResult6);
 
-        // WHEN / THEN
-        assertThatThrownBy(() -> apiClient.createProxy(container, shell, config))
-            .isInstanceOf(IOException.class)
-            .hasMessageContaining("Failed to create proxy");
-      }
+      assertThatThrownBy(() -> apiClient.createProxy(ctx, config))
+          .isInstanceOf(IOException.class)
+          .hasMessageContaining("Failed to create proxy");
+
     }
 
     @Test
-    @DisplayName("should validate configuration is not null")
-    void shouldValidateConfiguration() {
-      // WHEN / THEN
-      assertThatThrownBy(() -> apiClient.createProxy(container, shell, null))
-          .isInstanceOf(NullPointerException.class)
-          .hasMessageContaining("config");
+    @DisplayName("should throw NullPointerException when config is null")
+    void shouldThrowNpe_whenConfigIsNull() {
+      assertThatNullPointerException()
+          .isThrownBy(() -> apiClient.createProxy(ctx, null))
+          .withMessage("config must not be null");
+
     }
   }
 
   @Nested
-  @DisplayName("Proxy Deletion")
-  class ProxyDeletionTests {
+  @DisplayName("deleteProxy")
+  class DeleteProxyTests {
 
     @Test
     @DisplayName("should delete proxy successfully")
     void shouldDeleteProxy_successfully() throws Exception {
-      // GIVEN
-      try (var detector = mockStatic(PlatformDetector.class)) {
-        detector.when(() -> PlatformDetector.detect(container)).thenReturn(platform);
-        final ExecResult result = mockExecResult(0, "", "");
-        when(shell.exec(eq(container), anyString())).thenReturn(result);
+      final ExecResult execResult7 = TestExecResults.of(0, "", "");
+      when(shell.exec(eq(container), anyString()))
+          .thenReturn(execResult7);
 
-        // WHEN
-        apiClient.deleteProxy(container, shell, "redis");
+      apiClient.deleteProxy(ctx, "redis");
 
-        // THEN
-        verify(shell).exec(eq(container), contains("/proxies/redis"));
-      }
+      verify(shell).exec(eq(container), contains("/proxies/redis"));
+
     }
 
     @Test
     @DisplayName("should throw IOException when deletion fails")
     void shouldThrowIOException_whenDeletionFails() throws Exception {
-      // GIVEN
-      try (var detector = mockStatic(PlatformDetector.class)) {
-        detector.when(() -> PlatformDetector.detect(container)).thenReturn(platform);
-        final ExecResult result = mockExecResult(1, "", "Proxy not found");
-        when(shell.exec(eq(container), anyString())).thenReturn(result);
+      final ExecResult execResult8 = TestExecResults.of(1, "", "Proxy not found");
+      when(shell.exec(eq(container), anyString()))
+          .thenReturn(execResult8);
 
-        // WHEN / THEN
-        assertThatThrownBy(() -> apiClient.deleteProxy(container, shell, "redis"))
-            .isInstanceOf(IOException.class)
-            .hasMessageContaining("Failed to delete proxy");
-      }
+      assertThatThrownBy(() -> apiClient.deleteProxy(ctx, "redis"))
+          .isInstanceOf(IOException.class)
+          .hasMessageContaining("Failed to delete proxy");
+
+    }
+
+    @Test
+    @DisplayName("should throw NullPointerException when proxyName is null")
+    void shouldThrowNpe_whenProxyNameIsNull() {
+      assertThatNullPointerException()
+          .isThrownBy(() -> apiClient.deleteProxy(ctx, null))
+          .withMessage("proxyName must not be null");
+
     }
   }
 
   @Nested
-  @DisplayName("Toxic Operations")
-  class ToxicTests {
+  @DisplayName("toxicExists")
+  class ToxicExistsTests {
 
     @Test
-    @DisplayName("should check if toxic exists")
-    void shouldCheckToxicExists() throws Exception {
-      // GIVEN
-      try (var detector = mockStatic(PlatformDetector.class)) {
-        detector.when(() -> PlatformDetector.detect(container)).thenReturn(platform);
-        final ExecResult result = mockExecResult(0, "", "");
-        when(shell.exec(eq(container), anyString())).thenReturn(result);
+    @DisplayName("should return true when toxic exists in list")
+    void shouldReturnTrue_whenToxicExistsInList() throws Exception {
+      final String toxicsJson = "[{\"name\":\"latency\",\"type\":\"latency\"}]";
+      final ExecResult execResult9 = TestExecResults.of(0, toxicsJson, "");
+      when(shell.exec(eq(container), anyString()))
+          .thenReturn(execResult9);
 
-        // WHEN
-        final boolean exists = apiClient.toxicExists(container, shell, "redis", "latency");
+      assertThat(apiClient.toxicExists(ctx, "redis", "latency")).isTrue();
 
-        // THEN
-        assertThat(exists).isTrue();
-      }
     }
+
+    @Test
+    @DisplayName("should return false when toxic not in list")
+    void shouldReturnFalse_whenToxicNotInList() throws Exception {
+      final ExecResult execResult10 = TestExecResults.of(0, "[]", "");
+      when(shell.exec(eq(container), anyString()))
+          .thenReturn(execResult10);
+
+      assertThat(apiClient.toxicExists(ctx, "redis", "latency")).isFalse();
+
+    }
+
+    @Test
+    @DisplayName("should throw NullPointerException when toxicName is null")
+    void shouldThrowNpe_whenToxicNameIsNull() {
+      assertThatNullPointerException()
+          .isThrownBy(() -> apiClient.toxicExists(ctx, "redis", null))
+          .withMessage("toxicName must not be null");
+
+    }
+  }
+
+  @Nested
+  @DisplayName("addToxic")
+  class AddToxicTests {
 
     @Test
     @DisplayName("should add toxic successfully")
     void shouldAddToxic_successfully() throws Exception {
-      // GIVEN
-      try (var detector = mockStatic(PlatformDetector.class)) {
-        detector.when(() -> PlatformDetector.detect(container)).thenReturn(platform);
-        final ExecResult result = mockExecResult(0, "{\"name\":\"latency\"}", "");
-        when(shell.exec(eq(container), anyString())).thenReturn(result);
+      final ExecResult execResult11 = TestExecResults.of(0, "{\"name\":\"latency\"}", "");
+      when(shell.exec(eq(container), anyString()))
+          .thenReturn(execResult11);
 
-        // WHEN
-        apiClient.addToxic(
-            container, shell, "redis", "latency", "latency", "{\"latency\":1000}", 1.0);
+      apiClient.addToxic(
+          ctx, "redis", "latency", "latency", "{\"latency\":1000}", 1.0);
 
-        // THEN
-        verify(shell).exec(eq(container), contains("/proxies/redis/toxics"));
-      }
+      verify(shell).exec(eq(container), contains("/proxies/redis/toxics"));
+
     }
 
     @Test
-    @DisplayName("should validate toxicity range")
-    void shouldValidateToxicityRange() {
-      // WHEN / THEN - toxicity < 0
-      assertThatThrownBy(
-              () -> apiClient.addToxic(container, shell, "redis", "latency", "latency", "{}", -0.1))
-          .isInstanceOf(IllegalArgumentException.class)
-          .hasMessageContaining("toxicity must be in [0.0, 1.0]");
+    @DisplayName("should throw IllegalArgumentException when toxicity < 0")
+    void shouldThrow_whenToxicityBelowZero() {
+      assertThatIllegalArgumentException()
+          .isThrownBy(() -> apiClient.addToxic(
+              ctx, "redis", "latency", "latency", "{}", -0.1))
+          .withMessageContaining("toxicity must be in [0.0, 1.0]");
 
-      // WHEN / THEN - toxicity > 1
-      assertThatThrownBy(
-              () -> apiClient.addToxic(container, shell, "redis", "latency", "latency", "{}", 1.1))
-          .isInstanceOf(IllegalArgumentException.class)
-          .hasMessageContaining("toxicity must be in [0.0, 1.0]");
+    }
+
+    @Test
+    @DisplayName("should throw IllegalArgumentException when toxicity > 1")
+    void shouldThrow_whenToxicityAboveOne() {
+      assertThatIllegalArgumentException()
+          .isThrownBy(() -> apiClient.addToxic(
+              ctx, "redis", "latency", "latency", "{}", 1.1))
+          .withMessageContaining("toxicity must be in [0.0, 1.0]");
+
+    }
+
+    @Test
+    @DisplayName("should throw NullPointerException when toxicName is null")
+    void shouldThrowNpe_whenToxicNameIsNull() {
+      assertThatNullPointerException()
+          .isThrownBy(() -> apiClient.addToxic(
+              ctx, "redis", null, "latency", "{}", 1.0))
+          .withMessage("toxicName must not be null");
+
+    }
+
+    @Test
+    @DisplayName("should throw NullPointerException when toxicType is null")
+    void shouldThrowNpe_whenToxicTypeIsNull() {
+      assertThatNullPointerException()
+          .isThrownBy(() -> apiClient.addToxic(
+              ctx, "redis", "latency", null, "{}", 1.0))
+          .withMessage("toxicType must not be null");
+
+    }
+
+    @Test
+    @DisplayName("should throw NullPointerException when attributes is null")
+    void shouldThrowNpe_whenAttributesIsNull() {
+      assertThatNullPointerException()
+          .isThrownBy(() -> apiClient.addToxic(
+              ctx, "redis", "latency", "latency", null, 1.0))
+          .withMessage("attributes must not be null");
+
     }
   }
 
   @Nested
-  @DisplayName("Validation")
-  class ValidationTests {
+  @DisplayName("deleteToxic")
+  class DeleteToxicTests {
 
     @Test
-    @DisplayName("should validate container is not null (isApiReady)")
-    void shouldValidateContainer_isApiReady() {
-      // WHEN / THEN
-      assertThatThrownBy(() -> apiClient.isApiReady(null, shell))
-          .isInstanceOf(NullPointerException.class)
-          .hasMessageContaining("container");
+    @DisplayName("should delete toxic successfully")
+    void shouldDeleteToxic_successfully() throws Exception {
+      final ExecResult execResult12 = TestExecResults.of(0, "", "");
+      when(shell.exec(eq(container), anyString()))
+          .thenReturn(execResult12);
+
+      apiClient.deleteToxic(ctx, "redis", "latency");
+
+      verify(shell).exec(eq(container), contains("/proxies/redis/toxics/latency"));
+
     }
 
     @Test
-    @DisplayName("should validate shell is not null (isApiReady)")
-    void shouldValidateShell_isApiReady() {
-      // WHEN / THEN
-      assertThatThrownBy(() -> apiClient.isApiReady(container, null))
-          .isInstanceOf(NullPointerException.class)
-          .hasMessageContaining("shell");
-    }
+    @DisplayName("should throw IOException when deletion fails")
+    void shouldThrowIOException_whenDeletionFails() throws Exception {
+      final ExecResult execResult13 = TestExecResults.of(1, "", "Toxic not found");
+      when(shell.exec(eq(container), anyString()))
+          .thenReturn(execResult13);
 
-    @Test
-    @DisplayName("should validate proxy name is not null (proxyExists)")
-    void shouldValidateProxyName_proxyExists() {
-      // WHEN / THEN
-      assertThatThrownBy(() -> apiClient.proxyExists(container, shell, null))
-          .isInstanceOf(NullPointerException.class)
-          .hasMessageContaining("proxyName");
-    }
+      assertThatThrownBy(() -> apiClient.deleteToxic(ctx, "redis", "latency"))
+          .isInstanceOf(IOException.class)
+          .hasMessageContaining("Failed to delete toxic");
 
-    @Test
-    @DisplayName("should validate proxy name is not null (deleteProxy)")
-    void shouldValidateProxyName_deleteProxy() {
-      // WHEN / THEN
-      assertThatThrownBy(() -> apiClient.deleteProxy(container, shell, null))
-          .isInstanceOf(NullPointerException.class)
-          .hasMessageContaining("proxyName");
-    }
-
-    @Test
-    @DisplayName("should validate toxic name is not null (toxicExists)")
-    void shouldValidateToxicName_toxicExists() {
-      // WHEN / THEN
-      assertThatThrownBy(() -> apiClient.toxicExists(container, shell, "redis", null))
-          .isInstanceOf(NullPointerException.class)
-          .hasMessageContaining("toxicName");
-    }
-
-    @Test
-    @DisplayName("should validate toxic name is not null (addToxic)")
-    void shouldValidateToxicName_addToxic() {
-      // WHEN / THEN
-      assertThatThrownBy(
-              () -> apiClient.addToxic(container, shell, "redis", null, "latency", "{}", 1.0))
-          .isInstanceOf(NullPointerException.class)
-          .hasMessageContaining("toxicName");
-    }
-
-    @Test
-    @DisplayName("should validate toxic type is not null (addToxic)")
-    void shouldValidateToxicType_addToxic() {
-      // WHEN / THEN
-      assertThatThrownBy(
-              () -> apiClient.addToxic(container, shell, "redis", "latency", null, "{}", 1.0))
-          .isInstanceOf(NullPointerException.class)
-          .hasMessageContaining("toxicType");
-    }
-
-    @Test
-    @DisplayName("should validate attributes is not null (addToxic)")
-    void shouldValidateAttributes_addToxic() {
-      // WHEN / THEN
-      assertThatThrownBy(
-              () -> apiClient.addToxic(container, shell, "redis", "latency", "latency", null, 1.0))
-          .isInstanceOf(NullPointerException.class)
-          .hasMessageContaining("attributes");
     }
   }
 
-  // ==================== Test Helpers ====================
+  @Nested
+  @DisplayName("listToxics")
+  class ListToxicsTests {
 
-  private static ExecResult mockExecResult(
-      final int exitCode, final String stdout, final String stderr) {
-    final ExecResult result = mock(ExecResult.class);
-    when(result.getExitCode()).thenReturn(exitCode);
-    when(result.getStdout()).thenReturn(stdout);
-    when(result.getStderr()).thenReturn(stderr);
-    return result;
+    @Test
+    @DisplayName("should parse toxic names from JSON response")
+    void shouldParseToxicNames_fromJsonResponse() throws Exception {
+      final String json =
+          "[{\"name\":\"latency\",\"type\":\"latency\"},"
+              + "{\"name\":\"bandwidth\",\"type\":\"bandwidth\"}]";
+      final ExecResult execResult14 = TestExecResults.of(0, json, "");
+      when(shell.exec(eq(container), anyString()))
+          .thenReturn(execResult14);
+
+      final var names = apiClient.listToxics(ctx, "redis");
+
+      assertThat(names).containsExactlyInAnyOrder("latency", "bandwidth");
+
+    }
+
+    @Test
+    @DisplayName("should return empty list when no toxics")
+    void shouldReturnEmptyList_whenNoToxics() throws Exception {
+      final ExecResult execResult15 = TestExecResults.of(0, "[]", "");
+      when(shell.exec(eq(container), anyString()))
+          .thenReturn(execResult15);
+
+      assertThat(apiClient.listToxics(ctx, "redis")).isEmpty();
+
+    }
   }
 }

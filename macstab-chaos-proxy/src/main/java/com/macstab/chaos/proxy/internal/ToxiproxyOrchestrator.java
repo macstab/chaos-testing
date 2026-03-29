@@ -1,15 +1,11 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.proxy.internal;
 
-import java.io.IOException;
 import java.util.Objects;
 
 import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
-import com.macstab.chaos.core.platform.Platform;
-import com.macstab.chaos.core.platform.PlatformDetector;
-import com.macstab.chaos.core.shell.Shell;
 import com.macstab.chaos.proxy.config.ToxiproxyConfig;
 import com.macstab.chaos.proxy.internal.lifecycle.ToxiproxyLifecycle;
 import com.macstab.chaos.proxy.internal.lifecycle.ToxiproxyLifecycleManager;
@@ -18,42 +14,40 @@ import com.macstab.chaos.proxy.internal.operations.ProxyOperations;
 import com.macstab.chaos.proxy.internal.operations.ProxyOperationsManager;
 import com.macstab.chaos.proxy.internal.operations.ToxicOperations;
 import com.macstab.chaos.proxy.internal.operations.ToxicOperationsManager;
-import com.macstab.chaos.proxy.internal.operations.toxic.LegacyToxicConfig;
+import com.macstab.chaos.proxy.internal.operations.toxic.ToxicConfig;
 import com.macstab.chaos.proxy.network.NetworkRedirect;
 import com.macstab.chaos.proxy.network.NetworkRedirectManager;
 
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Orchestrator for Toxiproxy operations.
+ * Orchestrates Toxiproxy operations across lifecycle, proxy, and toxic managers.
  *
- * <p>Coordinates lifecycle, proxy, and toxic operations through dedicated managers. Replaces the
- * old god-class ToxiproxyManager with clean separation of concerns.
- *
- * <p><strong>Architecture:</strong>
+ * <p>This is the single point where {@link ContainerContext} is created. It is resolved exactly
+ * once per public operation and passed to all downstream managers — eliminating repeated
+ * platform detection across the call chain.
  *
  * <pre>
- * ToxiproxyOrchestrator
- *     ├── ToxiproxyLifecycleManager (start/stop/health)
- *     ├── ProxyOperationsManager (proxy CRUD)
- *     ├── ToxicOperationsManager (toxic CRUD)
- *     └── NetworkRedirectManager (iptables)
+ * ToxiproxyOrchestrator  ← creates ContainerContext once
+ *     ├── ToxiproxyLifecycleManager  (receives ctx)
+ *     ├── ProxyOperationsManager     (receives ctx)
+ *     ├── ToxicOperationsManager     (receives ctx)
+ *     └── NetworkRedirectManager     (receives ctx)
  * </pre>
  *
- * <p><strong>INTERNAL USE ONLY</strong> - Implementation detail, not part of public API.
+ * <p><strong>INTERNAL USE ONLY</strong> — implementation detail, not part of the public API.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
 @Slf4j
 public final class ToxiproxyOrchestrator {
 
-  private final ToxiproxyConfig config;
   private final ToxiproxyLifecycle lifecycle;
   private final ProxyOperations proxyOps;
   private final ToxicOperations toxicOps;
   private final NetworkRedirect networkRedirect;
 
-  /** Create orchestrator with default configuration and components. */
+  /** Create orchestrator with default configuration. */
   public ToxiproxyOrchestrator() {
     this(ToxiproxyConfig.defaults());
   }
@@ -64,7 +58,7 @@ public final class ToxiproxyOrchestrator {
    * @param config Toxiproxy configuration
    */
   public ToxiproxyOrchestrator(final ToxiproxyConfig config) {
-    this.config = Objects.requireNonNull(config, "config must not be null");
+    Objects.requireNonNull(config, "config must not be null");
     this.lifecycle = new ToxiproxyLifecycleManager(config);
     this.proxyOps = new ProxyOperationsManager(config);
     this.toxicOps = new ToxicOperationsManager(config);
@@ -72,13 +66,34 @@ public final class ToxiproxyOrchestrator {
   }
 
   /**
+   * Create orchestrator with custom components (for testing).
+   *
+   * @param lifecycle lifecycle manager
+   * @param proxyOps proxy operations
+   * @param toxicOps toxic operations
+   * @param networkRedirect network redirect
+   */
+  public ToxiproxyOrchestrator(
+      final ToxiproxyLifecycle lifecycle,
+      final ProxyOperations proxyOps,
+      final ToxicOperations toxicOps,
+      final NetworkRedirect networkRedirect) {
+    this.lifecycle = Objects.requireNonNull(lifecycle, "lifecycle must not be null");
+    this.proxyOps = Objects.requireNonNull(proxyOps, "proxyOps must not be null");
+    this.toxicOps = Objects.requireNonNull(toxicOps, "toxicOps must not be null");
+    this.networkRedirect =
+        Objects.requireNonNull(networkRedirect, "networkRedirect must not be null");
+  }
+
+  /**
    * Create a proxy for a TCP service.
    *
-   * <p>Ensures Toxiproxy is running, creates the proxy, and sets up network redirection.
+   * <p>Platform is detected once here and passed to lifecycle and proxy operations.
    *
    * @param container container
    * @param proxyConfig proxy configuration
    * @return proxy configuration
+   * @throws ChaosOperationFailedException if proxy creation fails
    */
   public ProxyConfiguration createProxy(
       final GenericContainer<?> container, final ProxyConfiguration proxyConfig) {
@@ -87,57 +102,98 @@ public final class ToxiproxyOrchestrator {
     Objects.requireNonNull(proxyConfig, "proxyConfig must not be null");
 
     try {
-      lifecycle.ensureRunning(container);
-      return proxyOps.createProxy(container, proxyConfig);
-
+      final ContainerContext ctx = ContainerContext.of(container);
+      lifecycle.ensureRunning(ctx);
+      return proxyOps.createProxy(ctx, proxyConfig);
+    } catch (final ChaosOperationFailedException e) {
+      throw e;
     } catch (final Exception e) {
-      throw handleProxyError("Failed to create proxy", e);
+      throw new ChaosOperationFailedException("Failed to create proxy", e);
     }
   }
 
   /**
-   * Add a toxic to a proxy.
+   * Add a typed toxic to a proxy.
    *
-   * <p>Ensures Toxiproxy is running, then adds the toxic.
+   * <p>Platform is detected once here and passed to lifecycle and toxic operations.
    *
    * @param container container
    * @param proxyName proxy name
-   * @param toxicName toxic name
-   * @param toxicType toxic type
-   * @param attributes toxic attributes (JSON)
-   * @param toxicity probability (0.0-1.0)
+   * @param toxicConfig type-safe toxic configuration
+   * @throws ChaosOperationFailedException if toxic addition fails
    */
   public void addToxic(
       final GenericContainer<?> container,
       final String proxyName,
-      final String toxicName,
-      final String toxicType,
-      final String attributes,
-      final double toxicity) {
+      final ToxicConfig toxicConfig) {
 
     Objects.requireNonNull(container, "container must not be null");
     Objects.requireNonNull(proxyName, "proxyName must not be null");
-    Objects.requireNonNull(toxicName, "toxicName must not be null");
-    Objects.requireNonNull(toxicType, "toxicType must not be null");
-
-    validateToxicity(toxicity);
+    Objects.requireNonNull(toxicConfig, "toxicConfig must not be null");
 
     try {
-      lifecycle.ensureRunning(container);
-
-      final LegacyToxicConfig toxic =
-          new LegacyToxicConfig(toxicName, toxicType, attributes, toxicity);
-      toxicOps.addToxic(container, proxyName, toxic);
-
+      final ContainerContext ctx = ContainerContext.of(container);
+      lifecycle.ensureRunning(ctx);
+      toxicOps.addToxic(ctx, proxyName, toxicConfig);
+    } catch (final ChaosOperationFailedException e) {
+      throw e;
     } catch (final Exception e) {
-      throw handleToxicError("Failed to add toxic", e);
+      throw new ChaosOperationFailedException("Failed to add toxic", e);
     }
   }
 
   /**
-   * Reset all proxy chaos (stop Toxiproxy, clear redirects).
+   * Remove a specific toxic from a proxy.
    *
    * @param container container
+   * @param proxyName proxy name
+   * @param toxicName toxic name
+   * @throws ChaosOperationFailedException if removal fails
+   */
+  public void removeToxic(
+      final GenericContainer<?> container,
+      final String proxyName,
+      final String toxicName) {
+
+    Objects.requireNonNull(container, "container must not be null");
+    Objects.requireNonNull(proxyName, "proxyName must not be null");
+    Objects.requireNonNull(toxicName, "toxicName must not be null");
+
+    try {
+      final ContainerContext ctx = ContainerContext.of(container);
+      toxicOps.removeToxic(ctx, proxyName, toxicName);
+    } catch (final ChaosOperationFailedException e) {
+      throw e;
+    } catch (final Exception e) {
+      throw new ChaosOperationFailedException("Failed to remove toxic", e);
+    }
+  }
+
+  /**
+   * Remove all toxics from a proxy.
+   *
+   * @param container container
+   * @param proxyName proxy name
+   * @throws ChaosOperationFailedException if removal fails
+   */
+  public void removeAllToxics(final GenericContainer<?> container, final String proxyName) {
+    Objects.requireNonNull(container, "container must not be null");
+    Objects.requireNonNull(proxyName, "proxyName must not be null");
+
+    try {
+      final ContainerContext ctx = ContainerContext.of(container);
+      toxicOps.removeAllToxics(ctx, proxyName);
+    } catch (final ChaosOperationFailedException e) {
+      throw e;
+    } catch (final Exception e) {
+      throw new ChaosOperationFailedException("Failed to remove all toxics", e);
+    }
+  }
+
+  /**
+   * Reset all proxy chaos: clear iptables redirects and stop Toxiproxy.
+   *
+   * @param container container (no-op if not running)
    */
   public void reset(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
@@ -147,65 +203,12 @@ public final class ToxiproxyOrchestrator {
     }
 
     try {
-      final Platform platform = PlatformDetector.detect(container);
-      final Shell shell = platform.getDefaultShell();
-
-      networkRedirect.clearAllRedirects(container, shell);
-      lifecycle.stop(container);
-
-      log.info("Reset proxy chaos (stopped Toxiproxy, removed port redirects)");
-
+      final ContainerContext ctx = ContainerContext.of(container);
+      networkRedirect.clearAllRedirects(ctx);
+      lifecycle.stop(ctx);
+      log.info("Reset proxy chaos (stopped Toxiproxy, cleared port redirects)");
     } catch (final Exception e) {
       log.warn("Failed to fully reset proxy chaos", e);
     }
-  }
-
-  // ==================== Private Helpers ====================
-
-  /**
-   * Validate toxicity is in valid range.
-   *
-   * @param toxicity toxicity value
-   * @throws IllegalArgumentException if out of range
-   */
-  private void validateToxicity(final double toxicity) {
-    if (toxicity < 0.0 || toxicity > 1.0) {
-      throw new IllegalArgumentException(
-          String.format("toxicity must be in [0.0, 1.0], got: %.2f", toxicity));
-    }
-  }
-
-  /**
-   * Handle proxy operation error.
-   *
-   * @param message error message
-   * @param e exception
-   * @return ChaosOperationFailedException
-   */
-  private ChaosOperationFailedException handleProxyError(final String message, final Exception e) {
-    if (e instanceof ChaosOperationFailedException) {
-      return (ChaosOperationFailedException) e;
-    }
-    if (e instanceof IOException) {
-      return new ChaosOperationFailedException(message, e);
-    }
-    return new ChaosOperationFailedException(message, e);
-  }
-
-  /**
-   * Handle toxic operation error.
-   *
-   * @param message error message
-   * @param e exception
-   * @return ChaosOperationFailedException
-   */
-  private ChaosOperationFailedException handleToxicError(final String message, final Exception e) {
-    if (e instanceof ChaosOperationFailedException) {
-      return (ChaosOperationFailedException) e;
-    }
-    if (e instanceof IOException) {
-      return new ChaosOperationFailedException(message, e);
-    }
-    return new ChaosOperationFailedException(message, e);
   }
 }

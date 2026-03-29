@@ -104,6 +104,28 @@ public interface HttpCommandBuilder {
   String buildDeleteRequest(String url);
 
   /**
+   * Build HTTP file download command.
+   *
+   * <p>Downloads the resource at {@code url} and saves it to {@code outputPath} on the target
+   * filesystem (inside the container). Follows redirects by default.
+   *
+   * <p><strong>Example:</strong>
+   *
+   * <pre>
+   * String cmd = http.buildDownloadRequest(
+   *     "https://github.com/.../toxiproxy-server-linux-amd64",
+   *     "/usr/local/bin/toxiproxy-server");
+   * shell.exec(container, cmd);
+   * </pre>
+   *
+   * @param url source URL (must not be null)
+   * @param outputPath destination path on the target filesystem (must not be null)
+   * @return shell command string
+   * @throws NullPointerException if url or outputPath is null
+   */
+  String buildDownloadRequest(String url, String outputPath);
+
+  /**
    * Check if the underlying HTTP tool is available.
    *
    * <p>Used for automatic fallback in platform detection (e.g., wget when curl unavailable).

@@ -16,8 +16,9 @@ import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.command.network.IptablesCommandBuilder;
 import com.macstab.chaos.core.platform.Platform;
-import com.macstab.chaos.core.platform.PlatformDetector;
 import com.macstab.chaos.core.shell.Shell;
+import com.macstab.chaos.proxy.support.TestExecResults;
+import com.macstab.chaos.proxy.internal.ContainerContext;
 
 /**
  * Unit tests for {@link NetworkRedirectManager}.
@@ -31,7 +32,7 @@ class NetworkRedirectManagerTest {
   private GenericContainer<?> container;
   private Shell shell;
   private Platform platform;
-  private IptablesCommandBuilder networkBuilder;
+  private ContainerContext ctx;
 
   @BeforeEach
   void setUp() {
@@ -39,10 +40,13 @@ class NetworkRedirectManagerTest {
     container = mock(GenericContainer.class);
     shell = mock(Shell.class);
     platform = mock(Platform.class);
-    networkBuilder = new IptablesCommandBuilder();
 
     when(container.isRunning()).thenReturn(true);
-    when(platform.getNetworkCommandBuilder()).thenReturn(networkBuilder);
+    when(platform.getNetworkCommandBuilder()).thenReturn(new IptablesCommandBuilder());
+    when(platform.getDefaultShell()).thenReturn(shell);
+
+    // Pre-build context after stubs are in place — avoids Mockito ordering issues
+    ctx = ContainerContext.of(container, platform, shell);
   }
 
   @Nested
@@ -53,44 +57,66 @@ class NetworkRedirectManagerTest {
     @DisplayName("should setup redirect successfully")
     void shouldSetupRedirect_successfully() throws Exception {
       // GIVEN
-      try (var detector = mockStatic(PlatformDetector.class)) {
-        detector.when(() -> PlatformDetector.detect(container)).thenReturn(platform);
-        final ExecResult result = mockExecResult(0, "", "");
-        when(shell.exec(eq(container), anyString())).thenReturn(result);
+      final ExecResult result = TestExecResults.of(0, "", "");
+      when(shell.exec(eq(container), anyString())).thenReturn(result);
 
-        // WHEN
-        networkRedirect.setupRedirect(container, shell, 6379, 16379);
+      // WHEN
+      networkRedirect.setupRedirect(ctx, 6379, 16379);
 
-        // THEN
-        verify(shell).exec(eq(container), anyString());
-      }
+      // THEN
+      verify(shell).exec(eq(container), anyString());
     }
 
     @Test
-    @DisplayName("should throw IOException when setup fails")
+    @DisplayName("should throw IOException when command fails")
     void shouldThrowIOException_whenSetupFails() throws Exception {
       // GIVEN
-      try (var detector = mockStatic(PlatformDetector.class)) {
-        detector.when(() -> PlatformDetector.detect(container)).thenReturn(platform);
-        final ExecResult result = mockExecResult(1, "", "iptables error");
-        when(shell.exec(eq(container), anyString())).thenReturn(result);
+      final ExecResult result = TestExecResults.of(1, "", "iptables error");
+      when(shell.exec(eq(container), anyString())).thenReturn(result);
 
-        // WHEN / THEN
-        assertThatThrownBy(() -> networkRedirect.setupRedirect(container, shell, 6379, 16379))
-            .isInstanceOf(IOException.class)
-            .hasMessageContaining("Failed to setup");
-      }
+      // WHEN / THEN
+      assertThatThrownBy(() -> networkRedirect.setupRedirect(ctx, 6379, 16379))
+          .isInstanceOf(IOException.class)
+          .hasMessageContaining("Failed to setup");
     }
 
     @Test
-    @DisplayName("should validate port range")
-    void shouldValidate_portRange() {
+    @DisplayName("should throw IOException when shell throws")
+    void shouldThrowIOException_whenShellThrows() throws Exception {
+      // GIVEN
+      when(shell.exec(eq(container), anyString())).thenThrow(new RuntimeException("exec failed"));
+
+      // WHEN / THEN
+      assertThatThrownBy(() -> networkRedirect.setupRedirect(ctx, 6379, 16379))
+          .isInstanceOf(IOException.class)
+          .hasMessageContaining("Failed to setup redirect");
+    }
+
+    @Test
+    @DisplayName("should throw NullPointerException when ctx is null")
+    void shouldThrowNpe_whenCtxIsNull() {
+      assertThatNullPointerException()
+          .isThrownBy(() -> networkRedirect.setupRedirect(null, 6379, 16379))
+          .withMessage("ctx must not be null");
+    }
+
+    @Test
+    @DisplayName("should reject servicePort out of range")
+    void shouldRejectServicePort_outOfRange() {
       assertThatIllegalArgumentException()
-          .isThrownBy(() -> networkRedirect.setupRedirect(container, shell, 0, 16379))
+          .isThrownBy(() -> networkRedirect.setupRedirect(ctx, 0, 16379))
           .withMessageContaining("must be in range [1, 65535]");
 
       assertThatIllegalArgumentException()
-          .isThrownBy(() -> networkRedirect.setupRedirect(container, shell, 6379, 99999))
+          .isThrownBy(() -> networkRedirect.setupRedirect(ctx, 65536, 16379))
+          .withMessageContaining("must be in range [1, 65535]");
+    }
+
+    @Test
+    @DisplayName("should reject proxyPort out of range")
+    void shouldRejectProxyPort_outOfRange() {
+      assertThatIllegalArgumentException()
+          .isThrownBy(() -> networkRedirect.setupRedirect(ctx, 6379, 99999))
           .withMessageContaining("must be in range [1, 65535]");
     }
   }
@@ -103,17 +129,47 @@ class NetworkRedirectManagerTest {
     @DisplayName("should remove redirect successfully")
     void shouldRemoveRedirect_successfully() throws Exception {
       // GIVEN
-      try (var detector = mockStatic(PlatformDetector.class)) {
-        detector.when(() -> PlatformDetector.detect(container)).thenReturn(platform);
-        final ExecResult result = mockExecResult(0, "", "");
-        when(shell.exec(eq(container), anyString())).thenReturn(result);
+      final ExecResult result = TestExecResults.of(0, "", "");
+      when(shell.exec(eq(container), anyString())).thenReturn(result);
 
-        // WHEN
-        networkRedirect.removeRedirect(container, shell, 6379, 16379);
+      // WHEN
+      networkRedirect.removeRedirect(ctx, 6379, 16379);
 
-        // THEN
-        verify(shell).exec(eq(container), anyString());
-      }
+      // THEN
+      verify(shell).exec(eq(container), anyString());
+    }
+
+    @Test
+    @DisplayName("should throw IOException when removal fails")
+    void shouldThrowIOException_whenRemovalFails() throws Exception {
+      // GIVEN
+      final ExecResult result = TestExecResults.of(1, "", "No rule to delete");
+      when(shell.exec(eq(container), anyString())).thenReturn(result);
+
+      // WHEN / THEN
+      assertThatThrownBy(() -> networkRedirect.removeRedirect(ctx, 6379, 16379))
+          .isInstanceOf(IOException.class)
+          .hasMessageContaining("Failed to remove");
+    }
+
+    @Test
+    @DisplayName("should throw IOException when shell throws")
+    void shouldThrowIOException_whenShellThrows() throws Exception {
+      // GIVEN
+      when(shell.exec(eq(container), anyString())).thenThrow(new RuntimeException("exec failed"));
+
+      // WHEN / THEN
+      assertThatThrownBy(() -> networkRedirect.removeRedirect(ctx, 6379, 16379))
+          .isInstanceOf(IOException.class)
+          .hasMessageContaining("Failed to remove redirect");
+    }
+
+    @Test
+    @DisplayName("should throw NullPointerException when ctx is null")
+    void shouldThrowNpe_whenCtxIsNull() {
+      assertThatNullPointerException()
+          .isThrownBy(() -> networkRedirect.removeRedirect(null, 6379, 16379))
+          .withMessage("ctx must not be null");
     }
   }
 
@@ -125,43 +181,45 @@ class NetworkRedirectManagerTest {
     @DisplayName("should clear all redirects successfully")
     void shouldClearAllRedirects_successfully() throws Exception {
       // GIVEN
-      try (var detector = mockStatic(PlatformDetector.class)) {
-        detector.when(() -> PlatformDetector.detect(container)).thenReturn(platform);
-        final ExecResult result = mockExecResult(0, "", "");
-        when(shell.exec(eq(container), anyString())).thenReturn(result);
+      final ExecResult result = TestExecResults.of(0, "", "");
+      when(shell.exec(eq(container), anyString())).thenReturn(result);
 
-        // WHEN
-        networkRedirect.clearAllRedirects(container, shell);
+      // WHEN
+      networkRedirect.clearAllRedirects(ctx);
 
-        // THEN
-        verify(shell).exec(eq(container), anyString());
-      }
+      // THEN
+      verify(shell).exec(eq(container), anyString());
     }
 
     @Test
-    @DisplayName("should not throw when clear fails (may not exist)")
+    @DisplayName("should log warning but not throw when clear fails (rules may not exist)")
     void shouldNotThrow_whenClearFails() throws Exception {
-      // GIVEN
-      try (var detector = mockStatic(PlatformDetector.class)) {
-        detector.when(() -> PlatformDetector.detect(container)).thenReturn(platform);
-        final ExecResult result = mockExecResult(1, "", "No chain/target");
-        when(shell.exec(eq(container), anyString())).thenReturn(result);
+      // GIVEN — non-zero exit is treated as warning, not error
+      final ExecResult result = TestExecResults.of(1, "", "No chain/target/match by that name");
+      when(shell.exec(eq(container), anyString())).thenReturn(result);
 
-        // WHEN / THEN - Should not throw
-        assertThatNoException()
-            .isThrownBy(() -> networkRedirect.clearAllRedirects(container, shell));
-      }
+      // WHEN / THEN
+      assertThatNoException().isThrownBy(() -> networkRedirect.clearAllRedirects(ctx));
     }
-  }
 
-  // ==================== Test Helpers ====================
+    @Test
+    @DisplayName("should throw IOException when shell throws")
+    void shouldThrowIOException_whenShellThrows() throws Exception {
+      // GIVEN
+      when(shell.exec(eq(container), anyString())).thenThrow(new RuntimeException("exec failed"));
 
-  private static ExecResult mockExecResult(
-      final int exitCode, final String stdout, final String stderr) {
-    final ExecResult result = mock(ExecResult.class);
-    lenient().when(result.getExitCode()).thenReturn(exitCode);
-    lenient().when(result.getStdout()).thenReturn(stdout);
-    lenient().when(result.getStderr()).thenReturn(stderr);
-    return result;
+      // WHEN / THEN
+      assertThatThrownBy(() -> networkRedirect.clearAllRedirects(ctx))
+          .isInstanceOf(IOException.class)
+          .hasMessageContaining("Failed to clear redirects");
+    }
+
+    @Test
+    @DisplayName("should throw NullPointerException when ctx is null")
+    void shouldThrowNpe_whenCtxIsNull() {
+      assertThatNullPointerException()
+          .isThrownBy(() -> networkRedirect.clearAllRedirects(null))
+          .withMessage("ctx must not be null");
+    }
   }
 }

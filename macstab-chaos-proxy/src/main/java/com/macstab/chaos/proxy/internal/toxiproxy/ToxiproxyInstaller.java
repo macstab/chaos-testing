@@ -5,22 +5,22 @@ import java.util.List;
 import java.util.Objects;
 
 import org.testcontainers.containers.Container.ExecResult;
-import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
 import com.macstab.chaos.core.model.ContainerArchitecture;
-import com.macstab.chaos.core.platform.Platform;
-import com.macstab.chaos.core.platform.PlatformDetector;
 import com.macstab.chaos.core.platform.Tool;
 import com.macstab.chaos.core.util.PackageInstaller;
-import com.macstab.chaos.core.util.Shell;
+import com.macstab.chaos.proxy.internal.ContainerContext;
 
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Internal installer for Toxiproxy binary.
+ * Installs the Toxiproxy binary into a container if not already present.
  *
- * <p><strong>INTERNAL USE ONLY</strong> - Implementation detail, not part of public API.
+ * <p>Uses {@link ContainerContext} for all container interactions — no direct
+ * {@code execInContainer} calls, no hardcoded tool names.
+ *
+ * <p><strong>INTERNAL USE ONLY</strong> — implementation detail, not part of the public API.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -29,91 +29,127 @@ public final class ToxiproxyInstaller {
 
   private static final String TOXIPROXY_VERSION = "v2.9.0";
   private static final String TOXIPROXY_BINARY = "toxiproxy-server";
+
+  /** Standard Linux binary directory — writable and on PATH in all supported container images. */
+  private static final String LINUX_BIN_DIR = "/usr/local/bin/";
+
+  private static final String TOXIPROXY_INSTALL_PATH = LINUX_BIN_DIR + TOXIPROXY_BINARY;
   private static final String TOXIPROXY_DOWNLOAD_URL_TEMPLATE =
       "https://github.com/Shopify/toxiproxy/releases/download/%s/toxiproxy-server-linux-%s";
 
   /**
-   * Install Toxiproxy binary if not already present.
+   * Install Toxiproxy binary into the container if not already present.
    *
-   * @param container container
+   * @param ctx resolved container context
+   * @throws NullPointerException if ctx is null
+   * @throws ChaosOperationFailedException if installation fails
    */
-  public void install(final GenericContainer<?> container) {
-    Objects.requireNonNull(container, "container must not be null");
+  public void install(final ContainerContext ctx) {
+    Objects.requireNonNull(ctx, "ctx must not be null");
 
-    if (isAlreadyInstalled(container)) {
+    if (isAlreadyInstalled(ctx)) {
       log.debug("Toxiproxy already installed");
       return;
     }
 
-    try {
-      final Platform platform = PlatformDetector.detect(container);
-      installDependencies(container, platform);
+    installDependencies(ctx);
 
-      final ContainerArchitecture arch = ContainerArchitecture.detect(container);
-      final String downloadUrl = buildDownloadUrl(arch);
+    final ContainerArchitecture arch = ContainerArchitecture.detect(ctx.container());
+    final String downloadUrl = buildDownloadUrl(arch);
 
-      downloadAndInstallBinary(container, downloadUrl);
+    downloadBinary(ctx, downloadUrl);
+    makeExecutable(ctx);
 
-      log.debug("Installed Toxiproxy {} ({})", TOXIPROXY_VERSION, arch.getBinaryName());
-
-    } catch (final Exception e) {
-      handleInstallationError(e);
-    }
+    log.debug("Installed Toxiproxy {} ({})", TOXIPROXY_VERSION, arch.getBinaryName());
   }
 
-  // ==================== Private Helper Methods ====================
+  // ==================== Private Helpers ====================
 
-  /** Check if Toxiproxy is already installed. */
-  private boolean isAlreadyInstalled(final GenericContainer<?> container) {
+  /**
+   * Check if the Toxiproxy binary is already installed.
+   *
+   * @param ctx container context
+   * @return true if binary found in PATH
+   */
+  private boolean isAlreadyInstalled(final ContainerContext ctx) {
     try {
-      final ExecResult result = container.execInContainer("which", TOXIPROXY_BINARY);
+      final ExecResult result = ctx.shell().exec(ctx.container(), "which " + TOXIPROXY_BINARY);
       return result.getExitCode() == 0;
     } catch (final Exception e) {
       return false;
     }
   }
 
-  /** Install required dependencies using platform-specific package names. */
-  private void installDependencies(final GenericContainer<?> container, final Platform platform) {
-    // Get platform-specific package names
-    final String caCertsPackage = platform.getPackageName(Tool.CA_CERTIFICATES);
-    final String curlPackage = platform.getPackageName(Tool.CURL);
-    final String iptablesPackage = platform.getPackageName(Tool.IPTABLES);
+  /**
+   * Install required system packages (CA certificates, curl, iptables).
+   *
+   * @param ctx container context
+   */
+  private void installDependencies(final ContainerContext ctx) {
+    final String caCertsPackage = ctx.platform().getPackageName(Tool.CA_CERTIFICATES);
+    final String curlPackage = ctx.platform().getPackageName(Tool.CURL);
+    final String iptablesPackage = ctx.platform().getPackageName(Tool.IPTABLES);
 
-    // ca-certificates has no binary, skip verification
-    PackageInstaller.install(container, List.of(caCertsPackage), false);
+    // ca-certificates has no binary to verify — skip verification
+    PackageInstaller.install(ctx.container(), List.of(caCertsPackage), false);
 
-    // curl and iptables have binaries, verify installation
-    PackageInstaller.install(container, curlPackage, iptablesPackage);
+    // curl and iptables have binaries — verify installation
+    PackageInstaller.install(ctx.container(), curlPackage, iptablesPackage);
   }
 
-  /** Build download URL for architecture. */
+  /**
+   * Build the GitHub release download URL for the detected container architecture.
+   *
+   * @param arch container CPU architecture
+   * @return fully qualified download URL
+   */
   private String buildDownloadUrl(final ContainerArchitecture arch) {
     return String.format(TOXIPROXY_DOWNLOAD_URL_TEMPLATE, TOXIPROXY_VERSION, arch.getBinaryName());
   }
 
-  /** Download and install Toxiproxy binary. */
-  private void downloadAndInstallBinary(
-      final GenericContainer<?> container, final String downloadUrl) throws Exception {
+  /**
+   * Download the Toxiproxy binary using the platform HTTP command builder.
+   *
+   * @param ctx container context
+   * @param downloadUrl source URL
+   * @throws ChaosOperationFailedException if download fails
+   */
+  private void downloadBinary(final ContainerContext ctx, final String downloadUrl) {
+    try {
+      final String downloadCmd =
+          ctx.http().buildDownloadRequest(downloadUrl, TOXIPROXY_INSTALL_PATH);
+      final ExecResult result = ctx.shell().exec(ctx.container(), downloadCmd);
 
-    final String downloadCmd =
-        String.format(
-            "curl -sL %s -o /usr/local/bin/%s && chmod +x /usr/local/bin/%s",
-            downloadUrl, TOXIPROXY_BINARY, TOXIPROXY_BINARY);
-
-    final ExecResult result = container.execInContainer(Shell.SH, Shell.FLAG_C, downloadCmd);
-
-    if (result.getExitCode() != 0) {
-      throw new ChaosOperationFailedException(
-          "Failed to download Toxiproxy: " + result.getStderr());
+      if (result.getExitCode() != 0) {
+        throw new ChaosOperationFailedException(
+            "Failed to download Toxiproxy from " + downloadUrl + ": " + result.getStderr());
+      }
+    } catch (final ChaosOperationFailedException e) {
+      throw e;
+    } catch (final Exception e) {
+      throw new ChaosOperationFailedException("Failed to download Toxiproxy", e);
     }
   }
 
-  /** Handle installation error. */
-  private void handleInstallationError(final Exception e) {
-    if (e instanceof ChaosOperationFailedException) {
-      throw (ChaosOperationFailedException) e;
+  /**
+   * Mark the downloaded binary as executable.
+   *
+   * @param ctx container context
+   * @throws ChaosOperationFailedException if chmod fails
+   */
+  private void makeExecutable(final ContainerContext ctx) {
+    try {
+      final ExecResult result =
+          ctx.shell().exec(ctx.container(), "chmod +x " + TOXIPROXY_INSTALL_PATH);
+
+      if (result.getExitCode() != 0) {
+        throw new ChaosOperationFailedException(
+            "Failed to chmod Toxiproxy binary: " + result.getStderr());
+      }
+    } catch (final ChaosOperationFailedException e) {
+      throw e;
+    } catch (final Exception e) {
+      throw new ChaosOperationFailedException("Failed to make Toxiproxy executable", e);
     }
-    throw new ChaosOperationFailedException("Failed to install Toxiproxy", e);
   }
 }

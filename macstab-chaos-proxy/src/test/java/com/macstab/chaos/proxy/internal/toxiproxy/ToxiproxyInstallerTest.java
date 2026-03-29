@@ -2,6 +2,7 @@
 package com.macstab.chaos.proxy.internal.toxiproxy;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -10,8 +11,12 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import com.macstab.chaos.core.platform.Platform;
+import com.macstab.chaos.core.platform.PlatformDetector;
+import com.macstab.chaos.proxy.internal.ContainerContext;
+
 /**
- * Tests for ToxiproxyInstaller.
+ * Tests for {@link ToxiproxyInstaller}.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -36,99 +41,101 @@ class ToxiproxyInstallerTest {
     @Test
     @DisplayName("should install Toxiproxy on Ubuntu")
     void shouldInstallOnUbuntu() throws Exception {
-      // When
-      installer.install(UBUNTU);
+      // GIVEN
+      final ContainerContext ctx = ContainerContext.of(UBUNTU);
 
-      // Then - should be installed and executable
-      assertThatNoException()
-          .isThrownBy(() -> UBUNTU.execInContainer("toxiproxy-server", "-version"));
+      // WHEN
+      installer.install(ctx);
+
+      // THEN
+      assertThat(UBUNTU.execInContainer("which", "toxiproxy-server").getExitCode()).isEqualTo(0);
     }
 
     @Test
     @DisplayName("should install Toxiproxy on Alpine")
     void shouldInstallOnAlpine() throws Exception {
-      installer.install(ALPINE);
+      // GIVEN
+      final ContainerContext ctx = ContainerContext.of(ALPINE);
 
-      assertThatNoException()
-          .isThrownBy(() -> ALPINE.execInContainer("toxiproxy-server", "-version"));
-    }
+      // WHEN
+      installer.install(ctx);
 
-    @Test
-    @DisplayName("should be idempotent (installing twice)")
-    void shouldBeIdempotent() throws Exception {
-      installer.install(UBUNTU);
-      installer.install(UBUNTU); // Install again
-
-      // Should not fail
-      assertThatNoException()
-          .isThrownBy(() -> UBUNTU.execInContainer("toxiproxy-server", "-version"));
-    }
-
-    @Test
-    @DisplayName("should fail on null container")
-    void shouldFailOnNullContainer() throws Exception {
-      assertThatThrownBy(() -> installer.install(null)).isInstanceOf(NullPointerException.class);
-    }
-  }
-
-  @Nested
-  @DisplayName("isInstalled()")
-  class IsInstalledTests {
-
-    @Test
-    @DisplayName("should return false when binary removed")
-    void shouldReturnFalseWhenBinaryRemoved() throws Exception {
-      // Install first, then remove binary — guarantees clean state regardless of test order
-      installer.install(UBUNTU);
-      UBUNTU.execInContainer("rm", "-f", "/usr/local/bin/toxiproxy-server");
-      assertThat(UBUNTU.execInContainer("which", "toxiproxy-server").getExitCode()).isNotEqualTo(0);
-    }
-
-    @Test
-    @DisplayName("should return true after installation")
-    void shouldReturnTrueAfterInstallation() throws Exception {
-      installer.install(UBUNTU);
-
-      assertThat(UBUNTU.execInContainer("which", "toxiproxy-server").getExitCode()).isEqualTo(0);
-    }
-
-    @Test
-    @DisplayName("should fail on null container")
-    void shouldFailOnNullContainer() throws Exception {
-      assertThatThrownBy(() -> installer.install(null))
-          .isInstanceOf(NullPointerException.class);
-    }
-  }
-
-  @Nested
-  @DisplayName("Installation Scenarios")
-  class InstallationScenarios {
-
-    @Test
-    @DisplayName("should install on different platforms")
-    void shouldInstallOnDifferentPlatforms() throws Exception {
-      // Ubuntu
-      installer.install(UBUNTU);
-      assertThat(UBUNTU.execInContainer("which", "toxiproxy-server").getExitCode()).isEqualTo(0);
-
-      // Alpine
-      installer.install(ALPINE);
+      // THEN
       assertThat(ALPINE.execInContainer("which", "toxiproxy-server").getExitCode()).isEqualTo(0);
     }
 
     @Test
-    @DisplayName("should support reinstallation after removal")
-    void shouldSupportReinstallation() throws Exception {
-      installer.install(UBUNTU);
-      assertThat(UBUNTU.execInContainer("which", "toxiproxy-server").getExitCode()).isEqualTo(0);
+    @DisplayName("should be idempotent — installing twice does not fail")
+    void shouldBeIdempotent() throws Exception {
+      // GIVEN
+      final ContainerContext ctx = ContainerContext.of(UBUNTU);
 
-      // Remove binary
+      // WHEN
+      installer.install(ctx);
+      installer.install(ctx); // second call — should skip silently
+
+      // THEN
+      assertThat(UBUNTU.execInContainer("which", "toxiproxy-server").getExitCode()).isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("should throw NullPointerException when ctx is null")
+    void shouldThrowNpe_whenCtxIsNull() {
+      assertThatNullPointerException()
+          .isThrownBy(() -> installer.install(null))
+          .withMessage("ctx must not be null");
+    }
+  }
+
+  @Nested
+  @DisplayName("Binary verification")
+  class BinaryVerificationTests {
+
+    @Test
+    @DisplayName("should detect missing binary before installation")
+    void shouldDetectMissingBinary_beforeInstall() throws Exception {
+      // Remove binary to ensure clean state
       UBUNTU.execInContainer("rm", "-f", "/usr/local/bin/toxiproxy-server");
       assertThat(UBUNTU.execInContainer("which", "toxiproxy-server").getExitCode()).isNotEqualTo(0);
+    }
 
-      // Reinstall
-      installer.install(UBUNTU);
+    @Test
+    @DisplayName("should detect present binary after installation")
+    void shouldDetectPresentBinary_afterInstall() throws Exception {
+      final ContainerContext ctx = ContainerContext.of(UBUNTU);
+      installer.install(ctx);
+      assertThat(UBUNTU.execInContainer("which", "toxiproxy-server").getExitCode()).isEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("should support reinstallation after binary removal")
+    void shouldSupportReinstallation() throws Exception {
+      // GIVEN — install, remove, reinstall
+      final ContainerContext ctx = ContainerContext.of(UBUNTU);
+      installer.install(ctx);
+      UBUNTU.execInContainer("rm", "-f", "/usr/local/bin/toxiproxy-server");
+
+      // WHEN
+      installer.install(ctx);
+
+      // THEN
       assertThat(UBUNTU.execInContainer("which", "toxiproxy-server").getExitCode()).isEqualTo(0);
     }
   }
+
+  @Nested
+  @DisplayName("Cross-platform")
+  class CrossPlatformTests {
+
+    @Test
+    @DisplayName("should install on both Debian-based and Alpine containers")
+    void shouldInstallOnBothPlatforms() throws Exception {
+      installer.install(ContainerContext.of(UBUNTU));
+      installer.install(ContainerContext.of(ALPINE));
+
+      assertThat(UBUNTU.execInContainer("which", "toxiproxy-server").getExitCode()).isEqualTo(0);
+      assertThat(ALPINE.execInContainer("which", "toxiproxy-server").getExitCode()).isEqualTo(0);
+    }
+  }
+
 }

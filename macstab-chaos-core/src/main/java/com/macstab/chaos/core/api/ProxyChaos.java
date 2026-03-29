@@ -664,6 +664,27 @@ public interface ProxyChaos {
   void reset(GenericContainer<?> container);
 
   /**
+   * Remove a specific toxic from a proxy.
+   *
+   * <p>No-op if the toxic does not exist.
+   *
+   * @param container target container
+   * @param proxyName proxy name
+   * @param toxicName toxic name to remove
+   */
+  void removeToxic(GenericContainer<?> container, String proxyName, String toxicName);
+
+  /**
+   * Remove all toxics from a proxy, restoring it to a clean pass-through state.
+   *
+   * <p>The proxy itself remains active — only the fault injections are removed.
+   *
+   * @param container target container
+   * @param proxyName proxy name
+   */
+  void removeAllToxics(GenericContainer<?> container, String proxyName);
+
+  /**
    * Check if proxy chaos is supported on this container's platform.
    *
    * <p>Proxy chaos requires Linux with iptables support. Returns false on:

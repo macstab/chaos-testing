@@ -19,6 +19,8 @@ import com.macstab.chaos.proxy.internal.operations.ProxyOperationsManager;
 import com.macstab.chaos.proxy.internal.operations.ToxicOperationsManager;
 import com.macstab.chaos.proxy.internal.operations.toxic.LatencyToxic;
 
+
+
 /**
  * Comprehensive integration tests for ToxiproxyOrchestrator.
  *
@@ -62,8 +64,8 @@ class ToxiproxyOrchestratorTest {
       ProxyConfiguration result = orchestrator.createProxy(REDIS, proxyConfig);
 
       assertThat(result).isNotNull();
-      assertThat(proxyOps.proxyExists(REDIS, "redis")).isTrue();
-      assertThat(lifecycle.isHealthy(REDIS)).isTrue();
+      assertThat(proxyOps.proxyExists(ContainerContext.of(REDIS), "redis")).isTrue();
+      assertThat(lifecycle.isHealthy(ContainerContext.of(REDIS))).isTrue();
     }
 
     @Test
@@ -76,7 +78,7 @@ class ToxiproxyOrchestratorTest {
       ProxyConfiguration result = orchestrator.createProxy(REDIS, proxyConfig);
 
       assertThat(result).isNotNull();
-      assertThat(proxyOps.proxyExists(REDIS, "redis")).isTrue();
+      assertThat(proxyOps.proxyExists(ContainerContext.of(REDIS), "redis")).isTrue();
     }
 
     @Test
@@ -90,8 +92,8 @@ class ToxiproxyOrchestratorTest {
       orchestrator.createProxy(REDIS, redis1);
       orchestrator.createProxy(REDIS, redis2);
 
-      assertThat(proxyOps.proxyExists(REDIS, "redis-1")).isTrue();
-      assertThat(proxyOps.proxyExists(REDIS, "redis-2")).isTrue();
+      assertThat(proxyOps.proxyExists(ContainerContext.of(REDIS), "redis-1")).isTrue();
+      assertThat(proxyOps.proxyExists(ContainerContext.of(REDIS), "redis-2")).isTrue();
     }
 
     @Test
@@ -119,24 +121,22 @@ class ToxiproxyOrchestratorTest {
   class AddToxicTests {
 
     @Test
-    @DisplayName("should add latency toxic via raw parameters")
+    @DisplayName("should add latency toxic via typed config")
     void shouldAddLatencyToxic() {
-      ProxyConfiguration proxyConfig =
+      final ProxyConfiguration proxyConfig =
           new ProxyConfiguration("redis", 6379, 16379, REDIS.getHost());
       orchestrator.createProxy(REDIS, proxyConfig);
 
-      LatencyToxic toxic = LatencyToxic.builder().name("latency").latencyMs(100).build();
+      final LatencyToxic toxic = LatencyToxic.builder().name("latency").latencyMs(100).build();
 
-      assertThatNoException().isThrownBy(() ->
-          orchestrator.addToxic(REDIS, "redis", toxic.name(), toxic.type(),
-              toxic.toJson(), toxic.toxicity()));
+      assertThatNoException().isThrownBy(() -> orchestrator.addToxic(REDIS, "redis", toxic));
     }
 
     @Test
     @DisplayName("should fail on null container")
     void shouldFailOnNullContainer() {
-      assertThatThrownBy(() ->
-          orchestrator.addToxic(null, "redis", "latency", "latency", "{}", 1.0))
+      final LatencyToxic toxic = LatencyToxic.builder().name("latency").latencyMs(100).build();
+      assertThatThrownBy(() -> orchestrator.addToxic(null, "redis", toxic))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("container");
     }
@@ -144,28 +144,18 @@ class ToxiproxyOrchestratorTest {
     @Test
     @DisplayName("should fail on null proxy name")
     void shouldFailOnNullProxyName() {
-      assertThatThrownBy(() ->
-          orchestrator.addToxic(REDIS, null, "latency", "latency", "{}", 1.0))
+      final LatencyToxic toxic = LatencyToxic.builder().name("latency").latencyMs(100).build();
+      assertThatThrownBy(() -> orchestrator.addToxic(REDIS, null, toxic))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("proxyName");
     }
 
     @Test
-    @DisplayName("should fail on null toxic name")
-    void shouldFailOnNullToxicName() {
-      assertThatThrownBy(() ->
-          orchestrator.addToxic(REDIS, "redis", null, "latency", "{}", 1.0))
+    @DisplayName("should fail on null toxic config")
+    void shouldFailOnNullToxicConfig() {
+      assertThatThrownBy(() -> orchestrator.addToxic(REDIS, "redis", null))
           .isInstanceOf(NullPointerException.class)
-          .hasMessageContaining("toxicName");
-    }
-
-    @Test
-    @DisplayName("should fail on null toxic type")
-    void shouldFailOnNullToxicType() {
-      assertThatThrownBy(() ->
-          orchestrator.addToxic(REDIS, "redis", "latency", null, "{}", 1.0))
-          .isInstanceOf(NullPointerException.class)
-          .hasMessageContaining("toxicType");
+          .hasMessageContaining("toxicConfig");
     }
   }
 
@@ -182,8 +172,8 @@ class ToxiproxyOrchestratorTest {
 
       orchestrator.reset(REDIS);
 
-      assertThat(lifecycle.isHealthy(REDIS)).isFalse();
-      assertThat(proxyOps.proxyExists(REDIS, "redis")).isFalse();
+      assertThat(lifecycle.isHealthy(ContainerContext.of(REDIS))).isFalse();
+      assertThat(proxyOps.proxyExists(ContainerContext.of(REDIS), "redis")).isFalse();
     }
 
     @Test

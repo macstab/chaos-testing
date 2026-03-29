@@ -11,6 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.util.ContainerIdFormatter;
+import com.macstab.chaos.core.util.ContainerNetworkUtils;
 import com.macstab.chaos.network.exception.NetworkChaosException;
 
 import lombok.extern.slf4j.Slf4j;
@@ -503,30 +504,24 @@ public final class NetworkChaosController {
   }
 
   /**
-   * Gets container IP address from Docker network.
+   * Gets the Docker bridge network IP of a container.
    *
-   * @param container container
-   * @return IP address (e.g., "172.18.0.5")
+   * <p>Delegates to {@link ContainerNetworkUtils#getContainerBridgeIp(GenericContainer)} which
+   * uses Docker inspect to obtain the correct in-network IP — the address that is reachable from
+   * inside other containers on the same bridge.
+   *
+   * @param container container whose bridge IP is needed
+   * @return bridge IP address (e.g., "172.18.0.5")
+   * @throws NetworkChaosException if resolution fails
    */
   private String getContainerIp(final GenericContainer<?> container) {
     try {
-      final var networkSettings =
-          container
-              .getDockerClient()
-              .inspectContainerCmd(container.getContainerId())
-              .exec()
-              .getNetworkSettings();
-
-      // Get first network IP (usually there's only one)
-      return networkSettings.getNetworks().values().stream()
-          .findFirst()
-          .orElseThrow(() -> new IllegalStateException("No network found for container"))
-          .getIpAddress();
-    } catch (Exception e) {
+      return ContainerNetworkUtils.getContainerBridgeIp(container);
+    } catch (final Exception e) {
       throw new NetworkChaosException(
           "getContainerIp",
           container.getContainerId(),
-          "Failed to get container IP: " + e.getMessage(),
+          "Failed to get container bridge IP: " + e.getMessage(),
           e);
     }
   }
