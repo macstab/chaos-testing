@@ -146,8 +146,8 @@ public interface ChaosPlugin<A extends Annotation> {
   /**
    * Creates a Testcontainers instance for this chaos scenario.
    *
-   * <p><strong>Purpose:</strong> Plugin configures the container (image, ports, env vars,
-   * command). The extension will handle lifecycle (start/stop) and resource constraints.
+   * <p><strong>Purpose:</strong> Plugin configures the container (image, ports, env vars, command).
+   * The extension will handle lifecycle (start/stop) and resource constraints.
    *
    * <p><strong>What to configure:</strong>
    *

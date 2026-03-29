@@ -14,10 +14,10 @@ import java.util.Objects;
  *
  * <ul>
  *   <li><strong>rateKbps</strong> — maximum data rate per connection in kilobytes per second.
- *       Applied independently per connection (not shared across all connections to the proxy).
- *       Must be {@code > 0}.</li>
- *   <li><strong>toxicity</strong> — fraction of connections that are bandwidth-limited.
- *       {@code 1.0} limits all connections; {@code 0.5} limits approximately half.</li>
+ *       Applied independently per connection (not shared across all connections to the proxy). Must
+ *       be {@code > 0}.
+ *   <li><strong>toxicity</strong> — fraction of connections that are bandwidth-limited. {@code 1.0}
+ *       limits all connections; {@code 0.5} limits approximately half.
  * </ul>
  *
  * <h2>Real-World Scenarios</h2>

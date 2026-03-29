@@ -42,8 +42,8 @@ public final class CommandWithArgs {
   /**
    * Parses a MONITOR output line into a {@link CommandWithArgs}.
    *
-   * <p>Extracts all quoted tokens from the line. The first token is the command name;
-   * subsequent tokens are arguments.
+   * <p>Extracts all quoted tokens from the line. The first token is the command name; subsequent
+   * tokens are arguments.
    *
    * @param line MONITOR output line
    * @return parsed command, or {@code null} if the line is malformed or contains no quoted tokens

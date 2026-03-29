@@ -72,13 +72,7 @@ public final class RoleResolver {
    * @return detected role (never null)
    */
   private ContainerRole determineRole(final GenericContainer<?> container) {
-    System.err.println(
-        "[RoleResolver] Checking container: "
-            + container.getContainerId()
-            + " - isRunning: "
-            + container.isRunning());
     if (!container.isRunning()) {
-      System.err.println("[RoleResolver] Container NOT RUNNING: " + container.getContainerId());
       log.warn("Container not running: {}", container.getContainerId());
       return ContainerRole.UNKNOWN;
     }
@@ -93,39 +87,17 @@ public final class RoleResolver {
 
       // Redis container - use internal Docker network IP (for DinD compatibility)
       final String internalIp = getInternalIpAddress(container);
-      System.err.println(
-          "[RoleResolver] Container: "
-              + container.getContainerId()
-              + " - Internal IP: "
-              + internalIp);
       if (internalIp != null) {
         log.debug("Using internal IP {} for container {}", internalIp, container.getContainerId());
         final ContainerRole role = resolveRedisRole(internalIp, 6379, container);
-        System.err.println(
-            "[RoleResolver] Container: "
-                + container.getContainerId()
-                + " - Role from internal IP: "
-                + role);
         return role;
       }
 
       // Fallback: Use host and mapped port (for non-networked containers)
       final String host = container.getHost();
       final int port = container.getMappedPort(6379);
-      System.err.println(
-          "[RoleResolver] Container: "
-              + container.getContainerId()
-              + " - Fallback host:port "
-              + host
-              + ":"
-              + port);
       log.debug("Using host:port {}:{} for container {}", host, port, container.getContainerId());
       final ContainerRole role = resolveRedisRole(host, port, container);
-      System.err.println(
-          "[RoleResolver] Container: "
-              + container.getContainerId()
-              + " - Role from fallback: "
-              + role);
       return role;
 
     } catch (Exception e) {
@@ -181,13 +153,6 @@ public final class RoleResolver {
   private ContainerRole resolveRedisRole(
       final String host, final int port, final GenericContainer<?> container) {
 
-    System.err.println(
-        "[RoleResolver] Connecting to "
-            + host
-            + ":"
-            + port
-            + " for container "
-            + container.getContainerId());
     log.debug(
         "Attempting to resolve role for container {} at {}:{}",
         container.getContainerId(),
@@ -199,27 +164,20 @@ public final class RoleResolver {
     try (final RedisClient client = RedisClient.create(uri);
         final StatefulRedisConnection<String, String> conn = client.connect()) {
 
-      System.err.println("[RoleResolver] Connected successfully to " + host + ":" + port);
       final String info = conn.sync().info("replication");
 
       if (info.contains("role:master")) {
-        System.err.println("[RoleResolver] Detected MASTER");
         log.info("Container is MASTER: {} ({}:{})", container.getContainerId(), host, port);
         return ContainerRole.MASTER;
       } else if (info.contains("role:slave")) {
-        System.err.println("[RoleResolver] Detected REPLICA");
         log.info("Container is REPLICA: {} ({}:{})", container.getContainerId(), host, port);
         return resolveReplicaRole(container);
       } else {
-        System.err.println("[RoleResolver] Unknown role in INFO: " + info);
         log.warn("Unknown Redis role in INFO: {}", info);
         return ContainerRole.UNKNOWN;
       }
 
     } catch (Exception e) {
-      System.err.println(
-          "[RoleResolver] CONNECTION FAILED to " + host + ":" + port + ": " + e.getMessage());
-      e.printStackTrace(System.err);
       log.error(
           "Failed to query Redis INFO at {}:{} for container {}: {}",
           host,

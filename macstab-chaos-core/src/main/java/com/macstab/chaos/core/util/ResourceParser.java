@@ -13,8 +13,7 @@ import lombok.extern.slf4j.Slf4j;
  * <p><strong>Supported Formats:</strong>
  *
  * <ul>
- *   <li><strong>Memory:</strong> {@code "512M"}, {@code "1G"}, {@code "2048K"}
- *       (case-insensitive)
+ *   <li><strong>Memory:</strong> {@code "512M"}, {@code "1G"}, {@code "2048K"} (case-insensitive)
  *   <li><strong>CPUs:</strong> {@code "2"}, {@code "0.5"}, {@code "4.0"} (decimal string)
  *   <li><strong>Disk:</strong> {@code "10G"}, {@code "5G"} (gigabytes only, case-insensitive)
  * </ul>
@@ -39,7 +38,8 @@ public final class ResourceParser {
   private static final Pattern MEMORY_PATTERN =
       Pattern.compile("^[+]?\\d+[KMG]$", Pattern.CASE_INSENSITIVE);
   private static final Pattern CPU_PATTERN = Pattern.compile("^[+]?\\d+(\\.\\d+)?$");
-  private static final Pattern DISK_PATTERN = Pattern.compile("^[+]?\\d+G$", Pattern.CASE_INSENSITIVE);
+  private static final Pattern DISK_PATTERN =
+      Pattern.compile("^[+]?\\d+G$", Pattern.CASE_INSENSITIVE);
 
   private static final long KB = 1024L;
   private static final long MB = 1024L * KB;
@@ -71,8 +71,7 @@ public final class ResourceParser {
 
     if (!MEMORY_PATTERN.matcher(normalized).matches()) {
       throw new IllegalArgumentException(
-          String.format(
-              "Invalid memory format '%s' (expected '512M', '1G', or '2048K')", input));
+          String.format("Invalid memory format '%s' (expected '512M', '1G', or '2048K')", input));
     }
 
     final char suffix = normalized.charAt(normalized.length() - 1);
@@ -114,8 +113,7 @@ public final class ResourceParser {
 
     if (!CPU_PATTERN.matcher(normalized).matches()) {
       throw new IllegalArgumentException(
-          String.format(
-              "Invalid CPU count '%s' (expected decimal like '2' or '0.5')", input));
+          String.format("Invalid CPU count '%s' (expected decimal like '2' or '0.5')", input));
     }
 
     final BigDecimal cpus = new BigDecimal(normalized);
@@ -150,8 +148,7 @@ public final class ResourceParser {
 
     if (!DISK_PATTERN.matcher(normalized).matches()) {
       throw new IllegalArgumentException(
-          String.format(
-              "Invalid disk size '%s' (expected gigabytes like '10G' or '5G')", input));
+          String.format("Invalid disk size '%s' (expected gigabytes like '10G' or '5G')", input));
     }
 
     final long value = Long.parseLong(normalized.substring(0, normalized.length() - 1));

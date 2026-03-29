@@ -9,11 +9,10 @@ import com.macstab.chaos.proxy.internal.model.ProxyConfiguration;
 /**
  * Proxy CRUD operations against the Toxiproxy REST API.
  *
- * <p>A <em>proxy</em> in Toxiproxy terminology is a named TCP intercept that listens on a
- * {@code proxyPort} and forwards traffic to a {@code servicePort} on {@code localhost} — with
- * any active toxics applied in between. This interface covers creating, checking, and deleting
- * proxy entries, plus setting up the iptables port redirect that makes the interception
- * transparent to clients.
+ * <p>A <em>proxy</em> in Toxiproxy terminology is a named TCP intercept that listens on a {@code
+ * proxyPort} and forwards traffic to a {@code servicePort} on {@code localhost} — with any active
+ * toxics applied in between. This interface covers creating, checking, and deleting proxy entries,
+ * plus setting up the iptables port redirect that makes the interception transparent to clients.
  *
  * <h2>Transparent Interception Architecture</h2>
  *
@@ -28,9 +27,8 @@ import com.macstab.chaos.proxy.internal.model.ProxyConfiguration;
  * <h2>Context Passing</h2>
  *
  * <p>All methods receive a pre-resolved {@link ContainerContext}. Platform detection is performed
- * exactly once per entry point in
- * {@link com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator} and passed through the entire
- * call chain.
+ * exactly once per entry point in {@link com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator}
+ * and passed through the entire call chain.
  *
  * <h2>Default Implementation</h2>
  *
@@ -43,17 +41,18 @@ public interface ProxyOperations {
   /**
    * Create a new proxy for a TCP service and set up transparent port redirection.
    *
-   * <p>This method is idempotent: if a proxy with the same name already exists and its port
-   * is listening, it returns the existing configuration without any changes. If the proxy exists
-   * in the API but its port is not listening (broken state), it is deleted and recreated.
+   * <p>This method is idempotent: if a proxy with the same name already exists and its port is
+   * listening, it returns the existing configuration without any changes. If the proxy exists in
+   * the API but its port is not listening (broken state), it is deleted and recreated.
    *
    * <p>Creation sequence:
+   *
    * <ol>
-   *   <li>Check if proxy exists in Toxiproxy API and its port is listening.</li>
-   *   <li>If broken (exists but not listening): delete and recreate.</li>
-   *   <li>Create proxy via {@code POST /proxies}.</li>
-   *   <li>Set up iptables redirect: servicePort → proxyPort.</li>
-   *   <li>Poll until proxyPort is listening (or timeout).</li>
+   *   <li>Check if proxy exists in Toxiproxy API and its port is listening.
+   *   <li>If broken (exists but not listening): delete and recreate.
+   *   <li>Create proxy via {@code POST /proxies}.
+   *   <li>Set up iptables redirect: servicePort → proxyPort.
+   *   <li>Poll until proxyPort is listening (or timeout).
    * </ol>
    *
    * @param ctx resolved container context (container must be running)
@@ -67,12 +66,11 @@ public interface ProxyOperations {
   /**
    * Delete a proxy entry from the Toxiproxy API.
    *
-   * <p>Removes the proxy via {@code DELETE /proxies/{proxyName}}. Any active toxics on this
-   * proxy are also removed (Toxiproxy deletes them automatically). The iptables redirect is
-   * <em>not</em> removed by this method — use
-   * {@link #deleteAllProxies(ContainerContext)} or
-   * {@link com.macstab.chaos.proxy.network.NetworkRedirect#clearAllRedirects(ContainerContext)}
-   * to clean up port redirects.
+   * <p>Removes the proxy via {@code DELETE /proxies/{proxyName}}. Any active toxics on this proxy
+   * are also removed (Toxiproxy deletes them automatically). The iptables redirect is <em>not</em>
+   * removed by this method — use {@link #deleteAllProxies(ContainerContext)} or {@link
+   * com.macstab.chaos.proxy.network.NetworkRedirect#clearAllRedirects(ContainerContext)} to clean
+   * up port redirects.
    *
    * @param ctx resolved container context
    * @param proxyName name of the proxy to delete
@@ -84,12 +82,12 @@ public interface ProxyOperations {
    * Check whether a named proxy exists in the Toxiproxy API.
    *
    * <p>Issues {@code GET /proxies/{proxyName}}. Returns {@code false} on any error — API
-   * unreachable, proxy not found, container stopped — and never throws. Safe to use in
-   * assertions and polling loops.
+   * unreachable, proxy not found, container stopped — and never throws. Safe to use in assertions
+   * and polling loops.
    *
-   * <p>Note: a {@code true} return means the proxy is registered in Toxiproxy's configuration.
-   * It does <em>not</em> guarantee the proxy port is actively listening. Use in combination with
-   * a port check for full readiness validation.
+   * <p>Note: a {@code true} return means the proxy is registered in Toxiproxy's configuration. It
+   * does <em>not</em> guarantee the proxy port is actively listening. Use in combination with a
+   * port check for full readiness validation.
    *
    * @param ctx resolved container context
    * @param proxyName proxy name to check
@@ -100,10 +98,10 @@ public interface ProxyOperations {
   /**
    * Clear all iptables port redirects for this container.
    *
-   * <p>Flushes the iptables chains used for transparent port redirection. Does not delete
-   * proxy entries from the Toxiproxy API — use {@link #deleteProxy(ContainerContext, String)}
-   * for that. Typically called as part of a full reset sequence in
-   * {@link com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator#reset}.
+   * <p>Flushes the iptables chains used for transparent port redirection. Does not delete proxy
+   * entries from the Toxiproxy API — use {@link #deleteProxy(ContainerContext, String)} for that.
+   * Typically called as part of a full reset sequence in {@link
+   * com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator#reset}.
    *
    * @param ctx resolved container context
    * @throws IOException if the iptables flush command fails

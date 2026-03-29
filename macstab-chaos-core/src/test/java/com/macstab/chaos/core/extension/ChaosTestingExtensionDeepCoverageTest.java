@@ -20,6 +20,7 @@ import com.macstab.chaos.core.extension.MockChaosPlugin.*;
  * Deep coverage tests for remaining uncovered paths in ChaosTestingExtension.
  *
  * <p>Targets:
+ *
  * <ul>
  *   <li>createContainerInstance: null container from plugin, null connectionInfo
  *   <li>resolveParameter: matchCount > 1 error path
@@ -47,17 +48,34 @@ class ChaosTestingExtensionDeepCoverageTest {
     @DisplayName("null container from plugin throws ExtensionConfigurationException")
     void nullContainer_throwsExtensionConfigException() throws Exception {
       ChaosTestingExtension ext = new ChaosTestingExtension();
-      Method m = ChaosTestingExtension.class.getDeclaredMethod(
-          "createContainerInstance", ChaosPlugin.class, Annotation.class, Resources.class);
+      Method m =
+          ChaosTestingExtension.class.getDeclaredMethod(
+              "createContainerInstance", ChaosPlugin.class, Annotation.class, Resources.class);
       m.setAccessible(true);
 
       // Plugin that returns null container
-      ChaosPlugin<MockContainer> nullContainerPlugin = new ChaosPlugin<>() {
-        @Override public Class<MockContainer> annotationType() { return MockContainer.class; }
-        @Override public GenericContainer<?> createContainer(MockContainer a) { return null; }
-        @Override public Object createConnectionInfo(GenericContainer<?> c, MockContainer a) { return new Object(); }
-        @Override public Set<Class<?>> supportedParameterTypes() { return Set.of(); }
-      };
+      ChaosPlugin<MockContainer> nullContainerPlugin =
+          new ChaosPlugin<>() {
+            @Override
+            public Class<MockContainer> annotationType() {
+              return MockContainer.class;
+            }
+
+            @Override
+            public GenericContainer<?> createContainer(MockContainer a) {
+              return null;
+            }
+
+            @Override
+            public Object createConnectionInfo(GenericContainer<?> c, MockContainer a) {
+              return new Object();
+            }
+
+            @Override
+            public Set<Class<?>> supportedParameterTypes() {
+              return Set.of();
+            }
+          };
 
       MockContainer annotation = NoAnnotationClass.class.getAnnotation(MockContainer.class);
 
@@ -71,8 +89,9 @@ class ChaosTestingExtensionDeepCoverageTest {
     @DisplayName("null connectionInfo from plugin throws ExtensionConfigurationException")
     void nullConnectionInfo_throwsExtensionConfigException() throws Exception {
       ChaosTestingExtension ext = new ChaosTestingExtension();
-      Method m = ChaosTestingExtension.class.getDeclaredMethod(
-          "createContainerInstance", ChaosPlugin.class, Annotation.class, Resources.class);
+      Method m =
+          ChaosTestingExtension.class.getDeclaredMethod(
+              "createContainerInstance", ChaosPlugin.class, Annotation.class, Resources.class);
       m.setAccessible(true);
 
       // Plugin that returns a valid container but null connectionInfo
@@ -87,21 +106,37 @@ class ChaosTestingExtensionDeepCoverageTest {
     }
 
     @Test
-    @DisplayName("IllegalArgumentException from plugin is wrapped as ExtensionConfigurationException")
+    @DisplayName(
+        "IllegalArgumentException from plugin is wrapped as ExtensionConfigurationException")
     void illegalArgFromPlugin_wrappedAsExtensionConfig() throws Exception {
       ChaosTestingExtension ext = new ChaosTestingExtension();
-      Method m = ChaosTestingExtension.class.getDeclaredMethod(
-          "createContainerInstance", ChaosPlugin.class, Annotation.class, Resources.class);
+      Method m =
+          ChaosTestingExtension.class.getDeclaredMethod(
+              "createContainerInstance", ChaosPlugin.class, Annotation.class, Resources.class);
       m.setAccessible(true);
 
-      ChaosPlugin<MockContainer> throwingPlugin = new ChaosPlugin<>() {
-        @Override public Class<MockContainer> annotationType() { return MockContainer.class; }
-        @Override public GenericContainer<?> createContainer(MockContainer a) {
-          throw new IllegalArgumentException("bad config value");
-        }
-        @Override public Object createConnectionInfo(GenericContainer<?> c, MockContainer a) { return null; }
-        @Override public Set<Class<?>> supportedParameterTypes() { return Set.of(); }
-      };
+      ChaosPlugin<MockContainer> throwingPlugin =
+          new ChaosPlugin<>() {
+            @Override
+            public Class<MockContainer> annotationType() {
+              return MockContainer.class;
+            }
+
+            @Override
+            public GenericContainer<?> createContainer(MockContainer a) {
+              throw new IllegalArgumentException("bad config value");
+            }
+
+            @Override
+            public Object createConnectionInfo(GenericContainer<?> c, MockContainer a) {
+              return null;
+            }
+
+            @Override
+            public Set<Class<?>> supportedParameterTypes() {
+              return Set.of();
+            }
+          };
 
       MockContainer annotation = NoAnnotationClass.class.getAnnotation(MockContainer.class);
 
@@ -162,8 +197,8 @@ class ChaosTestingExtensionDeepCoverageTest {
     /** Build a List that looks like a ContainerInstance list with 2 matching infos. */
     private Object buildTwoContainerList(List<MockConnectionInfo> infos) throws Exception {
       // ContainerInstance is private inner class. Use reflection to construct two instances.
-      Class<?> containerInstanceClass = Class.forName(
-          "com.macstab.chaos.core.extension.ChaosTestingExtension$ContainerInstance");
+      Class<?> containerInstanceClass =
+          Class.forName("com.macstab.chaos.core.extension.ChaosTestingExtension$ContainerInstance");
       java.lang.reflect.Constructor<?> ctor = containerInstanceClass.getDeclaredConstructors()[0];
       ctor.setAccessible(true);
 
@@ -193,8 +228,12 @@ class ChaosTestingExtensionDeepCoverageTest {
     @DisplayName("disk size applied when os.name=linux (coverage of Linux branch)")
     void diskSize_linuxBranch_appliedWithoutError() throws Exception {
       ChaosTestingExtension ext = new ChaosTestingExtension();
-      Method m = ChaosTestingExtension.class.getDeclaredMethod(
-          "applyResourceConstraints", GenericContainer.class, Annotation.class, Resources.class);
+      Method m =
+          ChaosTestingExtension.class.getDeclaredMethod(
+              "applyResourceConstraints",
+              GenericContainer.class,
+              Annotation.class,
+              Resources.class);
       m.setAccessible(true);
 
       @SuppressWarnings("resource")
@@ -218,8 +257,12 @@ class ChaosTestingExtensionDeepCoverageTest {
     @DisplayName("disk size with invalid format throws IllegalArgumentException")
     void diskSize_invalidFormat_throwsIllegalArgument() throws Exception {
       ChaosTestingExtension ext = new ChaosTestingExtension();
-      Method m = ChaosTestingExtension.class.getDeclaredMethod(
-          "applyResourceConstraints", GenericContainer.class, Annotation.class, Resources.class);
+      Method m =
+          ChaosTestingExtension.class.getDeclaredMethod(
+              "applyResourceConstraints",
+              GenericContainer.class,
+              Annotation.class,
+              Resources.class);
       m.setAccessible(true);
 
       @SuppressWarnings("resource")
@@ -237,8 +280,12 @@ class ChaosTestingExtensionDeepCoverageTest {
     @DisplayName("invalid memory format in applyResourceConstraints throws wrapped IAE")
     void memory_invalidFormat_throwsWrappedIAE() throws Exception {
       ChaosTestingExtension ext = new ChaosTestingExtension();
-      Method m = ChaosTestingExtension.class.getDeclaredMethod(
-          "applyResourceConstraints", GenericContainer.class, Annotation.class, Resources.class);
+      Method m =
+          ChaosTestingExtension.class.getDeclaredMethod(
+              "applyResourceConstraints",
+              GenericContainer.class,
+              Annotation.class,
+              Resources.class);
       m.setAccessible(true);
 
       @SuppressWarnings("resource")
@@ -256,8 +303,12 @@ class ChaosTestingExtensionDeepCoverageTest {
     @DisplayName("invalid cpu format in applyResourceConstraints throws wrapped IAE")
     void cpu_invalidFormat_throwsWrappedIAE() throws Exception {
       ChaosTestingExtension ext = new ChaosTestingExtension();
-      Method m = ChaosTestingExtension.class.getDeclaredMethod(
-          "applyResourceConstraints", GenericContainer.class, Annotation.class, Resources.class);
+      Method m =
+          ChaosTestingExtension.class.getDeclaredMethod(
+              "applyResourceConstraints",
+              GenericContainer.class,
+              Annotation.class,
+              Resources.class);
       m.setAccessible(true);
 
       @SuppressWarnings("resource")
@@ -271,10 +322,21 @@ class ChaosTestingExtensionDeepCoverageTest {
           .isInstanceOf(IllegalArgumentException.class);
     }
 
-    @MockContainer(image = "alpine:latest") @Resources(diskSize = "5G")   static class DiskAnnotationClass {}
-    @MockContainer(image = "alpine:latest") @Resources(diskSize = "5GB")  static class InvalidDiskClass {}
-    @MockContainer(image = "alpine:latest") @Resources(memory = "512MB")  static class InvalidMemoryClass {}
-    @MockContainer(image = "alpine:latest") @Resources(cpus = "2.5.5")    static class InvalidCpuClass {}
+    @MockContainer(image = "alpine:latest")
+    @Resources(diskSize = "5G")
+    static class DiskAnnotationClass {}
+
+    @MockContainer(image = "alpine:latest")
+    @Resources(diskSize = "5GB")
+    static class InvalidDiskClass {}
+
+    @MockContainer(image = "alpine:latest")
+    @Resources(memory = "512MB")
+    static class InvalidMemoryClass {}
+
+    @MockContainer(image = "alpine:latest")
+    @Resources(cpus = "2.5.5")
+    static class InvalidCpuClass {}
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -293,8 +355,8 @@ class ChaosTestingExtensionDeepCoverageTest {
     @DisplayName("getConnectionInfoByBaseType returns info when interface is a base type")
     void getConnectionInfoByBaseType_returnsInfo(MockConnectionInfo info) {
       // MockConnectionInfo implements MockConnectionBase — stored under that base type
-      Object stored = ChaosTestingExtension.getConnectionInfoByBaseType(
-          MockConnectionBase.class, "default");
+      Object stored =
+          ChaosTestingExtension.getConnectionInfoByBaseType(MockConnectionBase.class, "default");
       assertThat(stored).isInstanceOf(MockConnectionBase.class);
       assertThat(stored).isEqualTo(info);
     }
@@ -302,8 +364,8 @@ class ChaosTestingExtensionDeepCoverageTest {
     @Test
     @DisplayName("getAllConnectionInfoByBaseType returns all entries for base type")
     void getAllConnectionInfoByBaseType_returnsAll(MockConnectionInfo info) {
-      List<Object> all = ChaosTestingExtension.getAllConnectionInfoByBaseType(
-          MockConnectionBase.class);
+      List<Object> all =
+          ChaosTestingExtension.getAllConnectionInfoByBaseType(MockConnectionBase.class);
       assertThat(all).hasSize(1);
       assertThat(all.get(0)).isEqualTo(info);
     }
@@ -311,8 +373,10 @@ class ChaosTestingExtensionDeepCoverageTest {
     @Test
     @DisplayName("getConnectionInfoByBaseType throws for unknown id on known base type")
     void getConnectionInfoByBaseType_unknownId_throws() {
-      assertThatThrownBy(() -> ChaosTestingExtension.getConnectionInfoByBaseType(
-              MockConnectionBase.class, "nonexistent"))
+      assertThatThrownBy(
+              () ->
+                  ChaosTestingExtension.getConnectionInfoByBaseType(
+                      MockConnectionBase.class, "nonexistent"))
           .isInstanceOf(java.util.NoSuchElementException.class)
           .hasMessageContaining("nonexistent");
     }
@@ -330,8 +394,8 @@ class ChaosTestingExtensionDeepCoverageTest {
     @DisplayName("two @MockContainer on class extracted as two separate annotations")
     void twoMockContainers_extractedSeparately() throws Exception {
       ChaosTestingExtension ext = new ChaosTestingExtension();
-      Method m = ChaosTestingExtension.class.getDeclaredMethod(
-          "extractContainerAnnotations", Class.class);
+      Method m =
+          ChaosTestingExtension.class.getDeclaredMethod("extractContainerAnnotations", Class.class);
       m.setAccessible(true);
 
       @SuppressWarnings("unchecked")
@@ -361,7 +425,7 @@ class ChaosTestingExtensionDeepCoverageTest {
 
       ExtensionContext ec = mock(ExtensionContext.class);
       ExtensionContext.Store store = mock(ExtensionContext.Store.class);
-      when(store.get(any())).thenReturn(null);  // null containers
+      when(store.get(any())).thenReturn(null); // null containers
       when(ec.getStore(any())).thenReturn(store);
       when(ec.getRequiredTestClass()).thenReturn((Class) AfterAllNullContainersTest.class);
 
@@ -405,21 +469,25 @@ class ChaosTestingExtensionDeepCoverageTest {
 
   private static ParameterContext singleMockInfoParamContext() throws Exception {
     ParameterContext pc = mock(ParameterContext.class);
-    when(pc.getParameter()).thenReturn(
-        SingleMockInfoHolder.class.getDeclaredMethod("method", MockConnectionInfo.class)
-            .getParameters()[0]);
+    when(pc.getParameter())
+        .thenReturn(
+            SingleMockInfoHolder.class.getDeclaredMethod("method", MockConnectionInfo.class)
+                .getParameters()[0]);
     return pc;
   }
 
   /** Plugin that returns a valid (started) container but null connectionInfo. */
   static final class NullConnectionInfoPlugin implements ChaosPlugin<MockContainer> {
-    @Override public Class<MockContainer> annotationType() { return MockContainer.class; }
+    @Override
+    public Class<MockContainer> annotationType() {
+      return MockContainer.class;
+    }
 
     @Override
     public GenericContainer<?> createContainer(final MockContainer annotation) {
       @SuppressWarnings("resource")
-      final GenericContainer<?> c = new GenericContainer<>(
-          org.testcontainers.utility.DockerImageName.parse("alpine:latest"));
+      final GenericContainer<?> c =
+          new GenericContainer<>(org.testcontainers.utility.DockerImageName.parse("alpine:latest"));
       c.withCommand("sleep", "infinity");
       c.waitingFor(org.testcontainers.containers.wait.strategy.Wait.forSuccessfulCommand("ls -la"));
       return c;
@@ -431,6 +499,8 @@ class ChaosTestingExtensionDeepCoverageTest {
     }
 
     @Override
-    public Set<Class<?>> supportedParameterTypes() { return Set.of(); }
+    public Set<Class<?>> supportedParameterTypes() {
+      return Set.of();
+    }
   }
 }

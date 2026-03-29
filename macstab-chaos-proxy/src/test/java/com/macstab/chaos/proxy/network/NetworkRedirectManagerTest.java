@@ -17,8 +17,8 @@ import org.testcontainers.containers.GenericContainer;
 import com.macstab.chaos.core.command.network.IptablesCommandBuilder;
 import com.macstab.chaos.core.platform.Platform;
 import com.macstab.chaos.core.shell.Shell;
-import com.macstab.chaos.proxy.support.TestExecResults;
 import com.macstab.chaos.proxy.internal.ContainerContext;
+import com.macstab.chaos.proxy.support.TestExecResults;
 
 /**
  * Unit tests for {@link NetworkRedirectManager}.

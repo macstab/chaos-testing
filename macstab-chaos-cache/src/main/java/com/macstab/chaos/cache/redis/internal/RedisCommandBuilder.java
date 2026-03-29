@@ -4,13 +4,13 @@ package com.macstab.chaos.cache.redis.internal;
 /**
  * Builds redis-cli shell commands for cache chaos operations.
  *
- * <p>All methods return shell command strings suitable for execution via
- * {@link com.macstab.chaos.core.util.Shell#exec}. Commands always target the real Redis port
- * directly — bypassing the Toxiproxy layer so data-level operations work regardless of active
- * TCP fault injection.
+ * <p>All methods return shell command strings suitable for execution via {@link
+ * com.macstab.chaos.core.util.Shell#exec}. Commands always target the real Redis port directly —
+ * bypassing the Toxiproxy layer so data-level operations work regardless of active TCP fault
+ * injection.
  *
- * <p><strong>INTERNAL USE ONLY</strong> — implementation detail of
- * {@link com.macstab.chaos.cache.redis.RedisCacheChaosProvider}.
+ * <p><strong>INTERNAL USE ONLY</strong> — implementation detail of {@link
+ * com.macstab.chaos.cache.redis.RedisCacheChaosProvider}.
  *
  * @author Christian Schnapka - Macstab GmbH
  */

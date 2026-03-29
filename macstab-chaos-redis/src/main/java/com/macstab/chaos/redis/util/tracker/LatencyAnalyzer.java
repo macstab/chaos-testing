@@ -9,20 +9,20 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
- * Analyzes command latency from MONITOR timestamps.
+ * Analyzes inter-arrival time (command gaps) from MONITOR timestamps.
  *
- * <p><strong>How it works:</strong> MONITOR lines contain microsecond-precision timestamps.
- * This class records those timestamps and computes average time delta between consecutive commands.
+ * <p><strong>How it works:</strong> MONITOR lines contain microsecond-precision timestamps. This
+ * class records those timestamps and computes average time delta between consecutive commands.
  *
- * <p><strong>Note:</strong> MONITOR timestamps measure server-side processing time, not network
- * round-trip time.
+ * <p><strong>IMPORTANT:</strong> This measures inter-arrival time between commands (command gaps),
+ * NOT response latency. Use this to understand command pacing and throughput patterns.
  *
  * <p><strong>Example:</strong>
  *
  * <pre>{@code
  * LatencyAnalyzer analyzer = new LatencyAnalyzer(capturedCommands, commandLatencies);
- * Duration avg = analyzer.getAverageLatency("GET");
- * assertThat(avg).isLessThan(Duration.ofMillis(1));
+ * Duration avgGap = analyzer.getAverageCommandGap("GET");
+ * assertThat(avgGap).isLessThan(Duration.ofMillis(1));
  * }</pre>
  *
  * @author Christian Schnapka - Macstab GmbH
@@ -46,14 +46,15 @@ public final class LatencyAnalyzer {
   }
 
   /**
-   * Returns average latency for a specific command.
+   * Returns average inter-arrival time (command gap) for a specific command.
    *
-   * <p>Calculates average time delta between consecutive occurrences of the command.
+   * <p>Calculates average time delta between consecutive occurrences of the command. This measures
+   * how frequently the command is being issued, NOT the response latency.
    *
    * @param command Redis command name (e.g., "GET") — must not be null
-   * @return average latency, or {@link Duration#ZERO} if insufficient data
+   * @return average command gap, or {@link Duration#ZERO} if insufficient data
    */
-  public Duration getAverageLatency(final String command) {
+  public Duration getAverageCommandGap(final String command) {
     Objects.requireNonNull(command, "command");
 
     final String quotedCommand = "\"" + command.toUpperCase() + "\"";
@@ -81,6 +82,19 @@ public final class LatencyAnalyzer {
 
     final long avgMicros = (long) latencies.stream().mapToLong(Long::longValue).average().orElse(0);
     return Duration.ofNanos(avgMicros * 1000);
+  }
+
+  /**
+   * Returns average latency for a specific command.
+   *
+   * @param command Redis command name (e.g., "GET") — must not be null
+   * @return average command gap, or {@link Duration#ZERO} if insufficient data
+   * @deprecated Use {@link #getAverageCommandGap(String)} instead. This method measures
+   *     inter-arrival time between commands, not response latency.
+   */
+  @Deprecated(since = "2.0", forRemoval = true)
+  public Duration getAverageLatency(final String command) {
+    return getAverageCommandGap(command);
   }
 
   /**

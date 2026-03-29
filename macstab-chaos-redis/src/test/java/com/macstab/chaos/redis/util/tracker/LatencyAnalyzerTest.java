@@ -14,9 +14,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-/**
- * Unit tests for {@link LatencyAnalyzer}.
- */
+/** Unit tests for {@link LatencyAnalyzer}. */
 @DisplayName("LatencyAnalyzer")
 class LatencyAnalyzerTest {
 
@@ -66,11 +64,10 @@ class LatencyAnalyzerTest {
       final String line1 = "1000.000000 [0 127.0.0.1] \"GET\" \"k1\"";
       final String line2 = "1000.001000 [0 127.0.0.1] \"GET\" \"k2\"";
       final Map<String, Long> latencies = new HashMap<>();
-      latencies.put(line1, 1_000_000_000L);    // 1000s in micros
-      latencies.put(line2, 1_000_001_000L);    // 1000.001s in micros (1000us later)
+      latencies.put(line1, 1_000_000_000L); // 1000s in micros
+      latencies.put(line2, 1_000_001_000L); // 1000.001s in micros (1000us later)
 
-      final LatencyAnalyzer analyzer =
-          new LatencyAnalyzer(List.of(line1, line2), latencies);
+      final LatencyAnalyzer analyzer = new LatencyAnalyzer(List.of(line1, line2), latencies);
 
       final Duration avg = analyzer.getAverageLatency("GET");
       assertThat(avg).isEqualTo(Duration.ofNanos(1000 * 1000)); // 1000us = 1ms
@@ -90,8 +87,7 @@ class LatencyAnalyzerTest {
       final String line1 = "1234.0 [0 127.0.0.1] \"GET\" \"k1\"";
       final String line2 = "1234.1 [0 127.0.0.1] \"GET\" \"k2\"";
       // No entries in latency map
-      final LatencyAnalyzer analyzer =
-          new LatencyAnalyzer(List.of(line1, line2), Map.of());
+      final LatencyAnalyzer analyzer = new LatencyAnalyzer(List.of(line1, line2), Map.of());
       assertThat(analyzer.getAverageLatency("GET")).isEqualTo(Duration.ZERO);
     }
   }
@@ -110,7 +106,8 @@ class LatencyAnalyzerTest {
 
       assertThat(latencies).containsKey(line);
       // 1234.567890 seconds = 1,234,567,890 microseconds
-      assertThat(latencies.get(line)).isCloseTo(1_234_567_890L, org.assertj.core.data.Offset.offset(1L));
+      assertThat(latencies.get(line))
+          .isCloseTo(1_234_567_890L, org.assertj.core.data.Offset.offset(1L));
     }
 
     @Test

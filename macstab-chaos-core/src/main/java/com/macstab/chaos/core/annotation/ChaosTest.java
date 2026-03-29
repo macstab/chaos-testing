@@ -57,12 +57,11 @@ import com.macstab.chaos.core.extension.ChaosTestingExtension;
  *   <li><strong>Clear boundary:</strong> Framework concerns hidden from public API
  *   <li><strong>Industry standard:</strong> Matches Spring Boot (@SpringBootTest), Micronaut,
  *       Quarkus patterns
- *   <li><strong>Scalability:</strong> Adding annotation 11-100 = 1 line change (not N×
- *       @ExtendWith)
+ *   <li><strong>Scalability:</strong> Adding annotation 11-100 = 1 line change (not N× @ExtendWith)
  * </ul>
  *
- * <p><strong>Not for Direct Use:</strong> This annotation should NEVER appear in user test code.
- * It exists solely for framework-internal composition.
+ * <p><strong>Not for Direct Use:</strong> This annotation should NEVER appear in user test code. It
+ * exists solely for framework-internal composition.
  *
  * <p><strong>Example (Correct):</strong>
  *

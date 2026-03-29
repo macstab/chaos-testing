@@ -13,8 +13,8 @@ import com.macstab.chaos.core.shell.*;
 
 /**
  * Tests for AbstractLinuxPlatform shell delegation logic.
- * 
- * Covers the lazy shell detection and delegation paths.
+ *
+ * <p>Covers the lazy shell detection and delegation paths.
  */
 @DisplayName("AbstractLinuxPlatform - Shell Delegation")
 class AbstractLinuxPlatformShellDelegationTest {
@@ -38,7 +38,7 @@ class AbstractLinuxPlatformShellDelegationTest {
   void shellGetType_shouldReturnBashBeforeInit() {
     Platform platform = new TestLinuxPlatform();
     Shell shell = platform.getDefaultShell();
-    
+
     // Before exec() call, delegate is null, should return BASH as default
     ShellType type = shell.getType();
     assertThat(type).isEqualTo(ShellType.BASH);
@@ -49,7 +49,7 @@ class AbstractLinuxPlatformShellDelegationTest {
   void shellGetBinary_shouldReturnShBeforeInit() {
     Platform platform = new TestLinuxPlatform();
     Shell shell = platform.getDefaultShell();
-    
+
     // Before exec() call, delegate is null, should return /bin/sh as default
     String binary = shell.getBinary();
     assertThat(binary).isEqualTo("/bin/sh");
@@ -60,25 +60,25 @@ class AbstractLinuxPlatformShellDelegationTest {
   void shellExec_shouldTriggerLazyInit() throws Exception {
     Platform platform = new TestLinuxPlatform();
     Shell shell = platform.getDefaultShell();
-    
+
     @SuppressWarnings("resource")
     GenericContainer<?> container = mock(GenericContainer.class);
     when(container.isRunning()).thenReturn(true);
-    
+
     // Mock bash detection
     ExecResult bashResult = mock(ExecResult.class);
     when(bashResult.getExitCode()).thenReturn(0);
     when(container.execInContainer("which", "/bin/bash")).thenReturn(bashResult);
-    
+
     // Mock command execution
     ExecResult execResult = mock(ExecResult.class);
     when(execResult.getExitCode()).thenReturn(0);
     when(execResult.getStdout()).thenReturn("output");
     when(container.execInContainer(anyString(), anyString(), anyString())).thenReturn(execResult);
-    
+
     // Execute command - this triggers lazy shell detection
     ExecResult result = shell.exec(container, "echo test");
-    
+
     assertThat(result).isNotNull();
     assertThat(result.getExitCode()).isZero();
   }
@@ -88,19 +88,19 @@ class AbstractLinuxPlatformShellDelegationTest {
   void shellIsAvailable_shouldTriggerLazyInit() throws Exception {
     Platform platform = new TestLinuxPlatform();
     Shell shell = platform.getDefaultShell();
-    
+
     @SuppressWarnings("resource")
     GenericContainer<?> container = mock(GenericContainer.class);
     when(container.isRunning()).thenReturn(true);
-    
+
     // Mock bash detection
     ExecResult bashResult = mock(ExecResult.class);
     when(bashResult.getExitCode()).thenReturn(0);
     when(container.execInContainer("which", "/bin/bash")).thenReturn(bashResult);
-    
+
     // Check availability - triggers lazy detection
     boolean available = shell.isAvailable(container);
-    
+
     assertThat(available).isTrue();
   }
 
@@ -109,22 +109,22 @@ class AbstractLinuxPlatformShellDelegationTest {
   void shellSupportsDevTcp_shouldWorkAfterInit() throws Exception {
     Platform platform = new TestLinuxPlatform();
     Shell shell = platform.getDefaultShell();
-    
+
     @SuppressWarnings("resource")
     GenericContainer<?> container = mock(GenericContainer.class);
     when(container.isRunning()).thenReturn(true);
-    
+
     // Mock bash detection
     ExecResult bashResult = mock(ExecResult.class);
     when(bashResult.getExitCode()).thenReturn(0);
     when(container.execInContainer("which", "/bin/bash")).thenReturn(bashResult);
-    
+
     // Trigger lazy init via exec
     ExecResult execResult = mock(ExecResult.class);
     when(execResult.getExitCode()).thenReturn(0);
     when(container.execInContainer(anyString(), anyString(), anyString())).thenReturn(execResult);
     shell.exec(container, "test");
-    
+
     // Now supportsDevTcp should work (bash supports it)
     boolean supports = shell.supportsDevTcp();
     assertThat(supports).isTrue(); // Bash supports /dev/tcp
@@ -135,9 +135,9 @@ class AbstractLinuxPlatformShellDelegationTest {
   void shellBuildPortCheckCommand_shouldWork() {
     Platform platform = new TestLinuxPlatform();
     Shell shell = platform.getDefaultShell();
-    
+
     String command = shell.buildPortCheckCommand(8080);
-    
+
     assertThat(command).contains("localhost:8080");
     assertThat(command).contains("curl");
   }
@@ -147,10 +147,10 @@ class AbstractLinuxPlatformShellDelegationTest {
   void shellBuildPortCheckCommand_shouldFallbackBeforeInit() {
     Platform platform = new TestLinuxPlatform();
     Shell shell = platform.getDefaultShell();
-    
+
     // Before lazy init (delegate == null), should use fallback
     String command = shell.buildPortCheckCommand(8080);
-    
+
     assertThat(command).isNotNull();
     assertThat(command).contains("8080");
     assertThat(command).contains("curl");
@@ -162,7 +162,7 @@ class AbstractLinuxPlatformShellDelegationTest {
     Platform platform = new TestLinuxPlatform();
     Shell shell1 = platform.getDefaultShell();
     Shell shell2 = platform.getDefaultShell();
-    
+
     assertThat(shell1).isNotNull();
     assertThat(shell2).isNotNull();
     assertThat(shell1).isNotSameAs(shell2);

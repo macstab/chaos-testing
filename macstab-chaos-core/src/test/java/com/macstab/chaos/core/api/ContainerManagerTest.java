@@ -21,6 +21,7 @@ import com.macstab.chaos.core.extension.ChaosTestingExtension;
  * Unit tests for {@link ContainerManager} type-safe facade.
  *
  * <p>Tests validate:
+ *
  * <ul>
  *   <li>Type-safe wrapper methods
  *   <li>Generic type safety
@@ -199,12 +200,15 @@ class ContainerManagerTest {
           new ContainerManager<>(
               id -> {
                 @SuppressWarnings("unchecked")
-                TestConnectionInfo result = (TestConnectionInfo) ChaosContainers.get(TestAnnotation.class, id);
+                TestConnectionInfo result =
+                    (TestConnectionInfo) ChaosContainers.get(TestAnnotation.class, id);
                 return result;
               },
               () -> {
                 @SuppressWarnings("unchecked")
-                List<TestConnectionInfo> result = (List<TestConnectionInfo>) (List<?>) ChaosContainers.getAll(TestAnnotation.class);
+                List<TestConnectionInfo> result =
+                    (List<TestConnectionInfo>)
+                        (List<?>) ChaosContainers.getAll(TestAnnotation.class);
                 return result;
               });
 

@@ -38,21 +38,22 @@ import com.macstab.chaos.core.exception.ChaosOperationFailedException;
  * <h2>Test Strategy</h2>
  *
  * <p><strong>TCP-level faults</strong> ({@code slowResponse}, {@code injectConnectionFailures},
- * {@code limitThroughput}, {@code truncateResponses}, {@code removeFault},
- * {@code removeAllFaults}): verify delegation to {@link ProxyChaos} mock. No real containers.
+ * {@code limitThroughput}, {@code truncateResponses}, {@code removeFault}, {@code
+ * removeAllFaults}): verify delegation to {@link ProxyChaos} mock. No real containers.
  *
- * <p><strong>Data-level faults</strong> ({@code forceEviction}, {@code limitMemory},
- * {@code setEvictionPolicy}, {@code disconnectClients}, {@code flushAll}): stub
- * {@link GenericContainer#execInContainer} via {@link TestExecResults}; verify happy path,
- * failure path ({@link ChaosOperationFailedException}), and guard conditions.
+ * <p><strong>Data-level faults</strong> ({@code forceEviction}, {@code limitMemory}, {@code
+ * setEvictionPolicy}, {@code disconnectClients}, {@code flushAll}): stub {@link
+ * GenericContainer#execInContainer} via {@link TestExecResults}; verify happy path, failure path
+ * ({@link ChaosOperationFailedException}), and guard conditions.
  *
  * <p><strong>Every public method</strong> is covered for:
+ *
  * <ul>
- *   <li>Null container → {@link NullPointerException}</li>
- *   <li>Stopped container → {@link IllegalStateException}</li>
- *   <li>Invalid arguments → {@link IllegalArgumentException}</li>
- *   <li>Happy path delegation / exec</li>
- *   <li>Exec failure → {@link ChaosOperationFailedException} (data-level ops only)</li>
+ *   <li>Null container → {@link NullPointerException}
+ *   <li>Stopped container → {@link IllegalStateException}
+ *   <li>Invalid arguments → {@link IllegalArgumentException}
+ *   <li>Happy path delegation / exec
+ *   <li>Exec failure → {@link ChaosOperationFailedException} (data-level ops only)
  * </ul>
  *
  * <p>{@link RedisChaosConfig} validation is tested inline in {@link ConfigTests}.
@@ -87,7 +88,8 @@ class RedisCacheChaosProviderTest {
     void shouldEnsureProxyAndDelegate() {
       final Duration delay = Duration.ofMillis(200);
       chaos.slowResponse(container, delay);
-      verify(proxy).createProxy(container, config.proxyName(), config.redisPort(), config.proxyPort());
+      verify(proxy)
+          .createProxy(container, config.proxyName(), config.redisPort(), config.proxyPort());
       verify(proxy).addLatency(container, config.proxyName(), delay);
     }
 
@@ -140,7 +142,8 @@ class RedisCacheChaosProviderTest {
     @DisplayName("should ensure proxy then delegate to proxy.addTimeout")
     void shouldEnsureProxyAndDelegate() {
       chaos.injectConnectionFailures(container, 0.3);
-      verify(proxy).createProxy(container, config.proxyName(), config.redisPort(), config.proxyPort());
+      verify(proxy)
+          .createProxy(container, config.proxyName(), config.redisPort(), config.proxyPort());
       verify(proxy).addTimeout(eq(container), eq(config.proxyName()), any(Duration.class), eq(0.3));
     }
 
@@ -158,7 +161,8 @@ class RedisCacheChaosProviderTest {
     @DisplayName("should accept boundary and typical rates")
     void shouldAcceptValidRates(final double rate) {
       chaos.injectConnectionFailures(container, rate);
-      verify(proxy).addTimeout(eq(container), eq(config.proxyName()), any(Duration.class), eq(rate));
+      verify(proxy)
+          .addTimeout(eq(container), eq(config.proxyName()), any(Duration.class), eq(rate));
     }
 
     @Test
@@ -186,7 +190,8 @@ class RedisCacheChaosProviderTest {
     @DisplayName("should ensure proxy then delegate to proxy.limitBandwidth")
     void shouldEnsureProxyAndDelegate() {
       chaos.limitThroughput(container, 10L);
-      verify(proxy).createProxy(container, config.proxyName(), config.redisPort(), config.proxyPort());
+      verify(proxy)
+          .createProxy(container, config.proxyName(), config.redisPort(), config.proxyPort());
       verify(proxy).limitBandwidth(container, config.proxyName(), 10L);
     }
 
@@ -224,7 +229,8 @@ class RedisCacheChaosProviderTest {
     @DisplayName("should ensure proxy then delegate to proxy.addLimitData")
     void shouldEnsureProxyAndDelegate() {
       chaos.truncateResponses(container, 1024L);
-      verify(proxy).createProxy(container, config.proxyName(), config.redisPort(), config.proxyPort());
+      verify(proxy)
+          .createProxy(container, config.proxyName(), config.redisPort(), config.proxyPort());
       verify(proxy).addLimitData(container, config.proxyName(), 1024L);
     }
 
@@ -547,8 +553,7 @@ class RedisCacheChaosProviderTest {
     @DisplayName("should reject stopped container")
     void shouldRejectStoppedContainer() {
       when(container.isRunning()).thenReturn(false);
-      assertThatThrownBy(() -> chaos.flushAll(container))
-          .isInstanceOf(IllegalStateException.class);
+      assertThatThrownBy(() -> chaos.flushAll(container)).isInstanceOf(IllegalStateException.class);
     }
 
     @Test
@@ -654,11 +659,12 @@ class RedisCacheChaosProviderTest {
     @Test
     @DisplayName("builder should fully override all values")
     void builderShouldOverrideAllValues() {
-      final RedisChaosConfig custom = RedisChaosConfig.builder()
-          .redisPort(6380)
-          .proxyPort(16380)
-          .proxyName("redis_primary")
-          .build();
+      final RedisChaosConfig custom =
+          RedisChaosConfig.builder()
+              .redisPort(6380)
+              .proxyPort(16380)
+              .proxyName("redis_primary")
+              .build();
       assertThat(custom.redisPort()).isEqualTo(6380);
       assertThat(custom.proxyPort()).isEqualTo(16380);
       assertThat(custom.proxyName()).isEqualTo("redis_primary");
@@ -708,16 +714,17 @@ class RedisCacheChaosProviderTest {
 
   private void stubExecSuccess() throws Exception {
     doReturn(TestExecResults.success())
-        .when(container).execInContainer(anyString(), anyString(), anyString());
+        .when(container)
+        .execInContainer(anyString(), anyString(), anyString());
   }
 
   private void stubExecFailure(final String stderr) throws Exception {
     doReturn(TestExecResults.failure(stderr))
-        .when(container).execInContainer(anyString(), anyString(), anyString());
+        .when(container)
+        .execInContainer(anyString(), anyString(), anyString());
   }
 
   private void stubExecThrows(final Exception ex) throws Exception {
-    doThrow(ex)
-        .when(container).execInContainer(anyString(), anyString(), anyString());
+    doThrow(ex).when(container).execInContainer(anyString(), anyString(), anyString());
   }
 }

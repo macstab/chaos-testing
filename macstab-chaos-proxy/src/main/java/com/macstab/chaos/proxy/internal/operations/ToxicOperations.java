@@ -11,29 +11,28 @@ import com.macstab.chaos.proxy.internal.operations.toxic.ToxicConfig;
  *
  * <p>A <em>toxic</em> is a fault injector attached to a named proxy. It intercepts data flowing
  * through the proxy and applies a configurable disruption — latency, bandwidth limit, connection
- * drop, etc. Multiple toxics can be active on the same proxy simultaneously; each is identified
- * by a unique name.
+ * drop, etc. Multiple toxics can be active on the same proxy simultaneously; each is identified by
+ * a unique name.
  *
  * <h2>Toxiproxy REST Endpoints Used</h2>
  *
  * <ul>
- *   <li>{@code GET  /proxies/{name}/toxics} — list toxics (used by {@link #toxicExists} and
- *       {@link #removeAllToxics})</li>
- *   <li>{@code POST /proxies/{name}/toxics} — add a toxic</li>
- *   <li>{@code DELETE /proxies/{name}/toxics/{toxicName}} — remove a specific toxic</li>
+ *   <li>{@code GET /proxies/{name}/toxics} — list toxics (used by {@link #toxicExists} and {@link
+ *       #removeAllToxics})
+ *   <li>{@code POST /proxies/{name}/toxics} — add a toxic
+ *   <li>{@code DELETE /proxies/{name}/toxics/{toxicName}} — remove a specific toxic
  * </ul>
  *
  * <h2>Idempotency</h2>
  *
  * <p>{@link #addToxic} is idempotent: if a toxic with the same name already exists on the proxy,
- * the operation is silently skipped. To update an existing toxic, remove it first with
- * {@link #removeToxic} then add the new configuration.
+ * the operation is silently skipped. To update an existing toxic, remove it first with {@link
+ * #removeToxic} then add the new configuration.
  *
  * <h2>Context Passing</h2>
  *
  * <p>All methods receive a pre-resolved {@link ContainerContext}. Platform detection is performed
- * exactly once per entry point in
- * {@link com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator}.
+ * exactly once per entry point in {@link com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator}.
  *
  * <h2>Default Implementation</h2>
  *
@@ -46,11 +45,11 @@ public interface ToxicOperations {
   /**
    * Add a typed toxic to a proxy.
    *
-   * <p>Idempotent: if a toxic with the same {@link ToxicConfig#name()} already exists on
-   * {@code proxyName}, this method logs and returns without modifying the existing toxic.
+   * <p>Idempotent: if a toxic with the same {@link ToxicConfig#name()} already exists on {@code
+   * proxyName}, this method logs and returns without modifying the existing toxic.
    *
-   * <p>The toxic is added via {@code POST /proxies/{proxyName}/toxics} using the JSON
-   * attributes from {@link ToxicConfig#toJson()}.
+   * <p>The toxic is added via {@code POST /proxies/{proxyName}/toxics} using the JSON attributes
+   * from {@link ToxicConfig#toJson()}.
    *
    * @param ctx resolved container context (container must be running)
    * @param proxyName name of the proxy to attach the toxic to
@@ -63,9 +62,9 @@ public interface ToxicOperations {
   /**
    * Remove a specific toxic from a proxy by name.
    *
-   * <p>Issues {@code DELETE /proxies/{proxyName}/toxics/{toxicName}}. The behavior when the
-   * toxic does not exist depends on the Toxiproxy server version — it may return an error or
-   * succeed silently. Callers should treat non-existent toxics as already removed.
+   * <p>Issues {@code DELETE /proxies/{proxyName}/toxics/{toxicName}}. The behavior when the toxic
+   * does not exist depends on the Toxiproxy server version — it may return an error or succeed
+   * silently. Callers should treat non-existent toxics as already removed.
    *
    * @param ctx resolved container context (container must be running)
    * @param proxyName name of the proxy
@@ -78,9 +77,9 @@ public interface ToxicOperations {
   /**
    * Check whether a named toxic exists on a proxy.
    *
-   * <p>Fetches the toxic list via {@code GET /proxies/{proxyName}/toxics} and searches for
-   * a matching {@code "name"} field. Returns {@code false} on any error — API unreachable,
-   * container stopped — and never throws. Safe to use in polling loops.
+   * <p>Fetches the toxic list via {@code GET /proxies/{proxyName}/toxics} and searches for a
+   * matching {@code "name"} field. Returns {@code false} on any error — API unreachable, container
+   * stopped — and never throws. Safe to use in polling loops.
    *
    * @param ctx resolved container context
    * @param proxyName name of the proxy
@@ -92,10 +91,9 @@ public interface ToxicOperations {
   /**
    * Remove all toxics from a proxy, leaving it as a clean pass-through.
    *
-   * <p>Fetches the current toxic list via {@code GET /proxies/{proxyName}/toxics}, then
-   * deletes each one individually via
-   * {@code DELETE /proxies/{proxyName}/toxics/{toxicName}}. The proxy itself remains active
-   * and continues forwarding traffic without any fault injection.
+   * <p>Fetches the current toxic list via {@code GET /proxies/{proxyName}/toxics}, then deletes
+   * each one individually via {@code DELETE /proxies/{proxyName}/toxics/{toxicName}}. The proxy
+   * itself remains active and continues forwarding traffic without any fault injection.
    *
    * <p>Idempotent: if no toxics exist, this method completes without error.
    *

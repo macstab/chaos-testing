@@ -14,8 +14,8 @@ import com.macstab.chaos.core.extension.MockChaosPlugin.*;
 /**
  * Coverage tests for {@link ChaosContainers} and {@link ContainerManager}.
  *
- * <p>Both are thin facades over {@link ChaosTestingExtension} — tested via real
- * container lifecycle inside a {@code @Nested} test class.
+ * <p>Both are thin facades over {@link ChaosTestingExtension} — tested via real container lifecycle
+ * inside a {@code @Nested} test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -60,7 +60,8 @@ class ApiCoverageTest {
     @Test
     @DisplayName("getByBaseType() returns connection info by base interface and id")
     void getByBaseType(MockConnectionInfo info) {
-      MockConnectionBase result = ChaosContainers.getByBaseType(MockConnectionBase.class, "default");
+      MockConnectionBase result =
+          ChaosContainers.getByBaseType(MockConnectionBase.class, "default");
       assertThat(result).isNotNull();
       assertThat(result).isEqualTo(info);
     }
@@ -68,11 +69,14 @@ class ApiCoverageTest {
     @Test
     @DisplayName("ChaosContainers constructor throws UnsupportedOperationException")
     void constructor_throwsUnsupportedOperation() {
-      assertThatThrownBy(() -> {
-        var ctor = ChaosContainers.class.getDeclaredConstructor();
-        ctor.setAccessible(true);
-        ctor.newInstance();
-      }).cause().isInstanceOf(UnsupportedOperationException.class);
+      assertThatThrownBy(
+              () -> {
+                var ctor = ChaosContainers.class.getDeclaredConstructor();
+                ctor.setAccessible(true);
+                ctor.newInstance();
+              })
+          .cause()
+          .isInstanceOf(UnsupportedOperationException.class);
     }
   }
 
@@ -90,9 +94,10 @@ class ApiCoverageTest {
     @Test
     @DisplayName("get() delegates to getter function")
     void get_delegatesToGetter(MockConnectionInfo info) {
-      ContainerManager<MockConnectionInfo> manager = new ContainerManager<>(
-          id -> ChaosContainers.get(MockContainer.class, id),
-          ()  -> ChaosContainers.getAll(MockContainer.class));
+      ContainerManager<MockConnectionInfo> manager =
+          new ContainerManager<>(
+              id -> ChaosContainers.get(MockContainer.class, id),
+              () -> ChaosContainers.getAll(MockContainer.class));
 
       MockConnectionInfo result = manager.get("default");
       assertThat(result).isNotNull();
@@ -102,9 +107,10 @@ class ApiCoverageTest {
     @Test
     @DisplayName("getAll() delegates to allGetter function")
     void getAll_delegatesToAllGetter(MockConnectionInfo info) {
-      ContainerManager<MockConnectionInfo> manager = new ContainerManager<>(
-          id -> ChaosContainers.get(MockContainer.class, id),
-          ()  -> ChaosContainers.getAll(MockContainer.class));
+      ContainerManager<MockConnectionInfo> manager =
+          new ContainerManager<>(
+              id -> ChaosContainers.get(MockContainer.class, id),
+              () -> ChaosContainers.getAll(MockContainer.class));
 
       List<MockConnectionInfo> all = manager.getAll();
       assertThat(all).hasSize(1);

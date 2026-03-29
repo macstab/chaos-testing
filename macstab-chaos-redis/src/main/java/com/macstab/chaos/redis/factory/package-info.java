@@ -3,6 +3,7 @@
  * Container factories for Redis standalone and Sentinel cluster deployments.
  *
  * <p>Contains:
+ *
  * <ul>
  *   <li>{@link com.macstab.chaos.redis.factory.StandaloneContainerFactory} — plain Redis
  *   <li>{@link com.macstab.chaos.redis.factory.SentinelContainerFactory} — Sentinel clusters

@@ -7,36 +7,35 @@ import java.util.Objects;
  * Closes the connection after a fixed number of bytes have been transmitted through the proxy.
  *
  * <p>Uses Toxiproxy's {@code limit_data} toxic. The byte counter tracks data flowing in
- * <em>both</em> directions combined (upstream + downstream). Once the cumulative byte count
- * reaches the threshold, the connection is closed immediately — the client receives a
- * connection reset mid-stream.
+ * <em>both</em> directions combined (upstream + downstream). Once the cumulative byte count reaches
+ * the threshold, the connection is closed immediately — the client receives a connection reset
+ * mid-stream.
  *
  * <h2>Semantics</h2>
  *
  * <ul>
- *   <li><strong>bytes=0</strong> — the connection is closed immediately upon establishment,
- *       before any data is exchanged. Equivalent to an instant TCP reset after connect.</li>
- *   <li><strong>bytes &gt; 0</strong> — the connection is closed after exactly {@code bytes}
- *       of combined bidirectional data. The client receives a partial response, which exercises
- *       error handling for incomplete reads.</li>
- *   <li><strong>toxicity</strong> — fraction of connections that hit the byte limit.
- *       {@code 1.0} limits every connection; lower values simulate intermittent partial
- *       failures.</li>
+ *   <li><strong>bytes=0</strong> — the connection is closed immediately upon establishment, before
+ *       any data is exchanged. Equivalent to an instant TCP reset after connect.
+ *   <li><strong>bytes &gt; 0</strong> — the connection is closed after exactly {@code bytes} of
+ *       combined bidirectional data. The client receives a partial response, which exercises error
+ *       handling for incomplete reads.
+ *   <li><strong>toxicity</strong> — fraction of connections that hit the byte limit. {@code 1.0}
+ *       limits every connection; lower values simulate intermittent partial failures.
  * </ul>
  *
  * <h2>Primary Use Cases</h2>
  *
  * <ul>
- *   <li><strong>Partial read resilience:</strong> Verify that the application correctly detects
- *       and handles truncated responses — e.g., a JSON body that is cut off mid-parse, or a
- *       binary protocol frame that arrives incomplete. The application must not silently accept
- *       partial data as complete.</li>
+ *   <li><strong>Partial read resilience:</strong> Verify that the application correctly detects and
+ *       handles truncated responses — e.g., a JSON body that is cut off mid-parse, or a binary
+ *       protocol frame that arrives incomplete. The application must not silently accept partial
+ *       data as complete.
  *   <li><strong>Streaming fault injection:</strong> For large response bodies or streaming
- *       protocols (SSE, gRPC, NATS), set {@code bytes} to a value mid-stream to simulate
- *       a network interruption partway through the transfer.</li>
+ *       protocols (SSE, gRPC, NATS), set {@code bytes} to a value mid-stream to simulate a network
+ *       interruption partway through the transfer.
  *   <li><strong>Connection recycling pressure:</strong> With {@code bytes} set to a small value
  *       (e.g., 64), connections are recycled after almost every protocol exchange, exercising
- *       reconnection logic and connection pool stability under churn.</li>
+ *       reconnection logic and connection pool stability under churn.
  * </ul>
  *
  * <h2>Examples</h2>
@@ -111,8 +110,8 @@ public final class LimitDataToxic implements ToxicConfig {
   /**
    * Cumulative byte threshold (upstream + downstream) at which the connection is closed.
    *
-   * <p>{@code 0} closes the connection immediately on establishment. Positive values allow
-   * exactly that many bytes through before the connection reset.
+   * <p>{@code 0} closes the connection immediately on establishment. Positive values allow exactly
+   * that many bytes through before the connection reset.
    *
    * @return byte limit (≥ 0)
    */
@@ -140,8 +139,8 @@ public final class LimitDataToxic implements ToxicConfig {
   /**
    * Builder for {@link LimitDataToxic}.
    *
-   * <p>Defaults: {@code bytes=0} (instant close), {@code toxicity=1.0}. Only
-   * {@link #name(String)} is required.
+   * <p>Defaults: {@code bytes=0} (instant close), {@code toxicity=1.0}. Only {@link #name(String)}
+   * is required.
    */
   public static final class Builder {
 
@@ -165,9 +164,8 @@ public final class LimitDataToxic implements ToxicConfig {
     /**
      * Set the cumulative byte threshold after which the connection is closed.
      *
-     * <p>Counts both upstream and downstream data combined. {@code 0} (default) closes
-     * the connection immediately on establishment — useful for testing reconnection logic.
-     * Must be ≥ 0.
+     * <p>Counts both upstream and downstream data combined. {@code 0} (default) closes the
+     * connection immediately on establishment — useful for testing reconnection logic. Must be ≥ 0.
      *
      * @param bytes byte limit (0 = instant close on connect)
      * @return this builder

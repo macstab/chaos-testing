@@ -8,21 +8,21 @@ import java.util.Objects;
  *
  * <p>Uses Toxiproxy's {@code timeout} toxic. When triggered, the toxic halts data transfer
  * immediately and waits for {@code timeoutMs} milliseconds before forcibly closing the connection.
- * The client experiences either a hang (during the wait) followed by a connection reset, or —
- * with {@code timeoutMs=0} — an instant connection drop.
+ * The client experiences either a hang (during the wait) followed by a connection reset, or — with
+ * {@code timeoutMs=0} — an instant connection drop.
  *
  * <h2>Semantics</h2>
  *
  * <ul>
- *   <li><strong>timeoutMs=0</strong> — connection is closed immediately upon first data.
- *       Use this to simulate a completely unresponsive upstream (connection refused after
- *       TCP handshake). This is the most aggressive timeout scenario.</li>
+ *   <li><strong>timeoutMs=0</strong> — connection is closed immediately upon first data. Use this
+ *       to simulate a completely unresponsive upstream (connection refused after TCP handshake).
+ *       This is the most aggressive timeout scenario.
  *   <li><strong>timeoutMs &gt; 0</strong> — data is held for {@code timeoutMs} ms then the
  *       connection is dropped. The client sees a hang of exactly that duration followed by an
- *       error. Use this to test timeout handling and circuit breaker trip times.</li>
- *   <li><strong>toxicity</strong> — fraction of connections that experience the timeout.
- *       {@code 0.3} simulates a service that times out 30% of requests — a realistic
- *       overloaded upstream scenario.</li>
+ *       error. Use this to test timeout handling and circuit breaker trip times.
+ *   <li><strong>toxicity</strong> — fraction of connections that experience the timeout. {@code
+ *       0.3} simulates a service that times out 30% of requests — a realistic overloaded upstream
+ *       scenario.
  * </ul>
  *
  * <h2>Real-World Scenarios</h2>
@@ -116,8 +116,8 @@ public final class TimeoutToxic implements ToxicConfig {
   /**
    * Duration the toxic holds data before closing the connection, in milliseconds.
    *
-   * <p>{@code 0} means the connection is closed immediately. Positive values create a hang
-   * of exactly that duration before the connection is dropped.
+   * <p>{@code 0} means the connection is closed immediately. Positive values create a hang of
+   * exactly that duration before the connection is dropped.
    *
    * @return timeout in milliseconds (≥ 0)
    */
@@ -145,8 +145,8 @@ public final class TimeoutToxic implements ToxicConfig {
   /**
    * Builder for {@link TimeoutToxic}.
    *
-   * <p>Defaults: {@code timeoutMs=0} (instant close), {@code toxicity=1.0}.
-   * Only {@link #name(String)} is required.
+   * <p>Defaults: {@code timeoutMs=0} (instant close), {@code toxicity=1.0}. Only {@link
+   * #name(String)} is required.
    */
   public static final class Builder {
 
@@ -171,8 +171,8 @@ public final class TimeoutToxic implements ToxicConfig {
      * Set the hang duration before the connection is closed.
      *
      * <p>{@code 0} (default) causes an <strong>instant</strong> connection drop — the most
-     * aggressive scenario. Positive values cause the connection to hang for exactly
-     * {@code timeoutMs} milliseconds then drop.
+     * aggressive scenario. Positive values cause the connection to hang for exactly {@code
+     * timeoutMs} milliseconds then drop.
      *
      * <p>Must be ≥ 0.
      *

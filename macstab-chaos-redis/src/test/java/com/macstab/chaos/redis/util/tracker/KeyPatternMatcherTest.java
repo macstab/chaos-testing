@@ -10,18 +10,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-/**
- * Unit tests for {@link KeyPatternMatcher}.
- */
+/** Unit tests for {@link KeyPatternMatcher}. */
 @DisplayName("KeyPatternMatcher")
 class KeyPatternMatcherTest {
 
   private static final String GET_USER = "1234.567 [0 127.0.0.1:12345] \"GET\" \"user:123\"";
-  private static final String GET_SESSION =
-      "1234.568 [0 127.0.0.1:12345] \"GET\" \"session:abc\"";
-  private static final String SET_USER = "1234.569 [0 127.0.0.1:12345] \"SET\" \"user:456\" \"val\"";
-  private static final String GET_PRODUCT =
-      "1234.570 [0 127.0.0.1:12345] \"GET\" \"product:789\"";
+  private static final String GET_SESSION = "1234.568 [0 127.0.0.1:12345] \"GET\" \"session:abc\"";
+  private static final String SET_USER =
+      "1234.569 [0 127.0.0.1:12345] \"SET\" \"user:456\" \"val\"";
+  private static final String GET_PRODUCT = "1234.570 [0 127.0.0.1:12345] \"GET\" \"product:789\"";
 
   @Nested
   @DisplayName("Constructor validation")

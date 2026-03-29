@@ -11,9 +11,7 @@ import org.testcontainers.containers.GenericContainer;
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
 import com.macstab.chaos.core.platform.*;
 
-/**
- * Comprehensive tests for {@link AbstractLinuxPlatform} base class.
- */
+/** Comprehensive tests for {@link AbstractLinuxPlatform} base class. */
 @DisplayName("AbstractLinuxPlatform - Comprehensive Coverage")
 class AbstractLinuxPlatformComprehensiveTest {
 
@@ -27,12 +25,15 @@ class AbstractLinuxPlatformComprehensiveTest {
   /** Platform whose overrides shadow all tools with null — forces UnsupportedOperationException. */
   static class NoMappingPlatform extends AbstractLinuxPlatform {
     @Override
-    public String getDistribution() { return "no-mapping"; }
+    public String getDistribution() {
+      return "no-mapping";
+    }
 
     @Override
     protected java.util.Map<com.macstab.chaos.core.platform.Tool, ToolMapping> getToolOverrides() {
       // HashMap allows null values; getOrDefault returns null when key is present with null value
-      java.util.Map<com.macstab.chaos.core.platform.Tool, ToolMapping> map = new java.util.HashMap<>();
+      java.util.Map<com.macstab.chaos.core.platform.Tool, ToolMapping> map =
+          new java.util.HashMap<>();
       for (com.macstab.chaos.core.platform.Tool t : com.macstab.chaos.core.platform.Tool.values()) {
         map.put(t, null);
       }
@@ -70,7 +71,7 @@ class AbstractLinuxPlatformComprehensiveTest {
     @DisplayName("Should throw when container is null")
     void shouldThrowWhenContainerNull() {
       Platform platform = new TestLinuxPlatform();
-      
+
       assertThatThrownBy(() -> platform.validatePrerequisites(null))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("container must not be null");
@@ -82,16 +83,15 @@ class AbstractLinuxPlatformComprehensiveTest {
       @SuppressWarnings("resource")
       GenericContainer<?> container = mock(GenericContainer.class);
       when(container.isRunning()).thenReturn(true);
-      
+
       ExecResult result = mock(ExecResult.class);
       when(result.getExitCode()).thenReturn(0);
       when(container.execInContainer("which", "curl")).thenReturn(result);
       when(container.execInContainer("which", "iptables")).thenReturn(result);
-      
+
       Platform platform = new TestLinuxPlatform();
-      
-      assertThatCode(() -> platform.validatePrerequisites(container))
-          .doesNotThrowAnyException();
+
+      assertThatCode(() -> platform.validatePrerequisites(container)).doesNotThrowAnyException();
     }
 
     @Test
@@ -100,18 +100,18 @@ class AbstractLinuxPlatformComprehensiveTest {
       @SuppressWarnings("resource")
       GenericContainer<?> container = mock(GenericContainer.class);
       when(container.isRunning()).thenReturn(true);
-      
+
       ExecResult curlMissing = mock(ExecResult.class);
       when(curlMissing.getExitCode()).thenReturn(1);
-      
+
       ExecResult iptablesPresent = mock(ExecResult.class);
       when(iptablesPresent.getExitCode()).thenReturn(0);
-      
+
       when(container.execInContainer("which", "curl")).thenReturn(curlMissing);
       when(container.execInContainer("which", "iptables")).thenReturn(iptablesPresent);
-      
+
       Platform platform = new TestLinuxPlatform();
-      
+
       assertThatThrownBy(() -> platform.validatePrerequisites(container))
           .isInstanceOf(ChaosOperationFailedException.class)
           .hasMessageContaining("Missing required tools: curl");
@@ -123,18 +123,18 @@ class AbstractLinuxPlatformComprehensiveTest {
       @SuppressWarnings("resource")
       GenericContainer<?> container = mock(GenericContainer.class);
       when(container.isRunning()).thenReturn(true);
-      
+
       ExecResult curlPresent = mock(ExecResult.class);
       when(curlPresent.getExitCode()).thenReturn(0);
-      
+
       ExecResult iptablesMissing = mock(ExecResult.class);
       when(iptablesMissing.getExitCode()).thenReturn(1);
-      
+
       when(container.execInContainer("which", "curl")).thenReturn(curlPresent);
       when(container.execInContainer("which", "iptables")).thenReturn(iptablesMissing);
-      
+
       Platform platform = new TestLinuxPlatform();
-      
+
       assertThatThrownBy(() -> platform.validatePrerequisites(container))
           .isInstanceOf(ChaosOperationFailedException.class)
           .hasMessageContaining("Missing required tools: iptables");
@@ -146,14 +146,14 @@ class AbstractLinuxPlatformComprehensiveTest {
       @SuppressWarnings("resource")
       GenericContainer<?> container = mock(GenericContainer.class);
       when(container.isRunning()).thenReturn(true);
-      
+
       ExecResult missing = mock(ExecResult.class);
       when(missing.getExitCode()).thenReturn(1);
       when(container.execInContainer("which", "curl")).thenReturn(missing);
       when(container.execInContainer("which", "iptables")).thenReturn(missing);
-      
+
       Platform platform = new TestLinuxPlatform();
-      
+
       assertThatThrownBy(() -> platform.validatePrerequisites(container))
           .isInstanceOf(ChaosOperationFailedException.class)
           .hasMessageContaining("Missing required tools")
@@ -170,7 +170,7 @@ class AbstractLinuxPlatformComprehensiveTest {
     @DisplayName("Should throw when container is null")
     void shouldThrowWhenContainerNull() {
       Platform platform = new TestLinuxPlatform();
-      
+
       assertThatThrownBy(() -> platform.hasCommand(null, "curl"))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("container must not be null");
@@ -182,7 +182,7 @@ class AbstractLinuxPlatformComprehensiveTest {
       @SuppressWarnings("resource")
       GenericContainer<?> container = mock(GenericContainer.class);
       Platform platform = new TestLinuxPlatform();
-      
+
       assertThatThrownBy(() -> platform.hasCommand(container, null))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("command must not be null");
@@ -194,10 +194,10 @@ class AbstractLinuxPlatformComprehensiveTest {
       @SuppressWarnings("resource")
       GenericContainer<?> container = mock(GenericContainer.class);
       when(container.isRunning()).thenReturn(false);
-      
+
       Platform platform = new TestLinuxPlatform();
       boolean result = platform.hasCommand(container, "curl");
-      
+
       assertThat(result).isFalse();
     }
 
@@ -207,14 +207,14 @@ class AbstractLinuxPlatformComprehensiveTest {
       @SuppressWarnings("resource")
       GenericContainer<?> container = mock(GenericContainer.class);
       when(container.isRunning()).thenReturn(true);
-      
+
       ExecResult result = mock(ExecResult.class);
       when(result.getExitCode()).thenReturn(0);
       when(container.execInContainer("which", "curl")).thenReturn(result);
-      
+
       Platform platform = new TestLinuxPlatform();
       boolean has = platform.hasCommand(container, "curl");
-      
+
       assertThat(has).isTrue();
     }
 
@@ -224,14 +224,14 @@ class AbstractLinuxPlatformComprehensiveTest {
       @SuppressWarnings("resource")
       GenericContainer<?> container = mock(GenericContainer.class);
       when(container.isRunning()).thenReturn(true);
-      
+
       ExecResult result = mock(ExecResult.class);
       when(result.getExitCode()).thenReturn(1);
       when(container.execInContainer("which", "missing-cmd")).thenReturn(result);
-      
+
       Platform platform = new TestLinuxPlatform();
       boolean has = platform.hasCommand(container, "missing-cmd");
-      
+
       assertThat(has).isFalse();
     }
 
@@ -243,10 +243,10 @@ class AbstractLinuxPlatformComprehensiveTest {
       when(container.isRunning()).thenReturn(true);
       when(container.execInContainer("which", "curl"))
           .thenThrow(new RuntimeException("Test exception"));
-      
+
       Platform platform = new TestLinuxPlatform();
       boolean has = platform.hasCommand(container, "curl");
-      
+
       assertThat(has).isFalse();
     }
   }
@@ -259,7 +259,7 @@ class AbstractLinuxPlatformComprehensiveTest {
     @DisplayName("Should throw when capability is null")
     void shouldThrowWhenCapabilityNull() {
       Platform platform = new TestLinuxPlatform();
-      
+
       assertThatThrownBy(() -> platform.supportsCapability(null))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("capability must not be null");
@@ -295,7 +295,7 @@ class AbstractLinuxPlatformComprehensiveTest {
     @DisplayName("getPackageName() should throw when tool is null")
     void getPackageName_shouldThrowWhenToolNull() {
       Platform platform = new TestLinuxPlatform();
-      
+
       assertThatThrownBy(() -> platform.getPackageName(null))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("tool must not be null");
@@ -305,7 +305,7 @@ class AbstractLinuxPlatformComprehensiveTest {
     @DisplayName("getBinaryName() should throw when tool is null")
     void getBinaryName_shouldThrowWhenToolNull() {
       Platform platform = new TestLinuxPlatform();
-      
+
       assertThatThrownBy(() -> platform.getBinaryName(null))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("tool must not be null");
@@ -384,7 +384,8 @@ class AbstractLinuxPlatformComprehensiveTest {
     }
 
     @Test
-    @DisplayName("getBinaryName() falls back to packageName when binaryName is null (CA_CERTIFICATES)")
+    @DisplayName(
+        "getBinaryName() falls back to packageName when binaryName is null (CA_CERTIFICATES)")
     void getBinaryName_shouldFallbackToPackageName_whenBinaryNameNull() {
       // CA_CERTIFICATES has ToolMapping("ca-certificates", null) → binaryName() is null
       // getBinaryName() must return packageName as fallback
@@ -393,7 +394,8 @@ class AbstractLinuxPlatformComprehensiveTest {
     }
 
     @Test
-    @DisplayName("getPackageName() throws UnsupportedOperationException for unmapped tool (via override)")
+    @DisplayName(
+        "getPackageName() throws UnsupportedOperationException for unmapped tool (via override)")
     void getPackageName_shouldThrow_whenToolNotMapped() {
       // Subclass that overrides ALL defaults with an empty map and removes CURL
       Platform platform = new NoMappingPlatform();
@@ -403,7 +405,8 @@ class AbstractLinuxPlatformComprehensiveTest {
     }
 
     @Test
-    @DisplayName("getBinaryName() throws UnsupportedOperationException for unmapped tool (via override)")
+    @DisplayName(
+        "getBinaryName() throws UnsupportedOperationException for unmapped tool (via override)")
     void getBinaryName_shouldThrow_whenToolNotMapped() {
       Platform platform = new NoMappingPlatform();
       assertThatThrownBy(() -> platform.getBinaryName(Tool.CURL))

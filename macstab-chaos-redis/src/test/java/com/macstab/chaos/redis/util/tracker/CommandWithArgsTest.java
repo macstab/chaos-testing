@@ -7,9 +7,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-/**
- * Unit tests for {@link CommandWithArgs}.
- */
+/** Unit tests for {@link CommandWithArgs}. */
 @DisplayName("CommandWithArgs")
 class CommandWithArgsTest {
 

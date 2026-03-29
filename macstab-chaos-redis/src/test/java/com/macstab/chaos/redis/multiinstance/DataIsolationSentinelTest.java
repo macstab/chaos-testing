@@ -183,8 +183,7 @@ class DataIsolationSentinelTest {
   // ==================== Helper Methods ====================
 
   private RedisClient createClient(final SentinelRedis cluster) {
-    final String uri =
-        String.format("redis://%s:%d", cluster.host(), cluster.port());
+    final String uri = String.format("redis://%s:%d", cluster.host(), cluster.port());
     return RedisClient.create(uri);
   }
 }

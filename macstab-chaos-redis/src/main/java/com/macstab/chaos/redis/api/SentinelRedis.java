@@ -44,12 +44,8 @@ import java.util.List;
  * @since 2.0
  */
 public record SentinelRedis(
-    String host,
-    int port,
-    String masterName,
-    List<Endpoint> sentinels,
-    List<Endpoint> replicas
-) implements Redis {
+    String host, int port, String masterName, List<Endpoint> sentinels, List<Endpoint> replicas)
+    implements Redis {
 
   public SentinelRedis {
     if (host == null || host.isBlank()) {

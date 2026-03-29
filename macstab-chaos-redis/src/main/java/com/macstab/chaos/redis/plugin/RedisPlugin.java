@@ -47,11 +47,11 @@ public final class RedisPlugin implements ChaosPlugin<RedisStandalone> {
 
   @Override
   public GenericContainer<?> createContainer(final RedisStandalone annotation) {
-    log.debug("Creating Redis container: version={}, port={}", 
-        annotation.version(), annotation.port());
+    log.debug(
+        "Creating Redis container: version={}, port={}", annotation.version(), annotation.port());
 
-    final GenericContainer<?> container = new GenericContainer<>(
-        DockerImageName.parse("redis:" + annotation.version()));
+    final GenericContainer<?> container =
+        new GenericContainer<>(DockerImageName.parse("redis:" + annotation.version()));
 
     container.withExposedPorts(6379);
 
@@ -77,16 +77,16 @@ public final class RedisPlugin implements ChaosPlugin<RedisStandalone> {
 
   @Override
   public Object createConnectionInfo(
-      final GenericContainer<?> container,
-      final RedisStandalone annotation) {
-    
-    return new StandaloneRedis(
-        container.getHost(),
-        container.getMappedPort(6379));
+      final GenericContainer<?> container, final RedisStandalone annotation) {
+
+    return new StandaloneRedis(container.getHost(), container.getMappedPort(6379));
   }
 
   @Override
   public Set<Class<?>> supportedParameterTypes() {
-    return Set.of(StandaloneRedis.class);
+    // RedisContainerExtension owns parameter injection for StandaloneRedis.
+    // ChaosTestingExtension handles container creation via createContainer/createConnectionInfo;
+    // parameter resolution is delegated to the dedicated extension to avoid competing resolvers.
+    return Set.of();
   }
 }

@@ -11,8 +11,6 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import com.macstab.chaos.core.platform.Platform;
-import com.macstab.chaos.core.platform.PlatformDetector;
 import com.macstab.chaos.proxy.internal.ContainerContext;
 
 /**
@@ -137,5 +135,4 @@ class ToxiproxyInstallerTest {
       assertThat(ALPINE.execInContainer("which", "toxiproxy-server").getExitCode()).isEqualTo(0);
     }
   }
-
 }

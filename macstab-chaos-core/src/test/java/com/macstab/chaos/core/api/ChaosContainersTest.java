@@ -21,6 +21,7 @@ import com.macstab.chaos.core.extension.ChaosTestingExtension;
  * Unit tests for {@link ChaosContainers} programmatic access API.
  *
  * <p>Tests validate:
+ *
  * <ul>
  *   <li>ThreadLocal registry access
  *   <li>Error handling (not found, no extension active)

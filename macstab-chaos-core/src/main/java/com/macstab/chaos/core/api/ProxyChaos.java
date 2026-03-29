@@ -11,9 +11,10 @@ import org.testcontainers.containers.GenericContainer;
  * <p>Enables transparent fault injection into any TCP service (Redis, Postgres, MySQL, MongoDB,
  * HTTP, etc.) without modifying the service or application code. Uses Toxiproxy + iptables to
  * intercept and manipulate TCP traffic.
- *
  * <!-- ═══════════════════════════════════════════════════════════════════ -->
+ *
  * <h2>⚠️ CRITICAL: deleteProxy vs reset — You Must Read This</h2>
+ *
  * <!-- ═══════════════════════════════════════════════════════════════════ -->
  *
  * <p><strong>One Toxiproxy process handles ALL proxies inside a container.</strong> Multiple
@@ -21,13 +22,12 @@ import org.testcontainers.containers.GenericContainer;
  * running instance. This is intentional — but cleanup must be done precisely:
  *
  * <ul>
- *   <li>⛔ {@link #reset} is <strong>nuclear</strong>. It kills the Toxiproxy process and
- *       flushes <strong>all</strong> iptables rules. Every proxy from every module is
- *       destroyed — not just yours. Only call this in {@code @AfterAll} when the container
- *       itself is done.</li>
- *   <li>✅ {@link #deleteProxy} is <strong>surgical</strong>. It removes one named proxy and
- *       its iptables rule. The Toxiproxy process and all other proxies stay alive. Use this
- *       in {@code @AfterEach}.</li>
+ *   <li>⛔ {@link #reset} is <strong>nuclear</strong>. It kills the Toxiproxy process and flushes
+ *       <strong>all</strong> iptables rules. Every proxy from every module is destroyed — not just
+ *       yours. Only call this in {@code @AfterAll} when the container itself is done.
+ *   <li>✅ {@link #deleteProxy} is <strong>surgical</strong>. It removes one named proxy and its
+ *       iptables rule. The Toxiproxy process and all other proxies stay alive. Use this in
+ *       {@code @AfterEach}.
  * </ul>
  *
  * <pre>{@code
@@ -51,6 +51,7 @@ import org.testcontainers.containers.GenericContainer;
  * }</pre>
  *
  * <!-- ═══════════════════════════════════════════════════════════════════ -->
+ *
  * <h2>Architecture: Transparent TCP Interception</h2>
  *
  * <pre>
@@ -726,9 +727,9 @@ public interface ProxyChaos {
   /**
    * Delete a single proxy and its iptables redirect rule.
    *
-   * <p>This is the <strong>targeted cleanup</strong> method. It removes only the named proxy
-   * and the corresponding iptables rule — all other proxies and the Toxiproxy process itself
-   * remain active.
+   * <p>This is the <strong>targeted cleanup</strong> method. It removes only the named proxy and
+   * the corresponding iptables rule — all other proxies and the Toxiproxy process itself remain
+   * active.
    *
    * <h3>⚠️ deleteProxy vs reset — Critical Difference</h3>
    *
@@ -741,10 +742,10 @@ public interface ProxyChaos {
    *       <td>{@code @AfterAll} only</td></tr>
    * </table>
    *
-   * <p>A single Toxiproxy process serves all proxies in a container. If multiple modules
-   * (cache, database, custom) each create their own proxy on the same container, calling
-   * {@link #reset} from one module destroys every other module's proxy. Use
-   * {@code deleteProxy} for module-level cleanup.
+   * <p>A single Toxiproxy process serves all proxies in a container. If multiple modules (cache,
+   * database, custom) each create their own proxy on the same container, calling {@link #reset}
+   * from one module destroys every other module's proxy. Use {@code deleteProxy} for module-level
+   * cleanup.
    *
    * <h3>Example: Safe per-test cleanup</h3>
    *

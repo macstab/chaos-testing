@@ -16,9 +16,9 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * Default implementation of Toxiproxy lifecycle management.
  *
- * <p>Receives a pre-resolved {@link ContainerContext} on every call — no platform detection
- * inside this class. Platform is detected exactly once per operation by
- * {@link com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator}.
+ * <p>Receives a pre-resolved {@link ContainerContext} on every call — no platform detection inside
+ * this class. Platform is detected exactly once per operation by {@link
+ * com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator}.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -128,8 +128,10 @@ public final class ToxiproxyLifecycleManager implements ToxiproxyLifecycle {
    */
   private void startToxiproxyServer(final ContainerContext ctx) {
     try {
-      final String startCmd = String.format(
-          "%s -host %s %s", TOXIPROXY_BINARY, TOXIPROXY_BIND_ADDRESS, BACKGROUND_PROCESS_SUFFIX);
+      final String startCmd =
+          String.format(
+              "%s -host %s %s",
+              TOXIPROXY_BINARY, TOXIPROXY_BIND_ADDRESS, BACKGROUND_PROCESS_SUFFIX);
       ctx.shell().exec(ctx.container(), startCmd);
     } catch (final Exception e) {
       throw new ChaosOperationFailedException("Failed to start Toxiproxy", e);
@@ -142,7 +144,8 @@ public final class ToxiproxyLifecycleManager implements ToxiproxyLifecycle {
    * <p>Reuses the same {@link ContainerContext} for every poll — no repeated platform detection.
    *
    * @param ctx resolved container context
-   * @throws ChaosOperationFailedException if the API does not become ready within configured timeout
+   * @throws ChaosOperationFailedException if the API does not become ready within configured
+   *     timeout
    */
   private void waitForApiReady(final ContainerContext ctx) {
     final long deadline = System.currentTimeMillis() + config.startupTimeoutMs();
@@ -169,8 +172,7 @@ public final class ToxiproxyLifecycleManager implements ToxiproxyLifecycle {
       Thread.sleep(millis);
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
-      throw new ChaosOperationFailedException(
-          "Interrupted while waiting for Toxiproxy startup", e);
+      throw new ChaosOperationFailedException("Interrupted while waiting for Toxiproxy startup", e);
     }
   }
 }

@@ -17,12 +17,12 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * Container lifecycle controller using Testcontainers and Docker API.
  *
- * <p><strong>Operations:</strong> restart (graceful stop+start), kill (SIGKILL),
- * pause (cgroup freeze), resume (unfreeze), waitForReady (PING poll).
+ * <p><strong>Operations:</strong> restart (graceful stop+start), kill (SIGKILL), pause (cgroup
+ * freeze), resume (unfreeze), waitForReady (PING poll).
  *
- * <p><strong>Note:</strong> {@code pause} uses Docker's {@code freeze} which suspends
- * all processes in the container's cgroup. The container remains in the Docker network
- * but stops processing commands.
+ * <p><strong>Note:</strong> {@code pause} uses Docker's {@code freeze} which suspends all processes
+ * in the container's cgroup. The container remains in the Docker network but stops processing
+ * commands.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @since 2.0

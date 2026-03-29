@@ -8,7 +8,6 @@ import org.testcontainers.containers.GenericContainer;
 
 import io.lettuce.core.RedisClient;
 import io.lettuce.core.RedisURI;
-import io.lettuce.core.api.StatefulRedisConnection;
 
 /**
  * Measures replication lag between a Redis master and a replica.
@@ -60,9 +59,7 @@ public final class ReplicationLagMeasurer {
    * @throws IllegalStateException if replication does not complete within timeout
    */
   public static Duration measureReplicationLag(
-      final GenericContainer<?> master,
-      final GenericContainer<?> replica,
-      final Duration timeout) {
+      final GenericContainer<?> master, final GenericContainer<?> replica, final Duration timeout) {
     Objects.requireNonNull(master, "master");
     Objects.requireNonNull(replica, "replica");
     Objects.requireNonNull(timeout, "timeout");

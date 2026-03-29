@@ -12,8 +12,8 @@ import org.junit.jupiter.api.Test;
 
 import com.macstab.chaos.redis.annotation.RedisSentinel;
 import com.macstab.chaos.redis.annotation.RedisStandalone;
-import com.macstab.chaos.redis.api.StandaloneRedis;
 import com.macstab.chaos.redis.api.SentinelRedis;
+import com.macstab.chaos.redis.api.StandaloneRedis;
 
 import io.lettuce.core.RedisClient;
 import io.lettuce.core.api.StatefulRedisConnection;
@@ -281,8 +281,7 @@ class MixedTopologyTest {
   // ==================== Helper Methods ====================
 
   private RedisClient createClientForSentinel(final SentinelRedis cluster) {
-    final String uri =
-        String.format("redis://%s:%d", cluster.host(), cluster.port());
+    final String uri = String.format("redis://%s:%d", cluster.host(), cluster.port());
     return RedisClient.create(uri);
   }
 

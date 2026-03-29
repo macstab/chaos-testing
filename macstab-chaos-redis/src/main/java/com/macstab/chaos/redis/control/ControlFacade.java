@@ -25,6 +25,7 @@ import lombok.extern.slf4j.Slf4j;
  * Unified facade for all Redis cluster control operations during chaos testing.
  *
  * <p><strong>Capabilities:</strong>
+ *
  * <ul>
  *   <li>Connection inspection (identify container from Lettuce connection)
  *   <li>Container lifecycle (restart, kill, pause, resume, waitForReady)
@@ -33,10 +34,11 @@ import lombok.extern.slf4j.Slf4j;
  *   <li>Network chaos engineering (latency, packet loss, jitter, partitions)
  * </ul>
  *
- * <p><strong>Lifecycle:</strong> Created once per cluster via {@link #create(List, Map)} and
- * reused across test methods. Thread-safe; caches role resolution results.
+ * <p><strong>Lifecycle:</strong> Created once per cluster via {@link #create(List, Map)} and reused
+ * across test methods. Thread-safe; caches role resolution results.
  *
  * <p><strong>Example:</strong>
+ *
  * <pre>{@code
  * ControlFacade control = ControlFacade.create(allContainers, containerIndexMap);
  *
@@ -110,6 +112,23 @@ public final class ControlFacade {
 
     return new ControlFacade(
         inspector, controller, failoverHelper, roleResolver, networkChaos, allContainers);
+  }
+
+  /**
+   * Creates a ControlFacade for a single standalone Redis container.
+   *
+   * <p>Simplified factory for standalone (non-cluster, non-sentinel) Redis instances. Creates a
+   * minimal ControlFacade with index 0 assigned to the container.
+   *
+   * @param container standalone Redis container (never null)
+   * @return ControlFacade instance (never null)
+   * @throws NullPointerException if container is null
+   */
+  public static ControlFacade forStandalone(final GenericContainer<?> container) {
+    Objects.requireNonNull(container, "container");
+    final List<GenericContainer<?>> containers = List.of(container);
+    final Map<GenericContainer<?>, Integer> indexMap = Map.of(container, 0);
+    return create(containers, indexMap);
   }
 
   // ==================== Connection Inspection ====================

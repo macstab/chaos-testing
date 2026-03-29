@@ -26,8 +26,8 @@ import lombok.extern.slf4j.Slf4j;
  * Orchestrates Toxiproxy operations across lifecycle, proxy, and toxic managers.
  *
  * <p>This is the single point where {@link ContainerContext} is created. It is resolved exactly
- * once per public operation and passed to all downstream managers — eliminating repeated
- * platform detection across the call chain.
+ * once per public operation and passed to all downstream managers — eliminating repeated platform
+ * detection across the call chain.
  *
  * <pre>
  * ToxiproxyOrchestrator  ← creates ContainerContext once
@@ -45,10 +45,10 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <ul>
  *   <li>{@link #deleteProxy} removes <strong>one</strong> proxy and its iptables rule. The
- *       Toxiproxy process and all other proxies stay alive. Use this for module-level cleanup.</li>
+ *       Toxiproxy process and all other proxies stay alive. Use this for module-level cleanup.
  *   <li>{@link #reset} is <strong>nuclear</strong>: it kills the Toxiproxy process and flushes
- *       <strong>all</strong> iptables rules. Every proxy created by every module is destroyed.
- *       Use this only in {@code @AfterAll} when the container itself is being destroyed.</li>
+ *       <strong>all</strong> iptables rules. Every proxy created by every module is destroyed. Use
+ *       this only in {@code @AfterAll} when the container itself is being destroyed.
  * </ul>
  *
  * <p><strong>INTERNAL USE ONLY</strong> — implementation detail, not part of the public API.
@@ -66,9 +66,9 @@ public final class ToxiproxyOrchestrator {
   /**
    * Registry of active proxies keyed by proxy name.
    *
-   * <p>Tracks the {@link ProxyConfiguration} (including service port and proxy port) so that
-   * {@link #deleteProxy} can remove the correct iptables rule without a full flush. Entries are
-   * added by {@link #createProxy} and removed by {@link #deleteProxy} or {@link #reset}.
+   * <p>Tracks the {@link ProxyConfiguration} (including service port and proxy port) so that {@link
+   * #deleteProxy} can remove the correct iptables rule without a full flush. Entries are added by
+   * {@link #createProxy} and removed by {@link #deleteProxy} or {@link #reset}.
    */
   private final Map<String, ProxyConfiguration> activeProxies = new ConcurrentHashMap<>();
 
@@ -113,9 +113,8 @@ public final class ToxiproxyOrchestrator {
   /**
    * Create a proxy for a TCP service.
    *
-   * <p>Platform is detected once here and passed to lifecycle and proxy operations.
-   * The created proxy is registered in the internal proxy registry for later cleanup
-   * via {@link #deleteProxy}.
+   * <p>Platform is detected once here and passed to lifecycle and proxy operations. The created
+   * proxy is registered in the internal proxy registry for later cleanup via {@link #deleteProxy}.
    *
    * @param container container
    * @param proxyConfig proxy configuration
@@ -144,13 +143,13 @@ public final class ToxiproxyOrchestrator {
   /**
    * Delete a single proxy and its iptables redirect rule.
    *
-   * <p>This is the <strong>safe, targeted cleanup</strong> method. It removes only the named
-   * proxy and the corresponding iptables rule — all other proxies and the Toxiproxy process
-   * itself remain active. Use this for module-level cleanup (e.g., cache module resetting its
-   * Redis proxy without affecting a PostgreSQL proxy created by another module).
+   * <p>This is the <strong>safe, targeted cleanup</strong> method. It removes only the named proxy
+   * and the corresponding iptables rule — all other proxies and the Toxiproxy process itself remain
+   * active. Use this for module-level cleanup (e.g., cache module resetting its Redis proxy without
+   * affecting a PostgreSQL proxy created by another module).
    *
-   * <p>If the proxy was not registered via {@link #createProxy} on this orchestrator instance,
-   * only the Toxiproxy API entry is deleted (the iptables rule cannot be removed without port
+   * <p>If the proxy was not registered via {@link #createProxy} on this orchestrator instance, only
+   * the Toxiproxy API entry is deleted (the iptables rule cannot be removed without port
    * information).
    *
    * @param container container
@@ -190,9 +189,7 @@ public final class ToxiproxyOrchestrator {
    * @throws ChaosOperationFailedException if toxic addition fails
    */
   public void addToxic(
-      final GenericContainer<?> container,
-      final String proxyName,
-      final ToxicConfig toxicConfig) {
+      final GenericContainer<?> container, final String proxyName, final ToxicConfig toxicConfig) {
 
     Objects.requireNonNull(container, "container must not be null");
     Objects.requireNonNull(proxyName, "proxyName must not be null");
@@ -218,9 +215,7 @@ public final class ToxiproxyOrchestrator {
    * @throws ChaosOperationFailedException if removal fails
    */
   public void removeToxic(
-      final GenericContainer<?> container,
-      final String proxyName,
-      final String toxicName) {
+      final GenericContainer<?> container, final String proxyName, final String toxicName) {
 
     Objects.requireNonNull(container, "container must not be null");
     Objects.requireNonNull(proxyName, "proxyName must not be null");
@@ -260,23 +255,23 @@ public final class ToxiproxyOrchestrator {
   /**
    * ⚠️ <strong>NUCLEAR RESET</strong> — destroys ALL proxies and stops Toxiproxy.
    *
-   * <p>This method kills the Toxiproxy process and flushes <strong>all</strong> iptables nat
-   * rules inside the container. Every proxy created by <em>every module</em> is destroyed —
-   * not just proxies registered on this orchestrator instance.
+   * <p>This method kills the Toxiproxy process and flushes <strong>all</strong> iptables nat rules
+   * inside the container. Every proxy created by <em>every module</em> is destroyed — not just
+   * proxies registered on this orchestrator instance.
    *
    * <h3>When to Use</h3>
    *
    * <ul>
-   *   <li>{@code @AfterAll} — when the container is being destroyed anyway</li>
-   *   <li>When you are the <strong>sole user</strong> of Toxiproxy in this container</li>
-   *   <li>When you need to guarantee a completely clean state</li>
+   *   <li>{@code @AfterAll} — when the container is being destroyed anyway
+   *   <li>When you are the <strong>sole user</strong> of Toxiproxy in this container
+   *   <li>When you need to guarantee a completely clean state
    * </ul>
    *
    * <h3>When NOT to Use</h3>
    *
    * <ul>
-   *   <li>{@code @AfterEach} with multiple modules sharing the same container</li>
-   *   <li>When another module's proxy must survive your cleanup</li>
+   *   <li>{@code @AfterEach} with multiple modules sharing the same container
+   *   <li>When another module's proxy must survive your cleanup
    * </ul>
    *
    * <p>For targeted cleanup of a single proxy, use {@link #deleteProxy} instead.

@@ -3,8 +3,6 @@ package com.macstab.chaos.redis.exception;
 
 import java.time.Duration;
 
-
-
 /**
  * Exception thrown when failover operation fails or times out.
  *

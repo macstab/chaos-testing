@@ -11,9 +11,7 @@ import org.junit.jupiter.api.Test;
 import com.macstab.chaos.redis.extension.RedisContainerExtension.RedisConnectionInfo;
 import com.macstab.chaos.redis.extension.RedisContainerExtension.Store;
 
-/**
- * Unit tests for the sealed {@link StartupResult} hierarchy.
- */
+/** Unit tests for the sealed {@link StartupResult} hierarchy. */
 @DisplayName("StartupResult Sealed Interface")
 class StartupResultTest {
 

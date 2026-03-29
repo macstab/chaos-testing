@@ -36,7 +36,9 @@ package com.macstab.chaos.redis.exception;
  * @since 2.0
  */
 public abstract sealed class ClusterException extends RuntimeException
-    permits ClusterCreationException, ClusterStartupException, ClusterTopologyException,
+    permits ClusterCreationException,
+        ClusterStartupException,
+        ClusterTopologyException,
         FailoverException {
 
   /**

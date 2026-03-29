@@ -1,9 +1,10 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.redis.factory;
 
-import java.io.IOException;
-
 import org.testcontainers.containers.GenericContainer;
+
+import com.macstab.chaos.core.util.Shell;
+import com.macstab.chaos.redis.command.RedisCommandBuilder;
 
 /**
  * Builder for Redis Sentinel startup and announce commands.
@@ -39,21 +40,12 @@ public final class SentinelCommandBuilder {
    *
    * @param masterIp master container IP (internal Docker network address)
    * @param quorum sentinel quorum (number of sentinels needed to agree on failover)
-   * @return shell command string suitable for container {@code withCommand("sh", "-c", ...)}
+   * @return shell command string suitable for container {@code withCommand(Shell.SH, Shell.FLAG_C,
+   *     ...)}
    */
   public static String buildSentinelCommandWithoutAnnounce(
       final String masterIp, final int quorum) {
-    return "printf \"port 26379\\n"
-        + "sentinel monitor mymaster "
-        + masterIp
-        + " 6379 "
-        + quorum
-        + "\\n"
-        + "sentinel down-after-milliseconds mymaster 2000\\n"
-        + "sentinel parallel-syncs mymaster 1\\n"
-        + "sentinel failover-timeout mymaster 5000\\n"
-        + "\" > /tmp/sentinel.conf && "
-        + "redis-server /tmp/sentinel.conf --sentinel";
+    return RedisCommandBuilder.buildSentinelStartCommand(masterIp, quorum);
   }
 
   /**
@@ -68,12 +60,10 @@ public final class SentinelCommandBuilder {
   public static void configureMasterAnnouncement(final GenericContainer<?> master) {
     final Integer masterMappedPort = master.getMappedPort(6379);
     try {
-      master.execInContainer(
-          "redis-cli", "CONFIG", "SET", "replica-announce-ip", "host.testcontainers.internal");
-      master.execInContainer(
-          "redis-cli", "CONFIG", "SET", "replica-announce-port", String.valueOf(masterMappedPort));
-    } catch (final IOException | InterruptedException e) {
-      Thread.currentThread().interrupt();
+      Shell.exec(
+          master, RedisCommandBuilder.buildAnnounceIpCommand(6379, "host.testcontainers.internal"));
+      Shell.exec(master, RedisCommandBuilder.buildAnnouncePortCommand(6379, masterMappedPort));
+    } catch (final Exception e) {
       throw new RuntimeException("Failed to configure master announce address", e);
     }
   }
@@ -90,16 +80,11 @@ public final class SentinelCommandBuilder {
   public static void configureReplicaAnnouncement(final GenericContainer<?> replica) {
     final Integer replicaMappedPort = replica.getMappedPort(6379);
     try {
-      replica.execInContainer(
-          "redis-cli", "CONFIG", "SET", "replica-announce-ip", "host.testcontainers.internal");
-      replica.execInContainer(
-          "redis-cli",
-          "CONFIG",
-          "SET",
-          "replica-announce-port",
-          String.valueOf(replicaMappedPort));
-    } catch (final IOException | InterruptedException e) {
-      Thread.currentThread().interrupt();
+      Shell.exec(
+          replica,
+          RedisCommandBuilder.buildAnnounceIpCommand(6379, "host.testcontainers.internal"));
+      Shell.exec(replica, RedisCommandBuilder.buildAnnouncePortCommand(6379, replicaMappedPort));
+    } catch (final Exception e) {
       throw new RuntimeException("Failed to configure replica announce address", e);
     }
   }
@@ -120,20 +105,12 @@ public final class SentinelCommandBuilder {
   public static void configureSentinelAnnouncement(final GenericContainer<?> sentinel) {
     final Integer sentinelMappedPort = sentinel.getMappedPort(26379);
     try {
-      sentinel.execInContainer(
-          "redis-cli",
-          "-p", "26379",
-          "CONFIG", "SET",
-          "sentinel-announce-ip",
-          "host.testcontainers.internal");
-      sentinel.execInContainer(
-          "redis-cli",
-          "-p", "26379",
-          "CONFIG", "SET",
-          "sentinel-announce-port",
-          String.valueOf(sentinelMappedPort));
-    } catch (final IOException | InterruptedException e) {
-      Thread.currentThread().interrupt();
+      Shell.exec(
+          sentinel,
+          RedisCommandBuilder.buildSentinelAnnounceIpCommand("host.testcontainers.internal"));
+      Shell.exec(
+          sentinel, RedisCommandBuilder.buildSentinelAnnouncePortCommand(sentinelMappedPort));
+    } catch (final Exception e) {
       throw new RuntimeException("Failed to configure sentinel announce address", e);
     }
   }

@@ -113,12 +113,18 @@ public final class StandaloneContainerFactory {
             MountableFile.forHostPath(certsDir.resolve("server.key"), 0644), "/tls/server.key")
         .withCommand(
             "redis-server",
-            "--port", "0",
-            "--tls-port", "6380",
-            "--tls-cert-file", "/tls/server.crt",
-            "--tls-key-file", "/tls/server.key",
-            "--tls-ca-cert-file", "/tls/ca.crt",
-            "--tls-auth-clients", "yes")
+            "--port",
+            "0",
+            "--tls-port",
+            "6380",
+            "--tls-cert-file",
+            "/tls/server.crt",
+            "--tls-key-file",
+            "/tls/server.key",
+            "--tls-ca-cert-file",
+            "/tls/ca.crt",
+            "--tls-auth-clients",
+            "yes")
         .withStartupTimeout(DEFAULT_STARTUP_TIMEOUT)
         .withReuse(false);
   }

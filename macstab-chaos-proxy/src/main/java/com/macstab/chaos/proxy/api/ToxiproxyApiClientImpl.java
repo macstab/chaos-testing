@@ -20,8 +20,8 @@ import lombok.extern.slf4j.Slf4j;
  * <p>All HTTP communication uses the platform-appropriate {@link HttpCommandBuilder} obtained from
  * {@link ContainerContext#http()}. No {@code execInContainer} calls, no hardcoded tool names.
  *
- * <p>Exception handling is centralized in {@link #executeApiCall} — eliminates repeated
- * {@code catch (IOException e) { throw e; } catch (Exception e) { throw new IOException(...) }}
+ * <p>Exception handling is centralized in {@link #executeApiCall} — eliminates repeated {@code
+ * catch (IOException e) { throw e; } catch (Exception e) { throw new IOException(...) }}
  * boilerplate throughout this class.
  *
  * @author Christian Schnapka - Macstab GmbH
@@ -91,8 +91,8 @@ public final class ToxiproxyApiClientImpl implements ToxiproxyApiClient {
 
           if (result.getExitCode() != 0) {
             throw new IOException(
-                String.format("Failed to create proxy '%s': %s",
-                    config.getProxyName(), result.getStderr()));
+                String.format(
+                    "Failed to create proxy '%s': %s", config.getProxyName(), result.getStderr()));
           }
 
           log.debug("Created proxy '{}' via API", config.getProxyName());
@@ -153,8 +153,8 @@ public final class ToxiproxyApiClientImpl implements ToxiproxyApiClient {
 
           if (result.getExitCode() != 0) {
             throw new IOException(
-                String.format("Failed to list toxics for proxy '%s': %s",
-                    proxyName, result.getStderr()));
+                String.format(
+                    "Failed to list toxics for proxy '%s': %s", proxyName, result.getStderr()));
           }
 
           return parseToxicNames(result.getStdout());
@@ -183,8 +183,9 @@ public final class ToxiproxyApiClientImpl implements ToxiproxyApiClient {
         () -> {
           final String url = String.format("%s/proxies/%s/toxics", apiUrl, proxyName);
           final String command =
-              ctx.http().buildPostJsonRequest(url,
-                  buildToxicJson(toxicName, toxicType, attributes, toxicity));
+              ctx.http()
+                  .buildPostJsonRequest(
+                      url, buildToxicJson(toxicName, toxicType, attributes, toxicity));
           final ExecResult result = ctx.shell().exec(ctx.container(), command);
 
           if (result.getExitCode() != 0) {
@@ -208,14 +209,14 @@ public final class ToxiproxyApiClientImpl implements ToxiproxyApiClient {
     executeApiCall(
         String.format("Failed to delete toxic: %s/%s", proxyName, toxicName),
         () -> {
-          final String url =
-              String.format("%s/proxies/%s/toxics/%s", apiUrl, proxyName, toxicName);
+          final String url = String.format("%s/proxies/%s/toxics/%s", apiUrl, proxyName, toxicName);
           final ExecResult result =
               ctx.shell().exec(ctx.container(), ctx.http().buildDeleteRequest(url));
 
           if (result.getExitCode() != 0) {
             throw new IOException(
-                String.format("Failed to delete toxic '%s' from proxy '%s': %s",
+                String.format(
+                    "Failed to delete toxic '%s' from proxy '%s': %s",
                     toxicName, proxyName, result.getStderr()));
           }
 
@@ -229,6 +230,7 @@ public final class ToxiproxyApiClientImpl implements ToxiproxyApiClient {
    * Execute an API call that returns a value, wrapping any non-{@link IOException} into one.
    *
    * <p>Centralizes the recurring pattern:
+   *
    * <pre>
    *   try { ... }
    *   catch (IOException e) { throw e; }
@@ -306,8 +308,8 @@ public final class ToxiproxyApiClientImpl implements ToxiproxyApiClient {
   /**
    * Parse toxic names from Toxiproxy JSON response array.
    *
-   * <p>Extracts the {@code "name"} field of each toxic object using a regex to avoid introducing
-   * a JSON library dependency.
+   * <p>Extracts the {@code "name"} field of each toxic object using a regex to avoid introducing a
+   * JSON library dependency.
    *
    * @param json raw JSON from {@code GET /proxies/{name}/toxics}
    * @return unmodifiable list of toxic names (empty when json is null or blank)
@@ -317,9 +319,7 @@ public final class ToxiproxyApiClientImpl implements ToxiproxyApiClient {
       return List.of();
     }
 
-    return TOXIC_NAME_PATTERN.matcher(json).results()
-        .map(m -> m.group(1))
-        .toList();
+    return TOXIC_NAME_PATTERN.matcher(json).results().map(m -> m.group(1)).toList();
   }
 
   /**

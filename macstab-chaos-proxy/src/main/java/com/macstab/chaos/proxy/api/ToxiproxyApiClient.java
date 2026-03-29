@@ -12,11 +12,11 @@ import com.macstab.chaos.proxy.internal.model.ProxyConfiguration;
  *
  * <h2>Why Shell-Based HTTP</h2>
  *
- * <p>Toxiproxy binds to {@code 0.0.0.0:8474} <em>inside</em> the container's network namespace.
- * The port is not exposed to the Docker host, so the test JVM cannot reach it via a standard
- * HTTP client. Instead, all API calls are executed by running HTTP commands (via
- * {@link com.macstab.chaos.core.command.http.HttpCommandBuilder}) inside the container through
- * the shell, which has access to localhost within the container's namespace.
+ * <p>Toxiproxy binds to {@code 0.0.0.0:8474} <em>inside</em> the container's network namespace. The
+ * port is not exposed to the Docker host, so the test JVM cannot reach it via a standard HTTP
+ * client. Instead, all API calls are executed by running HTTP commands (via {@link
+ * com.macstab.chaos.core.command.http.HttpCommandBuilder}) inside the container through the shell,
+ * which has access to localhost within the container's namespace.
  *
  * <h2>Command Execution Model</h2>
  *
@@ -29,16 +29,15 @@ import com.macstab.chaos.proxy.internal.model.ProxyConfiguration;
  *
  * <h2>Context Passing</h2>
  *
- * <p>All methods receive a pre-resolved {@link ContainerContext}. The HTTP command string is
- * built by {@link ContainerContext#http()} (platform-appropriate
- * {@link com.macstab.chaos.core.command.http.HttpCommandBuilder}) and executed via
- * {@link ContainerContext#shell()}. No direct {@code execInContainer} calls. No hardcoded
- * tool names.
+ * <p>All methods receive a pre-resolved {@link ContainerContext}. The HTTP command string is built
+ * by {@link ContainerContext#http()} (platform-appropriate {@link
+ * com.macstab.chaos.core.command.http.HttpCommandBuilder}) and executed via {@link
+ * ContainerContext#shell()}. No direct {@code execInContainer} calls. No hardcoded tool names.
  *
  * <h2>Thread Safety</h2>
  *
- * <p>Implementations must be stateless and thread-safe. {@link ToxiproxyApiClientImpl} holds
- * only the immutable {@code apiUrl} string and satisfies this requirement.
+ * <p>Implementations must be stateless and thread-safe. {@link ToxiproxyApiClientImpl} holds only
+ * the immutable {@code apiUrl} string and satisfies this requirement.
  *
  * <h2>Default Implementation</h2>
  *
@@ -51,9 +50,9 @@ public interface ToxiproxyApiClient {
   /**
    * Check whether the Toxiproxy HTTP API is alive and responding.
    *
-   * <p>Issues {@code GET /proxies} and checks the exit code. Returns {@code true} if exit
-   * code is 0 (HTTP 200). Returns {@code false} for any failure (process not running, network
-   * error, non-zero exit) without throwing. Safe to call in a polling loop.
+   * <p>Issues {@code GET /proxies} and checks the exit code. Returns {@code true} if exit code is 0
+   * (HTTP 200). Returns {@code false} for any failure (process not running, network error, non-zero
+   * exit) without throwing. Safe to call in a polling loop.
    *
    * @param ctx resolved container context
    * @return {@code true} if the API responded successfully, {@code false} otherwise
@@ -63,11 +62,11 @@ public interface ToxiproxyApiClient {
   /**
    * Check whether a named proxy entry exists in Toxiproxy.
    *
-   * <p>Issues {@code GET /proxies/{proxyName}}. Returns {@code true} if exit code is 0
-   * (HTTP 200 — proxy found). Returns {@code false} for HTTP 404 (proxy not found).
+   * <p>Issues {@code GET /proxies/{proxyName}}. Returns {@code true} if exit code is 0 (HTTP 200 —
+   * proxy found). Returns {@code false} for HTTP 404 (proxy not found).
    *
-   * <p>Note: existence does not imply the proxy port is currently listening — check that
-   * separately if readiness matters.
+   * <p>Note: existence does not imply the proxy port is currently listening — check that separately
+   * if readiness matters.
    *
    * @param ctx resolved container context
    * @param proxyName proxy name (Toxiproxy API key)
@@ -81,14 +80,15 @@ public interface ToxiproxyApiClient {
    * Create a new proxy entry in Toxiproxy.
    *
    * <p>Issues {@code POST /proxies} with the proxy configuration as JSON:
+   *
    * <pre>
    * {"name":"redis","listen":"0.0.0.0:16379","upstream":"localhost:6379","enabled":true}
    * </pre>
    *
-   * <p>The proxy immediately begins listening on {@code proxyPort} and forwarding to
-   * {@code servicePort} on localhost — though it may take a few milliseconds to become ready.
-   * Use {@link com.macstab.chaos.proxy.internal.operations.ProxyOperations#createProxy} for
-   * the full creation flow including readiness polling.
+   * <p>The proxy immediately begins listening on {@code proxyPort} and forwarding to {@code
+   * servicePort} on localhost — though it may take a few milliseconds to become ready. Use {@link
+   * com.macstab.chaos.proxy.internal.operations.ProxyOperations#createProxy} for the full creation
+   * flow including readiness polling.
    *
    * @param ctx resolved container context
    * @param config proxy configuration (name, service port, proxy port, hostname)
@@ -117,8 +117,8 @@ public interface ToxiproxyApiClient {
   /**
    * Check whether a named toxic exists on a proxy.
    *
-   * <p>Fetches the toxic list via {@code GET /proxies/{proxyName}/toxics} and searches for
-   * a toxic entry with a matching {@code "name"} field. Returns {@code false} on any error.
+   * <p>Fetches the toxic list via {@code GET /proxies/{proxyName}/toxics} and searches for a toxic
+   * entry with a matching {@code "name"} field. Returns {@code false} on any error.
    *
    * @param ctx resolved container context
    * @param proxyName proxy name
@@ -132,9 +132,9 @@ public interface ToxiproxyApiClient {
   /**
    * List the names of all toxics currently active on a proxy.
    *
-   * <p>Issues {@code GET /proxies/{proxyName}/toxics} and extracts the {@code "name"} field
-   * from each entry in the JSON array response. Parses the response with a regex rather than
-   * a full JSON parser to avoid adding a JSON library dependency.
+   * <p>Issues {@code GET /proxies/{proxyName}/toxics} and extracts the {@code "name"} field from
+   * each entry in the JSON array response. Parses the response with a regex rather than a full JSON
+   * parser to avoid adding a JSON library dependency.
    *
    * @param ctx resolved container context
    * @param proxyName proxy name
@@ -148,6 +148,7 @@ public interface ToxiproxyApiClient {
    * Add a toxic to a proxy.
    *
    * <p>Issues {@code POST /proxies/{proxyName}/toxics} with the following JSON payload:
+   *
    * <pre>
    * {
    *   "name":       "{toxicName}",
@@ -157,9 +158,9 @@ public interface ToxiproxyApiClient {
    * }
    * </pre>
    *
-   * <p>The {@code attributes} string must be a valid JSON object matching the Toxiproxy
-   * schema for the given type (e.g., {@code {"latency":100,"jitter":0}} for type
-   * {@code "latency"}). It is produced by {@link com.macstab.chaos.proxy.internal.operations.toxic.ToxicConfig#toJson()}.
+   * <p>The {@code attributes} string must be a valid JSON object matching the Toxiproxy schema for
+   * the given type (e.g., {@code {"latency":100,"jitter":0}} for type {@code "latency"}). It is
+   * produced by {@link com.macstab.chaos.proxy.internal.operations.toxic.ToxicConfig#toJson()}.
    *
    * @param ctx resolved container context
    * @param proxyName proxy name
@@ -183,8 +184,8 @@ public interface ToxiproxyApiClient {
   /**
    * Delete a specific toxic from a proxy.
    *
-   * <p>Issues {@code DELETE /proxies/{proxyName}/toxics/{toxicName}}. After deletion, the
-   * proxy continues forwarding traffic but the removed fault is no longer applied.
+   * <p>Issues {@code DELETE /proxies/{proxyName}/toxics/{toxicName}}. After deletion, the proxy
+   * continues forwarding traffic but the removed fault is no longer applied.
    *
    * @param ctx resolved container context
    * @param proxyName proxy name

@@ -18,7 +18,6 @@ import com.macstab.chaos.proxy.ProxyChaosProvider;
 import com.macstab.chaos.proxy.api.ToxiproxyApiClient;
 import com.macstab.chaos.proxy.config.ToxiproxyConfig;
 import com.macstab.chaos.proxy.internal.lifecycle.ToxiproxyLifecycleManager;
-import com.macstab.chaos.proxy.internal.model.ProxyConfiguration;
 import com.macstab.chaos.proxy.internal.operations.ProxyOperationsManager;
 import com.macstab.chaos.proxy.internal.operations.ToxicOperationsManager;
 import com.macstab.chaos.proxy.internal.operations.toxic.*;
@@ -28,8 +27,8 @@ import com.macstab.chaos.proxy.network.NetworkRedirectManager;
 /**
  * Targeted coverage tests for proxy module uncovered paths.
  *
- * <p>Uses Mockito to inject API clients and test error paths, injectable constructors,
- * validation, and edge cases without requiring live Toxiproxy.
+ * <p>Uses Mockito to inject API clients and test error paths, injectable constructors, validation,
+ * and edge cases without requiring live Toxiproxy.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -38,16 +37,16 @@ import com.macstab.chaos.proxy.network.NetworkRedirectManager;
 class ProxyCoverageTest {
 
   /**
-   * Shared running container for tests that need ContainerContext resolution.
-   * Alpine with NET_ADMIN so iptables and platform detection work.
+   * Shared running container for tests that need ContainerContext resolution. Alpine with NET_ADMIN
+   * so iptables and platform detection work.
    */
   @Container
   @SuppressWarnings("resource")
   private static final GenericContainer<?> SHARED_REDIS =
       new GenericContainer<>("redis:7.4")
           .withExposedPorts(6379)
-          .withCreateContainerCmdModifier(cmd ->
-              cmd.getHostConfig().withCapAdd(Capability.NET_ADMIN));
+          .withCreateContainerCmdModifier(
+              cmd -> cmd.getHostConfig().withCapAdd(Capability.NET_ADMIN));
 
   private final ToxiproxyConfig config = ToxiproxyConfig.defaults();
 
@@ -135,8 +134,8 @@ class ProxyCoverageTest {
     private final GenericContainer<?> CONTAINER =
         new GenericContainer<>("redis:7.4")
             .withExposedPorts(6379)
-            .withCreateContainerCmdModifier(cmd ->
-                cmd.getHostConfig().withCapAdd(Capability.NET_ADMIN));
+            .withCreateContainerCmdModifier(
+                cmd -> cmd.getHostConfig().withCapAdd(Capability.NET_ADMIN));
 
     @Test
     @DisplayName("returns false when container not running")
@@ -158,8 +157,7 @@ class ProxyCoverageTest {
     @DisplayName("returns false on API exception")
     void apiException_returnsFalse() throws Exception {
       ToxiproxyApiClient apiClient = mock(ToxiproxyApiClient.class);
-      when(apiClient.toxicExists(any(), any(), any()))
-          .thenThrow(new IOException("network error"));
+      when(apiClient.toxicExists(any(), any(), any())).thenThrow(new IOException("network error"));
       ToxicOperationsManager mgr = new ToxicOperationsManager(config, apiClient);
       assertThat(mgr.toxicExists(ContainerContext.of(CONTAINER), "redis", "latency")).isFalse();
     }
@@ -283,10 +281,13 @@ class ProxyCoverageTest {
     @Test
     @DisplayName("4-arg constructor: null lifecycle throws NPE")
     void constructor_nullLifecycle_throws() {
-      assertThatThrownBy(() -> new ToxiproxyOrchestrator(null,
-          mock(com.macstab.chaos.proxy.internal.operations.ProxyOperations.class),
-          mock(com.macstab.chaos.proxy.internal.operations.ToxicOperations.class),
-          mock(com.macstab.chaos.proxy.network.NetworkRedirect.class)))
+      assertThatThrownBy(
+              () ->
+                  new ToxiproxyOrchestrator(
+                      null,
+                      mock(com.macstab.chaos.proxy.internal.operations.ProxyOperations.class),
+                      mock(com.macstab.chaos.proxy.internal.operations.ToxicOperations.class),
+                      mock(com.macstab.chaos.proxy.network.NetworkRedirect.class)))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("lifecycle");
     }
@@ -294,11 +295,13 @@ class ProxyCoverageTest {
     @Test
     @DisplayName("4-arg constructor: null proxyOps throws NPE")
     void constructor_nullProxyOps_throws() {
-      assertThatThrownBy(() -> new ToxiproxyOrchestrator(
-          mock(com.macstab.chaos.proxy.internal.lifecycle.ToxiproxyLifecycle.class),
-          null,
-          mock(com.macstab.chaos.proxy.internal.operations.ToxicOperations.class),
-          mock(com.macstab.chaos.proxy.network.NetworkRedirect.class)))
+      assertThatThrownBy(
+              () ->
+                  new ToxiproxyOrchestrator(
+                      mock(com.macstab.chaos.proxy.internal.lifecycle.ToxiproxyLifecycle.class),
+                      null,
+                      mock(com.macstab.chaos.proxy.internal.operations.ToxicOperations.class),
+                      mock(com.macstab.chaos.proxy.network.NetworkRedirect.class)))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("proxyOps");
     }
@@ -306,11 +309,13 @@ class ProxyCoverageTest {
     @Test
     @DisplayName("4-arg constructor: null toxicOps throws NPE")
     void constructor_nullToxicOps_throws() {
-      assertThatThrownBy(() -> new ToxiproxyOrchestrator(
-          mock(com.macstab.chaos.proxy.internal.lifecycle.ToxiproxyLifecycle.class),
-          mock(com.macstab.chaos.proxy.internal.operations.ProxyOperations.class),
-          null,
-          mock(com.macstab.chaos.proxy.network.NetworkRedirect.class)))
+      assertThatThrownBy(
+              () ->
+                  new ToxiproxyOrchestrator(
+                      mock(com.macstab.chaos.proxy.internal.lifecycle.ToxiproxyLifecycle.class),
+                      mock(com.macstab.chaos.proxy.internal.operations.ProxyOperations.class),
+                      null,
+                      mock(com.macstab.chaos.proxy.network.NetworkRedirect.class)))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("toxicOps");
     }
@@ -318,11 +323,13 @@ class ProxyCoverageTest {
     @Test
     @DisplayName("4-arg constructor: null networkRedirect throws NPE")
     void constructor_nullNetworkRedirect_throws() {
-      assertThatThrownBy(() -> new ToxiproxyOrchestrator(
-          mock(com.macstab.chaos.proxy.internal.lifecycle.ToxiproxyLifecycle.class),
-          mock(com.macstab.chaos.proxy.internal.operations.ProxyOperations.class),
-          mock(com.macstab.chaos.proxy.internal.operations.ToxicOperations.class),
-          null))
+      assertThatThrownBy(
+              () ->
+                  new ToxiproxyOrchestrator(
+                      mock(com.macstab.chaos.proxy.internal.lifecycle.ToxiproxyLifecycle.class),
+                      mock(com.macstab.chaos.proxy.internal.operations.ProxyOperations.class),
+                      mock(com.macstab.chaos.proxy.internal.operations.ToxicOperations.class),
+                      null))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("networkRedirect");
     }
@@ -330,11 +337,12 @@ class ProxyCoverageTest {
     @Test
     @DisplayName("4-arg constructor: valid args constructs successfully")
     void constructor_validArgs_succeeds() {
-      final ToxiproxyOrchestrator orchestrator = new ToxiproxyOrchestrator(
-          mock(com.macstab.chaos.proxy.internal.lifecycle.ToxiproxyLifecycle.class),
-          mock(com.macstab.chaos.proxy.internal.operations.ProxyOperations.class),
-          mock(com.macstab.chaos.proxy.internal.operations.ToxicOperations.class),
-          mock(com.macstab.chaos.proxy.network.NetworkRedirect.class));
+      final ToxiproxyOrchestrator orchestrator =
+          new ToxiproxyOrchestrator(
+              mock(com.macstab.chaos.proxy.internal.lifecycle.ToxiproxyLifecycle.class),
+              mock(com.macstab.chaos.proxy.internal.operations.ProxyOperations.class),
+              mock(com.macstab.chaos.proxy.internal.operations.ToxicOperations.class),
+              mock(com.macstab.chaos.proxy.network.NetworkRedirect.class));
       assertThat(orchestrator).isNotNull();
     }
 
@@ -350,11 +358,12 @@ class ProxyCoverageTest {
           new com.macstab.chaos.core.exception.ChaosOperationFailedException("toxic error");
       doThrow(expected).when(toxicOps).removeToxic(any(), any(), any());
 
-      final ToxiproxyOrchestrator orchestrator = new ToxiproxyOrchestrator(
-          lifecycle,
-          mock(com.macstab.chaos.proxy.internal.operations.ProxyOperations.class),
-          toxicOps,
-          mock(com.macstab.chaos.proxy.network.NetworkRedirect.class));
+      final ToxiproxyOrchestrator orchestrator =
+          new ToxiproxyOrchestrator(
+              lifecycle,
+              mock(com.macstab.chaos.proxy.internal.operations.ProxyOperations.class),
+              toxicOps,
+              mock(com.macstab.chaos.proxy.network.NetworkRedirect.class));
 
       // WHEN / THEN — same instance re-thrown, not wrapped
       assertThatThrownBy(() -> orchestrator.removeToxic(SHARED_REDIS, "redis", "latency"))
@@ -373,11 +382,12 @@ class ProxyCoverageTest {
           new com.macstab.chaos.core.exception.ChaosOperationFailedException("remove all error");
       doThrow(expected).when(toxicOps).removeAllToxics(any(), any());
 
-      final ToxiproxyOrchestrator orchestrator = new ToxiproxyOrchestrator(
-          lifecycle,
-          mock(com.macstab.chaos.proxy.internal.operations.ProxyOperations.class),
-          toxicOps,
-          mock(com.macstab.chaos.proxy.network.NetworkRedirect.class));
+      final ToxiproxyOrchestrator orchestrator =
+          new ToxiproxyOrchestrator(
+              lifecycle,
+              mock(com.macstab.chaos.proxy.internal.operations.ProxyOperations.class),
+              toxicOps,
+              mock(com.macstab.chaos.proxy.network.NetworkRedirect.class));
 
       // WHEN / THEN
       assertThatThrownBy(() -> orchestrator.removeAllToxics(SHARED_REDIS, "redis"))
@@ -392,13 +402,16 @@ class ProxyCoverageTest {
           mock(com.macstab.chaos.proxy.internal.lifecycle.ToxiproxyLifecycle.class);
       final com.macstab.chaos.proxy.network.NetworkRedirect networkRedirect =
           mock(com.macstab.chaos.proxy.network.NetworkRedirect.class);
-      doThrow(new RuntimeException("iptables error")).when(networkRedirect).clearAllRedirects(any());
+      doThrow(new RuntimeException("iptables error"))
+          .when(networkRedirect)
+          .clearAllRedirects(any());
 
-      final ToxiproxyOrchestrator orchestrator = new ToxiproxyOrchestrator(
-          lifecycle,
-          mock(com.macstab.chaos.proxy.internal.operations.ProxyOperations.class),
-          mock(com.macstab.chaos.proxy.internal.operations.ToxicOperations.class),
-          networkRedirect);
+      final ToxiproxyOrchestrator orchestrator =
+          new ToxiproxyOrchestrator(
+              lifecycle,
+              mock(com.macstab.chaos.proxy.internal.operations.ProxyOperations.class),
+              mock(com.macstab.chaos.proxy.internal.operations.ToxicOperations.class),
+              networkRedirect);
 
       // WHEN / THEN — reset must NOT throw; exception is swallowed with a warning
       assertThatNoException().isThrownBy(() -> orchestrator.reset(SHARED_REDIS));
@@ -431,7 +444,8 @@ class ProxyCoverageTest {
     @Test
     @DisplayName("BandwidthToxic: toxicity > 1.0 throws")
     void bandwidth_toxicityAboveOne_throws() {
-      assertThatThrownBy(() -> BandwidthToxic.builder().name("b").rateKbps(100).toxicity(1.5).build())
+      assertThatThrownBy(
+              () -> BandwidthToxic.builder().name("b").rateKbps(100).toxicity(1.5).build())
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("toxicity");
     }
@@ -439,7 +453,8 @@ class ProxyCoverageTest {
     @Test
     @DisplayName("BandwidthToxic: toxicity < 0 throws")
     void bandwidth_toxicityBelowZero_throws() {
-      assertThatThrownBy(() -> BandwidthToxic.builder().name("b").rateKbps(100).toxicity(-0.1).build())
+      assertThatThrownBy(
+              () -> BandwidthToxic.builder().name("b").rateKbps(100).toxicity(-0.1).build())
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("toxicity");
     }
@@ -455,7 +470,8 @@ class ProxyCoverageTest {
     @Test
     @DisplayName("SlowCloseToxic: toxicity > 1.0 throws")
     void slowClose_toxicityAboveOne_throws() {
-      assertThatThrownBy(() -> SlowCloseToxic.builder().name("s").delayMs(100).toxicity(1.5).build())
+      assertThatThrownBy(
+              () -> SlowCloseToxic.builder().name("s").delayMs(100).toxicity(1.5).build())
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("toxicity");
     }
@@ -486,7 +502,8 @@ class ProxyCoverageTest {
     @Test
     @DisplayName("LatencyToxic: toxicity > 1.0 throws")
     void latency_toxicityAboveOne_throws() {
-      assertThatThrownBy(() -> LatencyToxic.builder().name("l").latencyMs(100).toxicity(1.5).build())
+      assertThatThrownBy(
+              () -> LatencyToxic.builder().name("l").latencyMs(100).toxicity(1.5).build())
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("toxicity");
     }

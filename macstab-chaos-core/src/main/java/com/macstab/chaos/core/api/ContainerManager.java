@@ -28,8 +28,8 @@ import java.util.function.Supplier;
  * StandaloneRedis cache = RedisStandalone.INSTANCE.get("cache");
  * }</pre>
  *
- * <p><strong>Thread Safety:</strong> Immutable after construction. Delegates to thread-safe
- * backend ({@link ChaosContainers}).
+ * <p><strong>Thread Safety:</strong> Immutable after construction. Delegates to thread-safe backend
+ * ({@link ChaosContainers}).
  *
  * @param <T> connection info type
  * @author Christian Schnapka - Macstab GmbH

@@ -19,13 +19,11 @@ import com.macstab.chaos.proxy.internal.operations.ProxyOperationsManager;
 import com.macstab.chaos.proxy.internal.operations.ToxicOperationsManager;
 import com.macstab.chaos.proxy.internal.operations.toxic.LatencyToxic;
 
-
-
 /**
  * Comprehensive integration tests for ToxiproxyOrchestrator.
  *
- * <p>The orchestrator is a high-level facade over lifecycle, proxy, and toxic operations.
- * Tests cover: createProxy (auto-starts lifecycle), addToxic (raw parameters), reset.
+ * <p>The orchestrator is a high-level facade over lifecycle, proxy, and toxic operations. Tests
+ * cover: createProxy (auto-starts lifecycle), addToxic (raw parameters), reset.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -37,8 +35,8 @@ class ToxiproxyOrchestratorTest {
   private static final GenericContainer<?> REDIS =
       new GenericContainer<>("redis:7.4")
           .withExposedPorts(6379)
-          .withCreateContainerCmdModifier(cmd ->
-              cmd.getHostConfig().withCapAdd(Capability.NET_ADMIN));
+          .withCreateContainerCmdModifier(
+              cmd -> cmd.getHostConfig().withCapAdd(Capability.NET_ADMIN));
 
   private final ToxiproxyConfig config = ToxiproxyConfig.defaults();
   private final ToxiproxyOrchestrator orchestrator = new ToxiproxyOrchestrator(config);
@@ -84,10 +82,8 @@ class ToxiproxyOrchestratorTest {
     @Test
     @DisplayName("should create multiple proxies")
     void shouldCreateMultipleProxies() {
-      ProxyConfiguration redis1 =
-          new ProxyConfiguration("redis-1", 6379, 16379, REDIS.getHost());
-      ProxyConfiguration redis2 =
-          new ProxyConfiguration("redis-2", 6379, 17379, REDIS.getHost());
+      ProxyConfiguration redis1 = new ProxyConfiguration("redis-1", 6379, 16379, REDIS.getHost());
+      ProxyConfiguration redis2 = new ProxyConfiguration("redis-2", 6379, 17379, REDIS.getHost());
 
       orchestrator.createProxy(REDIS, redis1);
       orchestrator.createProxy(REDIS, redis2);
@@ -99,8 +95,7 @@ class ToxiproxyOrchestratorTest {
     @Test
     @DisplayName("should fail on null container")
     void shouldFailOnNullContainer() {
-      ProxyConfiguration proxyConfig =
-          new ProxyConfiguration("redis", 6379, 16379, "localhost");
+      ProxyConfiguration proxyConfig = new ProxyConfiguration("redis", 6379, 16379, "localhost");
 
       assertThatThrownBy(() -> orchestrator.createProxy(null, proxyConfig))
           .isInstanceOf(NullPointerException.class)
@@ -199,11 +194,12 @@ class ToxiproxyOrchestratorTest {
     @Test
     @DisplayName("should fail gracefully if Toxiproxy fails to start")
     void shouldHandleStartupFailure() {
-      ToxiproxyConfig badConfig = ToxiproxyConfig.builder()
-          .apiUrl("http://localhost:9999")
-          .startupTimeoutMs(100)
-          .pollIntervalMs(10)
-          .build();
+      ToxiproxyConfig badConfig =
+          ToxiproxyConfig.builder()
+              .apiUrl("http://localhost:9999")
+              .startupTimeoutMs(100)
+              .pollIntervalMs(10)
+              .build();
 
       ToxiproxyOrchestrator badOrchestrator = new ToxiproxyOrchestrator(badConfig);
       ProxyConfiguration proxyConfig =
@@ -254,8 +250,7 @@ class ToxiproxyOrchestratorTest {
       assertThat(proxyOps.proxyExists(ContainerContext.of(REDIS), "redis")).isFalse();
 
       // AND — can recreate cleanly
-      assertThatNoException().isThrownBy(
-          () -> orchestrator.createProxy(REDIS, proxyConfig));
+      assertThatNoException().isThrownBy(() -> orchestrator.createProxy(REDIS, proxyConfig));
     }
 
     @Test
@@ -277,10 +272,10 @@ class ToxiproxyOrchestratorTest {
     @DisplayName("should delete one proxy without affecting others")
     void shouldDeleteOneProxy_leavingOthersIntact() {
       // GIVEN — two proxies
-      orchestrator.createProxy(REDIS,
-          new ProxyConfiguration("redis-1", 6379, 16379, REDIS.getHost()));
-      orchestrator.createProxy(REDIS,
-          new ProxyConfiguration("redis-2", 6379, 17379, REDIS.getHost()));
+      orchestrator.createProxy(
+          REDIS, new ProxyConfiguration("redis-1", 6379, 16379, REDIS.getHost()));
+      orchestrator.createProxy(
+          REDIS, new ProxyConfiguration("redis-2", 6379, 17379, REDIS.getHost()));
 
       // WHEN — delete only redis-1
       orchestrator.deleteProxy(REDIS, "redis-1");

@@ -4,6 +4,7 @@ package com.macstab.chaos.redis.factory;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 import java.util.List;
 
@@ -13,11 +14,9 @@ import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
 
-/**
- * Unit tests for {@link SentinelCluster} record.
- */
-@DisplayName("SentinelCluster Record")
-class SentinelClusterTest {
+/** Unit tests for {@link RawSentinelCluster} record. */
+@DisplayName("RawSentinelCluster Record")
+class RawSentinelClusterTest {
 
   private final Network network = mock(Network.class);
   private final GenericContainer<?> master = mock(GenericContainer.class);
@@ -33,8 +32,8 @@ class SentinelClusterTest {
     @DisplayName("Should create valid cluster record")
     void shouldCreateValid() {
       // ARRANGE & ACT
-      final SentinelCluster cluster =
-          new SentinelCluster(
+      final RawSentinelCluster cluster =
+          new RawSentinelCluster(
               network, master, List.of(replica1), List.of(sentinel1, sentinel2));
 
       // ASSERT
@@ -48,7 +47,7 @@ class SentinelClusterTest {
     @DisplayName("Should throw for null network")
     void shouldThrowForNullNetwork() {
       assertThatThrownBy(
-              () -> new SentinelCluster(null, master, List.of(replica1), List.of(sentinel1)))
+              () -> new RawSentinelCluster(null, master, List.of(replica1), List.of(sentinel1)))
           .isInstanceOf(NullPointerException.class);
     }
 
@@ -56,24 +55,64 @@ class SentinelClusterTest {
     @DisplayName("Should throw for null master")
     void shouldThrowForNullMaster() {
       assertThatThrownBy(
-              () -> new SentinelCluster(network, null, List.of(replica1), List.of(sentinel1)))
+              () -> new RawSentinelCluster(network, null, List.of(replica1), List.of(sentinel1)))
           .isInstanceOf(NullPointerException.class);
     }
 
     @Test
     @DisplayName("Should throw for null replicas")
     void shouldThrowForNullReplicas() {
-      assertThatThrownBy(
-              () -> new SentinelCluster(network, master, null, List.of(sentinel1)))
+      assertThatThrownBy(() -> new RawSentinelCluster(network, master, null, List.of(sentinel1)))
           .isInstanceOf(NullPointerException.class);
     }
 
     @Test
     @DisplayName("Should throw for null sentinels")
     void shouldThrowForNullSentinels() {
-      assertThatThrownBy(
-              () -> new SentinelCluster(network, master, List.of(replica1), null))
+      assertThatThrownBy(() -> new RawSentinelCluster(network, master, List.of(replica1), null))
           .isInstanceOf(NullPointerException.class);
+    }
+  }
+
+  @Nested
+  @DisplayName("stop()")
+  class StopTests {
+
+    @Test
+    @DisplayName("Should call stop on all containers and close network")
+    void shouldStopAllContainersAndCloseNetwork() {
+      final RawSentinelCluster cluster =
+          new RawSentinelCluster(
+              network, master, List.of(replica1), List.of(sentinel1, sentinel2));
+
+      cluster.stop();
+
+      verify(sentinel1).stop();
+      verify(sentinel2).stop();
+      verify(replica1).stop();
+      verify(master).stop();
+      verify(network).close();
+    }
+  }
+
+  @Nested
+  @DisplayName("close() - AutoCloseable")
+  class CloseTests {
+
+    @Test
+    @DisplayName("Should call stop when closed")
+    void shouldCallStopWhenClosed() {
+      final RawSentinelCluster cluster =
+          new RawSentinelCluster(
+              network, master, List.of(replica1), List.of(sentinel1, sentinel2));
+
+      cluster.close();
+
+      verify(sentinel1).stop();
+      verify(sentinel2).stop();
+      verify(replica1).stop();
+      verify(master).stop();
+      verify(network).close();
     }
   }
 
@@ -84,8 +123,8 @@ class SentinelClusterTest {
     @Test
     @DisplayName("Should return first sentinel from list")
     void shouldReturnFirstSentinel() {
-      final SentinelCluster cluster =
-          new SentinelCluster(
+      final RawSentinelCluster cluster =
+          new RawSentinelCluster(
               network, master, List.of(replica1), List.of(sentinel1, sentinel2));
 
       assertThat(cluster.firstSentinel()).isSameAs(sentinel1);
@@ -94,11 +133,10 @@ class SentinelClusterTest {
     @Test
     @DisplayName("Should throw for empty sentinel list")
     void shouldThrowForEmptySentinels() {
-      final SentinelCluster cluster =
-          new SentinelCluster(network, master, List.of(replica1), List.of());
+      final RawSentinelCluster cluster =
+          new RawSentinelCluster(network, master, List.of(replica1), List.of());
 
-      assertThatThrownBy(cluster::firstSentinel)
-          .isInstanceOf(IndexOutOfBoundsException.class);
+      assertThatThrownBy(cluster::firstSentinel).isInstanceOf(IndexOutOfBoundsException.class);
     }
   }
 }

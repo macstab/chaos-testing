@@ -8,9 +8,10 @@ import java.util.Objects;
  *
  * <p>Centralizes Redis port assignments and proxy naming so callers never hardcode magic numbers.
  * All values have sensible defaults; override only when a non-standard Redis setup is used.
- *
  * <!-- ═══════════════════════════════════════════════════════════════════ -->
+ *
  * <h2>Default Configuration</h2>
+ *
  * <!-- ═══════════════════════════════════════════════════════════════════ -->
  *
  * <pre>
@@ -20,7 +21,9 @@ import java.util.Objects;
  * </pre>
  *
  * <!-- ═══════════════════════════════════════════════════════════════════ -->
+ *
  * <h2>Usage: Default Configuration</h2>
+ *
  * <!-- ═══════════════════════════════════════════════════════════════════ -->
  *
  * <pre>{@code
@@ -30,7 +33,9 @@ import java.util.Objects;
  * }</pre>
  *
  * <!-- ═══════════════════════════════════════════════════════════════════ -->
+ *
  * <h2>Usage: Custom Ports</h2>
+ *
  * <!-- ═══════════════════════════════════════════════════════════════════ -->
  *
  * <pre>{@code

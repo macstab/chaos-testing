@@ -188,14 +188,14 @@ class ToxiproxyLifecycleManagerTest {
     @Test
     @DisplayName("should accept custom configuration")
     void shouldAcceptCustomConfig() {
-      final ToxiproxyConfig customConfig = ToxiproxyConfig.builder()
-          .apiUrl("http://localhost:8474")
-          .startupTimeoutMs(10000)
-          .pollIntervalMs(100)
-          .build();
+      final ToxiproxyConfig customConfig =
+          ToxiproxyConfig.builder()
+              .apiUrl("http://localhost:8474")
+              .startupTimeoutMs(10000)
+              .pollIntervalMs(100)
+              .build();
 
-      assertThatCode(() -> new ToxiproxyLifecycleManager(customConfig))
-          .doesNotThrowAnyException();
+      assertThatCode(() -> new ToxiproxyLifecycleManager(customConfig)).doesNotThrowAnyException();
     }
 
     @Test

@@ -23,8 +23,8 @@ import lombok.extern.slf4j.Slf4j;
 public final class NetworkRedirectManager implements NetworkRedirect {
 
   @Override
-  public void setupRedirect(
-      final ContainerContext ctx, final int servicePort, final int proxyPort) throws IOException {
+  public void setupRedirect(final ContainerContext ctx, final int servicePort, final int proxyPort)
+      throws IOException {
 
     Objects.requireNonNull(ctx, "ctx must not be null");
     validatePort(servicePort, "servicePort");
@@ -37,7 +37,8 @@ public final class NetworkRedirectManager implements NetworkRedirect {
 
       if (result.getExitCode() != 0) {
         throw new IOException(
-            String.format("Failed to setup port redirect %d → %d: %s",
+            String.format(
+                "Failed to setup port redirect %d → %d: %s",
                 servicePort, proxyPort, result.getStderr()));
       }
 
@@ -52,8 +53,8 @@ public final class NetworkRedirectManager implements NetworkRedirect {
   }
 
   @Override
-  public void removeRedirect(
-      final ContainerContext ctx, final int servicePort, final int proxyPort) throws IOException {
+  public void removeRedirect(final ContainerContext ctx, final int servicePort, final int proxyPort)
+      throws IOException {
 
     Objects.requireNonNull(ctx, "ctx must not be null");
     validatePort(servicePort, "servicePort");
@@ -66,7 +67,8 @@ public final class NetworkRedirectManager implements NetworkRedirect {
 
       if (result.getExitCode() != 0) {
         throw new IOException(
-            String.format("Failed to remove port redirect %d → %d: %s",
+            String.format(
+                "Failed to remove port redirect %d → %d: %s",
                 servicePort, proxyPort, result.getStderr()));
       }
 

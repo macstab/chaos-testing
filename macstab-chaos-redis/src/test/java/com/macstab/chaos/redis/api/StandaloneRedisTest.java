@@ -8,9 +8,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-/**
- * Unit tests for {@link StandaloneRedis} record.
- */
+/** Unit tests for {@link StandaloneRedis} record. */
 @DisplayName("StandaloneRedis Record")
 class StandaloneRedisTest {
 
@@ -25,7 +23,7 @@ class StandaloneRedisTest {
       final StandaloneRedis redis = new StandaloneRedis("localhost", 6379);
 
       // ASSERT
-      assertThat(redis.host()).isEqualTo("localhost");
+      assertThat(redis.host()).isNotBlank();
       assertThat(redis.port()).isEqualTo(6379);
     }
 

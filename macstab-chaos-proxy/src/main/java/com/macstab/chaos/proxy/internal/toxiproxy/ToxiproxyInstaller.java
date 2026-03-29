@@ -17,8 +17,8 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * Installs the Toxiproxy binary into a container if not already present.
  *
- * <p>Uses {@link ContainerContext} for all container interactions — no direct
- * {@code execInContainer} calls, no hardcoded tool names.
+ * <p>Uses {@link ContainerContext} for all container interactions — no direct {@code
+ * execInContainer} calls, no hardcoded tool names.
  *
  * <p><strong>INTERNAL USE ONLY</strong> — implementation detail, not part of the public API.
  *

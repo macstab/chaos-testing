@@ -14,6 +14,7 @@ import org.testcontainers.containers.Container.ExecResult;
  * assertions without Mockito complaining about unused interactions.
  *
  * <p><strong>Usage:</strong>
+ *
  * <pre>{@code
  * final ExecResult result = TestExecResults.success();
  * final ExecResult failure = TestExecResults.failure("iptables error");

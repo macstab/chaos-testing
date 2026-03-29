@@ -27,7 +27,7 @@ import org.testcontainers.containers.Network;
  * <p><strong>Example:</strong>
  *
  * <pre>{@code
- * SentinelCluster cluster = SentinelContainerFactory.createSentinelCluster();
+ * RawSentinelCluster cluster = SentinelContainerFactory.createSentinelCluster();
  * try {
  *   GenericContainer<?> sentinel = cluster.firstSentinel();
  *   String host = sentinel.getHost();
@@ -45,14 +45,15 @@ import org.testcontainers.containers.Network;
  * @author Christian Schnapka - Macstab GmbH
  * @since 2.0
  */
-public record SentinelCluster(
+public record RawSentinelCluster(
     Network network,
     GenericContainer<?> master,
     List<GenericContainer<?>> replicas,
-    List<GenericContainer<?>> sentinels) {
+    List<GenericContainer<?>> sentinels)
+    implements AutoCloseable {
 
   /** Canonical constructor with null validation. */
-  public SentinelCluster {
+  public RawSentinelCluster {
     Objects.requireNonNull(network, "network");
     Objects.requireNonNull(master, "master");
     Objects.requireNonNull(replicas, "replicas");
@@ -69,6 +70,11 @@ public record SentinelCluster(
     replicas.forEach(GenericContainer::stop);
     master.stop();
     network.close();
+  }
+
+  @Override
+  public void close() {
+    stop();
   }
 
   /**

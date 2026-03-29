@@ -16,8 +16,7 @@ import java.lang.annotation.Target;
  * <p><strong>Supported Constraints:</strong>
  *
  * <ul>
- *   <li><strong>Memory:</strong> {@code "512M"}, {@code "1G"}, {@code "2048K"}
- *       (case-insensitive)
+ *   <li><strong>Memory:</strong> {@code "512M"}, {@code "1G"}, {@code "2048K"} (case-insensitive)
  *   <li><strong>CPUs:</strong> {@code "2"}, {@code "0.5"}, {@code "4.0"} (decimal string)
  *   <li><strong>Disk:</strong> {@code "10G"}, {@code "5G"} (gigabytes only, Linux overlay2 only)
  * </ul>

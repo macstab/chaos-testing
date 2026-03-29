@@ -13,7 +13,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.mockito.MockedConstruction;
 
 /**
  * Unit tests for {@link CurlCommandBuilder}.
@@ -463,14 +462,17 @@ class CurlCommandBuilderTest {
 
       // Each ProcessBuilder construction gets a different Process: first→fail, second→ok
       final int[] callCount = {0};
-      try (var mocked = mockConstruction(ProcessBuilder.class, (pb, ctx) -> {
-        when(pb.redirectErrorStream(anyBoolean())).thenReturn(pb);
-        if (callCount[0]++ == 0) {
-          when(pb.start()).thenReturn(whichFail);
-        } else {
-          when(pb.start()).thenReturn(commandVOk);
-        }
-      })) {
+      try (var mocked =
+          mockConstruction(
+              ProcessBuilder.class,
+              (pb, ctx) -> {
+                when(pb.redirectErrorStream(anyBoolean())).thenReturn(pb);
+                if (callCount[0]++ == 0) {
+                  when(pb.start()).thenReturn(whichFail);
+                } else {
+                  when(pb.start()).thenReturn(commandVOk);
+                }
+              })) {
         assertThat(new CurlCommandBuilder().isAvailable()).isTrue();
       }
     }
@@ -481,8 +483,8 @@ class CurlCommandBuilderTest {
       final Process fail = mock(Process.class);
       when(fail.waitFor()).thenReturn(1);
 
-      try (var mocked = mockConstruction(ProcessBuilder.class,
-          (pb, ctx) -> when(pb.start()).thenReturn(fail))) {
+      try (var mocked =
+          mockConstruction(ProcessBuilder.class, (pb, ctx) -> when(pb.start()).thenReturn(fail))) {
         assertThat(new CurlCommandBuilder().isAvailable()).isFalse();
       }
     }
@@ -490,8 +492,10 @@ class CurlCommandBuilderTest {
     @Test
     @DisplayName("should return false when ProcessBuilder throws IOException")
     void shouldReturnFalseWhenProcessBuilderThrows() throws Exception {
-      try (var mocked = mockConstruction(ProcessBuilder.class,
-          (pb, ctx) -> when(pb.start()).thenThrow(new java.io.IOException("exec failed")))) {
+      try (var mocked =
+          mockConstruction(
+              ProcessBuilder.class,
+              (pb, ctx) -> when(pb.start()).thenThrow(new java.io.IOException("exec failed")))) {
         assertThat(new CurlCommandBuilder().isAvailable()).isFalse();
       }
     }

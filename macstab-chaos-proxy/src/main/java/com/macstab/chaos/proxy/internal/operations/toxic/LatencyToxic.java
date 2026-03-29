@@ -6,20 +6,19 @@ import java.util.Objects;
 /**
  * Adds fixed latency and optional jitter to all data flowing through the proxy.
  *
- * <p>Uses Toxiproxy's {@code latency} toxic, which delays every data chunk by
- * {@code latencyMs ± jitterMs} milliseconds before forwarding it. Both upstream and downstream
- * traffic are affected.
+ * <p>Uses Toxiproxy's {@code latency} toxic, which delays every data chunk by {@code latencyMs ±
+ * jitterMs} milliseconds before forwarding it. Both upstream and downstream traffic are affected.
  *
  * <h2>Semantics</h2>
  *
  * <ul>
- *   <li><strong>latencyMs</strong> — base delay added to every chunk of data. {@code 0} means
- *       no base delay (jitter only).</li>
- *   <li><strong>jitterMs</strong> — random variation uniformly distributed in
- *       {@code [-jitter, +jitter]}. Actual delay per chunk:
- *       {@code latencyMs + random(-jitterMs, +jitterMs)}. {@code 0} means deterministic.</li>
+ *   <li><strong>latencyMs</strong> — base delay added to every chunk of data. {@code 0} means no
+ *       base delay (jitter only).
+ *   <li><strong>jitterMs</strong> — random variation uniformly distributed in {@code [-jitter,
+ *       +jitter]}. Actual delay per chunk: {@code latencyMs + random(-jitterMs, +jitterMs)}. {@code
+ *       0} means deterministic.
  *   <li><strong>toxicity</strong> — fraction of connections affected. {@code 1.0} applies latency
- *       to every connection; {@code 0.5} applies it to approximately half.</li>
+ *       to every connection; {@code 0.5} applies it to approximately half.
  * </ul>
  *
  * <h2>Real-World Scenarios</h2>
@@ -164,8 +163,8 @@ public final class LatencyToxic implements ToxicConfig {
   /**
    * Builder for {@link LatencyToxic}.
    *
-   * <p>All fields have defaults: {@code latencyMs=0}, {@code jitterMs=0},
-   * {@code toxicity=1.0}. Only {@link #name(String)} is required.
+   * <p>All fields have defaults: {@code latencyMs=0}, {@code jitterMs=0}, {@code toxicity=1.0}.
+   * Only {@link #name(String)} is required.
    */
   public static final class Builder {
 
@@ -204,8 +203,8 @@ public final class LatencyToxic implements ToxicConfig {
     /**
      * Set the random jitter applied around the base latency.
      *
-     * <p>Actual per-chunk delay: {@code latencyMs + random(-jitterMs, +jitterMs)}.
-     * Default: {@code 0} (deterministic). Must be ≥ 0.
+     * <p>Actual per-chunk delay: {@code latencyMs + random(-jitterMs, +jitterMs)}. Default: {@code
+     * 0} (deterministic). Must be ≥ 0.
      *
      * @param jitterMs jitter amplitude in milliseconds
      * @return this builder

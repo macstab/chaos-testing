@@ -12,8 +12,7 @@ import com.macstab.chaos.core.extension.MockChaosPlugin.*;
 /**
  * Tests for ChaosTestingExtension.beforeAll() orchestration.
  *
- * These tests exercise the full container lifecycle to hit
- * beforeAll() orchestration paths.
+ * <p>These tests exercise the full container lifecycle to hit beforeAll() orchestration paths.
  */
 @DisplayName("ChaosTestingExtension - beforeAll() Orchestration")
 class ChaosTestingExtensionBeforeAllTest {

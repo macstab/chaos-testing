@@ -3,7 +3,7 @@
  * JUnit 5 test annotations for Redis container lifecycle management.
  *
  * <p>Contains {@code @RedisStandalone}, {@code @RedisSentinel}, {@code @RedisStandalones},
- * {@code @RedisSentinels}, {@code @InstallPackages}, and {@code @RedisManager}.
+ * {@code @RedisSentinels}, and {@code @InstallPackages}.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @since 1.0

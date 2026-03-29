@@ -15,10 +15,11 @@ import com.github.dockerjava.api.model.Capability;
 import com.macstab.chaos.core.platform.Tool;
 
 /**
- * Annotation contract tests — verifies retention, targets, and default values for all
- * public annotations defined in the chaos-core annotation package.
+ * Annotation contract tests — verifies retention, targets, and default values for all public
+ * annotations defined in the chaos-core annotation package.
  *
  * <p>Structure:
+ *
  * <ul>
  *   <li>{@code RetentionAndTargetTest} — meta contract for all 6 annotations
  *   <li>{@code ResourcesContractTest} — attribute defaults + combinations
@@ -150,11 +151,20 @@ class AnnotationContractTest {
       assertThat(r.diskSize()).isEqualTo("10G");
     }
 
-    @Resources                                    static class DefaultResources {}
-    @Resources(memory = "512M")                   static class MemoryOnlyResources {}
-    @Resources(cpus = "2")                        static class CpuOnlyResources {}
-    @Resources(memory = "1G", cpus = "0.5")       static class MemoryCpuResources {}
-    @Resources(memory = "256M", cpus = "4", diskSize = "10G") static class AllConstraintsResources {}
+    @Resources
+    static class DefaultResources {}
+
+    @Resources(memory = "512M")
+    static class MemoryOnlyResources {}
+
+    @Resources(cpus = "2")
+    static class CpuOnlyResources {}
+
+    @Resources(memory = "1G", cpus = "0.5")
+    static class MemoryCpuResources {}
+
+    @Resources(memory = "256M", cpus = "4", diskSize = "10G")
+    static class AllConstraintsResources {}
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -205,13 +215,21 @@ class AnnotationContractTest {
       assertThat(a.value()).containsExactly("wget");
     }
 
-    @InstallPackages("curl")                                           static class SinglePackage {}
-    @InstallPackages(value = "curl", verify = false)                   static class NoVerifyPackage {}
-    @InstallPackages(value = "tcpdump", target = "master")             static class TargetedPackage {}
-    @InstallPackages({"tcpdump", "netcat", "strace"})                  static class MultiPackage {}
+    @InstallPackages("curl")
+    static class SinglePackage {}
+
+    @InstallPackages(value = "curl", verify = false)
+    static class NoVerifyPackage {}
+
+    @InstallPackages(value = "tcpdump", target = "master")
+    static class TargetedPackage {}
+
+    @InstallPackages({"tcpdump", "netcat", "strace"})
+    static class MultiPackage {}
 
     static class FieldAnnotationHolder {
-      @InstallPackages("wget") Object container;
+      @InstallPackages("wget")
+      Object container;
     }
   }
 
@@ -252,8 +270,8 @@ class AnnotationContractTest {
     @DisplayName("multiple tools in value array")
     void multipleTools() {
       InstallTools a = MultiTool.class.getAnnotation(InstallTools.class);
-      assertThat(a.value()).containsExactlyInAnyOrder(
-          Tool.CURL, Tool.IPTABLES, Tool.PROCPS, Tool.STRESS_NG);
+      assertThat(a.value())
+          .containsExactlyInAnyOrder(Tool.CURL, Tool.IPTABLES, Tool.PROCPS, Tool.STRESS_NG);
     }
 
     @Test
@@ -265,13 +283,21 @@ class AnnotationContractTest {
       assertThat(a.value()).containsExactly(Tool.PYTHON);
     }
 
-    @InstallTools(Tool.CURL)                                                        static class SingleTool {}
-    @InstallTools(value = Tool.CA_CERTIFICATES, verify = false)                     static class NoVerifyTool {}
-    @InstallTools(value = Tool.IPTABLES, target = "replica")                        static class TargetedTool {}
-    @InstallTools({Tool.CURL, Tool.IPTABLES, Tool.PROCPS, Tool.STRESS_NG})          static class MultiTool {}
+    @InstallTools(Tool.CURL)
+    static class SingleTool {}
+
+    @InstallTools(value = Tool.CA_CERTIFICATES, verify = false)
+    static class NoVerifyTool {}
+
+    @InstallTools(value = Tool.IPTABLES, target = "replica")
+    static class TargetedTool {}
+
+    @InstallTools({Tool.CURL, Tool.IPTABLES, Tool.PROCPS, Tool.STRESS_NG})
+    static class MultiTool {}
 
     static class FieldAnnotationHolder {
-      @InstallTools(Tool.PYTHON) Object container;
+      @InstallTools(Tool.PYTHON)
+      Object container;
     }
   }
 
@@ -295,8 +321,7 @@ class AnnotationContractTest {
     @DisplayName("multiple capabilities in value array")
     void multipleCapabilities() {
       RequireCapability a = MultiCapability.class.getAnnotation(RequireCapability.class);
-      assertThat(a.value()).containsExactlyInAnyOrder(
-          Capability.NET_ADMIN, Capability.SYS_ADMIN);
+      assertThat(a.value()).containsExactlyInAnyOrder(Capability.NET_ADMIN, Capability.SYS_ADMIN);
     }
 
     @Test
@@ -316,12 +341,18 @@ class AnnotationContractTest {
       assertThat(a.value()).containsExactly(Capability.NET_ADMIN);
     }
 
-    @RequireCapability(Capability.NET_ADMIN)                                     static class NetAdminOnly {}
-    @RequireCapability({Capability.NET_ADMIN, Capability.SYS_ADMIN})             static class MultiCapability {}
-    @RequireCapability(value = Capability.SYS_PTRACE, target = "chaos-node")     static class TargetedCapability {}
+    @RequireCapability(Capability.NET_ADMIN)
+    static class NetAdminOnly {}
+
+    @RequireCapability({Capability.NET_ADMIN, Capability.SYS_ADMIN})
+    static class MultiCapability {}
+
+    @RequireCapability(value = Capability.SYS_PTRACE, target = "chaos-node")
+    static class TargetedCapability {}
 
     static class FieldAnnotationHolder {
-      @RequireCapability(Capability.NET_ADMIN) Object container;
+      @RequireCapability(Capability.NET_ADMIN)
+      Object container;
     }
   }
 
@@ -393,12 +424,39 @@ class AnnotationContractTest {
       assertThat(a.memory()).isEmpty();
     }
 
-    static class AllDefaultsHolder    { @ConfigureContainer                                                                    Object container; }
-    static class MemoryOnlyHolder     { @ConfigureContainer(memory = "512M")                                                   Object container; }
-    static class CpuOnlyHolder        { @ConfigureContainer(cpus = 4)                                                          Object container; }
-    static class CpuSharesHolder      { @ConfigureContainer(cpuShares = 1024)                                                  Object container; }
-    static class MemorySwapHolder     { @ConfigureContainer(memorySwap = "4G")                                                 Object container; }
-    static class AllAttributesHolder  { @ConfigureContainer(memory = "1G", cpus = 2, diskSize = "20G", cpuShares = 512, memorySwap = "2G") Object container; }
+    static class AllDefaultsHolder {
+      @ConfigureContainer Object container;
+    }
+
+    static class MemoryOnlyHolder {
+      @ConfigureContainer(memory = "512M")
+      Object container;
+    }
+
+    static class CpuOnlyHolder {
+      @ConfigureContainer(cpus = 4)
+      Object container;
+    }
+
+    static class CpuSharesHolder {
+      @ConfigureContainer(cpuShares = 1024)
+      Object container;
+    }
+
+    static class MemorySwapHolder {
+      @ConfigureContainer(memorySwap = "4G")
+      Object container;
+    }
+
+    static class AllAttributesHolder {
+      @ConfigureContainer(
+          memory = "1G",
+          cpus = 2,
+          diskSize = "20G",
+          cpuShares = 512,
+          memorySwap = "2G")
+      Object container;
+    }
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -509,7 +567,8 @@ class AnnotationContractTest {
 
       assertThat(f.getAnnotation(InstallPackages.class).value()).containsExactly("netcat");
       assertThat(f.getAnnotation(InstallTools.class).value()).containsExactly(Tool.PYTHON);
-      assertThat(f.getAnnotation(RequireCapability.class).value()).containsExactly(Capability.SYS_ADMIN);
+      assertThat(f.getAnnotation(RequireCapability.class).value())
+          .containsExactly(Capability.SYS_ADMIN);
       assertThat(f.getAnnotation(ConfigureContainer.class).diskSize()).isEqualTo("10G");
     }
 

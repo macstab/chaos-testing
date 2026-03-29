@@ -20,8 +20,8 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * Default implementation of proxy CRUD operations.
  *
- * <p>Receives a pre-resolved {@link ContainerContext} on every call — no platform detection
- * inside this class.
+ * <p>Receives a pre-resolved {@link ContainerContext} on every call — no platform detection inside
+ * this class.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -75,14 +75,18 @@ public final class ProxyOperationsManager implements ProxyOperations {
       final ProxyStatus status = checkProxyStatus(ctx, proxyConfig);
 
       if (status.isReady()) {
-        log.debug("Proxy '{}' already configured and listening on port {}",
-            proxyConfig.getProxyName(), proxyConfig.getProxyPort());
+        log.debug(
+            "Proxy '{}' already configured and listening on port {}",
+            proxyConfig.getProxyName(),
+            proxyConfig.getProxyPort());
         return proxyConfig;
       }
 
       if (status.existsInApi() && !status.listening()) {
-        log.warn("Proxy '{}' exists in API but port {} not listening — recreating",
-            proxyConfig.getProxyName(), proxyConfig.getProxyPort());
+        log.warn(
+            "Proxy '{}' exists in API but port {} not listening — recreating",
+            proxyConfig.getProxyName(),
+            proxyConfig.getProxyPort());
         apiClient.deleteProxy(ctx, proxyConfig.getProxyName());
       }
 
@@ -90,7 +94,8 @@ public final class ProxyOperationsManager implements ProxyOperations {
       networkRedirect.setupRedirect(ctx, proxyConfig.getServicePort(), proxyConfig.getProxyPort());
       validateProxyReady(ctx, proxyConfig.getProxyPort());
 
-      log.info("Created proxy '{}': {}:{} → proxy:{} → localhost:{}",
+      log.info(
+          "Created proxy '{}': {}:{} → proxy:{} → localhost:{}",
           proxyConfig.getProxyName(),
           proxyConfig.getContainerHostname(),
           proxyConfig.getServicePort(),
@@ -219,8 +224,11 @@ public final class ProxyOperationsManager implements ProxyOperations {
     }
 
     throw new ChaosOperationFailedException(
-        "Proxy port " + proxyPort + " did not become ready within "
-            + config.proxyReadyTimeoutMs() + "ms");
+        "Proxy port "
+            + proxyPort
+            + " did not become ready within "
+            + config.proxyReadyTimeoutMs()
+            + "ms");
   }
 
   /**

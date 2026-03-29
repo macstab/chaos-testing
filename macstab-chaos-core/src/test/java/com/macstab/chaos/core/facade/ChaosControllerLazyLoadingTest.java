@@ -7,9 +7,7 @@ import static org.mockito.Mockito.*;
 import org.junit.jupiter.api.*;
 import org.testcontainers.containers.GenericContainer;
 
-/**
- * Tests for ChaosController lazy loading and getter methods.
- */
+/** Tests for ChaosController lazy loading and getter methods. */
 @DisplayName("ChaosController - Lazy Loading Coverage")
 class ChaosControllerLazyLoadingTest {
 
@@ -19,7 +17,7 @@ class ChaosControllerLazyLoadingTest {
     @SuppressWarnings("resource")
     GenericContainer<?> container = mock(GenericContainer.class);
     ChaosController controller = new ChaosController(container);
-    
+
     assertThat(controller.cpu()).isNotNull();
   }
 
@@ -29,7 +27,7 @@ class ChaosControllerLazyLoadingTest {
     @SuppressWarnings("resource")
     GenericContainer<?> container = mock(GenericContainer.class);
     ChaosController controller = new ChaosController(container);
-    
+
     assertThat(controller.memory()).isNotNull();
   }
 
@@ -39,7 +37,7 @@ class ChaosControllerLazyLoadingTest {
     @SuppressWarnings("resource")
     GenericContainer<?> container = mock(GenericContainer.class);
     ChaosController controller = new ChaosController(container);
-    
+
     assertThat(controller.disk()).isNotNull();
   }
 
@@ -49,7 +47,7 @@ class ChaosControllerLazyLoadingTest {
     @SuppressWarnings("resource")
     GenericContainer<?> container = mock(GenericContainer.class);
     ChaosController controller = new ChaosController(container);
-    
+
     assertThat(controller.process()).isNotNull();
   }
 
@@ -59,7 +57,7 @@ class ChaosControllerLazyLoadingTest {
     @SuppressWarnings("resource")
     GenericContainer<?> container = mock(GenericContainer.class);
     ChaosController controller = new ChaosController(container);
-    
+
     assertThat(controller.network()).isNotNull();
   }
 
@@ -69,7 +67,7 @@ class ChaosControllerLazyLoadingTest {
     @SuppressWarnings("resource")
     GenericContainer<?> container = mock(GenericContainer.class);
     ChaosController controller = new ChaosController(container);
-    
+
     assertThat(controller.time()).isNotNull();
   }
 
@@ -79,7 +77,7 @@ class ChaosControllerLazyLoadingTest {
     @SuppressWarnings("resource")
     GenericContainer<?> container = mock(GenericContainer.class);
     ChaosController controller = new ChaosController(container);
-    
+
     assertThat(controller.dns()).isNotNull();
   }
 
@@ -89,7 +87,7 @@ class ChaosControllerLazyLoadingTest {
     @SuppressWarnings("resource")
     GenericContainer<?> container = mock(GenericContainer.class);
     ChaosController controller = new ChaosController(container);
-    
+
     assertThat(controller.connection()).isNotNull();
   }
 
@@ -99,7 +97,7 @@ class ChaosControllerLazyLoadingTest {
     @SuppressWarnings("resource")
     GenericContainer<?> container = mock(GenericContainer.class);
     ChaosController controller = new ChaosController(container);
-    
+
     assertThat(controller.cache()).isNotNull();
   }
 
@@ -109,7 +107,7 @@ class ChaosControllerLazyLoadingTest {
     @SuppressWarnings("resource")
     GenericContainer<?> container = mock(GenericContainer.class);
     ChaosController controller = new ChaosController(container);
-    
+
     assertThat(controller.filesystem()).isNotNull();
   }
 
@@ -119,10 +117,10 @@ class ChaosControllerLazyLoadingTest {
     @SuppressWarnings("resource")
     GenericContainer<?> container = mock(GenericContainer.class);
     ChaosController controller = new ChaosController(container);
-    
+
     var cpu1 = controller.cpu();
     var cpu2 = controller.cpu();
-    
+
     assertThat(cpu1).isSameAs(cpu2);
   }
 
@@ -140,7 +138,7 @@ class ChaosControllerLazyLoadingTest {
     @SuppressWarnings("resource")
     GenericContainer<?> container = mock(GenericContainer.class);
     ChaosController controller = new ChaosController(container);
-    
+
     assertThatThrownBy(() -> controller.withProbability(-0.1, 42))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("rate must be in [0.0, 1.0]");
@@ -152,7 +150,7 @@ class ChaosControllerLazyLoadingTest {
     @SuppressWarnings("resource")
     GenericContainer<?> container = mock(GenericContainer.class);
     ChaosController controller = new ChaosController(container);
-    
+
     assertThatThrownBy(() -> controller.withProbability(1.1, 42))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("rate must be in [0.0, 1.0]");
@@ -164,9 +162,8 @@ class ChaosControllerLazyLoadingTest {
     @SuppressWarnings("resource")
     GenericContainer<?> container = mock(GenericContainer.class);
     ChaosController controller = new ChaosController(container);
-    
-    assertThatCode(() -> controller.withProbability(0.0, 42))
-        .doesNotThrowAnyException();
+
+    assertThatCode(() -> controller.withProbability(0.0, 42)).doesNotThrowAnyException();
   }
 
   @Test
@@ -175,9 +172,8 @@ class ChaosControllerLazyLoadingTest {
     @SuppressWarnings("resource")
     GenericContainer<?> container = mock(GenericContainer.class);
     ChaosController controller = new ChaosController(container);
-    
-    assertThatCode(() -> controller.withProbability(1.0, 42))
-        .doesNotThrowAnyException();
+
+    assertThatCode(() -> controller.withProbability(1.0, 42)).doesNotThrowAnyException();
   }
 
   @Test
@@ -186,9 +182,8 @@ class ChaosControllerLazyLoadingTest {
     @SuppressWarnings("resource")
     GenericContainer<?> container = mock(GenericContainer.class);
     ChaosController controller = new ChaosController(container);
-    
-    assertThatCode(() -> controller.withProbability(0.5, 42))
-        .doesNotThrowAnyException();
+
+    assertThatCode(() -> controller.withProbability(0.5, 42)).doesNotThrowAnyException();
   }
 
   @Test
@@ -197,9 +192,9 @@ class ChaosControllerLazyLoadingTest {
     @SuppressWarnings("resource")
     GenericContainer<?> container = mock(GenericContainer.class);
     ChaosController controller = new ChaosController(container);
-    
+
     ChaosController probabilistic = controller.withProbability(0.5, 42);
-    
+
     assertThat(probabilistic).isNotNull();
     assertThat(probabilistic).isNotSameAs(controller);
   }
@@ -210,7 +205,7 @@ class ChaosControllerLazyLoadingTest {
     @SuppressWarnings("resource")
     GenericContainer<?> container = mock(GenericContainer.class);
     ChaosController controller = new ChaosController(container).withProbability(0.5, 42);
-    
+
     assertThat(controller.cpu()).isNotNull();
     assertThat(controller.memory()).isNotNull();
     assertThat(controller.network()).isNotNull();
@@ -222,7 +217,7 @@ class ChaosControllerLazyLoadingTest {
     @SuppressWarnings("resource")
     GenericContainer<?> container = mock(GenericContainer.class);
     ChaosController controller = new ChaosController(container).withProbability(0.5, 42);
-    
+
     // Call all 10 getters to trigger probabilistic wrapping paths
     assertThat(controller.cpu()).isNotNull();
     assertThat(controller.memory()).isNotNull();
@@ -243,13 +238,13 @@ class ChaosControllerLazyLoadingTest {
     GenericContainer<?> container = mock(GenericContainer.class);
     ChaosController deterministic = new ChaosController(container);
     ChaosController probabilistic = new ChaosController(container).withProbability(0.5, 42);
-    
+
     // Deterministic returns direct instances
     var detCpu = deterministic.cpu();
-    
+
     // Probabilistic returns wrapped instances (proxies)
     var probCpu = probabilistic.cpu();
-    
+
     assertThat(detCpu).isNotNull();
     assertThat(probCpu).isNotNull();
     // Wrapped instances are proxies, so class differs

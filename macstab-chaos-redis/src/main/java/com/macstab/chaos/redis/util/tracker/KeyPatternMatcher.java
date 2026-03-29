@@ -92,8 +92,7 @@ public final class KeyPatternMatcher {
    * @return compiled regex pattern
    */
   static Pattern convertGlobToRegex(final String glob) {
-    final String regex =
-        glob.replace(".", "\\.").replace("*", ".*").replace("?", ".");
+    final String regex = glob.replace(".", "\\.").replace("*", ".*").replace("?", ".");
     return Pattern.compile("^" + regex + "$");
   }
 

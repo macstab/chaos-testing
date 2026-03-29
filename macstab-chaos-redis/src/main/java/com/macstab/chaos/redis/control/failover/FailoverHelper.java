@@ -18,10 +18,11 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * Drives failover simulation for Redis Sentinel clusters.
  *
- * <p><strong>Purpose:</strong> Tests Sentinel's automatic master re-election by killing the
- * current master and measuring the time until a new master is elected.
+ * <p><strong>Purpose:</strong> Tests Sentinel's automatic master re-election by killing the current
+ * master and measuring the time until a new master is elected.
  *
  * <p><strong>Failover process:</strong>
+ *
  * <ol>
  *   <li>Locate current master via {@link com.macstab.chaos.redis.control.role.RoleResolver}
  *   <li>Kill (SIGKILL) the master container

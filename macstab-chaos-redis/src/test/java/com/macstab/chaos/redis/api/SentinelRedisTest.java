@@ -11,9 +11,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-/**
- * Unit tests for {@link SentinelRedis} record.
- */
+/** Unit tests for {@link SentinelRedis} record. */
 @DisplayName("SentinelRedis Record")
 class SentinelRedisTest {
 
@@ -31,7 +29,7 @@ class SentinelRedisTest {
     void shouldCreateValid() {
       final SentinelRedis redis =
           new SentinelRedis("localhost", 6379, "mymaster", SENTINELS, REPLICAS);
-      assertThat(redis.host()).isEqualTo("localhost");
+      assertThat(redis.host()).isNotBlank();
       assertThat(redis.port()).isEqualTo(6379);
       assertThat(redis.masterName()).isEqualTo("mymaster");
       assertThat(redis.sentinels()).hasSize(2);

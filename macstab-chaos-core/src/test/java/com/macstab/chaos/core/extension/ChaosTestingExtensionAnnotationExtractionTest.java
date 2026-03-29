@@ -16,8 +16,8 @@ import com.macstab.chaos.core.extension.MockChaosPlugin.MockContainer;
 /**
  * Unit tests for {@link ChaosTestingExtension} annotation extraction logic.
  *
- * <p>Tests validate the {@code extractContainerAnnotations()} and {@code extractId()} 
- * private methods using real @MockContainer annotations that are registered in the plugin system.
+ * <p>Tests validate the {@code extractContainerAnnotations()} and {@code extractId()} private
+ * methods using real @MockContainer annotations that are registered in the plugin system.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -72,8 +72,7 @@ class ChaosTestingExtensionAnnotationExtractionTest {
 
     private Method findExtractMethod() throws Exception {
       Method method =
-          ChaosTestingExtension.class.getDeclaredMethod(
-              "extractContainerAnnotations", Class.class);
+          ChaosTestingExtension.class.getDeclaredMethod("extractContainerAnnotations", Class.class);
       method.setAccessible(true);
       return method;
     }
@@ -99,8 +98,7 @@ class ChaosTestingExtensionAnnotationExtractionTest {
     }
 
     private Method findExtractIdMethod() throws Exception {
-      Method method =
-          ChaosTestingExtension.class.getDeclaredMethod("extractId", Annotation.class);
+      Method method = ChaosTestingExtension.class.getDeclaredMethod("extractId", Annotation.class);
       method.setAccessible(true);
       return method;
     }

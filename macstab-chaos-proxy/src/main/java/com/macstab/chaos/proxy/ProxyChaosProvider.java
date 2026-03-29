@@ -22,23 +22,23 @@ import com.macstab.chaos.proxy.internal.operations.toxic.TimeoutToxic;
  * <p>Enables transparent fault injection into any TCP service without modifying application code.
  * Clients connect via the address returned by {@link #createProxy} — traffic routes through
  * Toxiproxy, which applies the configured faults.
- *
  * <!-- ═══════════════════════════════════════════════════════════════════ -->
+ *
  * <h2>⚠️ CRITICAL: deleteProxy vs reset — You Must Read This</h2>
+ *
  * <!-- ═══════════════════════════════════════════════════════════════════ -->
  *
- * <p><strong>One Toxiproxy process handles ALL proxies inside a container.</strong>
- * When multiple modules create proxies on the same container (e.g., cache chaos creates
- * {@code "redis"}, database chaos creates {@code "postgres"}), they share the same Toxiproxy
- * process. Cleanup must be done carefully:
+ * <p><strong>One Toxiproxy process handles ALL proxies inside a container.</strong> When multiple
+ * modules create proxies on the same container (e.g., cache chaos creates {@code "redis"}, database
+ * chaos creates {@code "postgres"}), they share the same Toxiproxy process. Cleanup must be done
+ * carefully:
  *
  * <ul>
  *   <li>⛔ {@link #reset} is <strong>nuclear</strong>: kills Toxiproxy and removes
- *       <strong>all</strong> iptables rules. Every proxy from every module is gone.
- *       Only use in {@code @AfterAll}.</li>
- *   <li>✅ {@link #deleteProxy} is <strong>surgical</strong>: removes one named proxy
- *       and its iptables rule. Everything else stays intact.
- *       Use in {@code @AfterEach}.</li>
+ *       <strong>all</strong> iptables rules. Every proxy from every module is gone. Only use in
+ *       {@code @AfterAll}.
+ *   <li>✅ {@link #deleteProxy} is <strong>surgical</strong>: removes one named proxy and its
+ *       iptables rule. Everything else stays intact. Use in {@code @AfterEach}.
  * </ul>
  *
  * <pre>{@code
@@ -62,7 +62,9 @@ import com.macstab.chaos.proxy.internal.operations.toxic.TimeoutToxic;
  * }</pre>
  *
  * <!-- ═══════════════════════════════════════════════════════════════════ -->
+ *
  * <h2>Quick Start</h2>
+ *
  * <!-- ═══════════════════════════════════════════════════════════════════ -->
  *
  * <pre>{@code
@@ -132,10 +134,8 @@ public final class ProxyChaosProvider implements ProxyChaos {
       throw new IllegalArgumentException("latency must not be negative");
     }
 
-    final LatencyToxic toxic = LatencyToxic.builder()
-        .name("latency")
-        .latencyMs(toIntMs(latency, "latency"))
-        .build();
+    final LatencyToxic toxic =
+        LatencyToxic.builder().name("latency").latencyMs(toIntMs(latency, "latency")).build();
 
     orchestrator.addToxic(container, proxyName, toxic);
   }
@@ -160,11 +160,12 @@ public final class ProxyChaosProvider implements ProxyChaos {
           String.format("probability must be in [0.0, 1.0], got: %.2f", probability));
     }
 
-    final TimeoutToxic toxic = TimeoutToxic.builder()
-        .name("timeout")
-        .timeoutMs(toIntMs(timeout, "timeout"))
-        .toxicity(probability)
-        .build();
+    final TimeoutToxic toxic =
+        TimeoutToxic.builder()
+            .name("timeout")
+            .timeoutMs(toIntMs(timeout, "timeout"))
+            .toxicity(probability)
+            .build();
 
     orchestrator.addToxic(container, proxyName, toxic);
   }
@@ -181,14 +182,13 @@ public final class ProxyChaosProvider implements ProxyChaos {
     }
     if (rateKBps > Integer.MAX_VALUE) {
       throw new IllegalArgumentException(
-          String.format("rateKBps exceeds maximum supported value (%d), got: %d",
+          String.format(
+              "rateKBps exceeds maximum supported value (%d), got: %d",
               Integer.MAX_VALUE, rateKBps));
     }
 
-    final BandwidthToxic toxic = BandwidthToxic.builder()
-        .name("bandwidth")
-        .rateKbps((int) rateKBps)
-        .build();
+    final BandwidthToxic toxic =
+        BandwidthToxic.builder().name("bandwidth").rateKbps((int) rateKBps).build();
 
     orchestrator.addToxic(container, proxyName, toxic);
   }
@@ -205,10 +205,8 @@ public final class ProxyChaosProvider implements ProxyChaos {
       throw new IllegalArgumentException("delay must not be negative");
     }
 
-    final SlowCloseToxic toxic = SlowCloseToxic.builder()
-        .name("slow_close")
-        .delayMs(toIntMs(delay, "delay"))
-        .build();
+    final SlowCloseToxic toxic =
+        SlowCloseToxic.builder().name("slow_close").delayMs(toIntMs(delay, "delay")).build();
 
     orchestrator.addToxic(container, proxyName, toxic);
   }
@@ -235,8 +233,8 @@ public final class ProxyChaosProvider implements ProxyChaos {
   /**
    * ✅ Delete one proxy and its iptables rule — safe for {@code @AfterEach}.
    *
-   * <p>Removes only the named proxy. The Toxiproxy process and all other proxies stay alive.
-   * Use this for per-test cleanup when other modules may be sharing the same container.
+   * <p>Removes only the named proxy. The Toxiproxy process and all other proxies stay alive. Use
+   * this for per-test cleanup when other modules may be sharing the same container.
    *
    * @param container target container
    * @param proxyName name of the proxy to delete
@@ -261,10 +259,7 @@ public final class ProxyChaosProvider implements ProxyChaos {
       throw new IllegalArgumentException("bytes must be >= 0, got: " + bytes);
     }
 
-    final LimitDataToxic toxic = LimitDataToxic.builder()
-        .name("limit_data")
-        .bytes(bytes)
-        .build();
+    final LimitDataToxic toxic = LimitDataToxic.builder().name("limit_data").bytes(bytes).build();
 
     orchestrator.addToxic(container, proxyName, toxic);
   }
@@ -272,9 +267,9 @@ public final class ProxyChaosProvider implements ProxyChaos {
   /**
    * ⛔ Nuclear reset — kills Toxiproxy and removes ALL iptables rules.
    *
-   * <p>This destroys <strong>every proxy in the container</strong> — not just the ones you
-   * created. Only use in {@code @AfterAll} when the container itself is being discarded.
-   * For per-test cleanup, use {@link #deleteProxy} instead.
+   * <p>This destroys <strong>every proxy in the container</strong> — not just the ones you created.
+   * Only use in {@code @AfterAll} when the container itself is being discarded. For per-test
+   * cleanup, use {@link #deleteProxy} instead.
    *
    * @param container target container (no-op if not running)
    * @see #deleteProxy(GenericContainer, String) for surgical single-proxy removal
@@ -308,8 +303,8 @@ public final class ProxyChaosProvider implements ProxyChaos {
     final long ms = duration.toMillis();
     if (ms > MAX_INT_MS) {
       throw new IllegalArgumentException(
-          String.format("%s exceeds maximum supported value (%dms), got: %dms",
-              paramName, MAX_INT_MS, ms));
+          String.format(
+              "%s exceeds maximum supported value (%dms), got: %dms", paramName, MAX_INT_MS, ms));
     }
     return (int) ms;
   }

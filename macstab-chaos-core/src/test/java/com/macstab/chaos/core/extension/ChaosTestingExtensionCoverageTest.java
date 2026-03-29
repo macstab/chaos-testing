@@ -187,7 +187,7 @@ class ChaosTestingExtensionCoverageTest {
   @TestInstance(TestInstance.Lifecycle.PER_CLASS)
   @DisplayName("applyResourceConstraints - invalid memory format")
   @MockContainer(image = "alpine:latest")
-  @Resources(memory = "512MB")  // invalid — triggers IllegalArgumentException
+  @Resources(memory = "512MB") // invalid — triggers IllegalArgumentException
   @ExtendWith(ChaosTestingExtension.class)
   class InvalidMemoryTest {
 
@@ -219,7 +219,8 @@ class ChaosTestingExtensionCoverageTest {
     @Test
     @DisplayName("invalid disk size format causes IllegalArgumentException")
     void invalidDisk_causesIllegalArgumentException() {
-      assertThatThrownBy(() -> com.macstab.chaos.core.util.ResourceParser.parseDiskSizeOption("10GB"))
+      assertThatThrownBy(
+              () -> com.macstab.chaos.core.util.ResourceParser.parseDiskSizeOption("10GB"))
           .isInstanceOf(IllegalArgumentException.class);
     }
   }
@@ -233,7 +234,7 @@ class ChaosTestingExtensionCoverageTest {
   @TestInstance(TestInstance.Lifecycle.PER_CLASS)
   @DisplayName("applyResourceConstraints - disk size (non-Linux warning)")
   @MockContainer(image = "alpine:latest")
-  @Resources(diskSize = "5G")   // triggers platform check; warns on macOS/Windows
+  @Resources(diskSize = "5G") // triggers platform check; warns on macOS/Windows
   @ExtendWith(ChaosTestingExtension.class)
   class DiskSizeWarningTest {
 
@@ -261,8 +262,9 @@ class ChaosTestingExtensionCoverageTest {
       ChaosTestingExtension ext = new ChaosTestingExtension();
 
       try {
-        Method m = ChaosTestingExtension.class.getDeclaredMethod(
-            "extractContainerAnnotations", Class.class);
+        Method m =
+            ChaosTestingExtension.class.getDeclaredMethod(
+                "extractContainerAnnotations", Class.class);
         m.setAccessible(true);
         @SuppressWarnings("unchecked")
         List<java.lang.annotation.Annotation> result =
@@ -279,8 +281,9 @@ class ChaosTestingExtensionCoverageTest {
     void noContainerAnnotations_returnsEmpty() {
       ChaosTestingExtension ext = new ChaosTestingExtension();
       try {
-        Method m = ChaosTestingExtension.class.getDeclaredMethod(
-            "extractContainerAnnotations", Class.class);
+        Method m =
+            ChaosTestingExtension.class.getDeclaredMethod(
+                "extractContainerAnnotations", Class.class);
         m.setAccessible(true);
         @SuppressWarnings("unchecked")
         List<java.lang.annotation.Annotation> result =
@@ -355,11 +358,17 @@ class ChaosTestingExtensionCoverageTest {
     }
 
     interface SomeInterface {}
+
     interface ChildInterface extends SomeInterface {}
+
     static class ClassWithInterface implements SomeInterface {}
+
     static class ParentClass {}
+
     static class ChildClass extends ParentClass {}
+
     static class PlainClass {}
+
     static class DeepImpl implements ChildInterface {}
   }
 
@@ -439,16 +448,16 @@ class ChaosTestingExtensionCoverageTest {
     @Test
     @DisplayName("getConnectionInfo throws NoSuchElementException for unknown annotation")
     void getConnectionInfo_unknownAnnotation_throws() {
-      assertThatThrownBy(() -> ChaosTestingExtension.getConnectionInfo(
-              SomeOtherAnnotation.class, "default"))
+      assertThatThrownBy(
+              () -> ChaosTestingExtension.getConnectionInfo(SomeOtherAnnotation.class, "default"))
           .isInstanceOf(java.util.NoSuchElementException.class);
     }
 
     @Test
     @DisplayName("getConnectionInfo throws NoSuchElementException for unknown id")
     void getConnectionInfo_unknownId_throws() {
-      assertThatThrownBy(() -> ChaosTestingExtension.getConnectionInfo(
-              MockContainer.class, "nonexistent"))
+      assertThatThrownBy(
+              () -> ChaosTestingExtension.getConnectionInfo(MockContainer.class, "nonexistent"))
           .isInstanceOf(java.util.NoSuchElementException.class);
     }
 
@@ -462,8 +471,8 @@ class ChaosTestingExtensionCoverageTest {
     @Test
     @DisplayName("getConnectionInfoByBaseType throws for unknown base type")
     void getConnectionInfoByBaseType_unknown_throws() {
-      assertThatThrownBy(() -> ChaosTestingExtension.getConnectionInfoByBaseType(
-              Runnable.class, "default"))
+      assertThatThrownBy(
+              () -> ChaosTestingExtension.getConnectionInfoByBaseType(Runnable.class, "default"))
           .isInstanceOf(java.util.NoSuchElementException.class);
     }
 
@@ -536,8 +545,7 @@ class ChaosTestingExtensionCoverageTest {
           .getParameters()[0];
     }
     if (type == String.class) {
-      return SingleStringParam.class.getDeclaredMethod("method", String.class)
-          .getParameters()[0];
+      return SingleStringParam.class.getDeclaredMethod("method", String.class).getParameters()[0];
     }
     throw new UnsupportedOperationException("No helper for " + type);
   }
@@ -575,7 +583,7 @@ class ChaosTestingExtensionCoverageTest {
   private static ExtensionContext mockContextWithEmptyContainerList() {
     ExtensionContext ec = mock(ExtensionContext.class);
     ExtensionContext.Store store = mock(ExtensionContext.Store.class);
-    when(store.get(any())).thenReturn(null);  // null → "No containers found" branch
+    when(store.get(any())).thenReturn(null); // null → "No containers found" branch
     when(ec.getStore(any())).thenReturn(store);
     when(ec.getUniqueId()).thenReturn("test-unique-id");
     return ec;

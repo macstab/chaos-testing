@@ -8,18 +8,12 @@ package com.macstab.chaos.redis.api;
  * @since 2.0
  */
 public enum RedisTopology {
-  /**
-   * Single Redis instance (no replication).
-   */
+  /** Single Redis instance (no replication). */
   STANDALONE,
 
-  /**
-   * Master-replica with sentinel monitoring (high availability).
-   */
+  /** Master-replica with sentinel monitoring (high availability). */
   SENTINEL,
 
-  /**
-   * Sharded cluster (horizontal scaling).
-   */
+  /** Sharded cluster (horizontal scaling). */
   CLUSTER
 }

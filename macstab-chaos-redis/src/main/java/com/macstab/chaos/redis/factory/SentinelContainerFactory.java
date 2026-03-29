@@ -1,15 +1,12 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.redis.factory;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
-import org.testcontainers.containers.wait.strategy.Wait;
 
-import com.github.dockerjava.api.model.Capability;
 import com.macstab.chaos.core.util.ContainerIdFormatter;
 import com.macstab.chaos.redis.exception.ClusterCreationException;
 
@@ -48,7 +45,7 @@ import lombok.extern.slf4j.Slf4j;
  *
  * @author Christian Schnapka - Macstab GmbH
  * @since 2.0
- * @see SentinelCluster
+ * @see RawSentinelCluster
  * @see SentinelCommandBuilder
  * @see StandaloneContainerFactory
  */
@@ -69,7 +66,7 @@ public final class SentinelContainerFactory {
    * @return Sentinel cluster with all containers started
    * @throws ClusterCreationException if any container fails to start
    */
-  public static SentinelCluster createSentinelCluster() {
+  public static RawSentinelCluster createSentinelCluster() {
     return createSentinelCluster(2, 3, false);
   }
 
@@ -82,7 +79,7 @@ public final class SentinelContainerFactory {
    * @throws ClusterCreationException if any container fails to start
    * @throws IllegalArgumentException if replica or sentinel count &lt; 1
    */
-  public static SentinelCluster createSentinelCluster(
+  public static RawSentinelCluster createSentinelCluster(
       final int replicaCount, final int sentinelCount) {
     return createSentinelCluster(replicaCount, sentinelCount, false);
   }
@@ -101,7 +98,7 @@ public final class SentinelContainerFactory {
    * @throws IllegalArgumentException if replica or sentinel count &lt; 1
    * @since 2.0
    */
-  public static SentinelCluster createSentinelCluster(
+  public static RawSentinelCluster createSentinelCluster(
       final int replicaCount, final int sentinelCount, final boolean enableNetworkChaos) {
     validateCounts(replicaCount, sentinelCount);
 
@@ -131,9 +128,11 @@ public final class SentinelContainerFactory {
     final long totalDuration = System.currentTimeMillis() - startTime;
     log.info(
         "✓ Sentinel cluster created in {}ms: 1 master + {} replicas + {} sentinels",
-        totalDuration, replicaCount, sentinelCount);
+        totalDuration,
+        replicaCount,
+        sentinelCount);
 
-    return new SentinelCluster(network, master, replicas, sentinels);
+    return new RawSentinelCluster(network, master, replicas, sentinels);
   }
 
   // ==================== Private helpers ====================
@@ -151,7 +150,8 @@ public final class SentinelContainerFactory {
   private static GenericContainer<?> startMaster(
       final Network network, final boolean enableNetworkChaos, final long startTime) {
     log.debug("Starting master node...");
-    final GenericContainer<?> master = createMasterNode(network, enableNetworkChaos);
+    final GenericContainer<?> master =
+        SentinelNodeFactory.createMaster(network, enableNetworkChaos);
     try {
       master.start();
       log.info(
@@ -172,12 +172,13 @@ public final class SentinelContainerFactory {
     for (int i = 1; i <= replicaCount; i++) {
       final long replicaStart = System.currentTimeMillis();
       final GenericContainer<?> replica =
-          createReplicaNode(network, "redis-replica" + i, enableNetworkChaos);
+          SentinelNodeFactory.createReplica(network, "redis-replica" + i, enableNetworkChaos);
       try {
         replica.start();
         log.info(
             "✓ Replica {}/{} started: {} ({}ms)",
-            i, replicaCount,
+            i,
+            replicaCount,
             ContainerIdFormatter.truncate(replica.getContainerId()),
             System.currentTimeMillis() - replicaStart);
         replicas.add(replica);
@@ -200,12 +201,14 @@ public final class SentinelContainerFactory {
     for (int i = 1; i <= sentinelCount; i++) {
       final long sentinelStart = System.currentTimeMillis();
       final GenericContainer<?> sentinel =
-          createSentinelNode(network, "sentinel" + i, masterIp, quorum, enableNetworkChaos);
+          SentinelNodeFactory.createSentinel(
+              network, "sentinel" + i, masterIp, quorum, enableNetworkChaos);
       try {
         sentinel.start();
         log.info(
             "✓ Sentinel {}/{} started: {} ({}ms)",
-            i, sentinelCount,
+            i,
+            sentinelCount,
             ContainerIdFormatter.truncate(sentinel.getContainerId()),
             System.currentTimeMillis() - sentinelStart);
         sentinels.add(sentinel);
@@ -215,100 +218,6 @@ public final class SentinelContainerFactory {
       }
     }
     return sentinels;
-  }
-
-  /**
-   * Creates Redis master node container.
-   *
-   * @param network Docker network
-   * @param enableNetworkChaos if true, adds NET_ADMIN capability
-   * @return configured master container (not started)
-   */
-  static GenericContainer<?> createMasterNode(
-      final Network network, final boolean enableNetworkChaos) {
-    return new GenericContainer<>(StandaloneContainerFactory.REDIS_IMAGE)
-        .withNetwork(network)
-        .withNetworkAliases("redis-master")
-        .withExposedPorts(6379)
-        .withCommand("redis-server", "--protected-mode", "no")
-        .withCreateContainerCmdModifier(
-            cmd -> {
-              var hostConfig =
-                  cmd.getHostConfig().withExtraHosts("host.testcontainers.internal:host-gateway");
-              if (enableNetworkChaos) {
-                hostConfig = hostConfig.withCapAdd(Capability.NET_ADMIN);
-              }
-              cmd.withHostConfig(hostConfig);
-            })
-        .waitingFor(Wait.forLogMessage(".*Ready to accept connections.*\\n", 1))
-        .withStartupTimeout(StandaloneContainerFactory.DEFAULT_STARTUP_TIMEOUT);
-  }
-
-  /**
-   * Creates Redis replica node container.
-   *
-   * @param network Docker network
-   * @param alias container network alias
-   * @param enableNetworkChaos if true, adds NET_ADMIN capability
-   * @return configured replica container (not started)
-   */
-  static GenericContainer<?> createReplicaNode(
-      final Network network, final String alias, final boolean enableNetworkChaos) {
-    return new GenericContainer<>(StandaloneContainerFactory.REDIS_IMAGE)
-        .withNetwork(network)
-        .withNetworkAliases(alias)
-        .withExposedPorts(6379)
-        .withCommand(
-            "redis-server", "--protected-mode", "no", "--replicaof", "redis-master", "6379")
-        .withCreateContainerCmdModifier(
-            cmd -> {
-              var hostConfig =
-                  cmd.getHostConfig().withExtraHosts("host.testcontainers.internal:host-gateway");
-              if (enableNetworkChaos) {
-                hostConfig = hostConfig.withCapAdd(Capability.NET_ADMIN);
-              }
-              cmd.withHostConfig(hostConfig);
-            })
-        .waitingFor(Wait.forLogMessage(".*MASTER <-> REPLICA sync: Finished with success.*\\n", 1))
-        .withStartupTimeout(StandaloneContainerFactory.DEFAULT_STARTUP_TIMEOUT);
-  }
-
-  /**
-   * Creates Sentinel node container.
-   *
-   * @param network Docker network
-   * @param alias container network alias
-   * @param masterIp master container IP address
-   * @param quorum sentinel quorum
-   * @param enableNetworkChaos if true, adds NET_ADMIN capability
-   * @return configured sentinel container (not started)
-   */
-  static GenericContainer<?> createSentinelNode(
-      final Network network,
-      final String alias,
-      final String masterIp,
-      final int quorum,
-      final boolean enableNetworkChaos) {
-    final String sentinelCommand =
-        SentinelCommandBuilder.buildSentinelCommandWithoutAnnounce(masterIp, quorum);
-    return new GenericContainer<>(StandaloneContainerFactory.REDIS_IMAGE)
-        .withNetwork(network)
-        .withNetworkAliases(alias)
-        .withExposedPorts(26379)
-        .withCreateContainerCmdModifier(
-            cmd -> {
-              var hostConfig =
-                  cmd.getHostConfig().withExtraHosts("host.testcontainers.internal:host-gateway");
-              if (enableNetworkChaos) {
-                hostConfig = hostConfig.withCapAdd(Capability.NET_ADMIN);
-              }
-              cmd.withHostConfig(hostConfig);
-            })
-        .withCommand("sh", "-c", sentinelCommand)
-        .waitingFor(
-            Wait.forSuccessfulCommand("redis-cli -p 26379 SENTINEL master mymaster")
-                .withStartupTimeout(StandaloneContainerFactory.DEFAULT_STARTUP_TIMEOUT))
-        .withStartupTimeout(StandaloneContainerFactory.DEFAULT_STARTUP_TIMEOUT);
   }
 
   /**

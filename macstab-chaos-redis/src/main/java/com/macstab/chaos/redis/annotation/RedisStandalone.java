@@ -8,10 +8,12 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
+import org.junit.jupiter.api.extension.ExtendWith;
+
 import com.macstab.chaos.core.annotation.ChaosTest;
-import com.macstab.chaos.core.api.ChaosContainers;
 import com.macstab.chaos.core.api.ContainerManager;
 import com.macstab.chaos.redis.api.StandaloneRedis;
+import com.macstab.chaos.redis.extension.RedisContainerExtension;
 
 /**
  * Starts a standalone Redis container for integration tests using Testcontainers.
@@ -59,6 +61,7 @@ import com.macstab.chaos.redis.api.StandaloneRedis;
  * @since 1.0
  */
 @ChaosTest
+@ExtendWith(RedisContainerExtension.class)
 @Repeatable(RedisStandalones.class)
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
@@ -85,8 +88,15 @@ public @interface RedisStandalone {
    */
   ContainerManager<StandaloneRedis> INSTANCE =
       new ContainerManager<>(
-          id -> ChaosContainers.get(RedisStandalone.class, id),
-          () -> ChaosContainers.getAll(RedisStandalone.class));
+          id -> {
+            final RedisContainerExtension.RedisConnectionInfo info =
+                RedisContainerExtension.getContainer(id);
+            return new StandaloneRedis(info.getHost(), info.getPort());
+          },
+          () ->
+              RedisContainerExtension.getAllContainers().stream()
+                  .map(info -> new StandaloneRedis(info.getHost(), info.getPort()))
+                  .toList());
 
   /**
    * Container ID (unique within test class).

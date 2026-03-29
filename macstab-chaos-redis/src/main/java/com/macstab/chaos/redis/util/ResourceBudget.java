@@ -7,10 +7,11 @@ import com.macstab.chaos.redis.annotation.RedisStandalone;
 /**
  * Validates container resource budgets to prevent runaway resource consumption in tests.
  *
- * <p><strong>Purpose:</strong> Enforces pre-defined limits on the number of Redis containers
- * per test class. Prevents CI timeouts and memory exhaustion caused by misconfigured tests.
+ * <p><strong>Purpose:</strong> Enforces pre-defined limits on the number of Redis containers per
+ * test class. Prevents CI timeouts and memory exhaustion caused by misconfigured tests.
  *
  * <p><strong>Limits:</strong>
+ *
  * <ul>
  *   <li>Max {@value #MAX_STANDALONE_INSTANCES} standalone instances per test class
  *   <li>Max {@value #MAX_SENTINEL_CLUSTERS} Sentinel clusters per test class

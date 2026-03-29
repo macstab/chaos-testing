@@ -2,9 +2,9 @@
 package com.macstab.chaos.redis.control;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Duration;
@@ -20,9 +20,7 @@ import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.redis.control.role.ContainerRole;
 
-/**
- * Unit tests for {@link ControlFacade}.
- */
+/** Unit tests for {@link ControlFacade}. */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("ControlFacade Factory Validation")
 class ControlFacadeTest {
@@ -44,6 +42,27 @@ class ControlFacadeTest {
       assertThatThrownBy(() -> ControlFacade.create(List.of(), null))
           .isInstanceOf(NullPointerException.class);
     }
+
+    @Test
+    @DisplayName("forStandalone() should throw for null container")
+    void forStandaloneShouldThrowForNull() {
+      assertThatThrownBy(() -> ControlFacade.forStandalone(null))
+          .isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    @DisplayName("forStandalone() should create facade with single container")
+    void forStandaloneShouldCreateFacade() {
+      // ARRANGE
+      final GenericContainer<?> container = mock(GenericContainer.class);
+
+      // ACT
+      final ControlFacade facade = ControlFacade.forStandalone(container);
+
+      // ASSERT
+      assertThat(facade).isNotNull();
+      assertThat(facade.network()).isNotNull();
+    }
   }
 
   @Nested
@@ -57,8 +76,7 @@ class ControlFacadeTest {
       final GenericContainer<?> container = mock(GenericContainer.class);
       when(container.isRunning()).thenReturn(false);
 
-      final ControlFacade facade =
-          ControlFacade.create(List.of(container), Map.of(container, 0));
+      final ControlFacade facade = ControlFacade.create(List.of(container), Map.of(container, 0));
 
       // ACT & ASSERT
       assertThatThrownBy(() -> facade.getContainer(ContainerRole.MASTER))
@@ -70,8 +88,7 @@ class ControlFacadeTest {
     @DisplayName("Should throw NPE for null role")
     void shouldThrowForNullRole() {
       final ControlFacade facade = ControlFacade.create(List.of(), Map.of());
-      assertThatThrownBy(() -> facade.getContainer(null))
-          .isInstanceOf(NullPointerException.class);
+      assertThatThrownBy(() -> facade.getContainer(null)).isInstanceOf(NullPointerException.class);
     }
   }
 
@@ -85,6 +102,64 @@ class ControlFacadeTest {
       final ControlFacade facade = ControlFacade.create(List.of(), Map.of());
       assertThatThrownBy(() -> facade.triggerFailover((Duration) null))
           .isInstanceOf(NullPointerException.class);
+    }
+  }
+
+  @Nested
+  @DisplayName("create() factory")
+  class FactoryCreate {
+
+    @Test
+    @DisplayName("Should create facade with empty containers (no exception)")
+    void shouldCreateWithEmptyContainers() {
+      assertThatCode(() -> ControlFacade.create(List.of(), Map.of())).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("Should return non-null network() controller")
+    void shouldReturnNonNullNetworkController() {
+      // ARRANGE
+      final ControlFacade facade = ControlFacade.create(List.of(), Map.of());
+
+      // ACT & ASSERT
+      assertThat(facade.network()).isNotNull();
+    }
+  }
+
+  @Nested
+  @DisplayName("clearRoleCache()")
+  class ClearRoleCache {
+
+    @Test
+    @DisplayName("Should not throw when called on empty facade")
+    void shouldNotThrowOnEmptyFacade() {
+      // ARRANGE
+      final ControlFacade facade = ControlFacade.create(List.of(), Map.of());
+
+      // ACT & ASSERT
+      assertThatCode(facade::clearRoleCache).doesNotThrowAnyException();
+    }
+  }
+
+  @Nested
+  @DisplayName("getContainer() with running container by role")
+  class GetContainerByRoleRunning {
+
+    @Test
+    @DisplayName("Should find SENTINEL_0 container when one is running and exposed on 26379")
+    void shouldFindSentinelContainer() {
+      // ARRANGE: sentinel container running and exposing port 26379
+      final GenericContainer<?> sentinel = mock(GenericContainer.class);
+      when(sentinel.isRunning()).thenReturn(true);
+      when(sentinel.getExposedPorts()).thenReturn(java.util.List.of(26379));
+
+      final ControlFacade facade = ControlFacade.create(List.of(sentinel), Map.of(sentinel, 0));
+
+      // ACT
+      final GenericContainer<?> found = facade.getContainer(ContainerRole.SENTINEL_0);
+
+      // ASSERT
+      assertThat(found).isSameAs(sentinel);
     }
   }
 }

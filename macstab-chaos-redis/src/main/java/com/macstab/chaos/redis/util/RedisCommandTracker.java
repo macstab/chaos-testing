@@ -6,7 +6,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -15,10 +14,13 @@ import java.util.function.Predicate;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.redis.util.tracker.CommandCategorizer;
+import com.macstab.chaos.redis.util.tracker.CommandCategorizer.CommandCategory;
 import com.macstab.chaos.redis.util.tracker.CommandParser;
 import com.macstab.chaos.redis.util.tracker.CommandWithArgs;
 import com.macstab.chaos.redis.util.tracker.KeyPatternMatcher;
 import com.macstab.chaos.redis.util.tracker.LatencyAnalyzer;
+import com.macstab.chaos.redis.util.tracker.RedisCommandTrackerBuilder;
 import com.macstab.chaos.redis.util.tracker.ReplicationLagMeasurer;
 
 import lombok.extern.slf4j.Slf4j;
@@ -36,8 +38,8 @@ import lombok.extern.slf4j.Slf4j;
  *   <li>Command argument extraction (Feature D)
  * </ul>
  *
- * <p><strong>Lifecycle:</strong> Call {@link #start()} before the operation under test,
- * then {@link #stop()} afterwards. The tracker uses a background daemon thread.
+ * <p><strong>Lifecycle:</strong> Call {@link #start()} before the operation under test, then {@link
+ * #stop()} afterwards. The tracker uses a background daemon thread.
  *
  * <p><strong>Example:</strong>
  *
@@ -75,8 +77,8 @@ public final class RedisCommandTracker {
    * Creates a command tracker with custom filtering.
    *
    * @param container Redis container to monitor — must not be null
-   * @param lineFilter predicate to filter MONITOR output lines (true = include, false = exclude)
-   *     — must not be null
+   * @param lineFilter predicate to filter MONITOR output lines (true = include, false = exclude) —
+   *     must not be null
    */
   public RedisCommandTracker(
       final GenericContainer<?> container, final Predicate<String> lineFilter) {
@@ -255,22 +257,36 @@ public final class RedisCommandTracker {
    * @throws IllegalStateException if replication doesn't complete within timeout
    */
   public static Duration measureReplicationLag(
-      final GenericContainer<?> master,
-      final GenericContainer<?> replica,
-      final Duration timeout) {
+      final GenericContainer<?> master, final GenericContainer<?> replica, final Duration timeout) {
     return ReplicationLagMeasurer.measureReplicationLag(master, replica, timeout);
   }
 
-  // ==================== Feature C: Latency/Timing Analysis ====================
+  // ==================== Feature C: Command Gap/Timing Analysis ====================
+
+  /**
+   * Returns average inter-arrival time (command gap) for a specific command.
+   *
+   * <p>This measures how frequently the command is being issued (time between consecutive
+   * executions), NOT the response latency.
+   *
+   * @param command Redis command name — must not be null
+   * @return average command gap or Duration.ZERO if no data
+   */
+  public Duration getAverageCommandGap(final String command) {
+    return new LatencyAnalyzer(capturedCommands, commandLatencies).getAverageCommandGap(command);
+  }
 
   /**
    * Returns average latency for a specific command.
    *
    * @param command Redis command name — must not be null
-   * @return average latency or Duration.ZERO if no data
+   * @return average command gap or Duration.ZERO if no data
+   * @deprecated Use {@link #getAverageCommandGap(String)} instead. This method measures
+   *     inter-arrival time between commands, not response latency.
    */
+  @Deprecated(since = "2.0", forRemoval = true)
   public Duration getAverageLatency(final String command) {
-    return new LatencyAnalyzer(capturedCommands, commandLatencies).getAverageLatency(command);
+    return getAverageCommandGap(command);
   }
 
   // ==================== Feature D: Command Arguments Extraction ====================
@@ -285,25 +301,169 @@ public final class RedisCommandTracker {
     return new CommandParser(capturedCommands).getCommandsWithArguments(command);
   }
 
+  // ==================== Feature F: Hot Key Detection ====================
+
   /**
-   * Default filter: includes client commands, excludes replication traffic.
+   * Returns top N hottest keys by access count (descending).
+   *
+   * @param topN number of keys to return
+   * @return list of hot keys with access counts (sorted descending)
+   */
+  public List<com.macstab.chaos.redis.util.tracker.HotKeyDetector.KeyAccessCount> getHotKeys(
+      final int topN) {
+    return new com.macstab.chaos.redis.util.tracker.HotKeyDetector(capturedCommands)
+        .getHotKeys(topN);
+  }
+
+  /**
+   * Returns keys exceeding a threshold access count.
+   *
+   * @param threshold minimum access count
+   * @return list of hot keys with access counts (sorted descending)
+   */
+  public List<com.macstab.chaos.redis.util.tracker.HotKeyDetector.KeyAccessCount>
+      getHotKeysExceeding(final long threshold) {
+    return new com.macstab.chaos.redis.util.tracker.HotKeyDetector(capturedCommands)
+        .getKeysExceeding(threshold);
+  }
+
+  // ==================== Feature E: Command Categorization ====================
+
+  /**
+   * Returns count of READ commands.
+   *
+   * @return number of read operations captured
+   */
+  public long getReadCount() {
+    return getCommandsByCategory().getOrDefault(CommandCategory.READ, 0L);
+  }
+
+  /**
+   * Returns count of WRITE commands.
+   *
+   * @return number of write operations captured
+   */
+  public long getWriteCount() {
+    return getCommandsByCategory().getOrDefault(CommandCategory.WRITE, 0L);
+  }
+
+  /**
+   * Returns count of ADMIN commands.
+   *
+   * @return number of admin operations captured
+   */
+  public long getAdminCount() {
+    return getCommandsByCategory().getOrDefault(CommandCategory.ADMIN, 0L);
+  }
+
+  /**
+   * Returns count of PUBSUB commands.
+   *
+   * @return number of pub/sub operations captured
+   */
+  public long getPubSubCount() {
+    return getCommandsByCategory().getOrDefault(CommandCategory.PUBSUB, 0L);
+  }
+
+  /**
+   * Returns count of TRANSACTION commands.
+   *
+   * @return number of transaction operations captured
+   */
+  public long getTransactionCount() {
+    return getCommandsByCategory().getOrDefault(CommandCategory.TRANSACTION, 0L);
+  }
+
+  /**
+   * Returns count of SCRIPTING commands.
+   *
+   * @return number of scripting operations captured
+   */
+  public long getScriptingCount() {
+    return getCommandsByCategory().getOrDefault(CommandCategory.SCRIPTING, 0L);
+  }
+
+  /**
+   * Returns count of STREAM commands.
+   *
+   * @return number of stream operations captured
+   */
+  public long getStreamCount() {
+    return getCommandsByCategory().getOrDefault(CommandCategory.STREAM, 0L);
+  }
+
+  /**
+   * Returns read/write ratio.
+   *
+   * <p>Returns {@link Double#POSITIVE_INFINITY} if writes==0, 0.0 if reads==0.
+   *
+   * @return read/write ratio
+   */
+  public double getReadWriteRatio() {
+    final long reads = getReadCount();
+    final long writes = getWriteCount();
+    if (writes == 0) {
+      return reads > 0 ? Double.POSITIVE_INFINITY : 0.0;
+    }
+    return (double) reads / writes;
+  }
+
+  /**
+   * Returns command counts grouped by category.
+   *
+   * @return map of category to count (never null, may be empty)
+   */
+  public Map<CommandCategory, Long> getCommandsByCategory() {
+    final Map<CommandCategory, Long> result = new ConcurrentHashMap<>();
+    for (final String line : capturedCommands) {
+      final String cmd = extractCommandName(line);
+      if (cmd != null) {
+        final CommandCategory category = CommandCategorizer.categorize(cmd);
+        result.merge(category, 1L, Long::sum);
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Extracts command name from a MONITOR line.
+   *
+   * @param line MONITOR output line
+   * @return command name (uppercase), or null if not found
+   */
+  private static String extractCommandName(final String line) {
+    final int firstQuote = line.indexOf('"');
+    if (firstQuote == -1) {
+      return null;
+    }
+    final int secondQuote = line.indexOf('"', firstQuote + 1);
+    if (secondQuote == -1) {
+      return null;
+    }
+    return line.substring(firstQuote + 1, secondQuote).toUpperCase();
+  }
+
+  /**
+   * Default filter: includes all client commands, excluding internal replication traffic.
    *
    * @param line MONITOR output line
    * @return true if line is a client command (not replication)
    */
   private static boolean isClientCommand(final String line) {
-    return (line.contains("\"GET\"")
-            || line.contains("\"SET\"")
-            || line.contains("\"HGET\"")
-            || line.contains("\"HSET\"")
-            || line.contains("\"DEL\"")
-            || line.contains("\"INCR\"")
-            || line.contains("\"DECR\""))
-        && !line.contains(":6379]");
+    // Exclude replication traffic (internal Redis replication uses :6379])
+    if (line.contains(":6379]")) {
+      return false;
+    }
+    // Must look like a MONITOR line (has timestamp + client address)
+    if (!line.contains("[")) {
+      return false;
+    }
+    // Must contain at least one quoted token (the command)
+    return line.contains("\"");
   }
 
   /**
-   * Builder for custom RedisCommandTracker configurations.
+   * Creates a builder for custom configurations.
    *
    * <p><strong>Example:</strong>
    *
@@ -313,58 +473,10 @@ public final class RedisCommandTracker {
    *     .trackCommands(Set.of("GET", "HGETALL"))
    *     .build();
    * }</pre>
-   */
-  public static final class Builder {
-    private GenericContainer<?> container;
-    private Set<String> commands = Set.of("GET", "SET", "HGET", "HSET", "DEL", "INCR", "DECR");
-    private boolean filterReplication = true;
-
-    /** Sets the Redis container to monitor. */
-    public Builder container(final GenericContainer<?> container) {
-      this.container = container;
-      return this;
-    }
-
-    /** Sets which commands to track (case-insensitive). */
-    public Builder trackCommands(final Set<String> commands) {
-      this.commands = Objects.requireNonNull(commands, "commands");
-      return this;
-    }
-
-    /** Enables/disables replication traffic filtering. */
-    public Builder filterReplication(final boolean filter) {
-      this.filterReplication = filter;
-      return this;
-    }
-
-    /** Builds the RedisCommandTracker. */
-    public RedisCommandTracker build() {
-      Objects.requireNonNull(container, "container not set");
-
-      final Set<String> trackedCommands = Set.copyOf(commands);
-      final boolean filterRep = filterReplication;
-
-      final Predicate<String> filter =
-          line -> {
-            final boolean hasCommand =
-                trackedCommands.stream()
-                    .anyMatch(cmd -> line.contains("\"" + cmd.toUpperCase() + "\""));
-            if (!hasCommand) {
-              return false;
-            }
-            return !filterRep || !line.contains(":6379]");
-          };
-
-      return new RedisCommandTracker(container, filter);
-    }
-  }
-
-  /**
-   * Creates a builder for custom configurations.
    *
    * @return new builder instance
    */
-  public static Builder builder() {
-    return new Builder();
+  public static RedisCommandTrackerBuilder builder() {
+    return new RedisCommandTrackerBuilder();
   }
 }

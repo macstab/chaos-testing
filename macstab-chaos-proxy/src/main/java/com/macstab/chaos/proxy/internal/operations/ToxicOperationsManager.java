@@ -16,8 +16,8 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * Default implementation of toxic CRUD operations.
  *
- * <p>Receives a pre-resolved {@link ContainerContext} on every call — no platform detection
- * inside this class.
+ * <p>Receives a pre-resolved {@link ContainerContext} on every call — no platform detection inside
+ * this class.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -48,8 +48,7 @@ public final class ToxicOperationsManager implements ToxicOperations {
   }
 
   @Override
-  public void addToxic(
-      final ContainerContext ctx, final String proxyName, final ToxicConfig config)
+  public void addToxic(final ContainerContext ctx, final String proxyName, final ToxicConfig config)
       throws IOException {
 
     Objects.requireNonNull(ctx, "ctx must not be null");
@@ -65,11 +64,15 @@ public final class ToxicOperationsManager implements ToxicOperations {
       return;
     }
 
-    apiClient.addToxic(ctx, proxyName, config.name(), config.type(), config.toJson(),
-        config.toxicity());
+    apiClient.addToxic(
+        ctx, proxyName, config.name(), config.type(), config.toJson(), config.toxicity());
 
-    log.info("Added toxic '{}' to proxy '{}' (type={}, toxicity={})",
-        config.name(), proxyName, config.type(), config.toxicity());
+    log.info(
+        "Added toxic '{}' to proxy '{}' (type={}, toxicity={})",
+        config.name(),
+        proxyName,
+        config.type(),
+        config.toxicity());
   }
 
   @Override

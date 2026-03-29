@@ -95,7 +95,8 @@ public final class ContainerNetworkUtils {
 
       if (networkSettings == null) {
         throw new ChaosOperationFailedException(
-            "Container has no network settings: " + ContainerIdFormatter.truncate(container.getContainerId()));
+            "Container has no network settings: "
+                + ContainerIdFormatter.truncate(container.getContainerId()));
       }
 
       final Map<String, ContainerNetwork> networks = networkSettings.getNetworks();

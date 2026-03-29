@@ -10,18 +10,13 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-/**
- * Unit tests for {@link CommandParser}.
- */
+/** Unit tests for {@link CommandParser}. */
 @DisplayName("CommandParser")
 class CommandParserTest {
 
-  private static final String SET_LINE_1 =
-      "1234.0 [0 127.0.0.1:1234] \"SET\" \"key1\" \"value1\"";
-  private static final String SET_LINE_2 =
-      "1234.1 [0 127.0.0.1:1234] \"SET\" \"key2\" \"value2\"";
-  private static final String GET_LINE =
-      "1234.2 [0 127.0.0.1:1234] \"GET\" \"key1\"";
+  private static final String SET_LINE_1 = "1234.0 [0 127.0.0.1:1234] \"SET\" \"key1\" \"value1\"";
+  private static final String SET_LINE_2 = "1234.1 [0 127.0.0.1:1234] \"SET\" \"key2\" \"value2\"";
+  private static final String GET_LINE = "1234.2 [0 127.0.0.1:1234] \"GET\" \"key1\"";
 
   @Nested
   @DisplayName("Constructor validation")
@@ -30,8 +25,7 @@ class CommandParserTest {
     @Test
     @DisplayName("Should throw for null capturedCommands")
     void shouldThrowForNull() {
-      assertThatThrownBy(() -> new CommandParser(null))
-          .isInstanceOf(NullPointerException.class);
+      assertThatThrownBy(() -> new CommandParser(null)).isInstanceOf(NullPointerException.class);
     }
   }
 

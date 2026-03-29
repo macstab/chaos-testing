@@ -10,8 +10,8 @@ import com.macstab.chaos.core.extension.MockChaosPlugin.*;
 
 /**
  * Tests for ChaosTestingExtension.afterAll() cleanup.
- * 
- * These tests exercise the cleanup/teardown paths.
+ *
+ * <p>These tests exercise the cleanup/teardown paths.
  */
 @DisplayName("ChaosTestingExtension - afterAll() Cleanup")
 class ChaosTestingExtensionAfterAllTest {
@@ -24,13 +24,13 @@ class ChaosTestingExtensionAfterAllTest {
   @ExtendWith(ChaosTestingExtension.class)
   class ContainerStopsTest {
     MockConnectionInfo savedInfo;
-    
+
     @Test
     void saveContainerInfo(MockConnectionInfo info) {
       savedInfo = info;
       assertThat(info.getContainer().isRunning()).isTrue();
     }
-    
+
     @AfterAll
     void verifyCleanup() {
       // Container should be stopped after all tests
@@ -50,12 +50,12 @@ class ChaosTestingExtensionAfterAllTest {
     void firstTest(MockConnectionInfo info) {
       assertThat(info.getContainer().isRunning()).isTrue();
     }
-    
+
     @Test
     void secondTest(MockConnectionInfo info) {
       assertThat(info.getContainer().isRunning()).isTrue();
     }
-    
+
     @AfterAll
     void cleanup() {
       // afterAll() should have run
@@ -75,7 +75,7 @@ class ChaosTestingExtensionAfterAllTest {
     void testWithResources(MockConnectionInfo info) {
       assertThat(info.getContainer().isRunning()).isTrue();
     }
-    
+
     @AfterAll
     void cleanup() {
       assertThat(true).isTrue();

@@ -8,12 +8,13 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
+import org.junit.jupiter.api.extension.ExtendWith;
+
 import com.macstab.chaos.core.annotation.ChaosTest;
-import com.macstab.chaos.core.api.ChaosContainers;
 import com.macstab.chaos.core.api.ContainerManager;
-import com.macstab.chaos.redis.api.SentinelRedis;
 import com.macstab.chaos.network.condition.DisabledOnNonLinuxHost;
-import com.macstab.chaos.redis.extension.SentinelContainerExtension.SentinelCluster;
+import com.macstab.chaos.redis.api.SentinelRedis;
+import com.macstab.chaos.redis.extension.SentinelContainerExtension;
 
 /**
  * Starts a full Redis Sentinel cluster for integration tests using Testcontainers.
@@ -78,6 +79,7 @@ import com.macstab.chaos.redis.extension.SentinelContainerExtension.SentinelClus
  * @since 1.0
  */
 @ChaosTest
+@ExtendWith(SentinelContainerExtension.class)
 @Repeatable(RedisSentinels.class)
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
@@ -109,8 +111,11 @@ public @interface RedisSentinel {
    */
   ContainerManager<SentinelRedis> INSTANCE =
       new ContainerManager<>(
-          id -> ChaosContainers.get(RedisSentinel.class, id),
-          () -> ChaosContainers.getAll(RedisSentinel.class));
+          id -> SentinelContainerExtension.getCluster(id).toSentinelRedis(),
+          () ->
+              SentinelContainerExtension.getAllClusters().stream()
+                  .map(com.macstab.chaos.redis.extension.SentinelCluster::toSentinelRedis)
+                  .toList());
 
   /**
    * Cluster ID (unique within test class).

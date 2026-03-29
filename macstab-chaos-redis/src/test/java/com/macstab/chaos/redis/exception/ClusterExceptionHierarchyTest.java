@@ -14,9 +14,7 @@ import org.junit.jupiter.api.Test;
 
 import com.macstab.chaos.redis.control.role.ContainerRole;
 
-/**
- * Unit tests for the sealed ClusterException hierarchy.
- */
+/** Unit tests for the sealed ClusterException hierarchy. */
 @DisplayName("ClusterException Sealed Hierarchy")
 class ClusterExceptionHierarchyTest {
 
@@ -80,12 +78,10 @@ class ClusterExceptionHierarchyTest {
     @Test
     @DisplayName("ClusterStartupFailure should validate required fields")
     void failureShouldValidateFields() {
-      assertThatThrownBy(
-              () -> new ClusterStartupException.ClusterStartupFailure(null, "msg", null))
+      assertThatThrownBy(() -> new ClusterStartupException.ClusterStartupFailure(null, "msg", null))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("clusterId");
-      assertThatThrownBy(
-              () -> new ClusterStartupException.ClusterStartupFailure("id", null, null))
+      assertThatThrownBy(() -> new ClusterStartupException.ClusterStartupFailure("id", null, null))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("errorMessage");
     }
@@ -134,8 +130,7 @@ class ClusterExceptionHierarchyTest {
     @DisplayName("Should create with timing context")
     void shouldCreateWithTimingContext() {
       final FailoverException ex =
-          new FailoverException(
-              "timed out", Duration.ofSeconds(30), Duration.ofSeconds(35), 5);
+          new FailoverException("timed out", Duration.ofSeconds(30), Duration.ofSeconds(35), 5);
       assertThat(ex.getMessage()).contains("30").contains("35").contains("5");
       assertThat(ex.getTimeout()).isEqualTo(Duration.ofSeconds(30));
       assertThat(ex.getElapsed()).isEqualTo(Duration.ofSeconds(35));

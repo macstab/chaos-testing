@@ -70,7 +70,10 @@ class RedisCommandBuilderTest {
     @DisplayName("should include CONFIG SET maxmemory-policy")
     void shouldIncludeConfigSet() {
       final String cmd = RedisCommandBuilder.buildSetEvictionPolicyCommand(6379, "allkeys-lru");
-      assertThat(cmd).contains("CONFIG SET maxmemory-policy").contains("allkeys-lru").contains("6379");
+      assertThat(cmd)
+          .contains("CONFIG SET maxmemory-policy")
+          .contains("allkeys-lru")
+          .contains("6379");
     }
 
     @Test

@@ -5,7 +5,6 @@ import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
-import lombok.extern.slf4j.Slf4j;
 import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.api.NetworkChaos;
@@ -14,11 +13,13 @@ import com.macstab.chaos.core.exception.ChaosOperationFailedException;
 import com.macstab.chaos.core.util.ContainerNetworkUtils;
 import com.macstab.chaos.core.util.PackageInstaller;
 
+import lombok.extern.slf4j.Slf4j;
+
 /**
  * Network chaos using Linux Traffic Control ({@code tc}) and {@code iptables}.
  *
- * <p>Registered as the default {@link NetworkChaos} SPI implementation via
- * {@code META-INF/services/com.macstab.chaos.core.api.NetworkChaos}.
+ * <p>Registered as the default {@link NetworkChaos} SPI implementation via {@code
+ * META-INF/services/com.macstab.chaos.core.api.NetworkChaos}.
  *
  * <p><strong>REQUIRES NET_ADMIN CAPABILITY</strong> — add to container:
  *
@@ -136,8 +137,16 @@ public final class TcNetworkChaos implements NetworkChaos {
     try {
       final var result =
           container.execInContainer(
-              "tc", "qdisc", "change", "dev", INTERFACE, "root", "netem",
-              "delay", ms + "ms", jitterMs + "ms");
+              "tc",
+              "qdisc",
+              "change",
+              "dev",
+              INTERFACE,
+              "root",
+              "netem",
+              "delay",
+              ms + "ms",
+              jitterMs + "ms");
 
       if (result.getExitCode() != 0) {
         throw new ChaosOperationFailedException(
@@ -171,8 +180,15 @@ public final class TcNetworkChaos implements NetworkChaos {
     try {
       final var result =
           container.execInContainer(
-              "tc", "qdisc", "change", "dev", INTERFACE, "root", "netem",
-              "loss", String.format("%.2f%%", percent));
+              "tc",
+              "qdisc",
+              "change",
+              "dev",
+              INTERFACE,
+              "root",
+              "netem",
+              "loss",
+              String.format("%.2f%%", percent));
 
       if (result.getExitCode() != 0) {
         throw new ChaosOperationFailedException(
@@ -212,8 +228,15 @@ public final class TcNetworkChaos implements NetworkChaos {
     try {
       final var result =
           container.execInContainer(
-              "tc", "qdisc", "change", "dev", INTERFACE, "root", "netem",
-              "loss", String.format("%.2f%% %.2f%%", percent, corr));
+              "tc",
+              "qdisc",
+              "change",
+              "dev",
+              INTERFACE,
+              "root",
+              "netem",
+              "loss",
+              String.format("%.2f%% %.2f%%", percent, corr));
 
       if (result.getExitCode() != 0) {
         throw new ChaosOperationFailedException(
@@ -222,9 +245,7 @@ public final class TcNetworkChaos implements NetworkChaos {
 
       log.info(
           "Injected {}% packet loss (corr: {}%) on {}",
-          String.format("%.1f", percent),
-          String.format("%.1f", corr),
-          INTERFACE);
+          String.format("%.1f", percent), String.format("%.1f", corr), INTERFACE);
     } catch (final ChaosOperationFailedException e) {
       throw e;
     } catch (final Exception e) {
@@ -244,12 +265,11 @@ public final class TcNetworkChaos implements NetworkChaos {
     try {
       final var result =
           container.execInContainer(
-              "tc", "qdisc", "add", "dev", INTERFACE, "root", "tbf",
-              "rate", rate, "burst", "32kbit", "latency", "400ms");
+              "tc", "qdisc", "add", "dev", INTERFACE, "root", "tbf", "rate", rate, "burst",
+              "32kbit", "latency", "400ms");
 
       if (result.getExitCode() != 0) {
-        throw new ChaosOperationFailedException(
-            "Failed to limit bandwidth: " + result.getStderr());
+        throw new ChaosOperationFailedException("Failed to limit bandwidth: " + result.getStderr());
       }
 
       activeQdiscs.put(container.getContainerId(), QdiscType.TBF);
@@ -405,8 +425,7 @@ public final class TcNetworkChaos implements NetworkChaos {
           String.format(
               "Cannot apply %s operation: %s qdisc is already active on this container."
                   + " Call reset() before switching between bandwidth limiting and netem operations.",
-              required.name().toLowerCase(),
-              active.name().toLowerCase()));
+              required.name().toLowerCase(), active.name().toLowerCase()));
     }
   }
 

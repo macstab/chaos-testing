@@ -4,23 +4,23 @@ package com.macstab.chaos.proxy.internal.operations.toxic;
 import java.util.Objects;
 
 /**
- * Delays the TCP close sequence by holding the connection open for a configurable duration
- * after all data has been transferred.
+ * Delays the TCP close sequence by holding the connection open for a configurable duration after
+ * all data has been transferred.
  *
  * <p>Uses Toxiproxy's {@code slow_close} toxic. When the upstream signals EOF (end of response),
- * the toxic delays forwarding the close signal to the client by {@code delayMs} milliseconds.
- * Data transfer is unaffected — only the close phase is delayed.
+ * the toxic delays forwarding the close signal to the client by {@code delayMs} milliseconds. Data
+ * transfer is unaffected — only the close phase is delayed.
  *
  * <h2>Semantics</h2>
  *
  * <ul>
- *   <li><strong>delayMs=0</strong> — no delay; TCP close is forwarded immediately. Effectively
- *       a no-op and rarely useful in practice.</li>
+ *   <li><strong>delayMs=0</strong> — no delay; TCP close is forwarded immediately. Effectively a
+ *       no-op and rarely useful in practice.
  *   <li><strong>delayMs &gt; 0</strong> — the connection is held open for {@code delayMs}
- *       milliseconds after data transfer completes. The client cannot reuse the socket until
- *       the close arrives. Connection pools waiting for the socket to free will block.</li>
- *   <li><strong>toxicity</strong> — fraction of connections that experience the delayed close.
- *       Use values below {@code 1.0} to simulate a partially degraded connection pool.</li>
+ *       milliseconds after data transfer completes. The client cannot reuse the socket until the
+ *       close arrives. Connection pools waiting for the socket to free will block.
+ *   <li><strong>toxicity</strong> — fraction of connections that experience the delayed close. Use
+ *       values below {@code 1.0} to simulate a partially degraded connection pool.
  * </ul>
  *
  * <h2>Primary Use Cases</h2>
@@ -28,12 +28,12 @@ import java.util.Objects;
  * <ul>
  *   <li><strong>Connection pool exhaustion:</strong> If pool size is small and close delay is
  *       longer than the pool timeout, new requests block waiting for a free connection. Tests
- *       whether the application fails fast (pool exhaustion error) or hangs.</li>
- *   <li><strong>Keepalive pressure:</strong> Simulates upstreams that are slow to acknowledge
- *       close — common with overloaded databases or legacy services.</li>
+ *       whether the application fails fast (pool exhaustion error) or hangs.
+ *   <li><strong>Keepalive pressure:</strong> Simulates upstreams that are slow to acknowledge close
+ *       — common with overloaded databases or legacy services.
  *   <li><strong>TIME_WAIT accumulation:</strong> Rapid request cycles with slow close can cause
  *       TIME_WAIT socket accumulation. Tests whether the application handles ephemeral port
- *       exhaustion gracefully.</li>
+ *       exhaustion gracefully.
  * </ul>
  *
  * <h2>Examples</h2>
@@ -161,11 +161,11 @@ public final class SlowCloseToxic implements ToxicConfig {
     }
 
     /**
-     * Set the duration to hold the connection open after data transfer, before forwarding the
-     * TCP close signal.
+     * Set the duration to hold the connection open after data transfer, before forwarding the TCP
+     * close signal.
      *
-     * <p>Default: {@code 0} (no delay). Must be ≥ 0. Higher values increase the pressure on
-     * the client connection pool.
+     * <p>Default: {@code 0} (no delay). Must be ≥ 0. Higher values increase the pressure on the
+     * client connection pool.
      *
      * @param delayMs close delay in milliseconds
      * @return this builder

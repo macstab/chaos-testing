@@ -11,9 +11,9 @@ import com.macstab.chaos.core.defaults.*;
 
 /**
  * Tests for {@link ChaosProviderRegistry} - service loader facade.
- * 
- * Validates that all chaos provider getters return no-op implementations
- * when no real provider is registered via ServiceLoader.
+ *
+ * <p>Validates that all chaos provider getters return no-op implementations when no real provider
+ * is registered via ServiceLoader.
  */
 @DisplayName("ChaosProviderRegistry - Service Loader Facade")
 class ChaosProviderRegistryTest {
@@ -109,7 +109,7 @@ class ChaosProviderRegistryTest {
     // ServiceLoader may cache or create new instances - just verify non-null
     CpuChaos first = ChaosProviderRegistry.getCpuChaos();
     CpuChaos second = ChaosProviderRegistry.getCpuChaos();
-    
+
     assertThat(first).isNotNull();
     assertThat(second).isNotNull();
     assertThat(first.getClass()).isEqualTo(second.getClass());

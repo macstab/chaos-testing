@@ -1,7 +1,6 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.core.extension;
 
-import java.lang.annotation.Annotation;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Repeatable;
 import java.lang.annotation.Retention;
@@ -36,6 +35,7 @@ public final class MockChaosPlugin implements ChaosPlugin<MockChaosPlugin.MockCo
   @Retention(RetentionPolicy.RUNTIME)
   public @interface MockContainer {
     String image() default "alpine:latest";
+
     /** Port to expose. Use -1 (default) to skip port binding and wait strategy. */
     int port() default -1;
   }
@@ -43,6 +43,7 @@ public final class MockChaosPlugin implements ChaosPlugin<MockChaosPlugin.MockCo
   /** Marker interface — allows testing getBaseTypes() / getConnectionInfoByBaseType(). */
   public interface MockConnectionBase {
     String getHost();
+
     int getPort();
   }
 
@@ -51,7 +52,8 @@ public final class MockChaosPlugin implements ChaosPlugin<MockChaosPlugin.MockCo
     private final int port;
     private final GenericContainer<?> container;
 
-    public MockConnectionInfo(final String host, final int port, final GenericContainer<?> container) {
+    public MockConnectionInfo(
+        final String host, final int port, final GenericContainer<?> container) {
       this.host = host;
       this.port = port;
       this.container = container;
@@ -79,8 +81,8 @@ public final class MockChaosPlugin implements ChaosPlugin<MockChaosPlugin.MockCo
 
   @Override
   public GenericContainer<?> createContainer(final MockContainer annotation) {
-    final GenericContainer<?> container = new GenericContainer<>(
-        DockerImageName.parse(annotation.image()));
+    final GenericContainer<?> container =
+        new GenericContainer<>(DockerImageName.parse(annotation.image()));
 
     container.withCommand("sleep", "infinity");
 
@@ -95,7 +97,8 @@ public final class MockChaosPlugin implements ChaosPlugin<MockChaosPlugin.MockCo
   }
 
   @Override
-  public Object createConnectionInfo(final GenericContainer<?> container, final MockContainer annotation) {
+  public Object createConnectionInfo(
+      final GenericContainer<?> container, final MockContainer annotation) {
     final int mappedPort = annotation.port() > 0 ? container.getMappedPort(annotation.port()) : -1;
     return new MockConnectionInfo(container.getHost(), mappedPort, container);
   }

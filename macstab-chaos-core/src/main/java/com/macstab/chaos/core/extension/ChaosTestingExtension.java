@@ -6,8 +6,8 @@ import java.lang.reflect.Parameter;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -47,9 +47,9 @@ import lombok.extern.slf4j.Slf4j;
  * </pre>
  *
  * <p><strong>Auto-Enable via Meta-Annotation:</strong> This extension is enabled via {@link
- * ChaosTest} meta-annotation. Container annotations ({@code @RedisStandalone}, etc.) extend {@code
- * @ChaosTest}, which implicitly registers this extension. Users never write {@code @ExtendWith}
- * manually.
+ * ChaosTest} meta-annotation. Container annotations ({@code @RedisStandalone}, etc.) extend
+ * {@code @ChaosTest}, which implicitly registers this extension. Users never write
+ * {@code @ExtendWith} manually.
  *
  * <p><strong>Plugin Discovery:</strong> Plugins are discovered via Java ServiceLoader at static
  * initialization time. Register plugins in {@code
@@ -89,8 +89,7 @@ public final class ChaosTestingExtension
 
   private static final String CONTAINERS_KEY = "chaos-containers";
 
-  private static final Map<Class<? extends Annotation>, ChaosPlugin<?>> PLUGINS =
-      new HashMap<>();
+  private static final Map<Class<? extends Annotation>, ChaosPlugin<?>> PLUGINS = new HashMap<>();
 
   // ThreadLocal storage for programmatic access (by annotation type)
   private static final ThreadLocal<Map<Class<? extends Annotation>, Map<String, Object>>>
@@ -125,7 +124,9 @@ public final class ChaosTestingExtension
         }
 
         PLUGINS.put(annotationType, plugin);
-        log.debug("Registered plugin: {} for @{}", plugin.getClass().getSimpleName(),
+        log.debug(
+            "Registered plugin: {} for @{}",
+            plugin.getClass().getSimpleName(),
             annotationType.getSimpleName());
 
       } catch (final Exception e) {
@@ -139,16 +140,17 @@ public final class ChaosTestingExtension
       log.warn(
           "No container plugins discovered. Did you add META-INF/services entry for ChaosPlugin?");
     } else {
-      log.info("Discovered {} container plugin(s): {}", PLUGINS.size(),
-          PLUGINS.values().stream()
-              .map(p -> p.getClass().getSimpleName())
-              .toList());
+      log.info(
+          "Discovered {} container plugin(s): {}",
+          PLUGINS.size(),
+          PLUGINS.values().stream().map(p -> p.getClass().getSimpleName()).toList());
     }
   }
 
   @Override
   public void beforeAll(final ExtensionContext context) throws Exception {
-    log.debug("ChaosTestingExtension.beforeAll() for test class: {}",
+    log.debug(
+        "ChaosTestingExtension.beforeAll() for test class: {}",
         context.getRequiredTestClass().getSimpleName());
 
     final List<ContainerInstance> containers = new ArrayList<>();
@@ -163,41 +165,45 @@ public final class ChaosTestingExtension
       final ChaosPlugin<?> plugin = PLUGINS.get(annotation.annotationType());
 
       if (plugin != null) {
-        log.info("Creating container for @{} in test class {}",
+        log.info(
+            "Creating container for @{} in test class {}",
             annotation.annotationType().getSimpleName(),
             testClass.getSimpleName());
 
-        final ContainerInstance instance = createContainerInstance(plugin, annotation,
-            resourcesAnnotation);
+        final ContainerInstance instance =
+            createContainerInstance(plugin, annotation, resourcesAnnotation);
         containers.add(instance);
 
-        log.info("Starting container: {} (image: {})",
+        log.info(
+            "Starting container: {} (image: {})",
             annotation.annotationType().getSimpleName(),
             instance.container.getDockerImageName());
 
         instance.container.start();
 
-        log.info("Container started: {} -> {}{}",
+        log.info(
+            "Container started: {} -> {}{}",
             annotation.annotationType().getSimpleName(),
             instance.container.getHost(),
             instance.container.getExposedPorts().isEmpty()
-                ? "" : ":" + instance.container.getFirstMappedPort());
+                ? ""
+                : ":" + instance.container.getFirstMappedPort());
       }
     }
 
     if (containers.isEmpty()) {
-      log.debug("No container annotations found on test class: {}",
-          testClass.getSimpleName());
+      log.debug("No container annotations found on test class: {}", testClass.getSimpleName());
     }
 
     context.getStore(NAMESPACE).put(CONTAINERS_KEY, containers);
-    log.debug("beforeAll: stored {} containers in context {}",
-        containers.size(), context.getUniqueId());
+    log.debug(
+        "beforeAll: stored {} containers in context {}", containers.size(), context.getUniqueId());
   }
 
   @Override
   public void afterAll(final ExtensionContext context) {
-    log.debug("ChaosTestingExtension.afterAll() for test class: {}",
+    log.debug(
+        "ChaosTestingExtension.afterAll() for test class: {}",
         context.getRequiredTestClass().getSimpleName());
 
     try {
@@ -208,10 +214,14 @@ public final class ChaosTestingExtension
       if (containers != null) {
         for (final ContainerInstance instance : containers) {
           try {
-            log.info("Stopping container: {}", instance.annotation.annotationType().getSimpleName());
+            log.info(
+                "Stopping container: {}", instance.annotation.annotationType().getSimpleName());
             instance.container.stop();
           } catch (final Exception e) {
-            log.warn("Failed to stop container: {}", instance.annotation.annotationType().getSimpleName(), e);
+            log.warn(
+                "Failed to stop container: {}",
+                instance.annotation.annotationType().getSimpleName(),
+                e);
           }
         }
       }
@@ -272,7 +282,8 @@ public final class ChaosTestingExtension
     final List<ContainerInstance> containers =
         (List<ContainerInstance>) extensionContext.getStore(NAMESPACE).get(CONTAINERS_KEY);
 
-    log.debug("resolveParameter: parameterType={}, containers={}, context={}",
+    log.debug(
+        "resolveParameter: parameterType={}, containers={}, context={}",
         parameterType.getSimpleName(),
         containers == null ? "null" : containers.size(),
         extensionContext.getUniqueId());
@@ -291,20 +302,20 @@ public final class ChaosTestingExtension
         if (typeArgs.length == 1 && typeArgs[0] instanceof Class) {
           final Class<?> elementType = (Class<?>) typeArgs[0];
           final List<Object> matchingInstances = new ArrayList<>();
-          
+
           for (final ContainerInstance instance : containers) {
             if (elementType.isAssignableFrom(instance.connectionInfo.getClass())) {
               matchingInstances.add(instance.connectionInfo);
             }
           }
-          
+
           if (matchingInstances.isEmpty()) {
             throw new ParameterResolutionException(
                 String.format(
                     "No container connection info found for List<%s>",
                     elementType.getSimpleName()));
           }
-          
+
           return matchingInstances;
         }
       }
@@ -313,38 +324,34 @@ public final class ChaosTestingExtension
     // Resolve single instance parameters
     Object matchedInstance = null;
     int matchCount = 0;
-    
+
     for (final ContainerInstance instance : containers) {
       if (parameterType.isAssignableFrom(instance.connectionInfo.getClass())) {
         matchedInstance = instance.connectionInfo;
         matchCount++;
       }
     }
-    
+
     if (matchCount == 0) {
       throw new ParameterResolutionException(
           String.format(
               "No container connection info found for parameter type: %s",
               parameterType.getSimpleName()));
     }
-    
+
     if (matchCount > 1) {
       throw new ParameterResolutionException(
           String.format(
               "Multiple containers found for parameter type %s (found: %d). Use List<%s> for multiple instances or specify ID programmatically via INSTANCE.get(\"id\")",
-              parameterType.getSimpleName(),
-              matchCount,
-              parameterType.getSimpleName()));
+              parameterType.getSimpleName(), matchCount, parameterType.getSimpleName()));
     }
-    
+
     return matchedInstance;
   }
 
   @SuppressWarnings({"rawtypes", "unchecked"})
   private ContainerInstance createContainerInstance(
-      final ChaosPlugin plugin,
-      final Annotation annotation,
-      final Resources resourcesAnnotation) {
+      final ChaosPlugin plugin, final Annotation annotation, final Resources resourcesAnnotation) {
 
     try {
       final GenericContainer<?> container = plugin.createContainer(annotation);
@@ -353,8 +360,7 @@ public final class ChaosTestingExtension
         throw new ExtensionConfigurationException(
             String.format(
                 "Plugin %s returned null container for @%s",
-                plugin.getClass().getSimpleName(),
-                annotation.annotationType().getSimpleName()));
+                plugin.getClass().getSimpleName(), annotation.annotationType().getSimpleName()));
       }
 
       applyResourceConstraints(container, annotation, resourcesAnnotation);
@@ -367,8 +373,7 @@ public final class ChaosTestingExtension
         throw new ExtensionConfigurationException(
             String.format(
                 "Plugin %s returned null connection info for @%s",
-                plugin.getClass().getSimpleName(),
-                annotation.annotationType().getSimpleName()));
+                plugin.getClass().getSimpleName(), annotation.annotationType().getSimpleName()));
       }
 
       // Store connection info for programmatic access
@@ -380,15 +385,13 @@ public final class ChaosTestingExtension
       throw new ExtensionConfigurationException(
           String.format(
               "Invalid configuration in @%s: %s",
-              annotation.annotationType().getSimpleName(),
-              e.getMessage()),
+              annotation.annotationType().getSimpleName(), e.getMessage()),
           e);
     } catch (final Exception e) {
       throw new ExtensionConfigurationException(
           String.format(
               "Failed to create container for @%s: %s",
-              annotation.annotationType().getSimpleName(),
-              e.getMessage()),
+              annotation.annotationType().getSimpleName(), e.getMessage()),
           e);
     }
   }
@@ -399,7 +402,8 @@ public final class ChaosTestingExtension
       final Resources resourcesAnnotation) {
 
     if (resourcesAnnotation == null) {
-      log.debug("No @Resources annotation found for @{}", annotation.annotationType().getSimpleName());
+      log.debug(
+          "No @Resources annotation found for @{}", annotation.annotationType().getSimpleName());
       return;
     }
 
@@ -412,15 +416,16 @@ public final class ChaosTestingExtension
         final long memoryBytes = ResourceParser.parseMemoryBytes(memory);
         container.withCreateContainerCmdModifier(
             cmd -> cmd.getHostConfig().withMemory(memoryBytes));
-        log.info("Applied memory limit: {} ({} bytes) to @{}",
-            memory, memoryBytes, annotation.annotationType().getSimpleName());
+        log.info(
+            "Applied memory limit: {} ({} bytes) to @{}",
+            memory,
+            memoryBytes,
+            annotation.annotationType().getSimpleName());
       } catch (final IllegalArgumentException e) {
         throw new IllegalArgumentException(
             String.format(
                 "Invalid memory format in @%s (memory=\"%s\"): %s",
-                annotation.annotationType().getSimpleName(),
-                memory,
-                e.getMessage()),
+                annotation.annotationType().getSimpleName(), memory, e.getMessage()),
             e);
       }
     }
@@ -430,15 +435,16 @@ public final class ChaosTestingExtension
         final long nanoCpus = ResourceParser.parseCpuNanoCpus(cpus);
         container.withCreateContainerCmdModifier(
             cmd -> cmd.getHostConfig().withCpuQuota(nanoCpus / 1000L).withCpuPeriod(100000L));
-        log.info("Applied CPU limit: {} ({} nano-CPUs) to @{}",
-            cpus, nanoCpus, annotation.annotationType().getSimpleName());
+        log.info(
+            "Applied CPU limit: {} ({} nano-CPUs) to @{}",
+            cpus,
+            nanoCpus,
+            annotation.annotationType().getSimpleName());
       } catch (final IllegalArgumentException e) {
         throw new IllegalArgumentException(
             String.format(
                 "Invalid CPU format in @%s (cpus=\"%s\"): %s",
-                annotation.annotationType().getSimpleName(),
-                cpus,
-                e.getMessage()),
+                annotation.annotationType().getSimpleName(), cpus, e.getMessage()),
             e);
       }
     }
@@ -451,20 +457,21 @@ public final class ChaosTestingExtension
         if (osName.contains("linux")) {
           container.withCreateContainerCmdModifier(
               cmd -> cmd.getHostConfig().withStorageOpt(Map.of("size", diskSize)));
-          log.info("Applied disk size limit: {} to @{}",
-              diskSize, annotation.annotationType().getSimpleName());
+          log.info(
+              "Applied disk size limit: {} to @{}",
+              diskSize,
+              annotation.annotationType().getSimpleName());
         } else {
           log.warn(
               "Disk size constraint '{}' ignored (requires Linux + overlay2 driver, detected: {})",
-              diskSize, osName);
+              diskSize,
+              osName);
         }
       } catch (final IllegalArgumentException e) {
         throw new IllegalArgumentException(
             String.format(
                 "Invalid disk size format in @%s (diskSize=\"%s\"): %s",
-                annotation.annotationType().getSimpleName(),
-                diskSize,
-                e.getMessage()),
+                annotation.annotationType().getSimpleName(), diskSize, e.getMessage()),
             e);
       }
     }
@@ -481,14 +488,16 @@ public final class ChaosTestingExtension
     final String id = extractId(annotation);
 
     // Store by annotation type
-    CONNECTION_INFO_BY_ANNOTATION.get()
-        .computeIfAbsent(annotationType, k -> new HashMap<>())
+    CONNECTION_INFO_BY_ANNOTATION
+        .get()
+        .computeIfAbsent(annotationType, k -> new LinkedHashMap<>())
         .put(id, connectionInfo);
 
     // Store by base interface types
     for (final Class<?> baseType : getBaseTypes(connectionInfo.getClass())) {
-      CONNECTION_INFO_BY_BASE_TYPE.get()
-          .computeIfAbsent(baseType, k -> new HashMap<>())
+      CONNECTION_INFO_BY_BASE_TYPE
+          .get()
+          .computeIfAbsent(baseType, k -> new LinkedHashMap<>())
           .put(id, connectionInfo);
     }
   }
@@ -507,25 +516,25 @@ public final class ChaosTestingExtension
    */
   private List<Annotation> extractContainerAnnotations(final Class<?> testClass) {
     final List<Annotation> result = new ArrayList<>();
-    
+
     for (final Annotation annotation : testClass.getAnnotations()) {
       final Class<? extends Annotation> annotationType = annotation.annotationType();
-      
+
       // Direct plugin annotation
       if (PLUGINS.containsKey(annotationType)) {
         result.add(annotation);
         continue;
       }
-      
+
       // Check if this is a container for repeatable annotations
       try {
         final java.lang.reflect.Method valueMethod = annotationType.getMethod("value");
         final Class<?> returnType = valueMethod.getReturnType();
-        
+
         if (returnType.isArray()) {
           final Class<?> componentType = returnType.getComponentType();
-          if (Annotation.class.isAssignableFrom(componentType) && 
-              PLUGINS.containsKey(componentType)) {
+          if (Annotation.class.isAssignableFrom(componentType)
+              && PLUGINS.containsKey(componentType)) {
             // This is a container annotation (e.g., @RedisStandalones)
             final Annotation[] repeated = (Annotation[]) valueMethod.invoke(annotation);
             for (final Annotation repeatedAnnotation : repeated) {
@@ -537,7 +546,7 @@ public final class ChaosTestingExtension
         // Not a container annotation, skip
       }
     }
-    
+
     return result;
   }
 
@@ -556,25 +565,51 @@ public final class ChaosTestingExtension
    * @param clazz connection info class
    * @return set of base types
    */
-  private List<Class<?>> getBaseTypes(final Class<?> clazz) {
+  private static List<Class<?>> getBaseTypes(final Class<?> clazz) {
     final List<Class<?>> baseTypes = new ArrayList<>();
-    
-    // Add all interfaces (recursively)
+
     for (final Class<?> iface : clazz.getInterfaces()) {
       if (!iface.equals(Annotation.class)) {
         baseTypes.add(iface);
         baseTypes.addAll(getBaseTypes(iface));
       }
     }
-    
-    // Add superclass (if not Object)
+
     final Class<?> superclass = clazz.getSuperclass();
     if (superclass != null && !superclass.equals(Object.class)) {
       baseTypes.add(superclass);
       baseTypes.addAll(getBaseTypes(superclass));
     }
-    
+
     return baseTypes;
+  }
+
+  /**
+   * Registers connection info from an external extension (e.g., SentinelContainerExtension).
+   *
+   * <p>Use this when a dedicated JUnit 5 extension manages its own container lifecycle but needs
+   * its connection info accessible via {@link ChaosContainers} / {@code INSTANCE.get()}.
+   *
+   * @param annotationType annotation class (e.g., {@code RedisSentinel.class})
+   * @param id container id
+   * @param connectionInfo connection info object to register
+   */
+  public static void registerExternalConnectionInfo(
+      final Class<? extends Annotation> annotationType,
+      final String id,
+      final Object connectionInfo) {
+
+    CONNECTION_INFO_BY_ANNOTATION
+        .get()
+        .computeIfAbsent(annotationType, k -> new LinkedHashMap<>())
+        .put(id, connectionInfo);
+
+    for (final Class<?> baseType : getBaseTypes(connectionInfo.getClass())) {
+      CONNECTION_INFO_BY_BASE_TYPE
+          .get()
+          .computeIfAbsent(baseType, k -> new LinkedHashMap<>())
+          .put(id, connectionInfo);
+    }
   }
 
   /**
@@ -588,23 +623,22 @@ public final class ChaosTestingExtension
    */
   public static Object getConnectionInfo(
       final Class<? extends Annotation> annotationType, final String id) {
-    
+
     final Map<String, Object> byId = CONNECTION_INFO_BY_ANNOTATION.get().get(annotationType);
-    
+
     if (byId == null) {
       throw new java.util.NoSuchElementException(
           String.format("No containers found for @%s", annotationType.getSimpleName()));
     }
-    
+
     final Object connectionInfo = byId.get(id);
-    
+
     if (connectionInfo == null) {
       throw new java.util.NoSuchElementException(
           String.format(
-              "No container found for @%s(id=\"%s\")",
-              annotationType.getSimpleName(), id));
+              "No container found for @%s(id=\"%s\")", annotationType.getSimpleName(), id));
     }
-    
+
     return connectionInfo;
   }
 
@@ -616,13 +650,13 @@ public final class ChaosTestingExtension
    */
   public static List<Object> getAllConnectionInfo(
       final Class<? extends Annotation> annotationType) {
-    
+
     final Map<String, Object> byId = CONNECTION_INFO_BY_ANNOTATION.get().get(annotationType);
-    
+
     if (byId == null) {
       return List.of();
     }
-    
+
     return new ArrayList<>(byId.values());
   }
 
@@ -634,11 +668,11 @@ public final class ChaosTestingExtension
    */
   public static List<Object> getAllConnectionInfoByBaseType(final Class<?> baseType) {
     final Map<String, Object> byId = CONNECTION_INFO_BY_BASE_TYPE.get().get(baseType);
-    
+
     if (byId == null) {
       return List.of();
     }
-    
+
     return new ArrayList<>(byId.values());
   }
 
@@ -652,21 +686,20 @@ public final class ChaosTestingExtension
    */
   public static Object getConnectionInfoByBaseType(final Class<?> baseType, final String id) {
     final Map<String, Object> byId = CONNECTION_INFO_BY_BASE_TYPE.get().get(baseType);
-    
+
     if (byId == null) {
       throw new java.util.NoSuchElementException(
           String.format("No containers found implementing %s", baseType.getSimpleName()));
     }
-    
+
     final Object connectionInfo = byId.get(id);
-    
+
     if (connectionInfo == null) {
       throw new java.util.NoSuchElementException(
           String.format(
-              "No container found implementing %s with id=\"%s\"",
-              baseType.getSimpleName(), id));
+              "No container found implementing %s with id=\"%s\"", baseType.getSimpleName(), id));
     }
-    
+
     return connectionInfo;
   }
 

@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -398,7 +397,8 @@ class PlatformDetectorEdgeCasesTest {
       when(osReleaseCheckResult.getExitCode()).thenReturn(1);
       doThrow(new IOException("Test exception"))
           .doReturn(osReleaseCheckResult)
-          .when(container).execInContainer("cat", "/etc/os-release");
+          .when(container)
+          .execInContainer("cat", "/etc/os-release");
 
       // Fallback to apt-get succeeds
       ExecResult aptResult = mock(ExecResult.class);

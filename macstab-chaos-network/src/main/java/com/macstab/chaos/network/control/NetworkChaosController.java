@@ -506,9 +506,9 @@ public final class NetworkChaosController {
   /**
    * Gets the Docker bridge network IP of a container.
    *
-   * <p>Delegates to {@link ContainerNetworkUtils#getContainerBridgeIp(GenericContainer)} which
-   * uses Docker inspect to obtain the correct in-network IP — the address that is reachable from
-   * inside other containers on the same bridge.
+   * <p>Delegates to {@link ContainerNetworkUtils#getContainerBridgeIp(GenericContainer)} which uses
+   * Docker inspect to obtain the correct in-network IP — the address that is reachable from inside
+   * other containers on the same bridge.
    *
    * @param container container whose bridge IP is needed
    * @return bridge IP address (e.g., "172.18.0.5")

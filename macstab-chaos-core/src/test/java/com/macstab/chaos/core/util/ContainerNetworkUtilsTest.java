@@ -64,9 +64,7 @@ class ContainerNetworkUtilsTest {
           final String ip = ContainerNetworkUtils.getContainerBridgeIp(container);
 
           // THEN
-          assertThat(ip)
-              .isNotBlank()
-              .matches("\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}");
+          assertThat(ip).isNotBlank().matches("\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}");
         }
       }
 
@@ -198,8 +196,7 @@ class ContainerNetworkUtilsTest {
     void shouldNotBeInstantiable() {
       assertThatThrownBy(
               () -> {
-                final var constructor =
-                    ContainerNetworkUtils.class.getDeclaredConstructor();
+                final var constructor = ContainerNetworkUtils.class.getDeclaredConstructor();
                 constructor.setAccessible(true);
                 constructor.newInstance();
               })

@@ -31,8 +31,8 @@ public final class DependencyVerifier {
   /**
    * Verifies that the macstab-chaos-cache module is present on the classpath.
    *
-   * <p>Required when {@code enableNetworkChaos=true} is set on a Redis annotation. The cache
-   * module provides the {@code RedisCacheChaosProvider} Toxiproxy integration.
+   * <p>Required when {@code enableNetworkChaos=true} is set on a Redis annotation. The cache module
+   * provides the {@code RedisCacheChaosProvider} Toxiproxy integration.
    *
    * @throws IllegalStateException if the cache module is not on the classpath
    */
