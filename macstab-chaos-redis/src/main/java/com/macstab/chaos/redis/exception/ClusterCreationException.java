@@ -1,8 +1,6 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.redis.exception;
 
-import com.macstab.chaos.core.exception.ClusterException;
-
 /**
  * Exception thrown when Redis Sentinel cluster creation fails.
  *
@@ -28,7 +26,7 @@ import com.macstab.chaos.core.exception.ClusterException;
  * @author Christian Schnapka - Macstab GmbH
  * @since 2.0
  */
-public class ClusterCreationException extends ClusterException {
+public final class ClusterCreationException extends ClusterException {
 
   private final int componentIndex;
   private final int totalComponents;

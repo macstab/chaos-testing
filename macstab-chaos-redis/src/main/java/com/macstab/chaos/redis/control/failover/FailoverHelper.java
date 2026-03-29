@@ -15,6 +15,23 @@ import com.macstab.chaos.redis.exception.FailoverException;
 
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * Drives failover simulation for Redis Sentinel clusters.
+ *
+ * <p><strong>Purpose:</strong> Tests Sentinel's automatic master re-election by killing the
+ * current master and measuring the time until a new master is elected.
+ *
+ * <p><strong>Failover process:</strong>
+ * <ol>
+ *   <li>Locate current master via {@link com.macstab.chaos.redis.control.role.RoleResolver}
+ *   <li>Kill (SIGKILL) the master container
+ *   <li>Poll until a different container reports {@code role:master}
+ *   <li>Return elapsed time (failover duration)
+ * </ol>
+ *
+ * @author Christian Schnapka - Macstab GmbH
+ * @since 2.0
+ */
 @Slf4j
 public final class FailoverHelper {
   private static final Duration DEFAULT_FAILOVER_TIMEOUT = Duration.ofSeconds(30);

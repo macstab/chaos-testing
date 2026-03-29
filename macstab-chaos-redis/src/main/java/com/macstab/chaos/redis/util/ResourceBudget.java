@@ -4,9 +4,23 @@ package com.macstab.chaos.redis.util;
 import com.macstab.chaos.redis.annotation.RedisSentinel;
 import com.macstab.chaos.redis.annotation.RedisStandalone;
 
-import lombok.extern.slf4j.Slf4j;
-
-@Slf4j
+/**
+ * Validates container resource budgets to prevent runaway resource consumption in tests.
+ *
+ * <p><strong>Purpose:</strong> Enforces pre-defined limits on the number of Redis containers
+ * per test class. Prevents CI timeouts and memory exhaustion caused by misconfigured tests.
+ *
+ * <p><strong>Limits:</strong>
+ * <ul>
+ *   <li>Max {@value #MAX_STANDALONE_INSTANCES} standalone instances per test class
+ *   <li>Max {@value #MAX_SENTINEL_CLUSTERS} Sentinel clusters per test class
+ *   <li>Max {@value #MAX_TOTAL_CONTAINERS} total containers combined
+ *   <li>Max {@value #MAX_MEMORY_MB}MB estimated memory
+ * </ul>
+ *
+ * @author Christian Schnapka - Macstab GmbH
+ * @since 1.0
+ */
 public final class ResourceBudget {
 
   /** Maximum number of Sentinel clusters per test class. */

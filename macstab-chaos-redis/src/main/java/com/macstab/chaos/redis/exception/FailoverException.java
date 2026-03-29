@@ -3,7 +3,7 @@ package com.macstab.chaos.redis.exception;
 
 import java.time.Duration;
 
-import com.macstab.chaos.core.exception.ClusterException;
+
 
 /**
  * Exception thrown when failover operation fails or times out.
@@ -28,7 +28,7 @@ import com.macstab.chaos.core.exception.ClusterException;
  * @author Christian Schnapka - Macstab GmbH
  * @since 2.0
  */
-public class FailoverException extends ClusterException {
+public final class FailoverException extends ClusterException {
 
   private final Duration timeout;
   private final Duration elapsed;

@@ -30,6 +30,8 @@ import com.macstab.chaos.redis.annotation.RedisStandalone;
 import com.macstab.chaos.redis.annotation.RedisStandalones;
 import com.macstab.chaos.redis.exception.ClusterStartupException;
 import com.macstab.chaos.redis.exception.ClusterStartupException.ClusterStartupFailure;
+import com.macstab.chaos.redis.extension.internal.DependencyVerifier;
+import com.macstab.chaos.redis.extension.internal.StartupResult;
 import com.macstab.chaos.redis.util.ResourceBudget;
 
 import lombok.Getter;
@@ -304,16 +306,24 @@ public final class RedisContainerExtension
       throws ClusterStartupException {
 
     final ExecutorService executor = Executors.newFixedThreadPool(annotations.length);
-    final List<Future<InstanceStartupResult>> futures = new ArrayList<>();
+    final List<Future<StartupResult>> futures = submitStartupTasks(executor, annotations);
+    final StartupCollectionResult collected = collectStartupResults(futures, annotations);
+    shutdownExecutor(executor);
+    handleStartupFailures(collected.failures(), collected.containersToCleanup());
+    return new StartupResults(collected.successfulInstances(), collected.successfulStores());
+  }
 
-    // Submit all instance startups
+  private List<Future<StartupResult>> submitStartupTasks(
+      final ExecutorService executor, final RedisStandalone[] annotations) {
+    final List<Future<StartupResult>> futures = new ArrayList<>();
     for (final RedisStandalone annotation : annotations) {
-      final Future<InstanceStartupResult> future =
-          executor.submit(() -> startSingleInstance(annotation));
-      futures.add(future);
+      futures.add(executor.submit(() -> startSingleInstance(annotation)));
     }
+    return futures;
+  }
 
-    // Wait for all and collect results
+  private StartupCollectionResult collectStartupResults(
+      final List<Future<StartupResult>> futures, final RedisStandalone[] annotations) {
     final Map<String, RedisConnectionInfo> successfulInstances = new LinkedHashMap<>();
     final Map<String, Store> successfulStores = new LinkedHashMap<>();
     final List<ClusterStartupFailure> failures = new ArrayList<>();
@@ -321,27 +331,21 @@ public final class RedisContainerExtension
 
     for (int i = 0; i < futures.size(); i++) {
       try {
-        final InstanceStartupResult result =
-            futures.get(i).get(STARTUP_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-
-        if (result.isSuccess()) {
-          successfulInstances.put(result.getInstanceId(), result.getConnectionInfo());
-          successfulStores.put(result.getInstanceId(), result.getStore());
-          containersToCleanup.add(result.getStore());
-          log.info("Instance '{}' started successfully", result.getInstanceId());
-        } else {
-          failures.add(
-              new ClusterStartupFailure(
-                  result.getInstanceId(), result.getErrorMessage(), result.getError()));
-          log.error(
-              "Instance '{}' failed to start: {}",
-              result.getInstanceId(),
-              result.getErrorMessage());
+        final StartupResult result = futures.get(i).get(STARTUP_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        switch (result) {
+          case StartupResult.Success s -> {
+            successfulInstances.put(s.instanceId(), s.connectionInfo());
+            successfulStores.put(s.instanceId(), s.store());
+            containersToCleanup.add(s.store());
+            log.info("Instance '{}' started successfully", s.instanceId());
+          }
+          case StartupResult.Failure f -> {
+            failures.add(new ClusterStartupFailure(f.instanceId(), f.errorMessage(), f.error()));
+            log.error("Instance '{}' failed to start: {}", f.instanceId(), f.errorMessage());
+          }
         }
-
       } catch (final TimeoutException e) {
         final String instanceId = annotations[i].id();
-        // Cancel the timed-out future to try to interrupt the thread
         futures.get(i).cancel(true);
         failures.add(
             new ClusterStartupFailure(
@@ -355,75 +359,98 @@ public final class RedisContainerExtension
         log.error("Instance '{}' encountered unexpected error", instanceId, e);
       }
     }
+    return new StartupCollectionResult(
+        successfulInstances, successfulStores, failures, containersToCleanup);
+  }
 
-    // Use shutdownNow() to interrupt any blocked threads (e.g., hanging package installation)
+  private void shutdownExecutor(final ExecutorService executor) {
     executor.shutdownNow();
     try {
-      // Give threads a brief moment to clean up after interruption
       if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
         log.warn("Some startup threads did not terminate within 5 seconds");
       }
-    } catch (InterruptedException e) {
+    } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
     }
+  }
 
-    // FAILURE ISOLATION: Clean up successful instances if ANY failed
+  private void handleStartupFailures(
+      final List<ClusterStartupFailure> failures, final List<Store> containersToCleanup)
+      throws ClusterStartupException {
     if (!failures.isEmpty()) {
       final List<String> cleanupActions = cleanupInstances(containersToCleanup);
       throw new ClusterStartupException(failures, cleanupActions);
     }
-
-    return new StartupResults(successfulInstances, successfulStores);
   }
 
-  private InstanceStartupResult startSingleInstance(final RedisStandalone annotation) {
+  private StartupResult startSingleInstance(final RedisStandalone annotation) {
     try {
-      final var container = createContainer(annotation);
-      container.start();
-
-      // Auto-install network tools if network chaos is enabled
-      if (annotation.enableNetworkChaos()) {
-        try {
-          if (!com.macstab.chaos.core.util.PackageInstaller.isInstalled(container, "tc")) {
-            com.macstab.chaos.core.util.PackageInstaller.install(container, "iproute2", "iptables");
-          }
-        } catch (final Exception e) {
-          log.warn(
-              "Network chaos enabled but failed to install tools for '{}': {}",
-              annotation.id(),
-              e.getMessage());
-        }
-      }
-
-      // Auto-install packages if specified
-      if (annotation.packages().length > 0) {
-        try {
-          log.info(
-              "Installing {} package(s) in instance '{}': {}",
-              annotation.packages().length,
-              annotation.id(),
-              java.util.Arrays.toString(annotation.packages()));
-          com.macstab.chaos.core.util.PackageInstaller.install(
-              container, java.util.Arrays.asList(annotation.packages()), true);
-          log.info("✓ Packages installed successfully in instance '{}'", annotation.id());
-        } catch (final Exception e) {
-          log.warn(
-              "Failed to install packages in instance '{}': {}", annotation.id(), e.getMessage());
-        }
-      }
-
-      final var connectionInfo =
-          new RedisConnectionInfo(container.getHost(), container.getMappedPort(6379));
-
-      final Store store = new Store(container, connectionInfo);
-
-      return InstanceStartupResult.success(annotation.id(), connectionInfo, store);
-
+      final var container = createAndStartContainer(annotation);
+      installNetworkTools(container, annotation);
+      installAnnotationPackages(container, annotation);
+      return buildSuccessResult(container, annotation);
     } catch (final Exception e) {
       log.error("Failed to start instance '{}'", annotation.id(), e);
-      return InstanceStartupResult.failure(annotation.id(), e.getMessage(), e);
+      return new StartupResult.Failure(annotation.id(), e.getMessage(), e);
     }
   }
+
+  private GenericContainer<?> createAndStartContainer(final RedisStandalone annotation) {
+    final var container = createContainer(annotation);
+    container.start();
+    return container;
+  }
+
+  private void installNetworkTools(
+      final GenericContainer<?> container, final RedisStandalone annotation) {
+    if (!annotation.enableNetworkChaos()) {
+      return;
+    }
+    try {
+      if (!com.macstab.chaos.core.util.PackageInstaller.isInstalled(container, "tc")) {
+        com.macstab.chaos.core.util.PackageInstaller.install(container, "iproute2", "iptables");
+      }
+    } catch (final Exception e) {
+      log.warn(
+          "Network chaos enabled but failed to install tools for '{}': {}",
+          annotation.id(),
+          e.getMessage());
+    }
+  }
+
+  private void installAnnotationPackages(
+      final GenericContainer<?> container, final RedisStandalone annotation) {
+    if (annotation.packages().length == 0) {
+      return;
+    }
+    try {
+      log.info(
+          "Installing {} package(s) in instance '{}': {}",
+          annotation.packages().length,
+          annotation.id(),
+          java.util.Arrays.toString(annotation.packages()));
+      com.macstab.chaos.core.util.PackageInstaller.install(
+          container, java.util.Arrays.asList(annotation.packages()), true);
+      log.info("✓ Packages installed successfully in instance '{}'", annotation.id());
+    } catch (final Exception e) {
+      log.warn("Failed to install packages in instance '{}': {}", annotation.id(), e.getMessage());
+    }
+  }
+
+  private StartupResult buildSuccessResult(
+      final GenericContainer<?> container, final RedisStandalone annotation) {
+    final var connectionInfo =
+        new RedisConnectionInfo(container.getHost(), container.getMappedPort(6379));
+    final Store store = new Store(container, connectionInfo);
+    return new StartupResult.Success(annotation.id(), connectionInfo, store);
+  }
+
+  /** Intermediate holder for startup collection results. */
+  private record StartupCollectionResult(
+      Map<String, RedisConnectionInfo> successfulInstances,
+      Map<String, Store> successfulStores,
+      List<ClusterStartupFailure> failures,
+      List<Store> containersToCleanup) {}
 
   private GenericContainer<?> createContainer(final RedisStandalone annotation) {
     final var imageName = DockerImageName.parse("redis:" + annotation.version());
@@ -492,61 +519,6 @@ public final class RedisContainerExtension
 
   // ==================== Inner Classes ====================
 
-  private static final class InstanceStartupResult {
-    private final String instanceId;
-    private final RedisConnectionInfo connectionInfo;
-    private final Store store;
-    private final String errorMessage;
-    private final Exception error;
-
-    private InstanceStartupResult(
-        final String instanceId,
-        final RedisConnectionInfo connectionInfo,
-        final Store store,
-        final String errorMessage,
-        final Exception error) {
-      this.instanceId = instanceId;
-      this.connectionInfo = connectionInfo;
-      this.store = store;
-      this.errorMessage = errorMessage;
-      this.error = error;
-    }
-
-    static InstanceStartupResult success(
-        final String instanceId, final RedisConnectionInfo connectionInfo, final Store store) {
-      return new InstanceStartupResult(instanceId, connectionInfo, store, null, null);
-    }
-
-    static InstanceStartupResult failure(
-        final String instanceId, final String errorMessage, final Exception error) {
-      return new InstanceStartupResult(instanceId, null, null, errorMessage, error);
-    }
-
-    boolean isSuccess() {
-      return error == null;
-    }
-
-    String getInstanceId() {
-      return instanceId;
-    }
-
-    RedisConnectionInfo getConnectionInfo() {
-      return connectionInfo;
-    }
-
-    Store getStore() {
-      return store;
-    }
-
-    String getErrorMessage() {
-      return errorMessage;
-    }
-
-    Exception getError() {
-      return error;
-    }
-  }
-
   /** Container + connection info holder. */
   @Getter
   public static final class Store implements ExtensionContext.Store.CloseableResource {
@@ -599,24 +571,6 @@ public final class RedisContainerExtension
       this.port = port;
     }
 
-    /**
-     * Gets the Redis host address.
-     *
-     * @return host address (never null)
-     */
-    public String getHost() {
-      return host;
-    }
-
-    /**
-     * Gets the Redis port number.
-     *
-     * @return port number (positive integer)
-     */
-    public int getPort() {
-      return port;
-    }
-
     @Override
     public String toString() {
       return host + ":" + port;
@@ -641,28 +595,6 @@ public final class RedisContainerExtension
    * @throws IllegalStateException if cache chaos module (Toxiproxy) is missing
    */
   private static void verifyChaosDependencies() {
-    // Check for cache module (contains Toxiproxy logic)
-    if (!isClassPresent("com.macstab.chaos.cache.ToxiproxyCacheChaos")) {
-      throw new IllegalStateException(
-          "enableNetworkChaos=true requires macstab-chaos-cache (Toxiproxy) on classpath.\n"
-              + "This proxies Redis traffic: client → Toxiproxy → Redis\n\n"
-              + "Add to your build.gradle.kts:\n"
-              + "    testImplementation(\"com.macstab:macstab-chaos-cache:${version}\")");
-    }
-  }
-
-  /**
-   * Check if class is present on classpath.
-   *
-   * @param className fully qualified class name
-   * @return true if class exists, false otherwise
-   */
-  private static boolean isClassPresent(final String className) {
-    try {
-      Class.forName(className, false, RedisContainerExtension.class.getClassLoader());
-      return true;
-    } catch (final ClassNotFoundException e) {
-      return false;
-    }
+    DependencyVerifier.requireCacheModule();
   }
 }

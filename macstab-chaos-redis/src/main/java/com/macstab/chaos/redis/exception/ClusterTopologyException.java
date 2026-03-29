@@ -3,7 +3,6 @@ package com.macstab.chaos.redis.exception;
 
 import java.util.Map;
 
-import com.macstab.chaos.core.exception.ClusterException;
 import com.macstab.chaos.redis.control.role.ContainerRole;
 
 /**
@@ -29,7 +28,7 @@ import com.macstab.chaos.redis.control.role.ContainerRole;
  * @author Christian Schnapka - Macstab GmbH
  * @since 2.0
  */
-public class ClusterTopologyException extends ClusterException {
+public final class ClusterTopologyException extends ClusterException {
 
   private final int runningContainers;
   private final Map<ContainerRole, Integer> roleDistribution;

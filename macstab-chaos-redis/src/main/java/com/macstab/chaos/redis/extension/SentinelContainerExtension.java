@@ -33,7 +33,7 @@ import com.macstab.chaos.redis.control.role.ContainerRole;
 import com.macstab.chaos.redis.exception.ClusterStartupException;
 import com.macstab.chaos.redis.exception.ClusterStartupException.ClusterStartupFailure;
 import com.macstab.chaos.redis.extension.RedisContainerExtension.RedisConnectionInfo;
-import com.macstab.chaos.redis.factory.RedisContainerFactory;
+import com.macstab.chaos.redis.factory.SentinelContainerFactory;
 import com.macstab.chaos.redis.util.ResourceBudget;
 
 import io.lettuce.core.RedisURI;
@@ -101,42 +101,38 @@ public final class SentinelContainerExtension
   @Override
   public void beforeAll(final ExtensionContext context) throws Exception {
     CURRENT_CONTEXT.set(context);
-
-    // Register automatic ThreadLocal cleanup
     context.getStore(NAMESPACE).put("threadlocal-cleanup", new ThreadLocalCleanup());
 
-    // Extract annotations (handle both single and container)
     final RedisSentinel[] annotations = extractAnnotations(context);
-
     if (annotations.length == 0) {
       log.warn("No @RedisSentinel annotations found, skipping cluster startup");
       return;
     }
 
-    // Validate resource budget BEFORE starting anything
-    try {
-      ResourceBudget.validateSentinelBudget(annotations);
-    } catch (ResourceBudget.ResourceBudgetExceededException e) {
-      log.error("Resource budget validation failed: {}", e.getMessage());
-      throw e;
-    }
-
-    // Store annotations for later use (ordering, getAll())
+    validateBudgetOrThrow(annotations);
     context.getStore(NAMESPACE).put(ANNOTATIONS_KEY, annotations);
-
     log.info(
         "Starting {} Sentinel cluster(s) in parallel (budget validated: {} total containers expected)",
         annotations.length,
         calculateTotalContainers(annotations));
 
-    // Start all clusters in parallel
     final Map<String, SentinelCluster> clusters = startClustersInParallel(annotations);
+    storeClustersAndExposeSystemProperty(context, clusters);
+    log.info("Successfully started {} Sentinel cluster(s)", clusters.size());
+  }
 
-    // Store clusters in map (keyed by ID)
-    // Wrap clusters in CloseableClusterMap to ensure cleanup
+  private void validateBudgetOrThrow(final RedisSentinel[] annotations) {
+    try {
+      ResourceBudget.validateSentinelBudget(annotations);
+    } catch (final ResourceBudget.ResourceBudgetExceededException e) {
+      log.error("Resource budget validation failed: {}", e.getMessage());
+      throw e;
+    }
+  }
+
+  private void storeClustersAndExposeSystemProperty(
+      final ExtensionContext context, final Map<String, SentinelCluster> clusters) {
     context.getStore(NAMESPACE).put(CLUSTER_MAP_KEY, new CloseableClusterMap(clusters));
-
-    // Expose first sentinel nodes as system property (backward compatibility)
     if (!clusters.isEmpty()) {
       final SentinelCluster firstCluster = clusters.values().iterator().next();
       final RedisConnectionInfo firstSentinel = firstCluster.getSentinels().get(0);
@@ -144,8 +140,6 @@ public final class SentinelContainerExtension
       System.setProperty(SENTINEL_NODES_PROPERTY, sentinelNodes);
       log.info("Set system property {}={}", SENTINEL_NODES_PROPERTY, sentinelNodes);
     }
-
-    log.info("Successfully started {} Sentinel cluster(s)", clusters.size());
   }
 
   @Override
@@ -389,7 +383,7 @@ public final class SentinelContainerExtension
   private ClusterStartupResult startSingleCluster(final RedisSentinel annotation) {
     try {
       final var factoryCluster =
-          RedisContainerFactory.createSentinelCluster(
+          SentinelContainerFactory.createSentinelCluster(
               annotation.replicas(), annotation.sentinels(), annotation.enableNetworkChaos());
 
       final SentinelCluster cluster =

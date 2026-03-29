@@ -15,6 +15,22 @@ import com.macstab.chaos.redis.control.role.RoleResolver;
 import io.lettuce.core.api.StatefulRedisConnection;
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * Inspects Lettuce connections to identify which Docker container they are connected to.
+ *
+ * <p><strong>Three-tier inspection strategy:</strong>
+ * <ul>
+ *   <li>Tier 1 (Auto): Extracts host:port from connection's toString(), matches against containers
+ *   <li>Tier 2 (Hint): Caller provides container reference directly
+ *   <li>Tier 3 (Manual): Caller builds {@link ConnectionInfo} without live connection
+ * </ul>
+ *
+ * <p><strong>Returned info includes:</strong> container role (master/replica/sentinel),
+ * connection health, and endpoint details.
+ *
+ * @author Christian Schnapka - Macstab GmbH
+ * @since 2.0
+ */
 @Slf4j
 public final class LettuceConnectionInspector implements ConnectionInspector {
   // Regex patterns for robust endpoint extraction (tried in order)

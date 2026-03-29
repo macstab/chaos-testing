@@ -3,10 +3,7 @@ package com.macstab.chaos.redis.exception;
 
 import java.util.List;
 
-import lombok.extern.slf4j.Slf4j;
-
-@Slf4j
-public final class ClusterStartupException extends RuntimeException {
+public final class ClusterStartupException extends ClusterException {
 
   private final List<ClusterStartupFailure> failures;
   private final List<String> cleanupActions;

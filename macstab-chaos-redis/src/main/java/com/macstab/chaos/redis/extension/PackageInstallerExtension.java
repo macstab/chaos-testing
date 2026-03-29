@@ -16,7 +16,7 @@ import com.macstab.chaos.redis.annotation.InstallPackages;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-public class PackageInstallerExtension implements BeforeEachCallback {
+public final class PackageInstallerExtension implements BeforeEachCallback {
   /**
    * Callback executed before each test method.
    *

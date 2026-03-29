@@ -21,6 +21,36 @@ import com.macstab.chaos.redis.control.role.RoleResolver;
 import io.lettuce.core.api.StatefulRedisConnection;
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * Unified facade for all Redis cluster control operations during chaos testing.
+ *
+ * <p><strong>Capabilities:</strong>
+ * <ul>
+ *   <li>Connection inspection (identify container from Lettuce connection)
+ *   <li>Container lifecycle (restart, kill, pause, resume, waitForReady)
+ *   <li>Failover simulation (trigger and measure election time)
+ *   <li>Role-based container access (master, replica, sentinel)
+ *   <li>Network chaos engineering (latency, packet loss, jitter, partitions)
+ * </ul>
+ *
+ * <p><strong>Lifecycle:</strong> Created once per cluster via {@link #create(List, Map)} and
+ * reused across test methods. Thread-safe; caches role resolution results.
+ *
+ * <p><strong>Example:</strong>
+ * <pre>{@code
+ * ControlFacade control = ControlFacade.create(allContainers, containerIndexMap);
+ *
+ * // Trigger failover and measure election time
+ * Duration elapsed = control.triggerFailover();
+ * assertThat(elapsed).isLessThan(Duration.ofSeconds(10));
+ *
+ * // Inject network latency on replica
+ * control.network().injectLatency(control.getContainer(ContainerRole.REPLICA_0), Duration.ofMillis(80));
+ * }</pre>
+ *
+ * @author Christian Schnapka - Macstab GmbH
+ * @since 2.0
+ */
 @Slf4j
 public final class ControlFacade {
 

@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.GenericContainer;
 
-import com.macstab.chaos.redis.util.RedisCommandTracker.CommandWithArgs;
+import com.macstab.chaos.redis.util.tracker.CommandWithArgs;
 
 /**
  * Unit tests for {@link RedisCommandTracker} new features.
