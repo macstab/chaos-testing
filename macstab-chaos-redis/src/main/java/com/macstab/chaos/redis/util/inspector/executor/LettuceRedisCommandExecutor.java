@@ -32,10 +32,11 @@ import lombok.extern.slf4j.Slf4j;
  * nested list — inspect via {@link com.macstab.chaos.redis.util.inspector.SlowCommandDetector}
  * which uses typed Lettuce methods directly for SLOWLOG parsing.
  *
- * <p><strong>Note on SLOWLOG GET:</strong> Because Lettuce returns SLOWLOG as {@code List<Object>}
- * (not a string), this executor does NOT support {@code SLOWLOG GET} via the string-based
- * {@link #execute(String)} interface. {@link com.macstab.chaos.redis.util.inspector.SlowCommandDetector}
- * uses its own typed Lettuce path for SLOWLOG parsing. This executor covers the remaining commands.
+ * <p><strong>SLOWLOG support:</strong> {@code SLOWLOG RESET} is supported (dispatches to
+ * {@code slowlogReset()}). {@code SLOWLOG GET} is intentionally NOT supported via
+ * {@link #execute(String)} — Lettuce returns it as {@code List<Object>}, not a string.
+ * {@link com.macstab.chaos.redis.util.inspector.SlowCommandDetector} handles SLOWLOG GET
+ * internally through its {@code LettuceSlowlogBackend} using the typed {@code slowlogGet(int)} API.
  *
  * <p><strong>Example:</strong>
  * <pre>{@code
@@ -88,6 +89,20 @@ public final class LettuceRedisCommandExecutor implements RedisCommandExecutor, 
     this.ownedClient = RedisClient.create(uri);
     this.ownedConnection = ownedClient.connect();
     this.redisCommands = ownedConnection.sync();
+  }
+
+  /**
+   * Returns the underlying Lettuce sync commands.
+   *
+   * <p><strong>Internal use only.</strong> Used by
+   * {@link com.macstab.chaos.redis.util.inspector.SlowCommandDetector} to access typed SLOWLOG
+   * operations ({@code slowlogGet(int)}) that cannot be expressed as a string command.
+   * Not intended for general use.
+   *
+   * @return sync Redis commands (never null)
+   */
+  public RedisCommands<String, String> getRedisCommands() {
+    return redisCommands;
   }
 
   /**

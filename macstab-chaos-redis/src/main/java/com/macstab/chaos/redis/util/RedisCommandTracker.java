@@ -169,7 +169,7 @@ public final class RedisCommandTracker {
       Thread.sleep(500);
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
-      throw new RuntimeException("Interrupted while starting MONITOR", e);
+      throw new IllegalStateException("Interrupted while starting MONITOR", e);
     }
   }
 
@@ -453,17 +453,10 @@ public final class RedisCommandTracker {
    *
    * @param line MONITOR output line
    * @return command name (uppercase), or null if not found
+   * @see CommandParser#extractCommandName(String)
    */
   private static String extractCommandName(final String line) {
-    final int firstQuote = line.indexOf('"');
-    if (firstQuote == -1) {
-      return null;
-    }
-    final int secondQuote = line.indexOf('"', firstQuote + 1);
-    if (secondQuote == -1) {
-      return null;
-    }
-    return line.substring(firstQuote + 1, secondQuote).toUpperCase();
+    return CommandParser.extractCommandName(line);
   }
 
   /**

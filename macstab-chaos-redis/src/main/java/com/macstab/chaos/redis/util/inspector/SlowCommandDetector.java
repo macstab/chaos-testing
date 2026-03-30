@@ -61,18 +61,74 @@ public final class SlowCommandDetector implements AutoCloseable {
   /** Default Redis port. */
   public static final int DEFAULT_REDIS_PORT = ShellRedisCommandExecutor.DEFAULT_REDIS_PORT;
 
-  private final RedisCommandExecutor executor;           // null when Lettuce-backed via field below
-  private final RedisCommands<String, String> lettuceCommands; // null when executor-backed
+  /**
+   * Internal strategy for SLOWLOG operations — eliminates nullable fields.
+   *
+   * <p>Two implementations: {@link LettuceSlowlogBackend} (typed API, maximum reliability)
+   * and {@link ShellSlowlogBackend} (text parsing via redis-cli).
+   */
+  private interface SlowlogBackend {
+    void reset();
+    List<SlowLogEntry> get(int count);
+    void close();
+  }
+
+  /** Lettuce-backed SLOWLOG strategy — uses typed {@code slowlogGet(int)}. */
+  private static final class LettuceSlowlogBackend implements SlowlogBackend {
+    private final RedisCommands<String, String> commands;
+    private final LettuceRedisCommandExecutor ownedExecutor; // null if caller owns connection
+
+    LettuceSlowlogBackend(
+        final RedisCommands<String, String> commands,
+        final LettuceRedisCommandExecutor ownedExecutor) {
+      this.commands = commands;
+      this.ownedExecutor = ownedExecutor;
+    }
+
+    @Override public void reset() { commands.slowlogReset(); }
+    @Override public List<SlowLogEntry> get(final int count) {
+      return parseLettuceSlowlog(commands.slowlogGet(count));
+    }
+    @Override public void close() {
+      if (ownedExecutor != null) {
+        ownedExecutor.close();
+      }
+    }
+  }
+
+  /** Shell-backed SLOWLOG strategy — parses redis-cli text output. */
+  private static final class ShellSlowlogBackend implements SlowlogBackend {
+    private final RedisCommandExecutor executor;
+
+    ShellSlowlogBackend(final RedisCommandExecutor executor) {
+      this.executor = executor;
+    }
+
+    @Override public void reset() { executor.execute("SLOWLOG RESET"); }
+    @Override public List<SlowLogEntry> get(final int count) {
+      return parseShellSlowlog(executor.execute("SLOWLOG GET " + count));
+    }
+    @Override public void close() { executor.close(); }
+  }
+
+  private final SlowlogBackend backend;
 
   /**
-   * Creates a detector backed by the given executor (shell or Lettuce).
-   * Use factory methods for convenience.
+   * Creates a detector using an executor-backed backend.
+   *
+   * <p>When passed a {@link LettuceRedisCommandExecutor}, uses the typed Lettuce API internally
+   * via {@link LettuceSlowlogBackend} for maximum reliability. When passed a
+   * {@link ShellRedisCommandExecutor}, uses text parsing via {@link ShellSlowlogBackend}.
    *
    * @param executor command executor — must not be null
    */
   public SlowCommandDetector(final RedisCommandExecutor executor) {
-    this.executor = Objects.requireNonNull(executor, "executor");
-    this.lettuceCommands = null;
+    Objects.requireNonNull(executor, "executor");
+    if (executor instanceof final LettuceRedisCommandExecutor lettuceExec) {
+      this.backend = new LettuceSlowlogBackend(lettuceExec.getRedisCommands(), lettuceExec);
+    } else {
+      this.backend = new ShellSlowlogBackend(executor);
+    }
   }
 
   /**
@@ -82,8 +138,8 @@ public final class SlowCommandDetector implements AutoCloseable {
    * @param redisCommands Lettuce sync commands — must not be null
    */
   public SlowCommandDetector(final RedisCommands<String, String> redisCommands) {
-    this.lettuceCommands = Objects.requireNonNull(redisCommands, "redisCommands");
-    this.executor = null;
+    Objects.requireNonNull(redisCommands, "redisCommands");
+    this.backend = new LettuceSlowlogBackend(redisCommands, null);
   }
 
   // ==================== Factory Methods ====================
@@ -112,8 +168,10 @@ public final class SlowCommandDetector implements AutoCloseable {
   public static SlowCommandDetector forContainer(
       final GenericContainer<?> container, final int port) {
     Objects.requireNonNull(container, "container");
-    final int mappedPort = container.getMappedPort(port);
-    return new SlowCommandDetector(new LettuceRedisCommandExecutor(container.getHost(), mappedPort));
+    // Create owned Lettuce executor — detector backend closes it on close()
+    final LettuceRedisCommandExecutor ownedExecutor =
+        new LettuceRedisCommandExecutor(container.getHost(), container.getMappedPort(port));
+    return new SlowCommandDetector(ownedExecutor);
   }
 
   /**
@@ -154,16 +212,14 @@ public final class SlowCommandDetector implements AutoCloseable {
   }
 
   /**
-   * Closes the underlying executor, releasing any owned Lettuce connection.
+   * Closes the backend, releasing any owned Lettuce connection.
    */
   @Override
   public void close() {
-    if (executor != null) {
-      try {
-        executor.close();
-      } catch (final Exception e) {
-        log.debug("Error closing executor", e);
-      }
+    try {
+      backend.close();
+    } catch (final Exception e) {
+      log.debug("Error closing slowlog backend", e);
     }
   }
 
@@ -175,11 +231,7 @@ public final class SlowCommandDetector implements AutoCloseable {
    * @return this instance for method chaining
    */
   public SlowCommandDetector reset() {
-    if (lettuceCommands != null) {
-      lettuceCommands.slowlogReset();
-    } else {
-      executor.execute("SLOWLOG RESET");
-    }
+    backend.reset();
     return this;
   }
 
@@ -199,10 +251,7 @@ public final class SlowCommandDetector implements AutoCloseable {
    * @return list of slowlog entries (never null, may be empty)
    */
   public List<SlowLogEntry> getSlowCommands(final int count) {
-    if (lettuceCommands != null) {
-      return parseLettuceSlowlog(lettuceCommands.slowlogGet(count));
-    }
-    return parseShellSlowlog(executor.execute("SLOWLOG GET " + count));
+    return backend.get(count);
   }
 
   /**

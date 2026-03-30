@@ -21,34 +21,26 @@ import lombok.extern.slf4j.Slf4j;
  * Verifies replication consistency between a Redis master and replica.
  *
  * <p>Writes {@code keyCount} unique test keys to the master, polls the replica until all replicate
- * (or timeout), and reports a {@link ConsistencyResult} with matching/missing counts.
+ * (or timeout), and reports a {@link ConsistencyResult} with matching/missing counts and assertion
+ * helpers.
  *
- * <p><strong>Two backends, one API:</strong>
- * <ul>
- *   <li>{@link #forContainers(GenericContainer, GenericContainer)} — shell-backed via
- *       {@code redis-cli} inside each container. No Lettuce required. Suitable for up to ~200 keys
- *       per test (one shell exec per key).
- *   <li>{@link #forCommands(RedisCommands, RedisCommands)} — Lettuce-backed. Preferred for large
- *       key counts or when connections are already available. Zero process-spawn overhead.
- * </ul>
+ * <p><strong>Single strategy — {@link RedisCommandExecutor}:</strong> All backends go through the
+ * executor abstraction. {@link #forContainers} creates Lettuce-backed executors (default, zero
+ * process overhead). {@link #forContainersShell} uses shell executors for DinD/Podman topologies.
+ * {@link #forCommands} wraps existing Lettuce connections. One code path, no nullable fields.
  *
- * <p><strong>Port configuration:</strong> Factory methods default to port 6379. Use
- * {@link #forContainers(GenericContainer, int, GenericContainer, int)} for non-standard ports.
+ * <p><strong>Port configuration:</strong> Factory methods default to port 6379. Use the
+ * explicit-port overloads for non-standard deployments.
  *
- * <p><strong>Example (container-backed):</strong>
+ * <p><strong>Lifecycle:</strong> Implements {@link AutoCloseable}. Use try-with-resources when
+ * created via {@link #forContainers} (owns connections). {@link #forCommands} is a no-op on close.
+ *
+ * <p><strong>Example:</strong>
  * <pre>{@code
- * ReplicationConsistencyVerifier verifier =
- *     ReplicationConsistencyVerifier.forContainers(masterContainer, replicaContainer);
- * ConsistencyResult result = verifier.verify(50);
- * result.assertFullConsistency();
- * }</pre>
- *
- * <p><strong>Example (Lettuce-backed, high-volume):</strong>
- * <pre>{@code
- * ReplicationConsistencyVerifier verifier =
- *     ReplicationConsistencyVerifier.forCommands(masterCommands, replicaCommands);
- * ConsistencyResult result = verifier.verify(1000, Duration.ofSeconds(10));
- * result.assertConsistencyAtLeast(0.99);
+ * try (ReplicationConsistencyVerifier verifier =
+ *         ReplicationConsistencyVerifier.forContainers(master, replica)) {
+ *     verifier.verify(50).assertFullConsistency();
+ * }
  * }</pre>
  *
  * @author Christian Schnapka - Macstab GmbH
@@ -61,50 +53,29 @@ public final class ReplicationConsistencyVerifier implements AutoCloseable {
   private static final Duration POLL_INTERVAL = Duration.ofMillis(10);
   private static final String KEY_PREFIX = "consistency-check-";
 
-  // Exactly one of these two backends is non-null
   private final RedisCommandExecutor masterExecutor;
   private final RedisCommandExecutor replicaExecutor;
-  private final RedisCommands<String, String> masterLettuceCommands;
-  private final RedisCommands<String, String> replicaLettuceCommands;
 
   /**
-   * Creates a shell-backed verifier. Use factory methods for convenience.
+   * Creates a verifier backed by the given executors. Use factory methods for convenience.
    *
-   * @param masterExecutor  executor for master container — must not be null
-   * @param replicaExecutor executor for replica container — must not be null
+   * @param masterExecutor  executor for the master — must not be null
+   * @param replicaExecutor executor for the replica — must not be null
    */
   public ReplicationConsistencyVerifier(
       final RedisCommandExecutor masterExecutor,
       final RedisCommandExecutor replicaExecutor) {
     this.masterExecutor = Objects.requireNonNull(masterExecutor, "masterExecutor");
     this.replicaExecutor = Objects.requireNonNull(replicaExecutor, "replicaExecutor");
-    this.masterLettuceCommands = null;
-    this.replicaLettuceCommands = null;
-  }
-
-  /**
-   * Creates a Lettuce-backed verifier. Use factory methods for convenience.
-   *
-   * @param masterCommands  Lettuce commands for master — must not be null
-   * @param replicaCommands Lettuce commands for replica — must not be null
-   */
-  public ReplicationConsistencyVerifier(
-      final RedisCommands<String, String> masterCommands,
-      final RedisCommands<String, String> replicaCommands) {
-    this.masterLettuceCommands = Objects.requireNonNull(masterCommands, "masterCommands");
-    this.replicaLettuceCommands = Objects.requireNonNull(replicaCommands, "replicaCommands");
-    this.masterExecutor = null;
-    this.replicaExecutor = null;
   }
 
   // ==================== Factory Methods ====================
 
   /**
-   * Creates a Lettuce-backed verifier by connecting to both containers' mapped Redis ports.
+   * Creates a Lettuce-backed verifier connecting to both containers on the default port (6379).
    *
-   * <p>This is the default and preferred backend. Zero per-key process overhead — all writes and
-   * reads use the existing Lettuce connection. The verifier owns both connections — call
-   * {@link #close()} when done, or use try-with-resources.
+   * <p>Preferred backend — zero per-key process overhead. Owns both connections;
+   * call {@link #close()} when done or use try-with-resources.
    *
    * @param master  running master container — must not be null
    * @param replica running replica container — must not be null
@@ -137,24 +108,26 @@ public final class ReplicationConsistencyVerifier implements AutoCloseable {
   }
 
   /**
-   * Creates a Lettuce-backed verifier using existing connections.
+   * Creates a Lettuce-backed verifier wrapping existing connections.
    *
-   * <p>The caller retains ownership — {@link #close()} is a no-op.
+   * <p>The caller retains ownership of the connections — {@link #close()} is a no-op.
    *
    * @param masterCommands  Lettuce sync commands for master — must not be null
    * @param replicaCommands Lettuce sync commands for replica — must not be null
-   * @return Lettuce-backed verifier (does NOT own the connections)
+   * @return verifier backed by the given connections (does NOT own them)
    */
   public static ReplicationConsistencyVerifier forCommands(
       final RedisCommands<String, String> masterCommands,
       final RedisCommands<String, String> replicaCommands) {
-    return new ReplicationConsistencyVerifier(masterCommands, replicaCommands);
+    return new ReplicationConsistencyVerifier(
+        new LettuceRedisCommandExecutor(masterCommands),
+        new LettuceRedisCommandExecutor(replicaCommands));
   }
 
   /**
-   * Creates a shell-backed verifier for environments where Lettuce is unavailable.
+   * Creates a shell-backed verifier for DinD, network-isolated, or Podman topologies.
    *
-   * <p>Uses one {@code redis-cli} process per key. Suitable for up to ~200 keys per test.
+   * <p>Uses one {@code redis-cli} process per key — suitable for up to ~200 keys per test.
    *
    * @param master  running master container — must not be null
    * @param replica running replica container — must not be null
@@ -185,25 +158,21 @@ public final class ReplicationConsistencyVerifier implements AutoCloseable {
   }
 
   /**
-   * Closes owned Lettuce connections (master and replica), if any.
+   * Closes owned executors, releasing any Lettuce connections created by this verifier.
    */
   @Override
   public void close() {
-    if (masterExecutor != null) {
-      try { masterExecutor.close(); } catch (final Exception e) { log.debug("Error closing master executor", e); }
-    }
-    if (replicaExecutor != null) {
-      try { replicaExecutor.close(); } catch (final Exception e) { log.debug("Error closing replica executor", e); }
-    }
+    closeQuietly(masterExecutor, "master");
+    closeQuietly(replicaExecutor, "replica");
   }
 
   // ==================== API ====================
 
   /**
-   * Verifies replication consistency using the default timeout of 5 seconds.
+   * Verifies replication consistency with a 5-second timeout.
    *
-   * @param keyCount number of unique test keys to write — must be &gt; 0
-   * @return consistency result with matching/missing counts
+   * @param keyCount number of unique test keys — must be &gt; 0
+   * @return consistency result
    */
   public ConsistencyResult verify(final int keyCount) {
     return verify(keyCount, DEFAULT_TIMEOUT);
@@ -212,9 +181,9 @@ public final class ReplicationConsistencyVerifier implements AutoCloseable {
   /**
    * Verifies replication consistency with a custom timeout.
    *
-   * @param keyCount number of unique test keys to write — must be &gt; 0
-   * @param timeout  maximum wait for all keys to replicate — must not be null
-   * @return consistency result with matching/missing counts
+   * @param keyCount number of unique test keys — must be &gt; 0
+   * @param timeout  maximum wait for replication — must not be null
+   * @return consistency result
    */
   public ConsistencyResult verify(final int keyCount, final Duration timeout) {
     if (keyCount <= 0) {
@@ -222,58 +191,25 @@ public final class ReplicationConsistencyVerifier implements AutoCloseable {
     }
     Objects.requireNonNull(timeout, "timeout");
 
-    // Lettuce direct path: typed commands, zero per-call overhead
-    if (masterLettuceCommands != null) {
-      return verifyWithLettuceCommands(keyCount, timeout);
-    }
-    // Executor path: handles both LettuceRedisCommandExecutor and ShellRedisCommandExecutor
-    return verifyWithExecutor(keyCount, timeout);
-  }
-
-  // ==================== Lettuce direct backend (forCommands) ====================
-
-  private ConsistencyResult verifyWithLettuceCommands(final int keyCount, final Duration timeout) {
-    final List<String> keys = generateKeys(keyCount);
-    try {
-      keys.forEach(key -> masterLettuceCommands.set(key, key));
-      return pollForConsistency(keyCount, timeout, keys,
-          key -> replicaLettuceCommands.get(key));
-    } finally {
-      keys.forEach(key -> {
-        try { masterLettuceCommands.del(key); } catch (final Exception e) { /* best-effort */ }
-      });
-    }
-  }
-
-  // ==================== Executor backend (forContainers / forContainersShell) ====================
-
-  private ConsistencyResult verifyWithExecutor(final int keyCount, final Duration timeout) {
     final List<String> keys = generateKeys(keyCount);
     try {
       keys.forEach(key -> masterExecutor.execute("SET " + key + " " + key));
-      return pollForConsistency(keyCount, timeout, keys, key -> {
-        final String result = replicaExecutor.execute("GET " + key);
-        // redis-cli returns "(nil)" for missing keys; Lettuce executor returns empty string
-        final String trimmed = result == null ? "" : result.trim();
-        return "(nil)".equals(trimmed) || trimmed.isEmpty() ? null : trimmed;
-      });
+      return pollForConsistency(keyCount, timeout, keys);
     } finally {
       keys.forEach(key -> {
-        try { masterExecutor.execute("DEL " + key); } catch (final Exception e) { /* best-effort */ }
+        try {
+          masterExecutor.execute("DEL " + key);
+        } catch (final Exception e) {
+          log.debug("Cleanup failed for key {}", key, e);
+        }
       });
     }
   }
 
-  // ==================== Shared polling logic ====================
-
-  @FunctionalInterface
-  private interface KeyReader {
-    String get(String key);
-  }
+  // ==================== Internal ====================
 
   private ConsistencyResult pollForConsistency(
-      final int keyCount, final Duration timeout,
-      final List<String> keys, final KeyReader reader) {
+      final int keyCount, final Duration timeout, final List<String> keys) {
 
     final long deadlineMs = System.currentTimeMillis() + timeout.toMillis();
     int matchingKeys = 0;
@@ -281,8 +217,7 @@ public final class ReplicationConsistencyVerifier implements AutoCloseable {
     while (System.currentTimeMillis() < deadlineMs) {
       matchingKeys = 0;
       for (final String key : keys) {
-        final String value = reader.get(key);
-        if (key.equals(value)) {
+        if (key.equals(readFromReplica(key))) {
           matchingKeys++;
         }
       }
@@ -293,6 +228,13 @@ public final class ReplicationConsistencyVerifier implements AutoCloseable {
     }
 
     return new ConsistencyResult(keyCount, matchingKeys, keyCount - matchingKeys);
+  }
+
+  private String readFromReplica(final String key) {
+    final String result = replicaExecutor.execute("GET " + key);
+    final String trimmed = result == null ? "" : result.trim();
+    // redis-cli returns "(nil)" for missing keys; LettuceRedisCommandExecutor returns ""
+    return "(nil)".equals(trimmed) || trimmed.isEmpty() ? null : trimmed;
   }
 
   private static List<String> generateKeys(final int count) {
@@ -308,6 +250,14 @@ public final class ReplicationConsistencyVerifier implements AutoCloseable {
       Thread.sleep(POLL_INTERVAL.toMillis());
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
+    }
+  }
+
+  private void closeQuietly(final RedisCommandExecutor executor, final String name) {
+    try {
+      executor.close();
+    } catch (final Exception e) {
+      log.debug("Error closing {} executor", name, e);
     }
   }
 }

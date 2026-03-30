@@ -50,4 +50,24 @@ public final class CommandParser {
         .filter(Objects::nonNull)
         .collect(Collectors.toList());
   }
+
+  /**
+   * Extracts the command name (first quoted token) from a MONITOR output line.
+   *
+   * <p>MONITOR format: {@code 1234.567 [0 127.0.0.1:12345] "COMMAND" "arg1" "arg2"}
+   *
+   * @param line MONITOR output line
+   * @return command name in uppercase, or {@code null} if line is malformed
+   */
+  public static String extractCommandName(final String line) {
+    final int firstQuote = line.indexOf('"');
+    if (firstQuote == -1) {
+      return null;
+    }
+    final int secondQuote = line.indexOf('"', firstQuote + 1);
+    if (secondQuote == -1) {
+      return null;
+    }
+    return line.substring(firstQuote + 1, secondQuote).toUpperCase();
+  }
 }

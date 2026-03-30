@@ -5,6 +5,7 @@ import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.util.Shell;
 import com.macstab.chaos.redis.command.RedisCommandBuilder;
+import com.macstab.chaos.redis.exception.ClusterCreationException;
 
 /**
  * Builder for Redis Sentinel startup and announce commands.
@@ -58,13 +59,14 @@ public final class SentinelCommandBuilder {
    * @throws RuntimeException if configuration fails
    */
   public static void configureMasterAnnouncement(final GenericContainer<?> master) {
-    final Integer masterMappedPort = master.getMappedPort(6379);
+    final int masterMappedPort = master.getMappedPort(StandaloneContainerFactory.REDIS_PORT);
     try {
-      Shell.exec(
-          master, RedisCommandBuilder.buildAnnounceIpCommand(6379, "host.testcontainers.internal"));
-      Shell.exec(master, RedisCommandBuilder.buildAnnouncePortCommand(6379, masterMappedPort));
+      Shell.exec(master, RedisCommandBuilder.buildAnnounceIpCommand(
+          StandaloneContainerFactory.REDIS_PORT, "host.testcontainers.internal"));
+      Shell.exec(master, RedisCommandBuilder.buildAnnouncePortCommand(
+          StandaloneContainerFactory.REDIS_PORT, masterMappedPort));
     } catch (final Exception e) {
-      throw new RuntimeException("Failed to configure master announce address", e);
+      throw new ClusterCreationException("Failed to configure master announce address", e);
     }
   }
 
@@ -78,14 +80,14 @@ public final class SentinelCommandBuilder {
    * @throws RuntimeException if configuration fails
    */
   public static void configureReplicaAnnouncement(final GenericContainer<?> replica) {
-    final Integer replicaMappedPort = replica.getMappedPort(6379);
+    final int replicaMappedPort = replica.getMappedPort(StandaloneContainerFactory.REDIS_PORT);
     try {
-      Shell.exec(
-          replica,
-          RedisCommandBuilder.buildAnnounceIpCommand(6379, "host.testcontainers.internal"));
-      Shell.exec(replica, RedisCommandBuilder.buildAnnouncePortCommand(6379, replicaMappedPort));
+      Shell.exec(replica, RedisCommandBuilder.buildAnnounceIpCommand(
+          StandaloneContainerFactory.REDIS_PORT, "host.testcontainers.internal"));
+      Shell.exec(replica, RedisCommandBuilder.buildAnnouncePortCommand(
+          StandaloneContainerFactory.REDIS_PORT, replicaMappedPort));
     } catch (final Exception e) {
-      throw new RuntimeException("Failed to configure replica announce address", e);
+      throw new ClusterCreationException("Failed to configure replica announce address", e);
     }
   }
 
@@ -103,15 +105,14 @@ public final class SentinelCommandBuilder {
    * @throws RuntimeException if configuration fails
    */
   public static void configureSentinelAnnouncement(final GenericContainer<?> sentinel) {
-    final Integer sentinelMappedPort = sentinel.getMappedPort(26379);
+    final int sentinelMappedPort = sentinel.getMappedPort(StandaloneContainerFactory.SENTINEL_PORT);
     try {
-      Shell.exec(
-          sentinel,
-          RedisCommandBuilder.buildSentinelAnnounceIpCommand("host.testcontainers.internal"));
-      Shell.exec(
-          sentinel, RedisCommandBuilder.buildSentinelAnnouncePortCommand(sentinelMappedPort));
+      Shell.exec(sentinel, RedisCommandBuilder.buildSentinelAnnounceIpCommand(
+          StandaloneContainerFactory.SENTINEL_PORT, "host.testcontainers.internal"));
+      Shell.exec(sentinel, RedisCommandBuilder.buildSentinelAnnouncePortCommand(
+          StandaloneContainerFactory.SENTINEL_PORT, sentinelMappedPort));
     } catch (final Exception e) {
-      throw new RuntimeException("Failed to configure sentinel announce address", e);
+      throw new ClusterCreationException("Failed to configure sentinel announce address", e);
     }
   }
 }

@@ -7,6 +7,7 @@ import org.testcontainers.containers.wait.strategy.Wait;
 
 import com.github.dockerjava.api.model.Capability;
 import com.macstab.chaos.core.util.Shell;
+import com.macstab.chaos.redis.command.RedisCommandBuilder;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -50,8 +51,8 @@ public final class SentinelNodeFactory {
       final Network network, final boolean enableNetworkChaos) {
     return new GenericContainer<>(StandaloneContainerFactory.REDIS_IMAGE)
         .withNetwork(network)
-        .withNetworkAliases("redis-master")
-        .withExposedPorts(6379)
+        .withNetworkAliases(StandaloneContainerFactory.MASTER_NETWORK_ALIAS)
+        .withExposedPorts(StandaloneContainerFactory.REDIS_PORT)
         .withCommand("redis-server", "--protected-mode", "no")
         .withCreateContainerCmdModifier(cmd -> applyHostConfig(cmd, enableNetworkChaos))
         .waitingFor(Wait.forLogMessage(".*Ready to accept connections.*\\n", 1))
@@ -73,9 +74,11 @@ public final class SentinelNodeFactory {
     return new GenericContainer<>(StandaloneContainerFactory.REDIS_IMAGE)
         .withNetwork(network)
         .withNetworkAliases(alias)
-        .withExposedPorts(6379)
+        .withExposedPorts(StandaloneContainerFactory.REDIS_PORT)
         .withCommand(
-            "redis-server", "--protected-mode", "no", "--replicaof", "redis-master", "6379")
+            "redis-server", "--protected-mode", "no",
+            "--replicaof", StandaloneContainerFactory.MASTER_NETWORK_ALIAS,
+            String.valueOf(StandaloneContainerFactory.REDIS_PORT))
         .withCreateContainerCmdModifier(cmd -> applyHostConfig(cmd, enableNetworkChaos))
         .waitingFor(Wait.forLogMessage(".*MASTER <-> REPLICA sync: Finished with success.*\\n", 1))
         .withStartupTimeout(StandaloneContainerFactory.DEFAULT_STARTUP_TIMEOUT);
@@ -104,11 +107,12 @@ public final class SentinelNodeFactory {
     return new GenericContainer<>(StandaloneContainerFactory.REDIS_IMAGE)
         .withNetwork(network)
         .withNetworkAliases(alias)
-        .withExposedPorts(26379)
+        .withExposedPorts(StandaloneContainerFactory.SENTINEL_PORT)
         .withCreateContainerCmdModifier(cmd -> applyHostConfig(cmd, enableNetworkChaos))
         .withCommand(Shell.SH, Shell.FLAG_C, sentinelCommand)
         .waitingFor(
-            Wait.forSuccessfulCommand("redis-cli -p 26379 SENTINEL master mymaster")
+            Wait.forSuccessfulCommand(
+                "redis-cli -p " + StandaloneContainerFactory.SENTINEL_PORT + " SENTINEL master mymaster")
                 .withStartupTimeout(StandaloneContainerFactory.DEFAULT_STARTUP_TIMEOUT))
         .withStartupTimeout(StandaloneContainerFactory.DEFAULT_STARTUP_TIMEOUT);
   }

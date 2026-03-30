@@ -262,7 +262,7 @@ public final class SentinelContainerFactory {
       Thread.sleep(2000);
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
-      throw new RuntimeException("Interrupted while waiting for Sentinel stabilization", e);
+      throw new ClusterCreationException("Interrupted while waiting for Sentinel stabilization", e);
     }
   }
 }

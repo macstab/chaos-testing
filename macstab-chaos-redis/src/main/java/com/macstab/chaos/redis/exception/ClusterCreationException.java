@@ -54,6 +54,18 @@ public final class ClusterCreationException extends ClusterException {
   }
 
   /**
+   * Creates a cluster creation exception with message and cause (no component index).
+   *
+   * @param message error description
+   * @param cause   underlying cause
+   */
+  public ClusterCreationException(final String message, final Throwable cause) {
+    super(message, cause);
+    this.componentIndex = -1;
+    this.totalComponents = -1;
+  }
+
+  /**
    * Creates a cluster creation exception without cause.
    *
    * @param message error description

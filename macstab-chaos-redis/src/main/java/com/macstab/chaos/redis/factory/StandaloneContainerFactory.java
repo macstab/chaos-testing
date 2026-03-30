@@ -9,6 +9,8 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
 import org.testcontainers.utility.MountableFile;
 
+import com.macstab.chaos.redis.command.RedisCommandBuilder;
+
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -45,6 +47,15 @@ public final class StandaloneContainerFactory {
 
   static final DockerImageName REDIS_IMAGE = DockerImageName.parse("redis:7-alpine");
   static final Duration DEFAULT_STARTUP_TIMEOUT = Duration.ofSeconds(30);
+
+  /** Standard Redis server port inside the container. */
+  static final int REDIS_PORT = RedisCommandBuilder.DEFAULT_REDIS_PORT;
+
+  /** Standard Redis Sentinel port inside the container. */
+  static final int SENTINEL_PORT = RedisCommandBuilder.DEFAULT_SENTINEL_PORT;
+
+  /** Docker network alias for the master node — referenced by replicas and sentinels. */
+  static final String MASTER_NETWORK_ALIAS = "redis-master";
 
   private StandaloneContainerFactory() {
     throw new UnsupportedOperationException("Utility class - not instantiable");
