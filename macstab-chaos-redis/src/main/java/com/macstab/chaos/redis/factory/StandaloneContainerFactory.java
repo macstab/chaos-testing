@@ -80,7 +80,7 @@ public final class StandaloneContainerFactory {
    */
   public static GenericContainer<?> createStandalone() {
     return new GenericContainer<>(REDIS_IMAGE)
-        .withExposedPorts(6379)
+        .withExposedPorts(REDIS_PORT)
         .withStartupTimeout(DEFAULT_STARTUP_TIMEOUT)
         .withReuse(false);
   }

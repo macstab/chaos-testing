@@ -7,6 +7,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.redis.command.RedisCommandBuilder;
+
 import io.lettuce.core.RedisClient;
 import io.lettuce.core.RedisURI;
 import io.lettuce.core.api.StatefulRedisConnection;
@@ -89,13 +91,13 @@ public final class RoleResolver {
       final String internalIp = getInternalIpAddress(container);
       if (internalIp != null) {
         log.debug("Using internal IP {} for container {}", internalIp, container.getContainerId());
-        final ContainerRole role = resolveRedisRole(internalIp, 6379, container);
+        final ContainerRole role = resolveRedisRole(internalIp, RedisCommandBuilder.DEFAULT_REDIS_PORT, container);
         return role;
       }
 
       // Fallback: Use host and mapped port (for non-networked containers)
       final String host = container.getHost();
-      final int port = container.getMappedPort(6379);
+      final int port = container.getMappedPort(RedisCommandBuilder.DEFAULT_REDIS_PORT);
       log.debug("Using host:port {}:{} for container {}", host, port, container.getContainerId());
       final ContainerRole role = resolveRedisRole(host, port, container);
       return role;
@@ -212,7 +214,7 @@ public final class RoleResolver {
    */
   private boolean isSentinelContainer(final GenericContainer<?> container) {
     try {
-      return container.getExposedPorts().contains(26379);
+      return container.getExposedPorts().contains(RedisCommandBuilder.DEFAULT_SENTINEL_PORT);
     } catch (Exception e) {
       log.debug("Failed to check if Sentinel container: {}", container.getContainerId(), e);
       return false;

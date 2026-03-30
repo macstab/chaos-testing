@@ -15,6 +15,7 @@ import org.testcontainers.containers.Network;
 
 import com.macstab.chaos.redis.api.Endpoint;
 import com.macstab.chaos.redis.api.SentinelRedis;
+import com.macstab.chaos.redis.command.RedisCommandBuilder;
 import com.macstab.chaos.redis.control.ControlFacade;
 import com.macstab.chaos.redis.control.inspection.ConnectionInfo;
 import com.macstab.chaos.redis.control.role.ContainerRole;
@@ -197,7 +198,7 @@ public final class SentinelCluster implements ExtensionContext.Store.CloseableRe
    * @return master port
    */
   public int getMasterPort() {
-    return getControl().getMaster().getMappedPort(6379);
+    return getControl().getMaster().getMappedPort(RedisCommandBuilder.DEFAULT_REDIS_PORT);
   }
 
   /**
@@ -212,7 +213,7 @@ public final class SentinelCluster implements ExtensionContext.Store.CloseableRe
    */
   public List<RedisConnectionInfo> getReplicas() {
     return replicas.stream()
-        .map(r -> new RedisConnectionInfo(r.getHost(), r.getMappedPort(6379)))
+        .map(r -> new RedisConnectionInfo(r.getHost(), r.getMappedPort(RedisCommandBuilder.DEFAULT_REDIS_PORT)))
         .toList();
   }
 
@@ -221,7 +222,7 @@ public final class SentinelCluster implements ExtensionContext.Store.CloseableRe
    */
   public List<RedisConnectionInfo> getSentinels() {
     return sentinels.stream()
-        .map(s -> new RedisConnectionInfo(s.getHost(), s.getMappedPort(26379)))
+        .map(s -> new RedisConnectionInfo(s.getHost(), s.getMappedPort(RedisCommandBuilder.DEFAULT_SENTINEL_PORT)))
         .toList();
   }
 
@@ -251,9 +252,9 @@ public final class SentinelCluster implements ExtensionContext.Store.CloseableRe
    */
   public SentinelRedis toSentinelRedis() {
     final List<Endpoint> sentinelEndpoints =
-        sentinels.stream().map(s -> new Endpoint(s.getHost(), s.getMappedPort(26379))).toList();
+        sentinels.stream().map(s -> new Endpoint(s.getHost(), s.getMappedPort(RedisCommandBuilder.DEFAULT_SENTINEL_PORT))).toList();
     final List<Endpoint> replicaEndpoints =
-        replicas.stream().map(r -> new Endpoint(r.getHost(), r.getMappedPort(6379))).toList();
+        replicas.stream().map(r -> new Endpoint(r.getHost(), r.getMappedPort(RedisCommandBuilder.DEFAULT_REDIS_PORT))).toList();
     return new SentinelRedis(
         getMasterHost(), getMasterPort(), masterName, sentinelEndpoints, replicaEndpoints);
   }

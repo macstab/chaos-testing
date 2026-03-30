@@ -11,6 +11,7 @@ import org.testcontainers.utility.DockerImageName;
 
 import com.github.dockerjava.api.model.Capability;
 import com.macstab.chaos.redis.annotation.RedisStandalone;
+import com.macstab.chaos.redis.command.RedisCommandBuilder;
 import com.macstab.chaos.redis.extension.RedisContainerExtension.RedisConnectionInfo;
 import com.macstab.chaos.redis.extension.RedisContainerExtension.Store;
 
@@ -74,10 +75,11 @@ public final class DefaultStandaloneContainerInstanceFactory
   GenericContainer<?> buildContainer(final RedisStandalone annotation) {
     final GenericContainer<?> container =
         new GenericContainer<>(DockerImageName.parse("redis:" + annotation.version()))
-            .withExposedPorts(6379);
+            .withExposedPorts(RedisCommandBuilder.DEFAULT_REDIS_PORT);
 
     if (annotation.port() > 0) {
-      container.setPortBindings(List.of(annotation.port() + ":6379"));
+      container.setPortBindings(
+          List.of(annotation.port() + ":" + RedisCommandBuilder.DEFAULT_REDIS_PORT));
     }
 
     if (annotation.args().length > 0) {
@@ -127,7 +129,8 @@ public final class DefaultStandaloneContainerInstanceFactory
   StartupResult buildSuccessResult(
       final GenericContainer<?> container, final RedisStandalone annotation) {
     final RedisConnectionInfo info =
-        new RedisConnectionInfo(container.getHost(), container.getMappedPort(6379));
+        new RedisConnectionInfo(
+            container.getHost(), container.getMappedPort(RedisCommandBuilder.DEFAULT_REDIS_PORT));
     return new StartupResult.Success(annotation.id(), info, new Store(container, info));
   }
 }

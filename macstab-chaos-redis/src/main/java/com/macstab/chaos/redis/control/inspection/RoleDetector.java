@@ -131,12 +131,12 @@ public final class RoleDetector {
    */
   private static int detectPort(final GenericContainer<?> container) {
     try {
-      if (container.getExposedPorts().contains(26379)) {
-        return 26379;
+      if (container.getExposedPorts().contains(RedisCommandBuilder.DEFAULT_SENTINEL_PORT)) {
+        return RedisCommandBuilder.DEFAULT_SENTINEL_PORT;
       }
     } catch (final Exception ignored) {
       // Ignore — use default port
     }
-    return 6379;
+    return RedisCommandBuilder.DEFAULT_REDIS_PORT;
   }
 }
