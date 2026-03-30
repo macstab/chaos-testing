@@ -1,10 +1,9 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.redis.extension.internal;
 
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.Stream;
 
 import org.testcontainers.containers.GenericContainer;
 
@@ -110,7 +109,7 @@ public final class DefaultSentinelClusterFactory implements SentinelClusterFacto
     int fail = 0;
     for (final GenericContainer<?> container : allContainers(cluster)) {
       try {
-        packageInstaller.install(container, Arrays.asList(packages), true);
+        packageInstaller.install(container, List.of(packages), true);
         success++;
       } catch (final Exception e) {
         fail++;
@@ -123,10 +122,11 @@ public final class DefaultSentinelClusterFactory implements SentinelClusterFacto
 
   /** Returns all containers in the cluster (master + replicas + sentinels). */
   List<GenericContainer<?>> allContainers(final SentinelCluster cluster) {
-    final List<GenericContainer<?>> all = new ArrayList<>();
-    all.add(cluster.getMasterContainer());
-    all.addAll(cluster.getReplicaContainers());
-    all.addAll(cluster.getSentinelContainers());
-    return all;
+    return Stream.concat(
+            Stream.concat(
+                Stream.of(cluster.getMasterContainer()),
+                cluster.getReplicaContainers().stream()),
+            cluster.getSentinelContainers().stream())
+        .toList();
   }
 }

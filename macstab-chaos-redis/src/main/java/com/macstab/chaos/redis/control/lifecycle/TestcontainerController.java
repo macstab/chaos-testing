@@ -61,7 +61,7 @@ public final class TestcontainerController implements ContainerController {
       log.info(
           "✓ Container restarted successfully: {}", ContainerIdFormatter.truncate(containerId));
 
-    } catch (Exception e) {
+    } catch (final Exception e) {
       log.error("✗ Failed to restart container: {}", ContainerIdFormatter.truncate(containerId), e);
       throw new ContainerOperationException(
           "restart", containerId, "Container failed to restart properly", e);
@@ -80,7 +80,7 @@ public final class TestcontainerController implements ContainerController {
       container.getDockerClient().killContainerCmd(containerId).exec();
       log.info("✓ Container killed: {}", ContainerIdFormatter.truncate(containerId));
 
-    } catch (Exception e) {
+    } catch (final Exception e) {
       log.error("✗ Failed to kill container: {}", ContainerIdFormatter.truncate(containerId), e);
       throw new ContainerOperationException(
           "kill", containerId, "Container kill operation failed", e);
@@ -99,7 +99,7 @@ public final class TestcontainerController implements ContainerController {
       container.getDockerClient().pauseContainerCmd(containerId).exec();
       log.info("✓ Container paused: {}", ContainerIdFormatter.truncate(containerId));
 
-    } catch (Exception e) {
+    } catch (final Exception e) {
       log.error("✗ Failed to pause container: {}", ContainerIdFormatter.truncate(containerId), e);
       throw new ContainerOperationException(
           "pause", containerId, "Container pause operation failed", e);
@@ -118,7 +118,7 @@ public final class TestcontainerController implements ContainerController {
       container.getDockerClient().unpauseContainerCmd(containerId).exec();
       log.info("✓ Container resumed: {}", ContainerIdFormatter.truncate(containerId));
 
-    } catch (Exception e) {
+    } catch (final Exception e) {
       log.error("✗ Failed to resume container: {}", ContainerIdFormatter.truncate(containerId), e);
       throw new ContainerOperationException(
           "resume", containerId, "Container resume operation failed", e);
@@ -190,7 +190,7 @@ public final class TestcontainerController implements ContainerController {
         return "PONG".equalsIgnoreCase(pong);
       }
 
-    } catch (Exception e) {
+    } catch (final Exception e) {
       log.trace("PING failed for container: {}", container.getContainerId(), e);
       return false;
     }

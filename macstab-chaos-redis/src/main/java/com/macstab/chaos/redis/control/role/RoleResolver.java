@@ -102,7 +102,7 @@ public final class RoleResolver {
       final ContainerRole role = resolveRedisRole(host, port, container);
       return role;
 
-    } catch (Exception e) {
+    } catch (final Exception e) {
       log.error("Failed to determine role for container: {}", container.getContainerId(), e);
       return ContainerRole.UNKNOWN;
     }
@@ -123,7 +123,7 @@ public final class RoleResolver {
           .findFirst()
           .map(network -> network.getIpAddress())
           .orElse(null);
-    } catch (Exception e) {
+    } catch (final Exception e) {
       log.debug("Failed to get internal IP for container: {}", container.getContainerId(), e);
       return null;
     }
@@ -179,7 +179,7 @@ public final class RoleResolver {
         return ContainerRole.UNKNOWN;
       }
 
-    } catch (Exception e) {
+    } catch (final Exception e) {
       log.error(
           "Failed to query Redis INFO at {}:{} for container {}: {}",
           host,
@@ -215,7 +215,7 @@ public final class RoleResolver {
   private boolean isSentinelContainer(final GenericContainer<?> container) {
     try {
       return container.getExposedPorts().contains(RedisCommandBuilder.DEFAULT_SENTINEL_PORT);
-    } catch (Exception e) {
+    } catch (final Exception e) {
       log.debug("Failed to check if Sentinel container: {}", container.getContainerId(), e);
       return false;
     }

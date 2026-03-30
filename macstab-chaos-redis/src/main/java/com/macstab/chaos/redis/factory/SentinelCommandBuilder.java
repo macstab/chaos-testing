@@ -56,7 +56,7 @@ public final class SentinelCommandBuilder {
    * network.
    *
    * @param master master container (must be running)
-   * @throws RuntimeException if configuration fails
+   * @throws com.macstab.chaos.redis.exception.ClusterCreationException if configuration fails
    */
   public static void configureMasterAnnouncement(final GenericContainer<?> master) {
     final int masterMappedPort = master.getMappedPort(StandaloneContainerFactory.REDIS_PORT);
@@ -77,7 +77,7 @@ public final class SentinelCommandBuilder {
    * itself to Sentinel and clients.
    *
    * @param replica replica container (must be running)
-   * @throws RuntimeException if configuration fails
+   * @throws com.macstab.chaos.redis.exception.ClusterCreationException if configuration fails
    */
   public static void configureReplicaAnnouncement(final GenericContainer<?> replica) {
     final int replicaMappedPort = replica.getMappedPort(StandaloneContainerFactory.REDIS_PORT);
@@ -102,7 +102,7 @@ public final class SentinelCommandBuilder {
    * </ul>
    *
    * @param sentinel sentinel container (must be running)
-   * @throws RuntimeException if configuration fails
+   * @throws com.macstab.chaos.redis.exception.ClusterCreationException if configuration fails
    */
   public static void configureSentinelAnnouncement(final GenericContainer<?> sentinel) {
     final int sentinelMappedPort = sentinel.getMappedPort(StandaloneContainerFactory.SENTINEL_PORT);

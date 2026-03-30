@@ -104,7 +104,7 @@ public final class FailoverHelper {
           "Pre-failover state: {} running containers, {} replicas available",
           countRunningContainers(),
           findReplicas().size());
-    } catch (Exception e) {
+    } catch (final Exception e) {
       log.debug("Unable to gather pre-failover diagnostics: {}", e.getMessage());
     }
 
