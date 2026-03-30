@@ -16,10 +16,26 @@ import java.util.Objects;
  */
 public final class RedisCommandBuilder {
 
-  /** Standard Redis server port. */
+  /**
+   * Standard Redis server port inside the container (6379).
+   *
+   * <p>Used as the container-internal port for all Redis node containers. The host-side mapped
+   * port is always random (or explicitly set via {@code @RedisStandalone(port = N)}).
+   *
+   * <p><strong>Known limitation:</strong> This module assumes Redis listens on this port inside
+   * every container. If you start Redis on a non-standard internal port via
+   * {@code @RedisStandalone(args = {"--port", "6380"})}, port resolution will silently fail because
+   * {@code getMappedPort(DEFAULT_REDIS_PORT)} looks for the wrong container port.
+   * Non-standard internal ports are not currently supported end-to-end.
+   */
   public static final int DEFAULT_REDIS_PORT = 6379;
 
-  /** Standard Redis Sentinel port. */
+  /**
+   * Standard Redis Sentinel port inside the container (26379).
+   *
+   * <p>Same constraint applies: Sentinel containers are expected to listen on this port.
+   * Non-standard Sentinel ports via custom config are not supported end-to-end.
+   */
   public static final int DEFAULT_SENTINEL_PORT = 26379;
 
   private RedisCommandBuilder() {
