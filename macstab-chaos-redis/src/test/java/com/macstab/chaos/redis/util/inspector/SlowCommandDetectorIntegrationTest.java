@@ -57,7 +57,7 @@ class SlowCommandDetectorIntegrationTest {
   }
 
   @Nested
-  @DisplayName("forContainer()")
+  @DisplayName("forContainer() — Lettuce backend")
   class ForContainer {
 
     @Test
@@ -67,6 +67,47 @@ class SlowCommandDetectorIntegrationTest {
       try (final SlowCommandDetector detector = SlowCommandDetector.forContainer(redis)) {
         // ASSERT
         assertThat(detector).isNotNull();
+      }
+    }
+  }
+
+  @Nested
+  @DisplayName("forContainerShell() — Shell backend")
+  class ForContainerShell {
+
+    @Test
+    @DisplayName("Should create shell-backed detector")
+    void shouldCreateShellDetector() {
+      // ARRANGE / ACT
+      try (final SlowCommandDetector detector = SlowCommandDetector.forContainerShell(redis)) {
+        // ASSERT
+        assertThat(detector).isNotNull();
+      }
+    }
+
+    @Test
+    @DisplayName("Shell backend should reset slowlog")
+    void shouldResetViaShell() {
+      // ARRANGE
+      commands.configSet("slowlog-log-slower-than", "0");
+      try (final SlowCommandDetector detector = SlowCommandDetector.forContainerShell(redis)) {
+        // ACT / ASSERT — reset must not throw
+        final SlowCommandDetector result = detector.reset();
+        assertThat(result).isSameAs(detector);
+      }
+    }
+
+    @Test
+    @DisplayName("Shell backend should return slow command list")
+    void shouldGetSlowCommandsViaShell() {
+      // ARRANGE
+      commands.configSet("slowlog-log-slower-than", "0");
+      commands.set("shell:key", "shell:value");
+      try (final SlowCommandDetector detector = SlowCommandDetector.forContainerShell(redis)) {
+        // ACT
+        final var entries = detector.getSlowCommands();
+        // ASSERT — at minimum no exception; shell parser runs through the real output
+        assertThat(entries).isNotNull();
       }
     }
   }
@@ -87,7 +128,11 @@ class SlowCommandDetectorIntegrationTest {
 
         // ASSERT
         assertThat(result).isSameAs(detector);
-        assertThat(detector.getSlowCommands()).isEmpty();
+        // slowlog-log-slower-than 0 logs SLOWLOG RESET itself — filter it out
+        final var commands2 = detector.getSlowCommands().stream()
+            .filter(e -> !e.command().equalsIgnoreCase("SLOWLOG"))
+            .toList();
+        assertThat(commands2).isEmpty();
       }
     }
   }
@@ -128,8 +173,11 @@ class SlowCommandDetectorIntegrationTest {
         commands.ping();
         detector.reset();
 
-        // ASSERT
-        assertThat(detector.getSlowCommands()).isEmpty();
+        // ASSERT — filter out SLOWLOG RESET itself (captured when slowlog-log-slower-than=0)
+        final var remaining = detector.getSlowCommands().stream()
+            .filter(e -> !e.command().equalsIgnoreCase("SLOWLOG"))
+            .toList();
+        assertThat(remaining).isEmpty();
       }
     }
   }

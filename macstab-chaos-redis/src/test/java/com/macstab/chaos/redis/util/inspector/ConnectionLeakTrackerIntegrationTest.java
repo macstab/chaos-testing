@@ -19,6 +19,8 @@ import io.lettuce.core.RedisURI;
 import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.api.sync.RedisCommands;
 
+import com.macstab.chaos.redis.util.inspector.ConnectionLeakTracker;
+
 /** Integration tests for {@link ConnectionLeakTracker}. */
 @Testcontainers
 @DisplayName("ConnectionLeakTracker — Integration")
@@ -55,7 +57,7 @@ class ConnectionLeakTrackerIntegrationTest {
   }
 
   @Nested
-  @DisplayName("forContainer()")
+  @DisplayName("forContainer() — Lettuce backend")
   class ForContainer {
 
     @Test
@@ -66,6 +68,61 @@ class ConnectionLeakTrackerIntegrationTest {
         // ASSERT
         assertThat(tracker).isNotNull();
         assertThat(tracker.hasSnapshot()).isFalse();
+      }
+    }
+  }
+
+  @Nested
+  @DisplayName("forContainerShell() — Shell backend")
+  class ForContainerShell {
+
+    @Test
+    @DisplayName("Should create shell-backed tracker")
+    void shouldCreateShellTracker() {
+      // ARRANGE / ACT
+      try (final ConnectionLeakTracker tracker = ConnectionLeakTracker.forContainerShell(redis)) {
+        // ASSERT
+        assertThat(tracker).isNotNull();
+        assertThat(tracker.hasSnapshot()).isFalse();
+      }
+    }
+
+    @Test
+    @DisplayName("Shell backend should snapshot and report connection count")
+    void shouldSnapshotAndReportConnectionCount() {
+      // ARRANGE
+      try (final ConnectionLeakTracker tracker = ConnectionLeakTracker.forContainerShell(redis)) {
+        // ACT
+        tracker.snapshot();
+
+        // ASSERT — snapshot taken, getNewConnections returns a list (may be empty or not
+        // depending on test ordering — just verify the API executes without error)
+        assertThat(tracker.hasSnapshot()).isTrue();
+        assertThat(tracker.getNewConnections()).isNotNull();
+      }
+    }
+
+    @Test
+    @DisplayName("Shell backend should detect new connection")
+    void shouldDetectNewConnectionViaShell() {
+      // ARRANGE
+      try (final ConnectionLeakTracker tracker = ConnectionLeakTracker.forContainerShell(redis)) {
+        tracker.snapshot();
+
+        final RedisClient leakedClient =
+            RedisClient.create(
+                RedisURI.builder()
+                    .withHost(redis.getHost())
+                    .withPort(redis.getFirstMappedPort())
+                    .build());
+        final StatefulRedisConnection<String, String> leakedConn = leakedClient.connect();
+
+        // ACT / ASSERT
+        assertThat(tracker.getNewConnections()).hasSizeGreaterThanOrEqualTo(1);
+
+        // CLEANUP
+        leakedConn.close();
+        leakedClient.shutdown();
       }
     }
   }

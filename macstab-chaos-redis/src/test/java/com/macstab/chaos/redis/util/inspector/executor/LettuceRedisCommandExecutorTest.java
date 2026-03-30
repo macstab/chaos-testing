@@ -321,3 +321,7 @@ class LettuceRedisCommandExecutorTest {
     }
   }
 }
+
+  // appended — lifecycle coverage for owned connection constructor
+  // (host, port) constructor requires a real Redis — tested via integration tests.
+  // close() on borrowed connection is a no-op.

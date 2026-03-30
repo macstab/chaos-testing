@@ -57,7 +57,7 @@ class MemorySnapshotAnalyzerIntegrationTest {
   }
 
   @Nested
-  @DisplayName("forContainer()")
+  @DisplayName("forContainer() — Lettuce backend")
   class ForContainer {
 
     @Test
@@ -67,6 +67,53 @@ class MemorySnapshotAnalyzerIntegrationTest {
       try (final MemorySnapshotAnalyzer analyzer = MemorySnapshotAnalyzer.forContainer(redis)) {
         // ASSERT
         assertThat(analyzer).isNotNull();
+      }
+    }
+  }
+
+  @Nested
+  @DisplayName("forContainerShell() — Shell backend")
+  class ForContainerShell {
+
+    @Test
+    @DisplayName("Should create shell-backed analyzer")
+    void shouldCreateShellAnalyzer() {
+      // ARRANGE / ACT
+      try (final MemorySnapshotAnalyzer analyzer = MemorySnapshotAnalyzer.forContainerShell(redis)) {
+        // ASSERT
+        assertThat(analyzer).isNotNull();
+      }
+    }
+
+    @Test
+    @DisplayName("Shell backend should snapshot and return non-zero memory")
+    void shouldSnapshotViaShell() {
+      // ARRANGE
+      try (final MemorySnapshotAnalyzer analyzer = MemorySnapshotAnalyzer.forContainerShell(redis)) {
+        // ACT
+        analyzer.snapshot();
+        final MemorySnapshot snapshot = analyzer.getSnapshot();
+
+        // ASSERT
+        assertThat(snapshot.usedMemoryBytes()).isGreaterThan(0);
+      }
+    }
+
+    @Test
+    @DisplayName("Shell backend should report positive delta after writes")
+    void shouldReportPositiveDeltaViaShell() {
+      // ARRANGE
+      try (final MemorySnapshotAnalyzer analyzer = MemorySnapshotAnalyzer.forContainerShell(redis)) {
+        analyzer.snapshot();
+
+        // ACT
+        for (int i = 0; i < 200; i++) {
+          commands.set("shell:mem:key_" + i, "shell:mem:value_" + i);
+        }
+        final long delta = analyzer.getMemoryDelta();
+
+        // ASSERT
+        assertThat(delta).isGreaterThan(0);
       }
     }
   }
