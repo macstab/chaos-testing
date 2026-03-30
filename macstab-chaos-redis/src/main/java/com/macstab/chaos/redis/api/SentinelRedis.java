@@ -41,7 +41,7 @@ import java.util.List;
  * @param sentinels sentinel endpoints (for discovery, immutable)
  * @param replicas replica endpoints (read-only slaves, immutable)
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 public record SentinelRedis(
     String host, int port, String masterName, List<Endpoint> sentinels, List<Endpoint> replicas)

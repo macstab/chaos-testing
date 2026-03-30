@@ -28,7 +28,7 @@ import com.macstab.chaos.redis.api.StandaloneRedis;
  * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 @DisplayName("Phase 3: Hybrid Architecture Validation")
 @RedisStandalone(id = "test-cache", version = "7.4")

@@ -18,7 +18,7 @@ import com.macstab.chaos.core.util.PackageInstaller;
  * PackageInstaller}.
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  * @see DefaultSentinelClusterFactory
  * @see DefaultStandaloneContainerInstanceFactory
  */

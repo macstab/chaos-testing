@@ -5,7 +5,7 @@ package com.macstab.chaos.redis.api;
  * Redis deployment topology types.
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 public enum RedisTopology {
   /** Single Redis instance (no replication). */

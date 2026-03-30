@@ -107,7 +107,7 @@ public @interface RedisSentinel {
    * List<SentinelRedis> all = RedisSentinel.INSTANCE.getAll();
    * }</pre>
    *
-   * @since 2.0
+   * @since 1.0
    */
   ContainerManager<SentinelRedis> INSTANCE =
       new ContainerManager<>(
@@ -234,7 +234,7 @@ public @interface RedisSentinel {
    * </ul>
    *
    * @return true to enable network chaos, false otherwise
-   * @since 2.0
+   * @since 1.0
    */
   boolean enableNetworkChaos() default false;
 
@@ -339,7 +339,7 @@ public @interface RedisSentinel {
    * }</pre>
    *
    * @return array of package names (empty = no packages to install)
-   * @since 2.0
+   * @since 1.0
    * @see com.macstab.chaos.core.util.PackageInstaller
    * @see com.macstab.chaos.core.util.PackageManager
    */

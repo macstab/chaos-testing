@@ -23,7 +23,7 @@ import com.macstab.chaos.redis.command.RedisCommandBuilder;
  * via mapped ports, while internal containers communicate via Docker network IPs.
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  * @see SentinelContainerFactory
  */
 public final class SentinelCommandBuilder {

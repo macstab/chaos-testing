@@ -44,7 +44,7 @@ import lombok.extern.slf4j.Slf4j;
  * }</pre>
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  * @see RawSentinelCluster
  * @see SentinelCommandBuilder
  * @see StandaloneContainerFactory
@@ -96,7 +96,7 @@ public final class SentinelContainerFactory {
    * @return Sentinel cluster with all containers started
    * @throws ClusterCreationException if any container fails to start
    * @throws IllegalArgumentException if replica or sentinel count &lt; 1
-   * @since 2.0
+   * @since 1.0
    */
   public static RawSentinelCluster createSentinelCluster(
       final int replicaCount, final int sentinelCount, final boolean enableNetworkChaos) {

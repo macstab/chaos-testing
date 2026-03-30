@@ -25,7 +25,7 @@ package com.macstab.chaos.redis.api;
  * @param host Redis host (not null)
  * @param port Redis port (1-65535)
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 public record StandaloneRedis(String host, int port) implements Redis {
 

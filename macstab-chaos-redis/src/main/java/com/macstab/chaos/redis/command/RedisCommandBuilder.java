@@ -16,6 +16,12 @@ import java.util.Objects;
  */
 public final class RedisCommandBuilder {
 
+  /** Standard Redis server port. */
+  public static final int DEFAULT_REDIS_PORT = 6379;
+
+  /** Standard Redis Sentinel port. */
+  public static final int DEFAULT_SENTINEL_PORT = 26379;
+
   private RedisCommandBuilder() {
     throw new UnsupportedOperationException("Utility class");
   }
@@ -58,24 +64,144 @@ public final class RedisCommandBuilder {
    */
   @Deprecated(since = "2.0", forRemoval = true)
   public static String buildSentinelMasterCommand(final String masterName) {
-    return buildSentinelMasterCommand(masterName, 26379);
+    return buildSentinelMasterCommand(masterName, DEFAULT_SENTINEL_PORT);
   }
 
-  /** Build Sentinel startup command (inline config + launch). */
+  /**
+   * Build Sentinel startup command (inline config + launch) using default ports.
+   *
+   * <p>Sentinel listens on {@value #DEFAULT_SENTINEL_PORT}, monitors master on
+   * {@value #DEFAULT_REDIS_PORT}. Use {@link #buildSentinelStartCommand(String, int, int, int)}
+   * to configure non-standard ports.
+   *
+   * @param masterIp master Redis container IP — must not be null
+   * @param quorum   number of Sentinels required to agree on failover
+   * @return shell command string
+   */
   public static String buildSentinelStartCommand(final String masterIp, final int quorum) {
+    return buildSentinelStartCommand(
+        masterIp, DEFAULT_REDIS_PORT, DEFAULT_SENTINEL_PORT, quorum);
+  }
+
+  /**
+   * Build Sentinel startup command (inline config + launch) with explicit ports.
+   *
+   * @param masterIp       master Redis container IP — must not be null
+   * @param masterPort     Redis master port inside the container (typically 6379)
+   * @param sentinelPort   port this Sentinel will listen on (typically 26379)
+   * @param quorum         number of Sentinels required to agree on failover
+   * @return shell command string
+   */
+  public static String buildSentinelStartCommand(
+      final String masterIp,
+      final int masterPort,
+      final int sentinelPort,
+      final int quorum) {
     Objects.requireNonNull(masterIp, "masterIp");
-    return "printf \"port 26379\\n"
+    return "printf \"port " + sentinelPort + "\\n"
         + "sentinel monitor mymaster "
-        + masterIp
-        + " 6379 "
-        + quorum
-        + "\\n"
+        + masterIp + " " + masterPort + " " + quorum + "\\n"
         + "sentinel down-after-milliseconds mymaster 2000\\n"
         + "sentinel parallel-syncs mymaster 1\\n"
         + "sentinel failover-timeout mymaster 5000\\n"
         + "\" > /tmp/sentinel.conf && "
         + "redis-server /tmp/sentinel.conf --sentinel";
   }
+
+  // ==================== Inspection Commands ====================
+
+  /**
+   * Build SLOWLOG RESET command.
+   *
+   * @param port Redis port
+   * @return redis-cli command string
+   */
+  public static String buildSlowlogResetCommand(final int port) {
+    return String.format("redis-cli -p %d SLOWLOG RESET", port);
+  }
+
+  /**
+   * Build SLOWLOG GET command.
+   *
+   * @param port Redis port
+   * @param count max number of entries to retrieve (use 128 for typical test scenarios)
+   * @return redis-cli command string
+   */
+  public static String buildSlowlogGetCommand(final int port, final int count) {
+    return String.format("redis-cli -p %d SLOWLOG GET %d", port, count);
+  }
+
+  /**
+   * Build CLIENT LIST command.
+   *
+   * @param port Redis port
+   * @return redis-cli command string
+   */
+  public static String buildClientListCommand(final int port) {
+    return String.format("redis-cli -p %d CLIENT LIST", port);
+  }
+
+  /**
+   * Build INFO memory command.
+   *
+   * @param port Redis port
+   * @return redis-cli command string
+   */
+  public static String buildInfoMemoryCommand(final int port) {
+    return String.format("redis-cli -p %d INFO memory", port);
+  }
+
+  /**
+   * Build generic INFO section command.
+   *
+   * @param port Redis port
+   * @param section INFO section name (e.g., "memory", "replication", "server")
+   * @return redis-cli command string
+   */
+  public static String buildInfoCommand(final int port, final String section) {
+    Objects.requireNonNull(section, "section");
+    return String.format("redis-cli -p %d INFO %s", port, section);
+  }
+
+  /**
+   * Build SET command for a key/value pair.
+   *
+   * @param port  Redis port
+   * @param key   key — must not be null
+   * @param value value — must not be null
+   * @return redis-cli command string
+   */
+  public static String buildSetCommand(final int port, final String key, final String value) {
+    Objects.requireNonNull(key, "key");
+    Objects.requireNonNull(value, "value");
+    return String.format("redis-cli -p %d SET %s %s", port, key, value);
+  }
+
+  /**
+   * Build GET command for a key.
+   *
+   * @param port Redis port
+   * @param key  key — must not be null
+   * @return redis-cli command string
+   */
+  public static String buildGetCommand(final int port, final String key) {
+    Objects.requireNonNull(key, "key");
+    return String.format("redis-cli -p %d GET %s", port, key);
+  }
+
+  /**
+   * Build DEL command for a key.
+   *
+   * @param port Redis port
+   * @param key  key — must not be null
+   * @return redis-cli command string
+   */
+  public static String buildDelCommand(final int port, final String key) {
+    Objects.requireNonNull(key, "key");
+    return String.format("redis-cli -p %d DEL %s", port, key);
+  }
+
+  // ==================== Announce / Replication Commands ====================
 
   /** Build replica-announce-ip CONFIG SET (for Testcontainers host routing). */
   public static String buildAnnounceIpCommand(final int port, final String announceHost) {
@@ -109,7 +235,7 @@ public final class RedisCommandBuilder {
    */
   @Deprecated(since = "2.0", forRemoval = true)
   public static String buildSentinelAnnounceIpCommand(final String announceHost) {
-    return buildSentinelAnnounceIpCommand(26379, announceHost);
+    return buildSentinelAnnounceIpCommand(DEFAULT_SENTINEL_PORT, announceHost);
   }
 
   /**
@@ -132,6 +258,6 @@ public final class RedisCommandBuilder {
    */
   @Deprecated(since = "2.0", forRemoval = true)
   public static String buildSentinelAnnouncePortCommand(final int announcePort) {
-    return buildSentinelAnnouncePortCommand(26379, announcePort);
+    return buildSentinelAnnouncePortCommand(DEFAULT_SENTINEL_PORT, announcePort);
   }
 }

@@ -33,7 +33,7 @@ import lombok.extern.slf4j.Slf4j;
  * Docker and is covered by Testcontainers integration tests.
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 @Slf4j
 public final class StandaloneStartupOrchestrator {

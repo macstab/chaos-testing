@@ -7,7 +7,7 @@ package com.macstab.chaos.redis.api;
  * @param host host address (IP or hostname, not null)
  * @param port port number (1-65535)
  * @author Christian Schnapka / Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 public record Endpoint(String host, int port) {
 

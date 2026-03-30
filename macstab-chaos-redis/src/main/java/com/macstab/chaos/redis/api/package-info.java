@@ -7,6 +7,6 @@
  * com.macstab.chaos.redis.api.SentinelRedis}. Supports pattern matching.
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 package com.macstab.chaos.redis.api;

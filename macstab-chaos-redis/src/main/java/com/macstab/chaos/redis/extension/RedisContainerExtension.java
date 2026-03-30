@@ -154,7 +154,7 @@ public final class RedisContainerExtension
    * @return container instance
    * @throws IllegalArgumentException if ID not found
    * @throws IllegalStateException if called outside test context
-   * @since 2.0
+   * @since 1.0
    */
   public static GenericContainer<?> getContainerInstance(final String id) {
     final Map<String, Store> storesMap = getStoresMap(requireContext());

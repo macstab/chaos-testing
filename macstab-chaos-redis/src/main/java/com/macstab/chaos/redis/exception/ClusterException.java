@@ -33,7 +33,7 @@ package com.macstab.chaos.redis.exception;
  * }</pre>
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 public abstract sealed class ClusterException extends RuntimeException
     permits ClusterCreationException,

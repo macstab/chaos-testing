@@ -14,6 +14,7 @@ import java.util.function.Predicate;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.redis.util.assertion.RedisCommandAssert;
 import com.macstab.chaos.redis.util.tracker.CommandCategorizer;
 import com.macstab.chaos.redis.util.tracker.CommandCategorizer.CommandCategory;
 import com.macstab.chaos.redis.util.tracker.CommandParser;
@@ -28,14 +29,21 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * Captures and analyzes Redis MONITOR output from a Testcontainers container.
  *
+ * <p>This class is intentionally the primary facade for all MONITOR-based analysis. Its size
+ * reflects breadth of delegation, not complexity — every method is ≤10 LOC and delegates to a
+ * focused single-responsibility class in the {@code tracker} sub-package.
+ *
  * <p><strong>Core capabilities:</strong>
  *
  * <ul>
- *   <li>Command counting and filtering
- *   <li>Key pattern matching (Feature A)
- *   <li>Replication lag measurement (Feature B)
- *   <li>Latency analysis (Feature C)
- *   <li>Command argument extraction (Feature D)
+ *   <li>Command counting and filtering (core)
+ *   <li>Key pattern matching — {@link com.macstab.chaos.redis.util.tracker.KeyPatternMatcher}
+ *   <li>Replication lag measurement — {@link com.macstab.chaos.redis.util.tracker.ReplicationLagMeasurer}
+ *   <li>Command gap/timing analysis — {@link com.macstab.chaos.redis.util.tracker.LatencyAnalyzer}
+ *   <li>Command argument extraction — {@link com.macstab.chaos.redis.util.tracker.CommandParser}
+ *   <li>Command categorization (READ/WRITE/ADMIN/…) — {@link com.macstab.chaos.redis.util.tracker.CommandCategorizer}
+ *   <li>Hot key detection — {@link com.macstab.chaos.redis.util.tracker.HotKeyDetector}
+ *   <li>Fluent assertions — {@link com.macstab.chaos.redis.util.assertion.RedisCommandAssert}
  * </ul>
  *
  * <p><strong>Lifecycle:</strong> Call {@link #start()} before the operation under test, then {@link
@@ -48,7 +56,11 @@ import lombok.extern.slf4j.Slf4j;
  * tracker.start();
  * redisTemplate.opsForValue().get("user:123");
  * tracker.stop();
- * assertThat(tracker.countCommand("GET")).isEqualTo(1);
+ *
+ * tracker.assertThat()
+ *     .hasCommand("GET").atLeast(1)
+ *     .hasNoDangerousCommands()
+ *     .hasReadWriteRatio().greaterThan(1.0);
  * }</pre>
  *
  * @author Christian Schnapka - Macstab GmbH
@@ -84,6 +96,17 @@ public final class RedisCommandTracker {
       final GenericContainer<?> container, final Predicate<String> lineFilter) {
     this.container = Objects.requireNonNull(container, "container");
     this.lineFilter = Objects.requireNonNull(lineFilter, "lineFilter");
+  }
+
+  /**
+   * Package-private test constructor for unit testing assertions.
+   *
+   * @param capturedLines pre-populated command lines for testing
+   */
+  RedisCommandTracker(final List<String> capturedLines) {
+    this.container = null;
+    this.lineFilter = line -> true;
+    this.capturedCommands.addAll(capturedLines);
   }
 
   /**
@@ -478,5 +501,22 @@ public final class RedisCommandTracker {
    */
   public static RedisCommandTrackerBuilder builder() {
     return new RedisCommandTrackerBuilder();
+  }
+
+  /**
+   * Creates a fluent assertion API for this tracker.
+   *
+   * <p><strong>Example:</strong>
+   *
+   * <pre>{@code
+   * tracker.assertThat()
+   *     .hasCommand("GET").atLeast(5)
+   *     .hasNoDangerousCommands();
+   * }</pre>
+   *
+   * @return fluent assertion API
+   */
+  public RedisCommandAssert assertThat() {
+    return new RedisCommandAssert(this);
   }
 }

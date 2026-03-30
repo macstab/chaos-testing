@@ -319,7 +319,7 @@ class RedisCommandTrackerTest {
     @Test
     @DisplayName("Should require non-null container")
     void shouldRejectNullContainer() {
-      assertThatThrownBy(() -> new RedisCommandTracker(null))
+      assertThatThrownBy(() -> new RedisCommandTracker((GenericContainer<?>) null))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("container");
     }

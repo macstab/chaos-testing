@@ -6,6 +6,6 @@
  * election testing by killing the current master and measuring election latency.
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 package com.macstab.chaos.redis.control.failover;

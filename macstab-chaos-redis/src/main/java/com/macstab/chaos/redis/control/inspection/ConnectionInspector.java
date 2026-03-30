@@ -44,7 +44,7 @@ import io.lettuce.core.api.StatefulRedisConnection;
  * can inspect connections concurrently.
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  * @see LettuceConnectionInspector
  * @see ConnectionInfo
  */
@@ -105,7 +105,7 @@ public interface ConnectionInspector {
    * @return connection info with role, container, and health status (never null)
    * @throws NullPointerException if connection or containerHint is null
    * @throws IllegalStateException if connection is closed or container is not running
-   * @since 2.0
+   * @since 1.0
    */
   ConnectionInfo inspect(
       StatefulRedisConnection<?, ?> connection,
@@ -139,7 +139,7 @@ public interface ConnectionInspector {
    * @return connection info with role, container, and description (never null)
    * @throws NullPointerException if container or connectionDescription is null
    * @throws IllegalStateException if container is not running
-   * @since 2.0
+   * @since 1.0
    */
   ConnectionInfo inspectManual(
       org.testcontainers.containers.GenericContainer<?> container, String connectionDescription);

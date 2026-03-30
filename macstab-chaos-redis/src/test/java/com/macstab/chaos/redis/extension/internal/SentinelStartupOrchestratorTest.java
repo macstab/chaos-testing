@@ -35,7 +35,7 @@ import com.macstab.chaos.redis.extension.SentinelCluster;
  * and executor lifecycle.
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("SentinelStartupOrchestrator")

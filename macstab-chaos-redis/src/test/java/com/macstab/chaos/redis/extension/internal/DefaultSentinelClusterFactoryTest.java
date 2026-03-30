@@ -29,7 +29,7 @@ import com.macstab.chaos.redis.extension.SentinelCluster;
  * create()} method itself requires Docker and is covered by integration tests.
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("DefaultSentinelClusterFactory")

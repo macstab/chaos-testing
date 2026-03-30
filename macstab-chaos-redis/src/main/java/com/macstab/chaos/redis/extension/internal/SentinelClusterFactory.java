@@ -17,7 +17,7 @@ import com.macstab.chaos.redis.extension.SentinelCluster;
  * <p><strong>Production implementation:</strong> {@link DefaultSentinelClusterFactory}
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  * @see DefaultSentinelClusterFactory
  * @see SentinelStartupOrchestrator
  */

@@ -27,7 +27,7 @@ import com.github.dockerjava.api.model.NetworkSettings;
  * methods require Linux Docker and are covered by integration tests.
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 @DisplayName("SentinelContainerFactory")
 class SentinelContainerFactoryTest {

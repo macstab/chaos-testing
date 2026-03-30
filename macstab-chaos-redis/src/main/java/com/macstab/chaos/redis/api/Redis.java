@@ -41,7 +41,7 @@ import com.macstab.chaos.core.api.ChaosContainers;
  * }</pre>
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  * @see StandaloneRedis
  * @see SentinelRedis
  */

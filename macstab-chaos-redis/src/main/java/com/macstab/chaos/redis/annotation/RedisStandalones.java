@@ -110,7 +110,7 @@ import com.macstab.chaos.redis.extension.RedisContainerExtension;
  * @author Christian Schnapka - Macstab GmbH
  * @see RedisStandalone
  * @see RedisContainerExtension
- * @since 2.0
+ * @since 1.0
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)

@@ -6,6 +6,6 @@
  * identify which Docker container a Lettuce connection is using, including role and health status.
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 package com.macstab.chaos.redis.control.inspection;

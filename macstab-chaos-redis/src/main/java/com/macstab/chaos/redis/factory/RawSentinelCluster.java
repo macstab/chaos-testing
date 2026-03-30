@@ -43,7 +43,7 @@ import org.testcontainers.containers.Network;
  * @param replicas Redis replica containers (typically 2)
  * @param sentinels Sentinel containers (typically 3)
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 public record RawSentinelCluster(
     Network network,

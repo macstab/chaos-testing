@@ -10,6 +10,6 @@
  * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 package com.macstab.chaos.redis.command;

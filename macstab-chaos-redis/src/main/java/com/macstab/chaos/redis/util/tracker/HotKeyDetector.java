@@ -25,7 +25,7 @@ import java.util.stream.Collectors;
  * }</pre>
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 public final class HotKeyDetector {
 

@@ -18,7 +18,7 @@ import com.macstab.chaos.redis.annotation.RedisStandalone;
  * <p><strong>Production implementation:</strong> {@link DefaultStandaloneContainerInstanceFactory}
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  * @see DefaultStandaloneContainerInstanceFactory
  * @see StandaloneStartupOrchestrator
  */

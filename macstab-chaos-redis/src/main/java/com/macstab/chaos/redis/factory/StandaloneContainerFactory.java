@@ -37,7 +37,7 @@ import lombok.extern.slf4j.Slf4j;
  * }</pre>
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  * @see SentinelContainerFactory
  */
 @Slf4j

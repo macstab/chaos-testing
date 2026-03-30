@@ -21,7 +21,7 @@ import com.macstab.chaos.redis.extension.RedisContainerExtension.Store;
  * }</pre>
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 public sealed interface StartupResult permits StartupResult.Success, StartupResult.Failure {
 

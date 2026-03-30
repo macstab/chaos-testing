@@ -31,7 +31,7 @@ import lombok.extern.slf4j.Slf4j;
  * </ol>
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 @Slf4j
 public final class FailoverHelper {

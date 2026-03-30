@@ -20,7 +20,7 @@ import org.testcontainers.containers.GenericContainer;
  * command configuration, and SSL-specific file mounts and command structure.
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 @DisplayName("StandaloneContainerFactory")
 class StandaloneContainerFactoryTest {

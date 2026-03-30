@@ -25,7 +25,7 @@ import lombok.extern.slf4j.Slf4j;
  * startup itself ({@link #create}) requires Docker and is covered by integration tests.
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 @Slf4j
 public final class DefaultSentinelClusterFactory implements SentinelClusterFactory {
@@ -47,7 +47,7 @@ public final class DefaultSentinelClusterFactory implements SentinelClusterFacto
 
   @Override
   public SentinelCluster create(final RedisSentinel annotation) throws Exception {
-    final com.macstab.chaos.redis.factory.SentinelCluster factoryCluster =
+    final com.macstab.chaos.redis.factory.RawSentinelCluster factoryCluster =
         SentinelContainerFactory.createSentinelCluster(
             annotation.replicas(), annotation.sentinels(), annotation.enableNetworkChaos());
 

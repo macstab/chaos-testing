@@ -47,7 +47,7 @@ import com.macstab.chaos.redis.control.role.ContainerRole;
  * @param connectionInfo human-readable connection description (never null)
  * @param healthy whether connection is healthy
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 public record ConnectionInfo(
     ContainerRole role, GenericContainer<?> container, String connectionInfo, boolean healthy) {

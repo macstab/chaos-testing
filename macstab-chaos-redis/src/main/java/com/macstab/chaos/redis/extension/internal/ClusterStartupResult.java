@@ -20,7 +20,7 @@ import com.macstab.chaos.redis.extension.SentinelCluster;
  * }</pre>
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 public sealed interface ClusterStartupResult
     permits ClusterStartupResult.Success, ClusterStartupResult.Failure {

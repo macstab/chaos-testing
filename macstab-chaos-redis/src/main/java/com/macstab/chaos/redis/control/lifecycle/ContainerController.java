@@ -50,7 +50,7 @@ import org.testcontainers.containers.GenericContainer;
  * can control containers concurrently.
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  * @see TestcontainerController
  */
 public interface ContainerController {
