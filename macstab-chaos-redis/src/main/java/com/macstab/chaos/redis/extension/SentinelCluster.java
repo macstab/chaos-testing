@@ -2,12 +2,12 @@
 package com.macstab.chaos.redis.extension;
 
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.testcontainers.containers.GenericContainer;
@@ -147,35 +147,45 @@ public final class SentinelCluster implements ExtensionContext.Store.CloseableRe
   // ==================== Container Access ====================
 
   /**
-   * @return the master container
+   * Returns the master container.
+   *
+   * @return master container (never null)
    */
   public GenericContainer<?> getMasterContainer() {
     return master;
   }
 
   /**
-   * @return immutable list of replica containers
+   * Returns an immutable list of replica containers.
+   *
+   * @return replica containers (never null, never empty unless replicas=0)
    */
   public List<GenericContainer<?>> getReplicaContainers() {
     return replicas;
   }
 
   /**
-   * @return immutable list of sentinel containers
+   * Returns an immutable list of sentinel containers.
+   *
+   * @return sentinel containers (never null, never empty)
    */
   public List<GenericContainer<?>> getSentinelContainers() {
     return sentinels;
   }
 
   /**
-   * @return Docker network shared by all containers
+   * Returns the Docker network shared by all containers in this cluster.
+   *
+   * @return shared Docker network (never null)
    */
   public Network getNetwork() {
     return network;
   }
 
   /**
-   * @return sentinel master name (e.g., "mymaster")
+   * Returns the Sentinel master name used by all sentinel nodes.
+   *
+   * @return master name (e.g., {@code "mymaster"}, never null)
    */
   public String getMasterName() {
     return masterName;
@@ -189,23 +199,30 @@ public final class SentinelCluster implements ExtensionContext.Store.CloseableRe
    * @return master host address
    */
   public String getMasterHost() {
-    return getControl().getMaster().getHost();
+    return currentMaster().getHost();
   }
 
   /**
    * Port of the current master (dynamic — supports failover).
    *
-   * @return master port
+   * @return master mapped port
    */
   public int getMasterPort() {
-    return getControl().getMaster().getMappedPort(RedisCommandBuilder.DEFAULT_REDIS_PORT);
+    return currentMaster().getMappedPort(RedisCommandBuilder.DEFAULT_REDIS_PORT);
   }
 
   /**
    * @return master connection info (host + port)
    */
   public RedisConnectionInfo getMaster() {
-    return new RedisConnectionInfo(getMasterHost(), getMasterPort());
+    final GenericContainer<?> m = currentMaster();
+    return new RedisConnectionInfo(
+        m.getHost(), m.getMappedPort(RedisCommandBuilder.DEFAULT_REDIS_PORT));
+  }
+
+  /** Returns the current master container — single control facade lookup. */
+  private GenericContainer<?> currentMaster() {
+    return getControl().getMaster();
   }
 
   /**
@@ -269,17 +286,10 @@ public final class SentinelCluster implements ExtensionContext.Store.CloseableRe
    * @return control facade (never null)
    */
   public ControlFacade getControl() {
-    ControlFacade facade = controlFacade.get();
-    if (facade == null) {
-      synchronized (this) {
-        facade = controlFacade.get();
-        if (facade == null) {
-          facade = ControlFacade.create(getAllContainers(), buildContainerIndexMap());
-          controlFacade.set(facade);
-        }
-      }
-    }
-    return facade;
+    return controlFacade.updateAndGet(
+        existing -> existing != null
+            ? existing
+            : ControlFacade.create(getAllContainers(), buildContainerIndexMap()));
   }
 
   /**
@@ -298,7 +308,8 @@ public final class SentinelCluster implements ExtensionContext.Store.CloseableRe
    * @param role container role — must not be null
    */
   public void restart(final ContainerRole role) {
-    getControl().restart(getControl().getContainer(role));
+    final ControlFacade control = getControl();
+    control.restart(control.getContainer(role));
   }
 
   /**
@@ -325,11 +336,8 @@ public final class SentinelCluster implements ExtensionContext.Store.CloseableRe
   // ==================== Private Helpers ====================
 
   private List<GenericContainer<?>> getAllContainers() {
-    final List<GenericContainer<?>> all = new ArrayList<>();
-    all.add(master);
-    all.addAll(replicas);
-    all.addAll(sentinels);
-    return List.copyOf(all);
+    return Stream.concat(Stream.concat(Stream.of(master), replicas.stream()), sentinels.stream())
+        .toList();
   }
 
   private Map<GenericContainer<?>, Integer> buildContainerIndexMap() {

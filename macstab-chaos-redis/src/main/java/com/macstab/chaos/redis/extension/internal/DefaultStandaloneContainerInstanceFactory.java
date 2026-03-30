@@ -2,7 +2,6 @@
 package com.macstab.chaos.redis.extension.internal;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
@@ -57,20 +56,36 @@ public final class DefaultStandaloneContainerInstanceFactory
       installNetworkTools(container, annotation);
       installAnnotationPackages(container, annotation);
       return buildSuccessResult(container, annotation);
-    } catch (final Exception e) {
-      log.error("Failed to start instance '{}'", annotation.id(), e);
+    } catch (final RuntimeException e) {
+      log.error("Failed to start standalone Redis instance '{}'", annotation.id(), e);
       return new StartupResult.Failure(annotation.id(), e.getMessage(), e);
     }
   }
 
-  /** Creates, configures and starts a Redis container. */
+  /**
+   * Creates, configures and starts a Redis container.
+   *
+   * <p>Package-private to allow unit testing of the start step independently of Docker socket
+   * access (integration tests cover actual container startup).
+   *
+   * @param annotation annotation driving container configuration — must not be null
+   * @return started container (never null)
+   */
   GenericContainer<?> createAndStartContainer(final RedisStandalone annotation) {
     final GenericContainer<?> container = buildContainer(annotation);
     container.start();
     return container;
   }
 
-  /** Builds a configured Redis container (not started). */
+  /**
+   * Builds a configured Redis container (not started).
+   *
+   * <p>Package-private to allow direct unit testing of container configuration (image, ports,
+   * args, capabilities) without starting Docker.
+   *
+   * @param annotation annotation driving container configuration — must not be null
+   * @return configured container ready to start (never null)
+   */
   @SuppressWarnings("resource")
   GenericContainer<?> buildContainer(final RedisStandalone annotation) {
     final GenericContainer<?> container =
@@ -85,8 +100,8 @@ public final class DefaultStandaloneContainerInstanceFactory
     if (annotation.args().length > 0) {
       final List<String> cmd = new ArrayList<>();
       cmd.add("redis-server");
-      cmd.addAll(Arrays.asList(annotation.args()));
-      container.withCommand(cmd.toArray(new String[0]));
+      cmd.addAll(List.of(annotation.args()));
+      container.withCommand(cmd.toArray(String[]::new));
     }
 
     if (annotation.enableNetworkChaos()) {
@@ -97,8 +112,14 @@ public final class DefaultStandaloneContainerInstanceFactory
     return container;
   }
 
-  /** Installs network tools if network chaos is enabled. */
-  void installNetworkTools(final GenericContainer<?> container, final RedisStandalone annotation) {
+  /**
+   * Installs {@code iproute2} and {@code iptables} if network chaos is enabled and not yet present.
+   *
+   * @param container running container — must not be null
+   * @param annotation source annotation — must not be null
+   */
+  void installNetworkTools(
+      final GenericContainer<?> container, final RedisStandalone annotation) {
     if (!annotation.enableNetworkChaos()) {
       return;
     }
@@ -106,26 +127,37 @@ public final class DefaultStandaloneContainerInstanceFactory
       if (!packageInstaller.isInstalled(container, "tc")) {
         packageInstaller.install(container, "iproute2", "iptables");
       }
-    } catch (final Exception e) {
+    } catch (final RuntimeException e) {
       log.warn("Network tools install failed for '{}': {}", annotation.id(), e.getMessage());
     }
   }
 
-  /** Installs annotation-specified packages. */
+  /**
+   * Installs annotation-specified packages via {@link PackageInstallerPort}.
+   *
+   * @param container running container — must not be null
+   * @param annotation source annotation — must not be null
+   */
   void installAnnotationPackages(
       final GenericContainer<?> container, final RedisStandalone annotation) {
     if (annotation.packages().length == 0) {
       return;
     }
     try {
-      packageInstaller.install(container, Arrays.asList(annotation.packages()), true);
+      packageInstaller.install(container, List.of(annotation.packages()), true);
       log.info("Packages installed in instance '{}'", annotation.id());
-    } catch (final Exception e) {
+    } catch (final RuntimeException e) {
       log.warn("Package install failed for '{}': {}", annotation.id(), e.getMessage());
     }
   }
 
-  /** Builds a success result from a started container. */
+  /**
+   * Builds a {@link StartupResult.Success} from a started container.
+   *
+   * @param container started container — must not be null
+   * @param annotation source annotation — must not be null
+   * @return success result containing connection info and store
+   */
   StartupResult buildSuccessResult(
       final GenericContainer<?> container, final RedisStandalone annotation) {
     final RedisConnectionInfo info =
