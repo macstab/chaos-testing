@@ -160,16 +160,30 @@ class ToxiproxyOrchestratorTest {
   class ResetTests {
 
     @Test
-    @DisplayName("should reset all state")
-    void shouldResetAllState() {
+    @DisplayName("should remove own proxies but keep Toxiproxy running")
+    void shouldRemoveOwnProxiesButKeepToxiproxyRunning() {
       ProxyConfiguration proxyConfig =
           new ProxyConfiguration("redis", 6379, 16379, REDIS.getHost());
       orchestrator.createProxy(REDIS, proxyConfig);
 
       orchestrator.reset(REDIS);
 
-      assertThat(lifecycle.isHealthy(ContainerContext.of(REDIS))).isFalse();
+      // Proxy removed — surgical cleanup
       assertThat(proxyOps.proxyExists(ContainerContext.of(REDIS), "redis")).isFalse();
+      // Toxiproxy still running — other modules' proxies are safe
+      assertThat(lifecycle.isHealthy(ContainerContext.of(REDIS))).isTrue();
+    }
+
+    @Test
+    @DisplayName("shutdown should kill Toxiproxy and flush all iptables")
+    void shutdownShouldKillToxiproxy() {
+      ProxyConfiguration proxyConfig =
+          new ProxyConfiguration("redis", 6379, 16379, REDIS.getHost());
+      orchestrator.createProxy(REDIS, proxyConfig);
+
+      orchestrator.shutdown(REDIS);
+
+      assertThat(lifecycle.isHealthy(ContainerContext.of(REDIS))).isFalse();
     }
 
     @Test

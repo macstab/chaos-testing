@@ -279,7 +279,54 @@ public final class ToxiproxyOrchestrator {
    *
    * @param container container (no-op if not running)
    */
+  /**
+   * Surgically removes all proxies owned by this orchestrator instance, without affecting
+   * proxies created by other modules (connection, cache) or killing the Toxiproxy process.
+   *
+   * <p>Iterates {@code activeProxies}, deletes each proxy from Toxiproxy via the API, removes
+   * its iptables redirect rule, and clears the tracking map. The Toxiproxy process stays
+   * running. Other modules' proxies and iptables rules are untouched.
+   *
+   * <p>For full container teardown (kill Toxiproxy + flush all iptables), use
+   * {@link #shutdown(GenericContainer)}.
+   *
+   * @param container target container (no-op if not running)
+   */
   public void reset(final GenericContainer<?> container) {
+    Objects.requireNonNull(container, "container must not be null");
+
+    if (!container.isRunning()) {
+      return;
+    }
+
+    final ContainerContext ctx = ContainerContext.of(container);
+    int removed = 0;
+
+    for (final var entry : activeProxies.entrySet()) {
+      try {
+        proxyOps.deleteProxy(ctx, entry.getKey());
+        final ProxyConfiguration config = entry.getValue();
+        networkRedirect.removeRedirect(ctx, config.servicePort(), config.proxyPort());
+        removed++;
+      } catch (final Exception e) {
+        log.debug("Failed to remove proxy '{}' during reset: {}", entry.getKey(), e.getMessage());
+      }
+    }
+    activeProxies.clear();
+    log.info("Reset proxy chaos: removed {} proxies (Toxiproxy still running)", removed);
+  }
+
+  /**
+   * Terminates the Toxiproxy process and flushes all iptables NAT rules — destroying every
+   * proxy from every module on this container.
+   *
+   * <p><strong>NUCLEAR — use only in {@code @AfterAll}.</strong> This kills the shared Toxiproxy
+   * process, severing all TCP connections through all proxies. All iptables redirects are flushed.
+   * After this call, any module that still holds proxy references has stale state.
+   *
+   * @param container target container (no-op if not running)
+   */
+  public void shutdown(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
 
     if (!container.isRunning()) {
@@ -288,12 +335,11 @@ public final class ToxiproxyOrchestrator {
 
     try {
       final ContainerContext ctx = ContainerContext.of(container);
-      networkRedirect.clearAllRedirects(ctx);
-      lifecycle.stop(ctx);
+      lifecycle.shutdown(ctx);
       activeProxies.clear();
-      log.info("Reset proxy chaos (stopped Toxiproxy, cleared ALL port redirects)");
+      log.info("Shutdown Toxiproxy: killed process + flushed all iptables rules");
     } catch (final Exception e) {
-      log.warn("Failed to fully reset proxy chaos", e);
+      log.warn("Failed to fully shutdown Toxiproxy", e);
     }
   }
 }

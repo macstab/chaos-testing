@@ -230,13 +230,26 @@ class ProxyChaosProviderDistributionTest {
     }
 
     @Test
-    @DisplayName("should stop Toxiproxy")
-    void shouldStopToxiproxy() throws Exception {
+    @DisplayName("reset should remove proxies but keep Toxiproxy running")
+    void resetShouldKeepToxiproxyRunning() throws Exception {
       container = createDebianRedisContainer();
       provider = new ProxyChaosProvider();
 
       provider.createProxy(container, "redis", 6379, 16379);
       provider.reset(container);
+
+      // Surgical: Toxiproxy still alive, proxy removed
+      assertThat(isToxiproxyRunning(container)).isTrue();
+    }
+
+    @Test
+    @DisplayName("shutdown should kill Toxiproxy")
+    void shutdownShouldKillToxiproxy() throws Exception {
+      container = createDebianRedisContainer();
+      provider = new ProxyChaosProvider();
+
+      provider.createProxy(container, "redis", 6379, 16379);
+      provider.shutdown(container);
 
       assertThat(isToxiproxyRunning(container)).isFalse();
     }
@@ -249,7 +262,7 @@ class ProxyChaosProviderDistributionTest {
   class EdgeCaseTests {
 
     @Test
-    @DisplayName("should handle repeated reset")
+    @DisplayName("should handle repeated reset without error")
     void shouldHandleRepeatedReset() throws Exception {
       container = createDebianRedisContainer();
       provider = new ProxyChaosProvider();
@@ -259,7 +272,8 @@ class ProxyChaosProviderDistributionTest {
       provider.reset(container);
       provider.reset(container);
 
-      assertThat(isToxiproxyRunning(container)).isFalse();
+      // Surgical reset is idempotent — Toxiproxy still running
+      assertThat(isToxiproxyRunning(container)).isTrue();
     }
 
     @Test

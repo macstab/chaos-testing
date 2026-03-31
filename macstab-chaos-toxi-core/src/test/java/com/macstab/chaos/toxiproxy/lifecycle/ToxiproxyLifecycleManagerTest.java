@@ -98,7 +98,7 @@ class ToxiproxyLifecycleManagerTest {
       assertThat(lifecycle.isHealthy(ctx)).isTrue();
 
       // WHEN
-      lifecycle.stop(ctx);
+      lifecycle.shutdown(ctx);
 
       // THEN
       assertThat(lifecycle.isHealthy(ctx)).isFalse();
@@ -108,14 +108,14 @@ class ToxiproxyLifecycleManagerTest {
     @DisplayName("should handle stop when never started")
     void shouldHandleStopWhenNeverStarted() throws Exception {
       final ContainerContext ctx = ContainerContext.of(UBUNTU);
-      assertThatNoException().isThrownBy(() -> lifecycle.stop(ctx));
+      assertThatNoException().isThrownBy(() -> lifecycle.shutdown(ctx));
     }
 
     @Test
     @DisplayName("should throw NullPointerException when ctx is null")
     void shouldThrowNpe_whenCtxIsNull() {
       assertThatNullPointerException()
-          .isThrownBy(() -> lifecycle.stop(null))
+          .isThrownBy(() -> lifecycle.shutdown(null))
           .withMessage("ctx must not be null");
     }
   }
@@ -144,7 +144,7 @@ class ToxiproxyLifecycleManagerTest {
     void shouldReturnFalse_afterStop() throws Exception {
       final ContainerContext ctx = ContainerContext.of(UBUNTU);
       lifecycle.ensureRunning(ctx);
-      lifecycle.stop(ctx);
+      lifecycle.shutdown(ctx);
       assertThat(lifecycle.isHealthy(ctx)).isFalse();
     }
 
@@ -170,13 +170,13 @@ class ToxiproxyLifecycleManagerTest {
       // Cycle 1
       lifecycle.ensureRunning(ctx);
       assertThat(lifecycle.isHealthy(ctx)).isTrue();
-      lifecycle.stop(ctx);
+      lifecycle.shutdown(ctx);
       assertThat(lifecycle.isHealthy(ctx)).isFalse();
 
       // Cycle 2
       lifecycle.ensureRunning(ctx);
       assertThat(lifecycle.isHealthy(ctx)).isTrue();
-      lifecycle.stop(ctx);
+      lifecycle.shutdown(ctx);
       assertThat(lifecycle.isHealthy(ctx)).isFalse();
     }
   }

@@ -267,17 +267,34 @@ public final class ProxyChaosProvider implements ProxyChaos {
   /**
    * ⛔ Nuclear reset — kills Toxiproxy and removes ALL iptables rules.
    *
-   * <p>This destroys <strong>every proxy in the container</strong> — not just the ones you created.
-   * Only use in {@code @AfterAll} when the container itself is being discarded. For per-test
-   * cleanup, use {@link #deleteProxy} instead.
+   * <p>Removes all proxies created by this {@code ProxyChaosProvider} instance, without killing
+   * the Toxiproxy process or affecting proxies created by other modules (connection, cache).
+   * Safe for {@code @AfterEach}.
+   *
+   * <p>For full container teardown (kill Toxiproxy + flush all iptables), use
+   * {@link #shutdown(GenericContainer)}.
    *
    * @param container target container (no-op if not running)
-   * @see #deleteProxy(GenericContainer, String) for surgical single-proxy removal
+   * @see #deleteProxy(GenericContainer, String) for single-proxy removal
+   * @see #shutdown(GenericContainer) for nuclear full teardown
    */
   @Override
   public void reset(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
     orchestrator.reset(container);
+  }
+
+  /**
+   * ⛔ Nuclear shutdown — kills the Toxiproxy process and flushes ALL iptables NAT rules.
+   *
+   * <p>Destroys every proxy from every module on this container. Only use in {@code @AfterAll}
+   * when the container itself is being discarded. For per-test cleanup, use {@link #reset}.
+   *
+   * @param container target container (no-op if not running)
+   */
+  public void shutdown(final GenericContainer<?> container) {
+    Objects.requireNonNull(container, "container must not be null");
+    orchestrator.shutdown(container);
   }
 
   @Override

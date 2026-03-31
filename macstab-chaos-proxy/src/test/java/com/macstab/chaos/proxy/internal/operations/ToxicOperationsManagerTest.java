@@ -41,7 +41,7 @@ class ToxicOperationsManagerTest {
 
   @AfterEach
   void cleanup() throws Exception {
-    lifecycle.stop(ContainerContext.of(REDIS));
+    lifecycle.shutdown(ContainerContext.of(REDIS));
   }
 
   @Nested

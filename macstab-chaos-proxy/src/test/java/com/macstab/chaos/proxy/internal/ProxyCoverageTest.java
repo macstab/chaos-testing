@@ -676,7 +676,7 @@ class ProxyCoverageTest {
       final ContainerContext stoppedCtx = ContainerContext.of(stopped, platform, shell);
 
       // WHEN / THEN
-      assertThatThrownBy(() -> mgr.stop(stoppedCtx))
+      assertThatThrownBy(() -> mgr.shutdown(stoppedCtx))
           .isInstanceOf(IllegalStateException.class)
           .hasMessageContaining("must be running");
     }

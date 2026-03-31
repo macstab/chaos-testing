@@ -127,37 +127,40 @@ public interface ToxiproxyLifecycle {
   void ensureRunning(@NonNull ContainerContext ctx) throws IOException;
 
   /**
-   * Terminates the Toxiproxy server process inside the container, destroying all registered
-   * proxies and their toxic configurations.
+   * Terminates the Toxiproxy server process and flushes all iptables NAT rules inside the
+   * container. This is a <strong>terminal, destructive</strong> operation — every proxy registered
+   * by every module (proxy, connection, cache) is destroyed, and all iptables redirects are
+   * removed.
    *
-   * <p><strong>CRITICAL — Shared instance destruction:</strong> Toxiproxy is a single process
-   * serving all proxies on the container. Calling this method destroys every proxy registered by
-   * every module (proxy module, connection module, cache module). This is intentional for full
-   * container teardown but catastrophic if called during per-test cleanup. Callers must only
-   * invoke {@code stop()} from {@code @AfterAll} when the container itself will be discarded.
-   * For per-test cleanup, use surgical proxy deletion via
-   * {@link com.macstab.chaos.toxiproxy.api.ToxiproxyApiClient#deleteProxy}.
+   * <p><strong>CRITICAL — This is NOT per-module cleanup.</strong> {@code shutdown()} kills the
+   * shared Toxiproxy process that serves all modules on the container. Calling this from one
+   * module destroys every other module's active proxies and iptables rules. Use this
+   * <em>exclusively</em> in {@code @AfterAll} when the container itself is being discarded.
+   * For per-module or per-test cleanup, each module must use its own surgical
+   * {@code reset()} method (which removes only its own proxies via the API, without touching
+   * the process or other modules' state).
    *
-   * <p><strong>Implementation:</strong> Sends a kill signal to the {@code toxiproxy-server}
-   * process using the platform's process command builder. Implementations must use
-   * {@code killall}/{@code pkill} or equivalent — not {@code kill -9 $(pidof ...)}, which
-   * requires a PID that is not tracked.
+   * <p><strong>Shutdown sequence:</strong>
+   * <ol>
+   *   <li>Flush all iptables NAT rules ({@code iptables -t nat -F}) via
+   *       {@link com.macstab.chaos.toxiproxy.network.NetworkRedirect#clearAllRedirects}.
+   *   <li>Kill the {@code toxiproxy-server} process via the platform's process command builder.
+   * </ol>
    *
-   * <p><strong>Post-stop state:</strong> After a successful call, {@link #isHealthy} will return
-   * {@code false}. Active TCP connections through Toxiproxy proxies will be severed. iptables
-   * redirect rules installed by {@link com.macstab.chaos.toxiproxy.network.NetworkRedirect} are
-   * NOT removed by this method — they must be removed separately via
-   * {@link com.macstab.chaos.toxiproxy.network.NetworkRedirect#clearAllRedirects(ContainerContext)}.
+   * <p><strong>Post-shutdown state:</strong> {@link #isHealthy} returns {@code false}. All TCP
+   * connections through Toxiproxy proxies are severed. All iptables NAT redirects are removed.
+   * A subsequent call to {@link #ensureRunning} will re-install and re-start Toxiproxy from
+   * scratch — but previously registered proxies and iptables rules are gone.
    *
-   * <p><strong>Idempotency:</strong> Safe to call when Toxiproxy is not running — the underlying
-   * kill command may report "no process found" which implementations should ignore.
+   * <p><strong>Idempotency:</strong> Safe to call when Toxiproxy is not running or when no
+   * iptables rules exist.
    *
    * @param ctx resolved container context; must reference a running container
-   * @throws IOException if the stop command fails unexpectedly (not "no process found")
+   * @throws IOException if the kill or iptables command fails unexpectedly
    * @throws IllegalStateException if the container is not running
    * @throws NullPointerException if ctx is null
    */
-  void stop(@NonNull ContainerContext ctx) throws IOException;
+  void shutdown(@NonNull ContainerContext ctx) throws IOException;
 
   /**
    * Tests whether the Toxiproxy management HTTP API is alive and responding, without throwing.

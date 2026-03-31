@@ -124,10 +124,10 @@ class ToxiproxyLifecycleManagerUnitTest {
     }
   }
 
-  // ==================== stop() ====================
+  // ==================== shutdown() ====================
 
   @Nested
-  @DisplayName("stop()")
+  @DisplayName("shutdown()")
   class StopTests {
 
     @Test
@@ -135,7 +135,7 @@ class ToxiproxyLifecycleManagerUnitTest {
     void containerNotRunning_throwsIllegalState() {
       when(mockContainer.isRunning()).thenReturn(false);
 
-      assertThatThrownBy(() -> lifecycle.stop(ctx))
+      assertThatThrownBy(() -> lifecycle.shutdown(ctx))
           .isInstanceOf(IllegalStateException.class)
           .hasMessageContaining("must be running");
     }

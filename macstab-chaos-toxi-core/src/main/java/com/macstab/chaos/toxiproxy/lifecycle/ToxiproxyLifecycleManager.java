@@ -141,7 +141,7 @@ public final class ToxiproxyLifecycleManager implements ToxiproxyLifecycle {
   }
 
   @Override
-  public void stop(@NonNull final ContainerContext ctx) throws IOException {
+  public void shutdown(@NonNull final ContainerContext ctx) throws IOException {
     Objects.requireNonNull(ctx, "ctx must not be null");
 
     if (!ctx.container().isRunning()) {
@@ -149,12 +149,19 @@ public final class ToxiproxyLifecycleManager implements ToxiproxyLifecycle {
     }
 
     try {
+      // 1. Flush ALL iptables NAT rules (nuclear — removes every module's redirects)
+      final var networkBuilder = ctx.platform().getNetworkCommandBuilder();
+      final String clearCmd = networkBuilder.buildClearRedirectsCommand();
+      ctx.shell().exec(ctx.container(), clearCmd);
+
+      // 2. Kill the Toxiproxy process (nuclear — destroys every module's proxies)
       final var processBuilder = ctx.platform().getProcessCommandBuilder();
       final String killCmd = processBuilder.buildKillAllProcessesCommand(TOXIPROXY_BINARY);
       ctx.shell().exec(ctx.container(), killCmd);
-      log.info("Stopped Toxiproxy server");
+
+      log.info("Shutdown Toxiproxy: killed process + flushed all iptables NAT rules");
     } catch (final Exception e) {
-      throw new IOException("Failed to stop Toxiproxy", e);
+      throw new IOException("Failed to shutdown Toxiproxy", e);
     }
   }
 
