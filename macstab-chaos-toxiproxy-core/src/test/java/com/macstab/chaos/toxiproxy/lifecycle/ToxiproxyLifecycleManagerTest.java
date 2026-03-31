@@ -1,13 +1,5 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
-package com.macstab.chaos.proxy.internal.lifecycle;
- import com.macstab.chaos.toxiproxy.context.ContainerContext;
-import com.macstab.chaos.toxiproxy.config.ToxiproxyConfig;
-import com.macstab.chaos.toxiproxy.lifecycle.ToxiproxyLifecycleManager;
-
-
-
-
-
+package com.macstab.chaos.toxiproxy.lifecycle;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -18,8 +10,8 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-
-
+import com.macstab.chaos.toxiproxy.config.ToxiproxyConfig;
+import com.macstab.chaos.toxiproxy.context.ContainerContext;
 
 /**
  * Comprehensive tests for {@link ToxiproxyLifecycleManager}.

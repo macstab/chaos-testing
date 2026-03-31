@@ -1,12 +1,5 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
-package com.macstab.chaos.proxy.network;
- import com.macstab.chaos.toxiproxy.context.ContainerContext;
-import com.macstab.chaos.toxiproxy.network.NetworkRedirect;
-import com.macstab.chaos.toxiproxy.network.NetworkRedirectManager;
-
-
-
-
+package com.macstab.chaos.toxiproxy.network;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -24,8 +17,8 @@ import org.testcontainers.containers.GenericContainer;
 import com.macstab.chaos.core.command.network.IptablesCommandBuilder;
 import com.macstab.chaos.core.platform.Platform;
 import com.macstab.chaos.core.shell.Shell;
-
-import com.macstab.chaos.proxy.support.TestExecResults;
+import com.macstab.chaos.toxiproxy.context.ContainerContext;
+import com.macstab.chaos.toxiproxy.support.TestExecResults;
 
 /**
  * Unit tests for {@link NetworkRedirectManager}.

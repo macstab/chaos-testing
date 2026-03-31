@@ -14,10 +14,16 @@ java {
 }
 
 dependencies {
+    // Core module (Platform, Shell, PackageInstaller, exceptions)
     api(project(":macstab-chaos-core"))
+
+    // JUnit Jupiter API
     api("org.junit.jupiter:junit-jupiter-api:${findProperty("junitVersion")}")
+
+    // Testcontainers
     api("org.testcontainers:testcontainers:1.20.4")
 
+    // Test dependencies
     testImplementation("org.testcontainers:junit-jupiter:1.20.4")
     testImplementation("org.assertj:assertj-core:3.24.2")
     testImplementation("org.mockito:mockito-core:5.8.0")
@@ -27,12 +33,23 @@ dependencies {
 
 tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
-    options.compilerArgs.addAll(listOf("-parameters", "-Xlint:unchecked", "-Xlint:deprecation"))
+    options.compilerArgs.addAll(
+        listOf(
+            "-parameters",
+            "-Xlint:unchecked",
+            "-Xlint:deprecation"
+        )
+    )
 }
 
 tasks.withType<Test> {
     useJUnitPlatform()
-    jvmArgs("--add-opens", "java.base/java.lang=ALL-UNNAMED", "--add-opens", "java.base/java.util=ALL-UNNAMED", "-Dnet.bytebuddy.experimental=true")
+
+    jvmArgs(
+        "--add-opens", "java.base/java.lang=ALL-UNNAMED",
+        "--add-opens", "java.base/java.util=ALL-UNNAMED",
+        "-Dnet.bytebuddy.experimental=true"
+    )
 }
 
 description = "Shared Toxiproxy lifecycle, API client, toxic model, and network redirect"
