@@ -1,5 +1,5 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
-package com.macstab.chaos.proxy.internal;
+package com.macstab.chaos.toxiproxy.context;
 
 import java.util.Objects;
 

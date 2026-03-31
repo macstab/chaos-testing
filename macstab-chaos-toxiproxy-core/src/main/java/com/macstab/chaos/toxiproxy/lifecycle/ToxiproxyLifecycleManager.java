@@ -1,15 +1,15 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
-package com.macstab.chaos.proxy.internal.lifecycle;
+package com.macstab.chaos.toxiproxy.lifecycle;
 
 import java.io.IOException;
 import java.util.Objects;
 
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
-import com.macstab.chaos.proxy.api.ToxiproxyApiClient;
-import com.macstab.chaos.proxy.api.ToxiproxyApiClientImpl;
-import com.macstab.chaos.proxy.config.ToxiproxyConfig;
-import com.macstab.chaos.proxy.internal.ContainerContext;
-import com.macstab.chaos.proxy.internal.toxiproxy.ToxiproxyInstaller;
+import com.macstab.chaos.toxiproxy.api.ToxiproxyApiClient;
+import com.macstab.chaos.toxiproxy.api.ToxiproxyApiClientImpl;
+import com.macstab.chaos.toxiproxy.config.ToxiproxyConfig;
+import com.macstab.chaos.toxiproxy.context.ContainerContext;
+import com.macstab.chaos.toxiproxy.lifecycle.ToxiproxyInstaller;
 
 import lombok.extern.slf4j.Slf4j;
 

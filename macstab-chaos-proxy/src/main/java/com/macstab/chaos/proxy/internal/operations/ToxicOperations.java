@@ -3,8 +3,8 @@ package com.macstab.chaos.proxy.internal.operations;
 
 import java.io.IOException;
 
-import com.macstab.chaos.proxy.internal.ContainerContext;
-import com.macstab.chaos.proxy.internal.operations.toxic.ToxicConfig;
+import com.macstab.chaos.toxiproxy.context.ContainerContext;
+import com.macstab.chaos.toxiproxy.toxic.ToxicConfig;
 
 /**
  * Toxic CRUD operations against the Toxiproxy REST API.

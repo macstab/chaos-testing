@@ -7,14 +7,14 @@ import java.util.Objects;
 import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.api.ProxyChaos;
-import com.macstab.chaos.proxy.config.ToxiproxyConfig;
+import com.macstab.chaos.toxiproxy.config.ToxiproxyConfig;
 import com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator;
-import com.macstab.chaos.proxy.internal.model.ProxyConfiguration;
-import com.macstab.chaos.proxy.internal.operations.toxic.BandwidthToxic;
-import com.macstab.chaos.proxy.internal.operations.toxic.LatencyToxic;
-import com.macstab.chaos.proxy.internal.operations.toxic.LimitDataToxic;
-import com.macstab.chaos.proxy.internal.operations.toxic.SlowCloseToxic;
-import com.macstab.chaos.proxy.internal.operations.toxic.TimeoutToxic;
+import com.macstab.chaos.toxiproxy.config.ProxyConfiguration;
+import com.macstab.chaos.toxiproxy.toxic.BandwidthToxic;
+import com.macstab.chaos.toxiproxy.toxic.LatencyToxic;
+import com.macstab.chaos.toxiproxy.toxic.LimitDataToxic;
+import com.macstab.chaos.toxiproxy.toxic.SlowCloseToxic;
+import com.macstab.chaos.toxiproxy.toxic.TimeoutToxic;
 
 /**
  * Provider for universal TCP proxy-based chaos injection.

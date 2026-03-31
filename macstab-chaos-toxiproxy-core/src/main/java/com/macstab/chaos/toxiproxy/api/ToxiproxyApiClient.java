@@ -1,11 +1,11 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
-package com.macstab.chaos.proxy.api;
+package com.macstab.chaos.toxiproxy.api;
 
 import java.io.IOException;
 import java.util.List;
 
-import com.macstab.chaos.proxy.internal.ContainerContext;
-import com.macstab.chaos.proxy.internal.model.ProxyConfiguration;
+import com.macstab.chaos.toxiproxy.context.ContainerContext;
+import com.macstab.chaos.toxiproxy.config.ProxyConfiguration;
 
 /**
  * HTTP client for the Toxiproxy management API running inside a container.
@@ -105,7 +105,7 @@ public interface ToxiproxyApiClient {
    * immediately.
    *
    * <p>Note: this does not remove iptables redirects — those must be cleaned up separately via
-   * {@link com.macstab.chaos.proxy.network.NetworkRedirect#clearAllRedirects(ContainerContext)}.
+   * {@link com.macstab.chaos.toxiproxy.network.NetworkRedirect#clearAllRedirects(ContainerContext)}.
    *
    * @param ctx resolved container context
    * @param proxyName proxy name to delete
@@ -160,7 +160,7 @@ public interface ToxiproxyApiClient {
    *
    * <p>The {@code attributes} string must be a valid JSON object matching the Toxiproxy schema for
    * the given type (e.g., {@code {"latency":100,"jitter":0}} for type {@code "latency"}). It is
-   * produced by {@link com.macstab.chaos.proxy.internal.operations.toxic.ToxicConfig#toJson()}.
+   * produced by {@link com.macstab.chaos.toxiproxy.toxic.ToxicConfig#toJson()}.
    *
    * @param ctx resolved container context
    * @param proxyName proxy name

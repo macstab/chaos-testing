@@ -1,5 +1,5 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
-package com.macstab.chaos.proxy.internal.operations.toxic;
+package com.macstab.chaos.toxiproxy.toxic;
 
 /**
  * Type-safe configuration for a Toxiproxy fault injection (toxic).
@@ -68,7 +68,7 @@ package com.macstab.chaos.proxy.internal.operations.toxic;
  * @see com.macstab.chaos.proxy.ProxyChaosProvider
  */
 public sealed interface ToxicConfig
-    permits LatencyToxic, TimeoutToxic, BandwidthToxic, SlowCloseToxic, LimitDataToxic {
+    permits LatencyToxic, TimeoutToxic, BandwidthToxic, SlowCloseToxic, LimitDataToxic, DownToxic {
 
   /**
    * Unique name for this toxic within its proxy.
@@ -117,7 +117,7 @@ public sealed interface ToxicConfig
    * payload. For example, {@link LatencyToxic} returns {@code {"latency":100,"jitter":0}}.
    *
    * <p>This method is called internally by {@link
-   * com.macstab.chaos.proxy.api.ToxiproxyApiClient#addToxic} and is not intended for direct use by
+   * com.macstab.chaos.toxiproxy.api.ToxiproxyApiClient#addToxic} and is not intended for direct use by
    * test code.
    *
    * @return JSON object string (e.g., {@code {"latency":100,"jitter":0}})

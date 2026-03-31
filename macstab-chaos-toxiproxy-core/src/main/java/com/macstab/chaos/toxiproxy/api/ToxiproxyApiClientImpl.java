@@ -1,5 +1,5 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
-package com.macstab.chaos.proxy.api;
+package com.macstab.chaos.toxiproxy.api;
 
 import java.io.IOException;
 import java.util.List;
@@ -9,8 +9,8 @@ import java.util.regex.Pattern;
 import org.testcontainers.containers.Container.ExecResult;
 
 import com.macstab.chaos.core.command.http.HttpCommandBuilder;
-import com.macstab.chaos.proxy.internal.ContainerContext;
-import com.macstab.chaos.proxy.internal.model.ProxyConfiguration;
+import com.macstab.chaos.toxiproxy.context.ContainerContext;
+import com.macstab.chaos.toxiproxy.config.ProxyConfiguration;
 
 import lombok.extern.slf4j.Slf4j;
 

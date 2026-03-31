@@ -1,9 +1,9 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
-package com.macstab.chaos.proxy.internal.lifecycle;
+package com.macstab.chaos.toxiproxy.lifecycle;
 
 import java.io.IOException;
 
-import com.macstab.chaos.proxy.internal.ContainerContext;
+import com.macstab.chaos.toxiproxy.context.ContainerContext;
 
 /**
  * Manages the lifecycle of the Toxiproxy server process inside a container.
@@ -39,7 +39,7 @@ import com.macstab.chaos.proxy.internal.ContainerContext;
  * com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator#ToxiproxyOrchestrator( ToxiproxyLifecycle,
  * com.macstab.chaos.proxy.internal.operations.ProxyOperations,
  * com.macstab.chaos.proxy.internal.operations.ToxicOperations,
- * com.macstab.chaos.proxy.network.NetworkRedirect)} constructor for testing or alternative
+ * com.macstab.chaos.toxiproxy.network.NetworkRedirect)} constructor for testing or alternative
  * Toxiproxy deployment strategies.
  *
  * @author Christian Schnapka - Macstab GmbH

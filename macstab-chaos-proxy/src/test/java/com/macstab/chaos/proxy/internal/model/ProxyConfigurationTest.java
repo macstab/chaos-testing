@@ -1,5 +1,8 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.proxy.internal.model;
+ import com.macstab.chaos.toxiproxy.config.ProxyConfiguration;
+
+
 
 import static org.assertj.core.api.Assertions.*;
 

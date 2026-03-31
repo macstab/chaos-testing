@@ -1,5 +1,6 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.proxy.internal.operations.toxic;
+import com.macstab.chaos.toxiproxy.toxic.*;
 
 import static org.assertj.core.api.Assertions.*;
 

@@ -17,7 +17,8 @@ include(
     "macstab-chaos-connection",
     "macstab-chaos-cache",
     "macstab-chaos-filesystem",
-    "macstab-chaos-proxy"
+    "macstab-chaos-proxy",
+    "macstab-chaos-toxiproxy-core"
 )
 
 // Note: macstab-chaos-core now renamed to avoid conflict

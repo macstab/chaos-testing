@@ -1,9 +1,9 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
-package com.macstab.chaos.proxy.network;
+package com.macstab.chaos.toxiproxy.network;
 
 import java.io.IOException;
 
-import com.macstab.chaos.proxy.internal.ContainerContext;
+import com.macstab.chaos.toxiproxy.context.ContainerContext;
 
 /**
  * Manages iptables port redirection inside a container to transparently route traffic through
@@ -37,7 +37,7 @@ import com.macstab.chaos.proxy.internal.ContainerContext;
  * <ul>
  *   <li>The container must have {@code NET_ADMIN} capability.
  *   <li>{@code iptables} must be installed (handled by {@link
- *       com.macstab.chaos.proxy.internal.toxiproxy.ToxiproxyInstaller}).
+ *       com.macstab.chaos.toxiproxy.lifecycle.ToxiproxyInstaller}).
  * </ul>
  *
  * <h2>Context Passing</h2>

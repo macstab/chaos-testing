@@ -7,13 +7,13 @@ import java.util.Objects;
 import org.testcontainers.containers.Container.ExecResult;
 
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
-import com.macstab.chaos.proxy.api.ToxiproxyApiClient;
-import com.macstab.chaos.proxy.api.ToxiproxyApiClientImpl;
-import com.macstab.chaos.proxy.config.ToxiproxyConfig;
-import com.macstab.chaos.proxy.internal.ContainerContext;
-import com.macstab.chaos.proxy.internal.model.ProxyConfiguration;
-import com.macstab.chaos.proxy.network.NetworkRedirect;
-import com.macstab.chaos.proxy.network.NetworkRedirectManager;
+import com.macstab.chaos.toxiproxy.api.ToxiproxyApiClient;
+import com.macstab.chaos.toxiproxy.api.ToxiproxyApiClientImpl;
+import com.macstab.chaos.toxiproxy.config.ToxiproxyConfig;
+import com.macstab.chaos.toxiproxy.context.ContainerContext;
+import com.macstab.chaos.toxiproxy.config.ProxyConfiguration;
+import com.macstab.chaos.toxiproxy.network.NetworkRedirect;
+import com.macstab.chaos.toxiproxy.network.NetworkRedirectManager;
 
 import lombok.extern.slf4j.Slf4j;
 

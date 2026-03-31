@@ -1,5 +1,5 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
-package com.macstab.chaos.proxy.internal.toxiproxy;
+package com.macstab.chaos.toxiproxy.lifecycle;
 
 import java.util.List;
 import java.util.Objects;
@@ -10,7 +10,7 @@ import com.macstab.chaos.core.exception.ChaosOperationFailedException;
 import com.macstab.chaos.core.model.ContainerArchitecture;
 import com.macstab.chaos.core.platform.Tool;
 import com.macstab.chaos.core.util.PackageInstaller;
-import com.macstab.chaos.proxy.internal.ContainerContext;
+import com.macstab.chaos.toxiproxy.context.ContainerContext;
 
 import lombok.extern.slf4j.Slf4j;
 

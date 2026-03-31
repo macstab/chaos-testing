@@ -1,5 +1,12 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.proxy.internal.operations;
+ import com.macstab.chaos.toxiproxy.context.ContainerContext;
+import com.macstab.chaos.toxiproxy.network.NetworkRedirect;
+import com.macstab.chaos.toxiproxy.network.NetworkRedirectManager;
+import com.macstab.chaos.toxiproxy.api.ToxiproxyApiClient;
+import com.macstab.chaos.toxiproxy.config.ToxiproxyConfig;
+import com.macstab.chaos.toxiproxy.lifecycle.ToxiproxyLifecycleManager;
+import com.macstab.chaos.toxiproxy.config.ProxyConfiguration;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -11,10 +18,10 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import com.macstab.chaos.proxy.config.ToxiproxyConfig;
-import com.macstab.chaos.proxy.internal.ContainerContext;
-import com.macstab.chaos.proxy.internal.lifecycle.ToxiproxyLifecycleManager;
-import com.macstab.chaos.proxy.internal.model.ProxyConfiguration;
+
+
+
+
 
 /**
  * Comprehensive tests for ProxyOperationsManager.
@@ -399,8 +406,8 @@ class ProxyOperationsManagerTest {
     @DisplayName("proxyExists returns false when API throws")
     void proxyExists_apiThrows_returnsFalse() throws Exception {
       // GIVEN
-      final com.macstab.chaos.proxy.api.ToxiproxyApiClient mockApi =
-          org.mockito.Mockito.mock(com.macstab.chaos.proxy.api.ToxiproxyApiClient.class);
+      final com.macstab.chaos.toxiproxy.api.ToxiproxyApiClient mockApi =
+          org.mockito.Mockito.mock(com.macstab.chaos.toxiproxy.api.ToxiproxyApiClient.class);
       org.mockito.Mockito.when(
               mockApi.proxyExists(
                   org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
@@ -408,7 +415,7 @@ class ProxyOperationsManagerTest {
 
       final ProxyOperationsManager mgr =
           new ProxyOperationsManager(
-              config, mockApi, new com.macstab.chaos.proxy.network.NetworkRedirectManager());
+              config, mockApi, new com.macstab.chaos.toxiproxy.network.NetworkRedirectManager());
       final ContainerContext ctx = ContainerContext.of(REDIS);
 
       // WHEN / THEN
@@ -419,15 +426,15 @@ class ProxyOperationsManagerTest {
     @DisplayName("deleteProxy wraps non-IOException in IOException")
     void deleteProxy_runtimeException_wrapsInIOException() throws Exception {
       // GIVEN
-      final com.macstab.chaos.proxy.api.ToxiproxyApiClient mockApi =
-          org.mockito.Mockito.mock(com.macstab.chaos.proxy.api.ToxiproxyApiClient.class);
+      final com.macstab.chaos.toxiproxy.api.ToxiproxyApiClient mockApi =
+          org.mockito.Mockito.mock(com.macstab.chaos.toxiproxy.api.ToxiproxyApiClient.class);
       org.mockito.Mockito.doThrow(new RuntimeException("unexpected error"))
           .when(mockApi)
           .deleteProxy(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
 
       final ProxyOperationsManager mgr =
           new ProxyOperationsManager(
-              config, mockApi, new com.macstab.chaos.proxy.network.NetworkRedirectManager());
+              config, mockApi, new com.macstab.chaos.toxiproxy.network.NetworkRedirectManager());
       final ContainerContext ctx = ContainerContext.of(REDIS);
 
       // WHEN / THEN
@@ -442,8 +449,8 @@ class ProxyOperationsManagerTest {
       // GIVEN — ensure Toxiproxy is running so we can test the broken-proxy path
       lifecycle.ensureRunning(ContainerContext.of(REDIS));
 
-      final com.macstab.chaos.proxy.api.ToxiproxyApiClient mockApi =
-          org.mockito.Mockito.mock(com.macstab.chaos.proxy.api.ToxiproxyApiClient.class);
+      final com.macstab.chaos.toxiproxy.api.ToxiproxyApiClient mockApi =
+          org.mockito.Mockito.mock(com.macstab.chaos.toxiproxy.api.ToxiproxyApiClient.class);
       // proxyExists returns true (exists in API) but port check will fail (not listening)
       org.mockito.Mockito.when(
               mockApi.proxyExists(
@@ -457,8 +464,8 @@ class ProxyOperationsManagerTest {
           .when(mockApi)
           .createProxy(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
 
-      final com.macstab.chaos.proxy.network.NetworkRedirect mockRedirect =
-          org.mockito.Mockito.mock(com.macstab.chaos.proxy.network.NetworkRedirect.class);
+      final com.macstab.chaos.toxiproxy.network.NetworkRedirect mockRedirect =
+          org.mockito.Mockito.mock(com.macstab.chaos.toxiproxy.network.NetworkRedirect.class);
 
       final ProxyOperationsManager mgr = new ProxyOperationsManager(config, mockApi, mockRedirect);
       final ContainerContext ctx = ContainerContext.of(REDIS);

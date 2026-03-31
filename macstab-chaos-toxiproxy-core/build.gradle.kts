@@ -14,20 +14,17 @@ java {
 }
 
 dependencies {
-    // Core module
+    // Core module (Platform, Shell, PackageInstaller, exceptions)
     api(project(":macstab-chaos-core"))
-
-    // Shared Toxiproxy infrastructure
-    api(project(":macstab-chaos-toxiproxy-core"))
 
     // JUnit Jupiter API
     api("org.junit.jupiter:junit-jupiter-api:${findProperty("junitVersion")}")
 
     // Testcontainers
     api("org.testcontainers:testcontainers:1.20.4")
-    testImplementation("org.testcontainers:junit-jupiter:1.20.4")
 
     // Test dependencies
+    testImplementation("org.testcontainers:junit-jupiter:1.20.4")
     testImplementation("org.assertj:assertj-core:3.24.2")
     testImplementation("org.mockito:mockito-core:5.8.0")
     testImplementation("org.mockito:mockito-junit-jupiter:5.8.0")
@@ -48,7 +45,6 @@ tasks.withType<JavaCompile> {
 tasks.withType<Test> {
     useJUnitPlatform()
 
-    // Java 25 compatibility for Mockito/Byte Buddy
     jvmArgs(
         "--add-opens", "java.base/java.lang=ALL-UNNAMED",
         "--add-opens", "java.base/java.util=ALL-UNNAMED",
@@ -56,4 +52,4 @@ tasks.withType<Test> {
     )
 }
 
-// Publishing configured in root build.gradle.kts
+description = "Shared Toxiproxy lifecycle, API client, toxic model, and network redirect"

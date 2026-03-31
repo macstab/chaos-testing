@@ -1,5 +1,14 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.proxy.api;
+ import com.macstab.chaos.toxiproxy.context.ContainerContext;
+import com.macstab.chaos.toxiproxy.api.ToxiproxyApiClient;
+import com.macstab.chaos.toxiproxy.api.ToxiproxyApiClientImpl;
+import com.macstab.chaos.toxiproxy.config.ProxyConfiguration;
+
+
+
+
+
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -18,8 +27,8 @@ import com.macstab.chaos.core.command.http.CurlCommandBuilder;
 import com.macstab.chaos.core.command.http.HttpCommandBuilder;
 import com.macstab.chaos.core.platform.Platform;
 import com.macstab.chaos.core.shell.Shell;
-import com.macstab.chaos.proxy.internal.ContainerContext;
-import com.macstab.chaos.proxy.internal.model.ProxyConfiguration;
+
+
 import com.macstab.chaos.proxy.support.TestExecResults;
 
 /**
