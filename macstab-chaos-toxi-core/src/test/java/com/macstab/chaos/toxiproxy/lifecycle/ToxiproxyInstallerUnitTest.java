@@ -81,11 +81,13 @@ class ToxiproxyInstallerUnitTest {
       final Shell mockShell = mock(Shell.class);
       final ContainerContext ctx = ctxWithMockShell(mockShell);
 
-      // 1st call — isAlreadyInstalled: binary not found, proceed to install
-      // 2nd call — downloadBinary: download fails with non-zero exit
+      // Pre-create mocks BEFORE the when() — avoids nested mock creation during stubbing
+      final var notFound = TestExecResults.failure("toxiproxy-server: not found");
+      final var downloadFail = TestExecResults.failure("curl: (6) Could not resolve host");
+
       when(mockShell.exec(any(), anyString()))
-          .thenReturn(TestExecResults.failure("toxiproxy-server: not found"))
-          .thenReturn(TestExecResults.failure("curl: (6) Could not resolve host"));
+          .thenReturn(notFound)
+          .thenReturn(downloadFail);
 
       assertThatThrownBy(() -> installer.install(ctx))
           .isInstanceOf(ChaosOperationFailedException.class)
@@ -122,13 +124,14 @@ class ToxiproxyInstallerUnitTest {
       final Shell mockShell = mock(Shell.class);
       final ContainerContext ctx = ctxWithMockShell(mockShell);
 
-      // 1st call — isAlreadyInstalled: not found
-      // 2nd call — downloadBinary: download succeeds
-      // 3rd call — makeExecutable: chmod fails
+      final var notFound = TestExecResults.failure("toxiproxy-server: not found");
+      final var downloadOk = TestExecResults.success();
+      final var chmodFail = TestExecResults.failure("chmod: cannot access '/usr/local/bin/toxiproxy-server'");
+
       when(mockShell.exec(any(), anyString()))
-          .thenReturn(TestExecResults.failure("toxiproxy-server: not found"))
-          .thenReturn(TestExecResults.success())
-          .thenReturn(TestExecResults.failure("chmod: cannot access '/usr/local/bin/toxiproxy-server'"));
+          .thenReturn(notFound)
+          .thenReturn(downloadOk)
+          .thenReturn(chmodFail);
 
       assertThatThrownBy(() -> installer.install(ctx))
           .isInstanceOf(ChaosOperationFailedException.class)
@@ -141,9 +144,12 @@ class ToxiproxyInstallerUnitTest {
       final Shell mockShell = mock(Shell.class);
       final ContainerContext ctx = ctxWithMockShell(mockShell);
 
+      final var notFound = TestExecResults.failure("toxiproxy-server: not found");
+      final var downloadOk = TestExecResults.success();
+
       when(mockShell.exec(any(), anyString()))
-          .thenReturn(TestExecResults.failure("toxiproxy-server: not found"))
-          .thenReturn(TestExecResults.success())
+          .thenReturn(notFound)
+          .thenReturn(downloadOk)
           .thenThrow(new RuntimeException("chmod exec failed"));
 
       assertThatThrownBy(() -> installer.install(ctx))

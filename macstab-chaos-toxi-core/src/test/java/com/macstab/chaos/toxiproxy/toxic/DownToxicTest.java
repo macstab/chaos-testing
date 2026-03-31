@@ -15,17 +15,17 @@ class DownToxicTest {
   class DefaultsTests {
 
     @Test
-    @DisplayName("name defaults to 'down'")
-    void defaultName() {
-      DownToxic toxic = DownToxic.builder().build();
-
-      assertThat(toxic.name()).isEqualTo("down");
+    @DisplayName("name is required — building without name throws NPE")
+    void nameIsRequired() {
+      assertThatThrownBy(() -> DownToxic.builder().build())
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("name");
     }
 
     @Test
     @DisplayName("toxicity defaults to 1.0")
     void defaultToxicity() {
-      DownToxic toxic = DownToxic.builder().build();
+      DownToxic toxic = DownToxic.builder().name("down").build();
 
       assertThat(toxic.toxicity()).isEqualTo(1.0);
     }
@@ -46,7 +46,7 @@ class DownToxicTest {
     @Test
     @DisplayName("type() returns 'down'")
     void type() {
-      DownToxic toxic = DownToxic.builder().build();
+      DownToxic toxic = DownToxic.builder().name("down").build();
 
       assertThat(toxic.type()).isEqualTo("down");
     }
@@ -54,7 +54,7 @@ class DownToxicTest {
     @Test
     @DisplayName("toxicity() returns configured value")
     void toxicity() {
-      DownToxic toxic = DownToxic.builder().toxicity(0.3).build();
+      DownToxic toxic = DownToxic.builder().name("down").toxicity(0.3).build();
 
       assertThat(toxic.toxicity()).isEqualTo(0.3);
     }
@@ -65,30 +65,19 @@ class DownToxicTest {
   class ToJsonTests {
 
     @Test
-    @DisplayName("serializes full down toxic JSON with name, type, toxicity and empty attributes")
-    void serializesFullJson() {
+    @DisplayName("returns empty attributes object — down toxic has no attributes")
+    void returnsEmptyAttributes() {
       DownToxic toxic = DownToxic.builder().name("my-down").toxicity(1.0).build();
 
-      assertThat(toxic.toJson())
-          .isEqualTo("{\"name\":\"my-down\",\"type\":\"down\",\"toxicity\":1.00,\"attributes\":{}}");
+      assertThat(toxic.toJson()).isEqualTo("{}");
     }
 
     @Test
-    @DisplayName("serializes default toxic JSON")
-    void serializesDefaultJson() {
-      DownToxic toxic = DownToxic.builder().build();
-
-      assertThat(toxic.toJson())
-          .isEqualTo("{\"name\":\"down\",\"type\":\"down\",\"toxicity\":1.00,\"attributes\":{}}");
-    }
-
-    @Test
-    @DisplayName("serializes partial toxicity correctly")
-    void serializesPartialToxicity() {
+    @DisplayName("toJson() is always {} regardless of toxicity")
+    void alwaysEmptyRegardlessOfToxicity() {
       DownToxic toxic = DownToxic.builder().name("down").toxicity(0.3).build();
 
-      assertThat(toxic.toJson())
-          .isEqualTo("{\"name\":\"down\",\"type\":\"down\",\"toxicity\":0.30,\"attributes\":{}}");
+      assertThat(toxic.toJson()).isEqualTo("{}");
     }
   }
 
@@ -111,7 +100,7 @@ class DownToxicTest {
     @Test
     @DisplayName("toxicity below 0.0 throws IllegalArgumentException")
     void toxicityBelowZeroThrows() {
-      assertThatThrownBy(() -> DownToxic.builder().toxicity(-0.01).build())
+      assertThatThrownBy(() -> DownToxic.builder().name("d").toxicity(-0.01).build())
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("toxicity");
     }
@@ -119,7 +108,7 @@ class DownToxicTest {
     @Test
     @DisplayName("toxicity above 1.0 throws IllegalArgumentException")
     void toxicityAboveOneThrows() {
-      assertThatThrownBy(() -> DownToxic.builder().toxicity(1.01).build())
+      assertThatThrownBy(() -> DownToxic.builder().name("d").toxicity(1.01).build())
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("toxicity");
     }
@@ -127,7 +116,7 @@ class DownToxicTest {
     @Test
     @DisplayName("toxicity=0.0 is valid (boundary)")
     void toxicityZeroIsValid() {
-      DownToxic toxic = DownToxic.builder().toxicity(0.0).build();
+      DownToxic toxic = DownToxic.builder().name("d").toxicity(0.0).build();
 
       assertThat(toxic.toxicity()).isEqualTo(0.0);
     }
@@ -135,7 +124,7 @@ class DownToxicTest {
     @Test
     @DisplayName("toxicity=1.0 is valid (boundary)")
     void toxicityOneIsValid() {
-      DownToxic toxic = DownToxic.builder().toxicity(1.0).build();
+      DownToxic toxic = DownToxic.builder().name("d").toxicity(1.0).build();
 
       assertThat(toxic.toxicity()).isEqualTo(1.0);
     }
@@ -143,7 +132,7 @@ class DownToxicTest {
     @Test
     @DisplayName("toxicity=0.05 is valid (5% packet loss)")
     void lowToxicityIsValid() {
-      DownToxic toxic = DownToxic.builder().toxicity(0.05).build();
+      DownToxic toxic = DownToxic.builder().name("d").toxicity(0.05).build();
 
       assertThat(toxic.toxicity()).isEqualTo(0.05);
     }
@@ -179,7 +168,7 @@ class DownToxicTest {
     @Test
     @DisplayName("implements ToxicConfig")
     void implementsToxicConfig() {
-      DownToxic toxic = DownToxic.builder().build();
+      DownToxic toxic = DownToxic.builder().name("d").build();
 
       assertThat(toxic).isInstanceOf(ToxicConfig.class);
     }

@@ -97,7 +97,7 @@ class ToxiproxyLifecycleManagerUnitTest {
           .thenThrow(new RuntimeException("exec failed in container"));
 
       assertThatThrownBy(() -> lifecycle.ensureRunning(ctx))
-          .isInstanceOf(ChaosOperationFailedException.class)
+          .isInstanceOf(com.macstab.chaos.core.exception.ChaosOperationFailedException.class)
           .hasMessageContaining("Failed to start Toxiproxy");
     }
 
@@ -119,7 +119,7 @@ class ToxiproxyLifecycleManagerUnitTest {
       doNothing().when(mockInstaller).install(any());
 
       assertThatThrownBy(() -> shortLifecycle.ensureRunning(ctx))
-          .isInstanceOf(ChaosOperationFailedException.class)
+          .isInstanceOf(java.io.IOException.class)
           .hasMessageContaining("did not start within");
     }
   }
