@@ -3,98 +3,189 @@ package com.macstab.chaos.toxiproxy.lifecycle;
 
 import java.io.IOException;
 
+import lombok.NonNull;
+
 import com.macstab.chaos.toxiproxy.context.ContainerContext;
 
 /**
- * Manages the lifecycle of the Toxiproxy server process inside a container.
+ * Contract for managing the Toxiproxy server process lifecycle inside a Testcontainers container.
  *
- * <p>Toxiproxy is a binary that must be installed, started, and stopped as a background process
- * within the target container. This interface abstracts that lifecycle, separating it cleanly from
- * proxy and toxic CRUD operations.
+ * <h2>Why This Interface Exists</h2>
  *
- * <h2>Responsibility</h2>
+ * <p>Toxiproxy is a standalone Go binary ({@code toxiproxy-server}) that must be installed,
+ * started as a background process, and eventually stopped inside a running container. This
+ * lifecycle is orthogonal to proxy CRUD operations and toxic management — separating it into a
+ * dedicated interface enforces the Single Responsibility Principle and enables test doubles.
+ *
+ * <h2>Shared-Instance Design Constraint</h2>
+ *
+ * <p>One Toxiproxy process handles <em>all</em> proxies inside a single container — Toxiproxy is
+ * not per-proxy, it is per-container. Multiple modules ({@code macstab-chaos-proxy},
+ * {@code macstab-chaos-connection}, {@code macstab-chaos-cache}) may each create their own proxies
+ * on the same Toxiproxy instance within the same container. This has critical operational
+ * consequences:
  *
  * <ul>
- *   <li><strong>Installation:</strong> Downloads the Toxiproxy binary from GitHub releases if not
- *       already present in the container.
- *   <li><strong>Startup:</strong> Launches {@code toxiproxy-server -host 0.0.0.0} as a background
- *       process and waits for the HTTP API to respond on port 8474.
- *   <li><strong>Health:</strong> Checks whether the Toxiproxy API is alive by issuing {@code GET
- *       /proxies} via the container shell. Returns {@code false} on any error — never throws.
- *   <li><strong>Stop:</strong> Sends a kill signal to the {@code toxiproxy-server} process using a
- *       platform-appropriate process command.
+ *   <li>{@link #ensureRunning(ContainerContext)} is called by each module independently. The
+ *       implementation must be <strong>idempotent</strong> — if Toxiproxy is already running,
+ *       the call must return immediately without side effects. This is enforced by checking
+ *       {@link #isHealthy(ContainerContext)} first.
+ *   <li>{@link #stop(ContainerContext)} terminates the Toxiproxy process and destroys <em>all</em>
+ *       proxies registered by <em>all</em> modules. Calling stop from one module implicitly breaks
+ *       all other modules' proxies on the same container. Callers must only invoke {@code stop()}
+ *       during full container teardown ({@code @AfterAll}), never during per-test cleanup
+ *       ({@code @AfterEach}).
  * </ul>
  *
- * <h2>Context Passing</h2>
+ * <h2>Startup Sequence</h2>
  *
- * <p>All methods receive a pre-resolved {@link ContainerContext}. Platform detection is the
- * caller's responsibility, performed exactly once per operation in {@link
- * com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator}. This avoids repeated {@code cat
- * /etc/os-release} calls across the lifecycle, proxy, and toxic managers.
+ * <p>The full startup path (when Toxiproxy is not already running):
+ * <ol>
+ *   <li>Check {@link #isHealthy} — fast path, returns immediately if already running.
+ *   <li>Delegate to {@link ToxiproxyInstaller#install} — downloads binary, installs dependencies
+ *       if needed.
+ *   <li>Launch {@code toxiproxy-server -host 0.0.0.0} as a background process via the container
+ *       shell.
+ *   <li>Poll {@link #isHealthy} until the API responds or the configured startup timeout expires.
+ * </ol>
+ *
+ * <h2>Thread Safety</h2>
+ *
+ * <p>Implementations are not required to be internally synchronized. Concurrent calls to
+ * {@link #ensureRunning} from multiple threads on the same container may race during the startup
+ * sequence, potentially launching multiple Toxiproxy processes. The second process will fail to
+ * bind port 8474 (already in use) and exit. This is benign: the first process wins, and subsequent
+ * {@link #isHealthy} calls will return {@code true}. However, concurrent callers should coordinate
+ * at a higher level to avoid unnecessary process startup attempts.
+ *
+ * <h2>Failure Semantics</h2>
+ *
+ * <p>All methods that can fail declare {@code throws IOException}. The checked exception is
+ * intentional: lifecycle failures (binary not downloadable, process crashed, container OOM) are
+ * recoverable infrastructure conditions, not programming errors. Callers must handle them.
+ * The timeout case ({@link #ensureRunning} exceeds the configured startup timeout) also throws
+ * {@link IOException} — this is a change from an unchecked exception to ensure callers cannot
+ * silently ignore startup failures.
  *
  * <h2>Default Implementation</h2>
  *
- * <p>{@link ToxiproxyLifecycleManager} is the production implementation. Inject a custom
- * implementation via the {@link
- * com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator#ToxiproxyOrchestrator( ToxiproxyLifecycle,
- * com.macstab.chaos.proxy.internal.operations.ProxyOperations,
- * com.macstab.chaos.proxy.internal.operations.ToxicOperations,
- * com.macstab.chaos.toxiproxy.network.NetworkRedirect)} constructor for testing or alternative
- * Toxiproxy deployment strategies.
+ * <p>{@link ToxiproxyLifecycleManager} is the production implementation. Inject a mock or
+ * stub for testing via the 4-argument constructor of
+ * {@link com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator}.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ToxiproxyLifecycleManager for production implementation
+ * @see ToxiproxyInstaller for binary installation
+ * @see com.macstab.chaos.toxiproxy.api.ToxiproxyApiClient for Toxiproxy REST operations
  */
 public interface ToxiproxyLifecycle {
 
   /**
-   * Ensure the Toxiproxy server is installed, running, and healthy.
+   * Ensures that the Toxiproxy server process is installed, running, and accepting API requests
+   * inside the container. Idempotent — safe to call multiple times and from multiple modules.
    *
-   * <p>This method is idempotent: if Toxiproxy is already running and the API is healthy, it
-   * returns immediately without any side effects. Otherwise it performs the full install → start →
-   * wait cycle.
+   * <p><strong>Contract and Idempotency:</strong> If {@link #isHealthy} returns {@code true} at
+   * call time, this method returns immediately without side effects. This is the common fast path
+   * once Toxiproxy is started. If {@link #isHealthy} returns {@code false}, the full startup
+   * sequence executes: install → launch → poll-until-ready.
    *
-   * <p>The startup sequence:
-   *
+   * <p><strong>Startup sequence steps:</strong>
    * <ol>
-   *   <li>Check {@link #isHealthy(ContainerContext)} — return if already healthy.
-   *   <li>Download and install Toxiproxy binary (if not present).
-   *   <li>Start {@code toxiproxy-server} as a background process.
-   *   <li>Poll {@link #isHealthy(ContainerContext)} until the API responds or the configured
-   *       startup timeout is exceeded.
+   *   <li>Check {@link #isHealthy} — returns immediately if Toxiproxy is already responsive.
+   *   <li>Invoke {@link ToxiproxyInstaller#install(ContainerContext)} — downloads the
+   *       {@code toxiproxy-server} binary from GitHub releases if not already present in the
+   *       container's PATH. Also installs {@code curl} and {@code iptables} as side effects.
+   *   <li>Launch {@code toxiproxy-server -host 0.0.0.0 >/dev/null 2>&1 &} via the container
+   *       shell. The process detaches and runs in the background.
+   *   <li>Poll {@link #isHealthy} with interval {@code config.pollIntervalMs()} until either
+   *       the API responds or {@code config.startupTimeoutMs()} milliseconds have elapsed.
    * </ol>
    *
-   * @param ctx resolved container context (container must be running)
-   * @throws IOException if installation or startup fails
-   * @throws IllegalStateException if {@code ctx.container().isRunning()} returns {@code false}
+   * <p><strong>Timeout behavior:</strong> If the API does not become ready within the configured
+   * startup timeout, this method throws {@link IOException}. This typically indicates the binary
+   * failed to execute (wrong architecture, missing libc), the container is resource-constrained
+   * (OOM), or the binary could not download. The timeout is not precisely honored — polling uses
+   * {@code Thread.sleep()}, which is subject to JVM scheduling jitter.
+   *
+   * <p><strong>InterruptedException handling:</strong> If the calling thread is interrupted
+   * during the polling sleep, this method restores the interrupt flag via
+   * {@code Thread.currentThread().interrupt()} and throws {@link IOException}. Callers that
+   * catch {@link IOException} and continue executing should re-check {@code Thread.interrupted()}
+   * if interrupt-driven cancellation is required.
+   *
+   * <p><strong>Performance:</strong> The fast path (already healthy) costs one Docker API round
+   * trip (~5–100 ms). The cold path (binary not installed, process not started) may take 5–30
+   * seconds depending on network speed (binary download) and container resources.
+   *
+   * @param ctx resolved container context; {@code ctx.container().isRunning()} must return
+   *            {@code true} at call time
+   * @throws IOException if binary installation fails, process launch fails, or the API does not
+   *                     become ready within the configured startup timeout
+   * @throws IllegalStateException if the container is not running
+   * @throws NullPointerException if ctx is null
    */
-  void ensureRunning(ContainerContext ctx) throws IOException;
+  void ensureRunning(@NonNull ContainerContext ctx) throws IOException;
 
   /**
-   * Stop the Toxiproxy server process.
+   * Terminates the Toxiproxy server process inside the container, destroying all registered
+   * proxies and their toxic configurations.
    *
-   * <p>Sends a kill signal to the {@code toxiproxy-server} process inside the container. Safe to
-   * call when Toxiproxy is not running — the underlying kill command may report an error that is
-   * silently ignored.
+   * <p><strong>CRITICAL — Shared instance destruction:</strong> Toxiproxy is a single process
+   * serving all proxies on the container. Calling this method destroys every proxy registered by
+   * every module (proxy module, connection module, cache module). This is intentional for full
+   * container teardown but catastrophic if called during per-test cleanup. Callers must only
+   * invoke {@code stop()} from {@code @AfterAll} when the container itself will be discarded.
+   * For per-test cleanup, use surgical proxy deletion via
+   * {@link com.macstab.chaos.toxiproxy.api.ToxiproxyApiClient#deleteProxy}.
    *
-   * <p>After a successful stop, {@link #isHealthy(ContainerContext)} will return {@code false}.
+   * <p><strong>Implementation:</strong> Sends a kill signal to the {@code toxiproxy-server}
+   * process using the platform's process command builder. Implementations must use
+   * {@code killall}/{@code pkill} or equivalent — not {@code kill -9 $(pidof ...)}, which
+   * requires a PID that is not tracked.
    *
-   * @param ctx resolved container context (container must be running)
-   * @throws IOException if the stop command fails unexpectedly
-   * @throws IllegalStateException if {@code ctx.container().isRunning()} returns {@code false}
+   * <p><strong>Post-stop state:</strong> After a successful call, {@link #isHealthy} will return
+   * {@code false}. Active TCP connections through Toxiproxy proxies will be severed. iptables
+   * redirect rules installed by {@link com.macstab.chaos.toxiproxy.network.NetworkRedirect} are
+   * NOT removed by this method — they must be removed separately via
+   * {@link com.macstab.chaos.toxiproxy.network.NetworkRedirect#clearAllRedirects(ContainerContext)}.
+   *
+   * <p><strong>Idempotency:</strong> Safe to call when Toxiproxy is not running — the underlying
+   * kill command may report "no process found" which implementations should ignore.
+   *
+   * @param ctx resolved container context; must reference a running container
+   * @throws IOException if the stop command fails unexpectedly (not "no process found")
+   * @throws IllegalStateException if the container is not running
+   * @throws NullPointerException if ctx is null
    */
-  void stop(ContainerContext ctx) throws IOException;
+  void stop(@NonNull ContainerContext ctx) throws IOException;
 
   /**
-   * Check whether the Toxiproxy HTTP API is alive and responding.
+   * Tests whether the Toxiproxy management HTTP API is alive and responding, without throwing.
    *
-   * <p>Issues {@code GET /proxies} against the Toxiproxy API URL via the container shell. Returns
-   * {@code true} if the command exits with code 0 (HTTP 200). Returns {@code false} for any failure
-   * — network error, process not running, container stopped — and never throws.
+   * <p><strong>Contract:</strong> Issues {@code GET /proxies} against the Toxiproxy API URL via
+   * the container shell. Returns {@code true} if the shell command exits with code 0 (implying
+   * HTTP 200 response from Toxiproxy). Returns {@code false} for any failure condition and never
+   * throws. This method is safe to call in tight polling loops.
    *
-   * <p>This method is safe to call in a polling loop without try/catch.
+   * <p><strong>Why no exception:</strong> Health checks in polling loops are inherently
+   * optimistic — the caller expects intermittent failures (process not yet started, brief
+   * unresponsiveness). A health-check method that throws forces callers to wrap each call in
+   * try-catch, adding noise without value. The {@code false} return is unambiguous: retry.
    *
-   * @param ctx resolved container context
-   * @return {@code true} if the Toxiproxy API is responding, {@code false} otherwise
+   * <p><strong>What "healthy" means precisely:</strong> The Toxiproxy binary is executing,
+   * has successfully bound port 8474, and its HTTP listener has processed at least one request
+   * (the health check). It does NOT mean: (1) all previously registered proxies are still active
+   * (Toxiproxy holds them in memory — they persist as long as the process runs), (2) TCP listeners
+   * on proxy ports are accepting connections (they may take a few ms after proxy creation).
+   *
+   * <p><strong>Performance:</strong> One Docker API round trip per call (~5–100 ms). Do not call
+   * in a tight loop with sub-millisecond interval — use {@code config.pollIntervalMs()} (default
+   * 100 ms) as the lower bound.
+   *
+   * @param ctx resolved container context; does NOT require the container to be running —
+   *            returns {@code false} immediately if {@code ctx.container().isRunning()} is false
+   * @return {@code true} if Toxiproxy's management API is responding; {@code false} for any
+   *         failure including container stopped, process not running, or transient error
    */
-  boolean isHealthy(ContainerContext ctx);
+  boolean isHealthy(@NonNull ContainerContext ctx);
 }

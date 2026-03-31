@@ -4,17 +4,37 @@ package com.macstab.chaos.toxiproxy.toxic;
 import lombok.NonNull;
 
 /**
- * Adds fixed latency and optional jitter to all data flowing through the proxy.
+ * Adds fixed latency and optional random jitter to every data chunk flowing through the proxy.
  *
- * <p>Uses Toxiproxy's {@code latency} toxic. Actual delay per chunk:
- * {@code latencyMs + random(-jitterMs, +jitterMs)}.
+ * <p>Uses Toxiproxy's {@code latency} toxic. Toxiproxy applies the delay to each data chunk
+ * individually as it passes through the proxy, in both upstream and downstream directions.
+ * This means: a single round-trip (request + response) experiences latency applied twice —
+ * once when the request bytes pass from client to upstream, and once when response bytes pass
+ * from upstream to client. Tests relying on wall-clock round-trip time should expect
+ * approximately {@code 2 × latencyMs} increase per request, not {@code 1 ×}.
  *
- * <h2>Semantics</h2>
+ * <h2>Jitter Semantics</h2>
+ *
+ * <p>When {@code jitterMs > 0}, Toxiproxy adds a uniformly distributed random value in
+ * {@code [-jitterMs, +jitterMs]} to each chunk's delay. This models real-world network
+ * variability (WiFi, mobile, congested links) more accurately than fixed delay. The actual
+ * per-chunk delay is therefore {@code latencyMs + U(-jitterMs, +jitterMs)}, where {@code U}
+ * denotes a uniform distribution. Setting {@code latencyMs=0, jitterMs=20} produces pure
+ * jitter with no baseline delay.
+ *
+ * <h2>Attributes JSON</h2>
+ *
+ * <p>{@link #toJson()} returns {@code {"latency":{latencyMs},"jitter":{jitterMs}}}. This
+ * matches Toxiproxy's {@code latency} toxic attribute schema. The field name is {@code "latency"}
+ * (not {@code "latencyMs"}) — do not rename.
+ *
+ * <h2>Use Cases</h2>
  *
  * <ul>
- *   <li><strong>latencyMs</strong> — base delay (≥ 0). {@code 0} = jitter only.
- *   <li><strong>jitterMs</strong> — random variation (≥ 0). {@code 0} = deterministic.
- *   <li><strong>toxicity</strong> — fraction of connections affected (0.0–1.0).
+ *   <li>Verify application-level timeouts trigger at the expected threshold
+ *   <li>Simulate cross-region latency (EU↔US ~100 ms)
+ *   <li>Test that connection pools tolerate latency without exhaustion
+ *   <li>Verify Lettuce/Jedis/Spring Data Redis timeout configuration
  * </ul>
  *
  * <h2>Real-World Scenarios</h2>

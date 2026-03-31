@@ -2,15 +2,34 @@
 package com.macstab.chaos.toxiproxy.toxic;
 
 /**
- * Limits the throughput of connections flowing through the proxy to a maximum rate in KB/s.
+ * Throttles the data transfer rate of connections flowing through the proxy to a configurable
+ * maximum in kilobytes per second.
  *
- * <p>Uses Toxiproxy's {@code bandwidth} toxic. Throttles data transfer per connection independently.
+ * <p>Uses Toxiproxy's {@code bandwidth} toxic. Toxiproxy applies the rate limit per connection
+ * independently using a token bucket algorithm. Each affected connection gets its own token
+ * bucket refilled at {@code rateKbps} KB/s — the rate is NOT shared across all connections to
+ * the proxy. Twenty concurrent connections with {@code rateKbps=100} each get 100 KB/s, not
+ * 5 KB/s each.
  *
- * <h2>Semantics</h2>
+ * <h2>Both Directions Affected</h2>
+ *
+ * <p>The bandwidth limit applies to both upstream (client → service) and downstream
+ * (service → client) traffic. For read-heavy workloads (large Redis HGETALL, large DB result
+ * sets), the downstream limit dominates perceived latency. For write-heavy workloads
+ * (bulk inserts, large message payloads), the upstream limit dominates.
+ *
+ * <h2>Attributes JSON</h2>
+ *
+ * <p>{@link #toJson()} returns {@code {"rate":{rateKbps}}}. The field is named {@code "rate"},
+ * not {@code "rateKbps"} — Toxiproxy's attribute schema uses the short name.
+ *
+ * <h2>Use Cases</h2>
  *
  * <ul>
- *   <li><strong>rateKbps</strong> — max data rate per connection in KB/s (must be &gt; 0).
- *   <li><strong>toxicity</strong> — fraction of connections that are bandwidth-limited.
+ *   <li>Test streaming behavior under constrained bandwidth (pagination, chunked transfers)
+ *   <li>Verify read timeouts trigger when large responses take too long to transfer
+ *   <li>Simulate mobile/satellite network conditions for embedded/IoT service testing
+ *   <li>Expose buffering inefficiencies in protocol clients
  * </ul>
  *
  * <h2>Real-World Scenarios</h2>

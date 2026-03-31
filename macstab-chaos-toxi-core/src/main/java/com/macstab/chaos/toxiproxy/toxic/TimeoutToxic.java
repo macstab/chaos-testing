@@ -2,17 +2,37 @@
 package com.macstab.chaos.toxiproxy.toxic;
 
 /**
- * Stops all data flowing through the proxy and closes the connection after a configurable timeout.
+ * Halts all data flowing through the proxy and forcibly closes the connection after a configurable
+ * hang duration.
  *
- * <p>Uses Toxiproxy's {@code timeout} toxic. {@code timeoutMs=0} = instant connection drop.
- * Positive values cause a hang of exactly that duration before the connection is closed.
+ * <p>Uses Toxiproxy's {@code timeout} toxic. The toxic intercepts data at the proxy level:
+ * when a connection is affected, Toxiproxy stops forwarding data immediately and waits for
+ * {@code timeoutMs} milliseconds before issuing a TCP RST to the client. The client experiences
+ * a connection that appears to have stalled, then receives a connection error after exactly
+ * {@code timeoutMs} milliseconds.
  *
- * <h2>Semantics</h2>
+ * <h2>timeoutMs=0 Semantics</h2>
+ *
+ * <p>With {@code timeoutMs=0}, Toxiproxy issues the TCP RST on the first data arrival — the
+ * connection is dropped as soon as it carries data. This simulates an upstream that accepts
+ * the TCP handshake (SYN/SYN-ACK/ACK) but immediately resets on the first payload. This is
+ * subtly different from "connection refused" (which fails the SYN-ACK) — clients that distinguish
+ * between TCP-refused and TCP-reset may behave differently.
+ *
+ * <h2>Difference from DownToxic</h2>
+ *
+ * <p>{@link DownToxic} drops data without a configurable delay. {@code TimeoutToxic} introduces
+ * a measurable hang before the drop, which is essential for testing client-side timeout
+ * configuration — you want to verify that the client's configured timeout is shorter than the
+ * upstream's failure duration.
+ *
+ * <h2>Use Cases</h2>
  *
  * <ul>
- *   <li><strong>timeoutMs=0</strong> — instant connection drop on first data.
- *   <li><strong>timeoutMs &gt; 0</strong> — hang then drop after timeout.
- *   <li><strong>toxicity</strong> — fraction of connections that experience the timeout.
+ *   <li>Verify circuit breaker trips at the expected threshold
+ *   <li>Validate that HikariCP/Lettuce connection timeouts are shorter than service SLA
+ *   <li>Test retry logic under intermittent connection failures ({@code toxicity} &lt; 1.0)
+ *   <li>Simulate an upstream that is accepting connections but not processing them (overloaded)
  * </ul>
  *
  * <h2>Real-World Scenarios</h2>

@@ -13,12 +13,46 @@ import com.macstab.chaos.toxiproxy.context.ContainerContext;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Implementation of network port redirection using iptables.
+ * Production implementation of {@link NetworkRedirect} — manages iptables NAT rules inside
+ * containers to transparently redirect TCP traffic through Toxiproxy.
  *
- * <p>Receives a pre-resolved {@link ContainerContext} — no platform detection or caching inside
- * this class.
+ * <h2>Design: No State, No Platform Detection</h2>
+ *
+ * <p>This class is stateless. It does not track which rules it has installed, does not cache the
+ * container reference, and does not perform platform detection. All execution context arrives via
+ * {@link ContainerContext}. The {@link com.macstab.chaos.core.command.network.NetworkCommandBuilder}
+ * is retrieved from {@link ContainerContext#platform()} on each call — if the platform abstraction
+ * changes the iptables command syntax for a new distribution, no change to this class is required.
+ *
+ * <h2>Statelessness Implication: No Rule Tracking</h2>
+ *
+ * <p>Because this class does not track installed rules, it cannot know whether a given port pair
+ * has an existing redirect, whether duplicates were added, or whether a previous cleanup failed
+ * partially. Higher-level orchestration ({@link com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator})
+ * is responsible for ensuring setup and teardown are symmetric. Rule tracking at this level would
+ * require shared mutable state across instances, introducing concurrency risk for marginal benefit.
+ *
+ * <h2>Failure Handling Pattern</h2>
+ *
+ * <p>Each method wraps command execution in a try-catch that distinguishes:
+ * <ul>
+ *   <li>Checked {@link IOException} from the shell layer — re-thrown directly.
+ *   <li>Any other {@link Exception} — wrapped as {@link IOException} with context message.
+ * </ul>
+ * This ensures callers only need to handle {@link IOException} regardless of whether the
+ * underlying failure is a shell execution error, a Docker API error, or an unexpected runtime
+ * exception.
+ *
+ * <h2>Non-Zero Exit on clearAllRedirects</h2>
+ *
+ * <p>{@link #clearAllRedirects(ContainerContext)} logs a warning for non-zero exit codes rather
+ * than throwing. The iptables flush command may exit non-zero if the nat table is empty or the
+ * kernel module is in an unusual state. Since {@code clearAllRedirects} is called during teardown,
+ * an exception here would prevent subsequent cleanup steps from running. Warning-only is the
+ * correct trade-off for teardown operations.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see NetworkRedirect for the full interface contract including the two-chain rationale
  */
 @Slf4j
 public final class NetworkRedirectManager implements NetworkRedirect {
