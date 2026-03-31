@@ -18,7 +18,7 @@ dependencies {
     api(project(":macstab-chaos-core"))
 
     // Shared Toxiproxy infrastructure
-    api(project(":macstab-chaos-toxiproxy-core"))
+    api(project(":macstab-chaos-toxi-core"))
     
     // Test dependencies
     testImplementation("org.testcontainers:junit-jupiter:1.20.4")

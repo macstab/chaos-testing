@@ -2,42 +2,26 @@
 package com.macstab.chaos.proxy.internal;
 
 import java.util.Map;
-import com.macstab.chaos.toxiproxy.context.ContainerContext;
 import java.util.Objects;
-import com.macstab.chaos.toxiproxy.context.ContainerContext;
 import java.util.concurrent.ConcurrentHashMap;
-import com.macstab.chaos.toxiproxy.context.ContainerContext;
 
 import org.testcontainers.containers.GenericContainer;
-import com.macstab.chaos.toxiproxy.context.ContainerContext;
 
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
-import com.macstab.chaos.toxiproxy.context.ContainerContext;
+import com.macstab.chaos.proxy.internal.operations.ProxyOperations;
+import com.macstab.chaos.proxy.internal.operations.ProxyOperationsManager;
+import com.macstab.chaos.proxy.internal.operations.ToxicOperations;
+import com.macstab.chaos.proxy.internal.operations.ToxicOperationsManager;
+import com.macstab.chaos.toxiproxy.config.ProxyConfiguration;
 import com.macstab.chaos.toxiproxy.config.ToxiproxyConfig;
 import com.macstab.chaos.toxiproxy.context.ContainerContext;
 import com.macstab.chaos.toxiproxy.lifecycle.ToxiproxyLifecycle;
-import com.macstab.chaos.toxiproxy.context.ContainerContext;
 import com.macstab.chaos.toxiproxy.lifecycle.ToxiproxyLifecycleManager;
-import com.macstab.chaos.toxiproxy.context.ContainerContext;
-import com.macstab.chaos.toxiproxy.config.ProxyConfiguration;
-import com.macstab.chaos.toxiproxy.context.ContainerContext;
-import com.macstab.chaos.proxy.internal.operations.ProxyOperations;
-import com.macstab.chaos.toxiproxy.context.ContainerContext;
-import com.macstab.chaos.proxy.internal.operations.ProxyOperationsManager;
-import com.macstab.chaos.toxiproxy.context.ContainerContext;
-import com.macstab.chaos.proxy.internal.operations.ToxicOperations;
-import com.macstab.chaos.toxiproxy.context.ContainerContext;
-import com.macstab.chaos.proxy.internal.operations.ToxicOperationsManager;
-import com.macstab.chaos.toxiproxy.context.ContainerContext;
-import com.macstab.chaos.toxiproxy.toxic.ToxicConfig;
-import com.macstab.chaos.toxiproxy.context.ContainerContext;
 import com.macstab.chaos.toxiproxy.network.NetworkRedirect;
-import com.macstab.chaos.toxiproxy.context.ContainerContext;
 import com.macstab.chaos.toxiproxy.network.NetworkRedirectManager;
-import com.macstab.chaos.toxiproxy.context.ContainerContext;
+import com.macstab.chaos.toxiproxy.toxic.ToxicConfig;
 
 import lombok.extern.slf4j.Slf4j;
-import com.macstab.chaos.toxiproxy.context.ContainerContext;
 
 /**
  * Orchestrates Toxiproxy operations across lifecycle, proxy, and toxic managers.

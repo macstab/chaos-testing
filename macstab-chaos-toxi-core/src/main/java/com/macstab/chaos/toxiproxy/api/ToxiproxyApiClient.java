@@ -4,8 +4,8 @@ package com.macstab.chaos.toxiproxy.api;
 import java.io.IOException;
 import java.util.List;
 
-import com.macstab.chaos.toxiproxy.context.ContainerContext;
 import com.macstab.chaos.toxiproxy.config.ProxyConfiguration;
+import com.macstab.chaos.toxiproxy.context.ContainerContext;
 
 /**
  * HTTP client for the Toxiproxy management API running inside a container.
@@ -105,7 +105,8 @@ public interface ToxiproxyApiClient {
    * immediately.
    *
    * <p>Note: this does not remove iptables redirects — those must be cleaned up separately via
-   * {@link com.macstab.chaos.toxiproxy.network.NetworkRedirect#clearAllRedirects(ContainerContext)}.
+   * {@link
+   * com.macstab.chaos.toxiproxy.network.NetworkRedirect#clearAllRedirects(ContainerContext)}.
    *
    * @param ctx resolved container context
    * @param proxyName proxy name to delete

@@ -7,14 +7,14 @@ import java.util.Objects;
  * Stops all data from flowing through the proxy, simulating a completely down upstream.
  *
  * <p>Uses Toxiproxy's internal proxy disable mechanism. When active, all new connections are
- * refused and existing connections are closed. Unlike {@link TimeoutToxic}, there is no delay —
- * the connection is refused immediately.
+ * refused and existing connections are closed. Unlike {@link TimeoutToxic}, there is no delay — the
+ * connection is refused immediately.
  *
  * <h2>Semantics</h2>
  *
  * <ul>
- *   <li><strong>toxicity</strong> — fraction of connections that are dropped. {@code 1.0} drops
- *       all connections; {@code 0.3} drops approximately 30%.
+ *   <li><strong>toxicity</strong> — fraction of connections that are dropped. {@code 1.0} drops all
+ *       connections; {@code 0.3} drops approximately 30%.
  * </ul>
  *
  * <h2>Real-World Scenarios</h2>
@@ -62,8 +62,7 @@ public final class DownToxic implements ToxicConfig {
   @Override
   public String toJson() {
     return String.format(
-        "{\"name\":\"%s\",\"type\":\"down\",\"toxicity\":%.2f,\"attributes\":{}}",
-        name, toxicity);
+        "{\"name\":\"%s\",\"type\":\"down\",\"toxicity\":%.2f,\"attributes\":{}}", name, toxicity);
   }
 
   /** Creates a builder for {@link DownToxic}. */

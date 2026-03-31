@@ -1,44 +1,24 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.proxy.internal;
- import com.macstab.chaos.toxiproxy.context.ContainerContext;
-import com.macstab.chaos.toxiproxy.config.ToxiproxyConfig;
-import com.macstab.chaos.toxiproxy.lifecycle.ToxiproxyLifecycleManager;
-import com.macstab.chaos.toxiproxy.config.ProxyConfiguration;
-import com.macstab.chaos.toxiproxy.toxic.ToxicConfig;
-import com.macstab.chaos.toxiproxy.toxic.*;
 
 import static org.assertj.core.api.Assertions.*;
 
-
 import org.junit.jupiter.api.AfterEach;
-
 import org.junit.jupiter.api.DisplayName;
-
 import org.junit.jupiter.api.Nested;
-
 import org.junit.jupiter.api.Test;
-
 import org.testcontainers.containers.GenericContainer;
-
 import org.testcontainers.junit.jupiter.Container;
-
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-
 import com.github.dockerjava.api.model.Capability;
-
-
-
-
-
-
-
 import com.macstab.chaos.proxy.internal.operations.ProxyOperationsManager;
-
 import com.macstab.chaos.proxy.internal.operations.ToxicOperationsManager;
-
-
-
+import com.macstab.chaos.toxiproxy.config.ProxyConfiguration;
+import com.macstab.chaos.toxiproxy.config.ToxiproxyConfig;
+import com.macstab.chaos.toxiproxy.context.ContainerContext;
+import com.macstab.chaos.toxiproxy.lifecycle.ToxiproxyLifecycleManager;
+import com.macstab.chaos.toxiproxy.toxic.*;
 
 /**
  * Comprehensive integration tests for ToxiproxyOrchestrator.

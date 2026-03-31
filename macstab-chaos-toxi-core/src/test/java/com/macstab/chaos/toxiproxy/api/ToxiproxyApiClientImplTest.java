@@ -18,8 +18,8 @@ import com.macstab.chaos.core.command.http.CurlCommandBuilder;
 import com.macstab.chaos.core.command.http.HttpCommandBuilder;
 import com.macstab.chaos.core.platform.Platform;
 import com.macstab.chaos.core.shell.Shell;
-import com.macstab.chaos.toxiproxy.context.ContainerContext;
 import com.macstab.chaos.toxiproxy.config.ProxyConfiguration;
+import com.macstab.chaos.toxiproxy.context.ContainerContext;
 import com.macstab.chaos.toxiproxy.support.TestExecResults;
 
 /**

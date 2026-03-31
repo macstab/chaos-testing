@@ -1,25 +1,5 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.proxy.internal;
- import com.macstab.chaos.toxiproxy.context.ContainerContext;
-import com.macstab.chaos.toxiproxy.network.NetworkRedirect;
-import com.macstab.chaos.toxiproxy.network.NetworkRedirectManager;
-import com.macstab.chaos.toxiproxy.api.ToxiproxyApiClient;
-import com.macstab.chaos.toxiproxy.config.ToxiproxyConfig;
-import com.macstab.chaos.toxiproxy.lifecycle.ToxiproxyInstaller;
-import com.macstab.chaos.toxiproxy.lifecycle.ToxiproxyLifecycleManager;
-import com.macstab.chaos.toxiproxy.lifecycle.ToxiproxyLifecycle;
-import com.macstab.chaos.toxiproxy.toxic.ToxicConfig;
-import com.macstab.chaos.toxiproxy.toxic.*;
-
-
-
-
-
-
-
-
-
-
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -35,14 +15,15 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import com.github.dockerjava.api.model.Capability;
 import com.macstab.chaos.proxy.ProxyChaosProvider;
-
-
-
 import com.macstab.chaos.proxy.internal.operations.ProxyOperationsManager;
 import com.macstab.chaos.proxy.internal.operations.ToxicOperationsManager;
-
-
-
+import com.macstab.chaos.toxiproxy.api.ToxiproxyApiClient;
+import com.macstab.chaos.toxiproxy.config.ToxiproxyConfig;
+import com.macstab.chaos.toxiproxy.context.ContainerContext;
+import com.macstab.chaos.toxiproxy.lifecycle.ToxiproxyInstaller;
+import com.macstab.chaos.toxiproxy.lifecycle.ToxiproxyLifecycleManager;
+import com.macstab.chaos.toxiproxy.network.NetworkRedirectManager;
+import com.macstab.chaos.toxiproxy.toxic.*;
 
 /**
  * Targeted coverage tests for proxy module uncovered paths.

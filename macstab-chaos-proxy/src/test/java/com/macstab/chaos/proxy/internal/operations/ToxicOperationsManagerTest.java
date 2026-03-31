@@ -1,11 +1,5 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.proxy.internal.operations;
- import com.macstab.chaos.toxiproxy.context.ContainerContext;
-import com.macstab.chaos.toxiproxy.config.ToxiproxyConfig;
-import com.macstab.chaos.toxiproxy.lifecycle.ToxiproxyLifecycleManager;
-import com.macstab.chaos.toxiproxy.config.ProxyConfiguration;
-import com.macstab.chaos.toxiproxy.toxic.ToxicConfig;
-import com.macstab.chaos.toxiproxy.toxic.*;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -18,11 +12,11 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import com.github.dockerjava.api.model.Capability;
-
-
-
-
-
+import com.macstab.chaos.toxiproxy.config.ProxyConfiguration;
+import com.macstab.chaos.toxiproxy.config.ToxiproxyConfig;
+import com.macstab.chaos.toxiproxy.context.ContainerContext;
+import com.macstab.chaos.toxiproxy.lifecycle.ToxiproxyLifecycleManager;
+import com.macstab.chaos.toxiproxy.toxic.*;
 
 /**
  * Comprehensive tests for ToxicOperationsManager.

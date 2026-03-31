@@ -117,8 +117,8 @@ public sealed interface ToxicConfig
    * payload. For example, {@link LatencyToxic} returns {@code {"latency":100,"jitter":0}}.
    *
    * <p>This method is called internally by {@link
-   * com.macstab.chaos.toxiproxy.api.ToxiproxyApiClient#addToxic} and is not intended for direct use by
-   * test code.
+   * com.macstab.chaos.toxiproxy.api.ToxiproxyApiClient#addToxic} and is not intended for direct use
+   * by test code.
    *
    * @return JSON object string (e.g., {@code {"latency":100,"jitter":0}})
    */

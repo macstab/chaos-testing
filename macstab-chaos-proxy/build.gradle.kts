@@ -18,7 +18,7 @@ dependencies {
     api(project(":macstab-chaos-core"))
 
     // Shared Toxiproxy infrastructure
-    api(project(":macstab-chaos-toxiproxy-core"))
+    api(project(":macstab-chaos-toxi-core"))
 
     // JUnit Jupiter API
     api("org.junit.jupiter:junit-jupiter-api:${findProperty("junitVersion")}")

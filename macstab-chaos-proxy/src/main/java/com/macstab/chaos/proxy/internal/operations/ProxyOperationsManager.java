@@ -9,9 +9,9 @@ import org.testcontainers.containers.Container.ExecResult;
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
 import com.macstab.chaos.toxiproxy.api.ToxiproxyApiClient;
 import com.macstab.chaos.toxiproxy.api.ToxiproxyApiClientImpl;
+import com.macstab.chaos.toxiproxy.config.ProxyConfiguration;
 import com.macstab.chaos.toxiproxy.config.ToxiproxyConfig;
 import com.macstab.chaos.toxiproxy.context.ContainerContext;
-import com.macstab.chaos.toxiproxy.config.ProxyConfiguration;
 import com.macstab.chaos.toxiproxy.network.NetworkRedirect;
 import com.macstab.chaos.toxiproxy.network.NetworkRedirectManager;
 

@@ -9,7 +9,6 @@ import com.macstab.chaos.toxiproxy.api.ToxiproxyApiClient;
 import com.macstab.chaos.toxiproxy.api.ToxiproxyApiClientImpl;
 import com.macstab.chaos.toxiproxy.config.ToxiproxyConfig;
 import com.macstab.chaos.toxiproxy.context.ContainerContext;
-import com.macstab.chaos.toxiproxy.lifecycle.ToxiproxyInstaller;
 
 import lombok.extern.slf4j.Slf4j;
 

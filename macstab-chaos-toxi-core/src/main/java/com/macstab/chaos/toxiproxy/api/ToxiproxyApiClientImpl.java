@@ -9,8 +9,8 @@ import java.util.regex.Pattern;
 import org.testcontainers.containers.Container.ExecResult;
 
 import com.macstab.chaos.core.command.http.HttpCommandBuilder;
-import com.macstab.chaos.toxiproxy.context.ContainerContext;
 import com.macstab.chaos.toxiproxy.config.ProxyConfiguration;
+import com.macstab.chaos.toxiproxy.context.ContainerContext;
 
 import lombok.extern.slf4j.Slf4j;
 

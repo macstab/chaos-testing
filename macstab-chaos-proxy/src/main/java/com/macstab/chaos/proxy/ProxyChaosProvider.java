@@ -7,9 +7,9 @@ import java.util.Objects;
 import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.api.ProxyChaos;
-import com.macstab.chaos.toxiproxy.config.ToxiproxyConfig;
 import com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator;
 import com.macstab.chaos.toxiproxy.config.ProxyConfiguration;
+import com.macstab.chaos.toxiproxy.config.ToxiproxyConfig;
 import com.macstab.chaos.toxiproxy.toxic.BandwidthToxic;
 import com.macstab.chaos.toxiproxy.toxic.LatencyToxic;
 import com.macstab.chaos.toxiproxy.toxic.LimitDataToxic;

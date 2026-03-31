@@ -30,8 +30,8 @@ import lombok.extern.slf4j.Slf4j;
  * Connection chaos using shared Toxiproxy infrastructure from {@code macstab-chaos-toxiproxy-core}.
  *
  * <p>Targets outbound connections from a container to external services via {@code "host:port"}
- * address strings. Uses the shared Toxiproxy lifecycle — safe to use alongside
- * {@link com.macstab.chaos.core.api.ProxyChaos} on the same container.
+ * address strings. Uses the shared Toxiproxy lifecycle — safe to use alongside {@link
+ * com.macstab.chaos.core.api.ProxyChaos} on the same container.
  *
  * <p><strong>REQUIRES NET_ADMIN CAPABILITY</strong> for iptables redirect.
  *
@@ -77,10 +77,8 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
     final TargetAddress addr = TargetAddress.parse(target);
     final ContainerContext ctx = ensureProxyFor(container, addr);
 
-    final LatencyToxic toxic = LatencyToxic.builder()
-        .name("latency")
-        .latencyMs((int) latency.toMillis())
-        .build();
+    final LatencyToxic toxic =
+        LatencyToxic.builder().name("latency").latencyMs((int) latency.toMillis()).build();
 
     addToxicSafe(ctx, proxyName(addr), toxic.toJson(), target, "latency");
     log.info("Added {}ms latency to {}", latency.toMillis(), target);
@@ -100,10 +98,7 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
     final TargetAddress addr = TargetAddress.parse(target);
     final ContainerContext ctx = ensureProxyFor(container, addr);
 
-    final DownToxic toxic = DownToxic.builder()
-        .name("down")
-        .toxicity(rate)
-        .build();
+    final DownToxic toxic = DownToxic.builder().name("down").toxicity(rate).build();
 
     addToxicSafe(ctx, proxyName(addr), toxic.toJson(), target, "packet drop");
     log.info("Added {:.0%} packet loss to {}", rate, target);
@@ -123,10 +118,8 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
     final TargetAddress addr = TargetAddress.parse(target);
     final ContainerContext ctx = ensureProxyFor(container, addr);
 
-    final BandwidthToxic toxic = BandwidthToxic.builder()
-        .name("bandwidth")
-        .rateKbps((int) (bytesPerSecond / 1024))
-        .build();
+    final BandwidthToxic toxic =
+        BandwidthToxic.builder().name("bandwidth").rateKbps((int) (bytesPerSecond / 1024)).build();
 
     addToxicSafe(ctx, proxyName(addr), toxic.toJson(), target, "bandwidth limit");
     log.info("Limited bandwidth to {} bytes/s for {}", bytesPerSecond, target);
@@ -143,10 +136,8 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
     final TargetAddress addr = TargetAddress.parse(target);
     final ContainerContext ctx = ensureProxyFor(container, addr);
 
-    final TimeoutToxic toxic = TimeoutToxic.builder()
-        .name("timeout")
-        .timeoutMs((int) timeout.toMillis())
-        .build();
+    final TimeoutToxic toxic =
+        TimeoutToxic.builder().name("timeout").timeoutMs((int) timeout.toMillis()).build();
 
     addToxicSafe(ctx, proxyName(addr), toxic.toJson(), target, "timeout");
     log.info("Added {}ms timeout to {}", timeout.toMillis(), target);
@@ -163,10 +154,8 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
     final TargetAddress addr = TargetAddress.parse(target);
     final ContainerContext ctx = ensureProxyFor(container, addr);
 
-    final SlowCloseToxic toxic = SlowCloseToxic.builder()
-        .name("slow_close")
-        .delayMs((int) delay.toMillis())
-        .build();
+    final SlowCloseToxic toxic =
+        SlowCloseToxic.builder().name("slow_close").delayMs((int) delay.toMillis()).build();
 
     addToxicSafe(ctx, proxyName(addr), toxic.toJson(), target, "slow close");
     log.info("Added {}ms slow close to {}", delay.toMillis(), target);
@@ -201,9 +190,7 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
     log.info("Rejected all connections to {}", target);
   }
 
-  /**
-   * Removes only proxies created by this module — safe for concurrent use with proxy module.
-   */
+  /** Removes only proxies created by this module — safe for concurrent use with proxy module. */
   @Override
   public void reset(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
@@ -217,7 +204,8 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
       try {
         apiClient.deleteProxy(ctx, entry.getKey());
         final ProxyConfiguration proxyConfig = entry.getValue();
-        networkRedirect.removeRedirect(ctx, proxyConfig.getServicePort(), proxyConfig.getProxyPort());
+        networkRedirect.removeRedirect(
+            ctx, proxyConfig.getServicePort(), proxyConfig.getProxyPort());
         log.debug("Removed connection proxy: {}", entry.getKey());
       } catch (final Exception e) {
         log.debug("Failed to remove proxy {} during reset: {}", entry.getKey(), e.getMessage());
@@ -277,17 +265,20 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
   }
 
   private void addToxicSafe(
-      final ContainerContext ctx, final String proxyName,
-      final String toxicJson, final String target, final String operation) {
+      final ContainerContext ctx,
+      final String proxyName,
+      final String toxicJson,
+      final String target,
+      final String operation) {
     try {
       // Use raw HTTP via the platform's HTTP command builder
-      final String cmd = String.format(
-          "curl -s -X POST %s/proxies/%s/toxics -H 'Content-Type: application/json' -d '%s'",
-          config.apiUrl(), proxyName, toxicJson);
+      final String cmd =
+          String.format(
+              "curl -s -X POST %s/proxies/%s/toxics -H 'Content-Type: application/json' -d '%s'",
+              config.apiUrl(), proxyName, toxicJson);
       ctx.shell().exec(ctx.container(), cmd);
     } catch (final Exception e) {
-      throw new ChaosOperationFailedException(
-          "Failed to add " + operation + " to " + target, e);
+      throw new ChaosOperationFailedException("Failed to add " + operation + " to " + target, e);
     }
   }
 
