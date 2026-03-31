@@ -20,6 +20,7 @@ import com.macstab.chaos.toxiproxy.lifecycle.ToxiproxyLifecycleManager;
 import com.macstab.chaos.toxiproxy.network.NetworkRedirectManager;
 import com.macstab.chaos.toxiproxy.toxic.BandwidthToxic;
 import com.macstab.chaos.toxiproxy.toxic.DownToxic;
+import com.macstab.chaos.toxiproxy.toxic.ToxicConfig;
 import com.macstab.chaos.toxiproxy.toxic.LatencyToxic;
 import com.macstab.chaos.toxiproxy.toxic.SlowCloseToxic;
 import com.macstab.chaos.toxiproxy.toxic.TimeoutToxic;
@@ -80,7 +81,7 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
     final LatencyToxic toxic =
         LatencyToxic.builder().name("latency").latencyMs((int) latency.toMillis()).build();
 
-    addToxicSafe(ctx, proxyName(addr), toxic.toJson(), target, "latency");
+    addToxicSafe(ctx, proxyName(addr), toxic, target, "latency");
     log.info("Added {}ms latency to {}", latency.toMillis(), target);
   }
 
@@ -100,7 +101,7 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
 
     final DownToxic toxic = DownToxic.builder().name("down").toxicity(rate).build();
 
-    addToxicSafe(ctx, proxyName(addr), toxic.toJson(), target, "packet drop");
+    addToxicSafe(ctx, proxyName(addr), toxic, target, "packet drop");
     log.info("Added {:.0%} packet loss to {}", rate, target);
   }
 
@@ -121,7 +122,7 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
     final BandwidthToxic toxic =
         BandwidthToxic.builder().name("bandwidth").rateKbps((int) (bytesPerSecond / 1024)).build();
 
-    addToxicSafe(ctx, proxyName(addr), toxic.toJson(), target, "bandwidth limit");
+    addToxicSafe(ctx, proxyName(addr), toxic, target, "bandwidth limit");
     log.info("Limited bandwidth to {} bytes/s for {}", bytesPerSecond, target);
   }
 
@@ -139,7 +140,7 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
     final TimeoutToxic toxic =
         TimeoutToxic.builder().name("timeout").timeoutMs((int) timeout.toMillis()).build();
 
-    addToxicSafe(ctx, proxyName(addr), toxic.toJson(), target, "timeout");
+    addToxicSafe(ctx, proxyName(addr), toxic, target, "timeout");
     log.info("Added {}ms timeout to {}", timeout.toMillis(), target);
   }
 
@@ -157,7 +158,7 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
     final SlowCloseToxic toxic =
         SlowCloseToxic.builder().name("slow_close").delayMs((int) delay.toMillis()).build();
 
-    addToxicSafe(ctx, proxyName(addr), toxic.toJson(), target, "slow close");
+    addToxicSafe(ctx, proxyName(addr), toxic, target, "slow close");
     log.info("Added {}ms slow close to {}", delay.toMillis(), target);
   }
 
@@ -267,16 +268,11 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
   private void addToxicSafe(
       final ContainerContext ctx,
       final String proxyName,
-      final String toxicJson,
+      final ToxicConfig toxic,
       final String target,
       final String operation) {
     try {
-      // Use raw HTTP via the platform's HTTP command builder
-      final String cmd =
-          String.format(
-              "curl -s -X POST %s/proxies/%s/toxics -H 'Content-Type: application/json' -d '%s'",
-              config.apiUrl(), proxyName, toxicJson);
-      ctx.shell().exec(ctx.container(), cmd);
+      apiClient.addToxic(ctx, proxyName, toxic.name(), toxic.type(), toxic.toJson(), toxic.toxicity());
     } catch (final Exception e) {
       throw new ChaosOperationFailedException("Failed to add " + operation + " to " + target, e);
     }
