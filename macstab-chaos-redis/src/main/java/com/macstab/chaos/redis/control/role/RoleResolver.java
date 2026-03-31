@@ -91,7 +91,8 @@ public final class RoleResolver {
       final String internalIp = getInternalIpAddress(container);
       if (internalIp != null) {
         log.debug("Using internal IP {} for container {}", internalIp, container.getContainerId());
-        final ContainerRole role = resolveRedisRole(internalIp, RedisCommandBuilder.DEFAULT_REDIS_PORT, container);
+        final ContainerRole role =
+            resolveRedisRole(internalIp, RedisCommandBuilder.DEFAULT_REDIS_PORT, container);
         return role;
       }
 

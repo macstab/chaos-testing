@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -13,11 +14,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import io.lettuce.core.api.sync.RedisCommands;
-import java.util.List;
-
-import com.macstab.chaos.redis.util.inspector.ConnectionLeakTracker;
 import com.macstab.chaos.redis.util.inspector.model.ClientConnectionInfo;
+
+import io.lettuce.core.api.sync.RedisCommands;
 
 /** Comprehensive unit tests for {@link ConnectionLeakTracker}. */
 @DisplayName("ConnectionLeakTracker")
@@ -131,8 +130,7 @@ class ConnectionLeakTrackerTest {
       tracker.snapshot();
 
       // ACT
-      final List<ClientConnectionInfo> newConnections =
-          tracker.getNewConnections();
+      final List<ClientConnectionInfo> newConnections = tracker.getNewConnections();
 
       // ASSERT
       assertThat(newConnections).isEmpty();
@@ -157,8 +155,7 @@ class ConnectionLeakTrackerTest {
       tracker.snapshot();
 
       // ACT
-      final List<ClientConnectionInfo> newConnections =
-          tracker.getNewConnections();
+      final List<ClientConnectionInfo> newConnections = tracker.getNewConnections();
 
       // ASSERT
       assertThat(newConnections).hasSize(1);
@@ -216,8 +213,7 @@ class ConnectionLeakTrackerTest {
     @DisplayName("Should parse full line correctly")
     void shouldParseFullLineCorrectly() {
       // ARRANGE
-      final String clientList =
-          clientListLine(42, "192.168.1.100:54321", "hgetall|user:123|field");
+      final String clientList = clientListLine(42, "192.168.1.100:54321", "hgetall|user:123|field");
       when(redisCommands.clientList()).thenReturn(clientList);
       final ConnectionLeakTracker tracker = ConnectionLeakTracker.forCommands(redisCommands);
       tracker.snapshot();
@@ -225,8 +221,7 @@ class ConnectionLeakTrackerTest {
           .thenReturn(clientList + "\n" + clientListLine(43, "192.168.1.101:54322", "ping"));
 
       // ACT
-      final List<ClientConnectionInfo> newConnections =
-          tracker.getNewConnections();
+      final List<ClientConnectionInfo> newConnections = tracker.getNewConnections();
 
       // ASSERT
       assertThat(newConnections).hasSize(1);
@@ -250,8 +245,7 @@ class ConnectionLeakTrackerTest {
       tracker.snapshot();
 
       // ACT
-      final List<ClientConnectionInfo> newConnections =
-          tracker.getNewConnections();
+      final List<ClientConnectionInfo> newConnections = tracker.getNewConnections();
 
       // ASSERT
       assertThat(newConnections).isEmpty();

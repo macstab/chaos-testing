@@ -7,7 +7,6 @@ import org.testcontainers.containers.wait.strategy.Wait;
 
 import com.github.dockerjava.api.model.Capability;
 import com.macstab.chaos.core.util.Shell;
-import com.macstab.chaos.redis.command.RedisCommandBuilder;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -76,8 +75,11 @@ public final class SentinelNodeFactory {
         .withNetworkAliases(alias)
         .withExposedPorts(StandaloneContainerFactory.REDIS_PORT)
         .withCommand(
-            "redis-server", "--protected-mode", "no",
-            "--replicaof", StandaloneContainerFactory.MASTER_NETWORK_ALIAS,
+            "redis-server",
+            "--protected-mode",
+            "no",
+            "--replicaof",
+            StandaloneContainerFactory.MASTER_NETWORK_ALIAS,
             String.valueOf(StandaloneContainerFactory.REDIS_PORT))
         .withCreateContainerCmdModifier(cmd -> applyHostConfig(cmd, enableNetworkChaos))
         .waitingFor(Wait.forLogMessage(".*MASTER <-> REPLICA sync: Finished with success.*\\n", 1))
@@ -112,7 +114,9 @@ public final class SentinelNodeFactory {
         .withCommand(Shell.SH, Shell.FLAG_C, sentinelCommand)
         .waitingFor(
             Wait.forSuccessfulCommand(
-                "redis-cli -p " + StandaloneContainerFactory.SENTINEL_PORT + " SENTINEL master mymaster")
+                    "redis-cli -p "
+                        + StandaloneContainerFactory.SENTINEL_PORT
+                        + " SENTINEL master mymaster")
                 .withStartupTimeout(StandaloneContainerFactory.DEFAULT_STARTUP_TIMEOUT))
         .withStartupTimeout(StandaloneContainerFactory.DEFAULT_STARTUP_TIMEOUT);
   }

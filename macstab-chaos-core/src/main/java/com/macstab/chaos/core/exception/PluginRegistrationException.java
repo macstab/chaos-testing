@@ -40,7 +40,7 @@ package com.macstab.chaos.core.exception;
  * </ol>
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 public final class PluginRegistrationException extends RuntimeException {
 

@@ -12,7 +12,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.macstab.chaos.redis.util.inspector.MemorySnapshotAnalyzer;
 import com.macstab.chaos.redis.util.inspector.model.MemorySnapshot;
 
 import io.lettuce.core.api.sync.RedisCommands;
@@ -248,8 +247,7 @@ class MemorySnapshotAnalyzerTest {
     @DisplayName("Should parse full response correctly")
     void shouldParseFullResponse() {
       // ARRANGE
-      when(redisCommands.info("memory"))
-          .thenReturn(infoMemory(1234567, 2345678, 1.23));
+      when(redisCommands.info("memory")).thenReturn(infoMemory(1234567, 2345678, 1.23));
       final MemorySnapshotAnalyzer analyzer = MemorySnapshotAnalyzer.forCommands(redisCommands);
 
       // ACT

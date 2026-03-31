@@ -180,8 +180,8 @@ public final class BigKeyDetector {
   /**
    * Extracts the Nth quoted token from a MONITOR line (0-indexed).
    *
-   * <p>Each token is a quoted pair. Index 0 = command name, 1 = first argument, etc.
-   * The algorithm skips N full quote-pairs (open + close) before extracting the target token.
+   * <p>Each token is a quoted pair. Index 0 = command name, 1 = first argument, etc. The algorithm
+   * skips N full quote-pairs (open + close) before extracting the target token.
    *
    * @param line MONITOR output line
    * @param tokenIndex token index (0=command, 1=first arg, 2=second arg, etc.)

@@ -54,8 +54,8 @@ class ReplicationLagMeasurerIntegrationTest {
     @DisplayName("Should return Duration with custom timeout")
     void shouldReturnDurationWithCustomTimeout() {
       // ARRANGE / ACT
-      final Duration lag = ReplicationLagMeasurer.measureReplicationLag(
-          redis, redis, Duration.ofSeconds(10));
+      final Duration lag =
+          ReplicationLagMeasurer.measureReplicationLag(redis, redis, Duration.ofSeconds(10));
 
       // ASSERT
       assertThat(lag).isGreaterThanOrEqualTo(Duration.ZERO);
@@ -67,14 +67,15 @@ class ReplicationLagMeasurerIntegrationTest {
   class TimeoutBehaviour {
 
     @Test
-    @DisplayName("Should throw IllegalStateException when timeout is very short and key cannot replicate")
+    @DisplayName(
+        "Should throw IllegalStateException when timeout is very short and key cannot replicate")
     void shouldThrowOnTimeout() {
       // ARRANGE — use an extremely short timeout so the measurer cannot possibly succeed
       // We use Duration.ofNanos(1) to guarantee timeout before any SET+GET round-trip
 
       // ACT / ASSERT
-      assertThatThrownBy(() ->
-          ReplicationLagMeasurer.measureReplicationLag(redis, redis, Duration.ofNanos(1)))
+      assertThatThrownBy(
+              () -> ReplicationLagMeasurer.measureReplicationLag(redis, redis, Duration.ofNanos(1)))
           .isInstanceOf(IllegalStateException.class)
           .hasMessageContaining("Replication did not complete");
     }

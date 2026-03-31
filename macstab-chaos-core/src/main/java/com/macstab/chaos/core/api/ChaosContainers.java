@@ -40,7 +40,7 @@ import com.macstab.chaos.core.extension.ChaosTestingExtension;
  * is primarily for framework-internal use and advanced scenarios.
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  * @see ChaosTestingExtension
  */
 public final class ChaosContainers {

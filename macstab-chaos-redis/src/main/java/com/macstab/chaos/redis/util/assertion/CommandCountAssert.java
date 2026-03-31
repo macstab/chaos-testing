@@ -22,7 +22,8 @@ public final class CommandCountAssert {
    * @param command command name
    * @param actualCount actual count
    */
-  CommandCountAssert(final RedisCommandAssert parent, final String command, final long actualCount) {
+  CommandCountAssert(
+      final RedisCommandAssert parent, final String command, final long actualCount) {
     this.parent = parent;
     this.command = command;
     this.actualCount = actualCount;
@@ -71,8 +72,7 @@ public final class CommandCountAssert {
     if (actualCount != expectedCount) {
       throw new AssertionError(
           String.format(
-              "Expected exactly %d %s commands but found %d",
-              expectedCount, command, actualCount));
+              "Expected exactly %d %s commands but found %d", expectedCount, command, actualCount));
     }
     return parent;
   }

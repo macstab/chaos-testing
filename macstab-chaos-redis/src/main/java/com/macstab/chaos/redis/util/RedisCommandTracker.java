@@ -38,10 +38,12 @@ import lombok.extern.slf4j.Slf4j;
  * <ul>
  *   <li>Command counting and filtering (core)
  *   <li>Key pattern matching — {@link com.macstab.chaos.redis.util.tracker.KeyPatternMatcher}
- *   <li>Replication lag measurement — {@link com.macstab.chaos.redis.util.tracker.ReplicationLagMeasurer}
+ *   <li>Replication lag measurement — {@link
+ *       com.macstab.chaos.redis.util.tracker.ReplicationLagMeasurer}
  *   <li>Command gap/timing analysis — {@link com.macstab.chaos.redis.util.tracker.LatencyAnalyzer}
  *   <li>Command argument extraction — {@link com.macstab.chaos.redis.util.tracker.CommandParser}
- *   <li>Command categorization (READ/WRITE/ADMIN/…) — {@link com.macstab.chaos.redis.util.tracker.CommandCategorizer}
+ *   <li>Command categorization (READ/WRITE/ADMIN/…) — {@link
+ *       com.macstab.chaos.redis.util.tracker.CommandCategorizer}
  *   <li>Hot key detection — {@link com.macstab.chaos.redis.util.tracker.HotKeyDetector}
  *   <li>Fluent assertions — {@link com.macstab.chaos.redis.util.assertion.RedisCommandAssert}
  * </ul>

@@ -18,8 +18,8 @@ import org.testcontainers.containers.GenericContainer;
  * Unit tests for {@link ReplicationLagMeasurer}.
  *
  * <p>Note: The actual replication lag measurement functionality is tested via integration tests in
- * the Sentinel cluster integration tests, as this class creates its own RedisClient internally
- * from container.getHost()/getFirstMappedPort() which requires a real Redis instance.
+ * the Sentinel cluster integration tests, as this class creates its own RedisClient internally from
+ * container.getHost()/getFirstMappedPort() which requires a real Redis instance.
  *
  * <p>These unit tests focus on what can be tested without Docker: constructor validation, utility
  * class structure, and method signatures.
@@ -40,7 +40,9 @@ class ReplicationLagMeasurerTest {
 
       // ACT / ASSERT
       assertThatThrownBy(
-              () -> ReplicationLagMeasurer.measureReplicationLag(null, replica, Duration.ofSeconds(5)))
+              () ->
+                  ReplicationLagMeasurer.measureReplicationLag(
+                      null, replica, Duration.ofSeconds(5)))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("master");
     }
@@ -54,7 +56,8 @@ class ReplicationLagMeasurerTest {
 
       // ACT / ASSERT
       assertThatThrownBy(
-              () -> ReplicationLagMeasurer.measureReplicationLag(master, null, Duration.ofSeconds(5)))
+              () ->
+                  ReplicationLagMeasurer.measureReplicationLag(master, null, Duration.ofSeconds(5)))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("replica");
     }

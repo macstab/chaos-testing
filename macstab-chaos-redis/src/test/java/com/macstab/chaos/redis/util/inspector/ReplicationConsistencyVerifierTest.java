@@ -15,7 +15,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import com.macstab.chaos.redis.util.inspector.ReplicationConsistencyVerifier;
 import com.macstab.chaos.redis.util.inspector.executor.RedisCommandExecutor;
 import com.macstab.chaos.redis.util.inspector.model.ConsistencyResult;
 
@@ -25,11 +24,13 @@ class ReplicationConsistencyVerifierTest {
 
   private RedisCommandExecutor mockExecutorReturning(final Function<String, String> responseFor) {
     final RedisCommandExecutor executor = mock(RedisCommandExecutor.class);
-    when(executor.execute(startsWith("GET "))).thenAnswer(inv -> {
-      final String cmd = inv.getArgument(0, String.class);
-      final String key = cmd.substring(4).trim();
-      return responseFor.apply(key);
-    });
+    when(executor.execute(startsWith("GET ")))
+        .thenAnswer(
+            inv -> {
+              final String cmd = inv.getArgument(0, String.class);
+              final String key = cmd.substring(4).trim();
+              return responseFor.apply(key);
+            });
     return executor;
   }
 
@@ -102,8 +103,7 @@ class ReplicationConsistencyVerifierTest {
           new ReplicationConsistencyVerifier(masterExecutor, replicaExecutor);
 
       // ACT / ASSERT
-      assertThatThrownBy(() -> verifier.verify(10, null))
-          .isInstanceOf(NullPointerException.class);
+      assertThatThrownBy(() -> verifier.verify(10, null)).isInstanceOf(NullPointerException.class);
     }
   }
 
@@ -121,8 +121,7 @@ class ReplicationConsistencyVerifierTest {
           new ReplicationConsistencyVerifier(masterExecutor, replicaExecutor);
 
       // ACT
-      final ConsistencyResult result =
-          verifier.verify(10, Duration.ofSeconds(5));
+      final ConsistencyResult result = verifier.verify(10, Duration.ofSeconds(5));
 
       // ASSERT
       assertThat(result.matchingKeys()).isEqualTo(10);
@@ -145,8 +144,7 @@ class ReplicationConsistencyVerifierTest {
           new ReplicationConsistencyVerifier(masterExecutor, replicaExecutor);
 
       // ACT
-      final ConsistencyResult result =
-          verifier.verify(5, Duration.ofSeconds(5));
+      final ConsistencyResult result = verifier.verify(5, Duration.ofSeconds(5));
 
       // ASSERT
       assertThat(result.matchingKeys()).isEqualTo(0);
@@ -166,14 +164,13 @@ class ReplicationConsistencyVerifierTest {
       final RedisCommandExecutor masterExecutor = mockExecutorReturning(key -> key);
       final java.util.concurrent.atomic.AtomicInteger counter =
           new java.util.concurrent.atomic.AtomicInteger(0);
-      final RedisCommandExecutor replicaExecutor = mockExecutorReturning(
-          key -> counter.getAndIncrement() % 2 == 0 ? key : "(nil)");
+      final RedisCommandExecutor replicaExecutor =
+          mockExecutorReturning(key -> counter.getAndIncrement() % 2 == 0 ? key : "(nil)");
       final ReplicationConsistencyVerifier verifier =
           new ReplicationConsistencyVerifier(masterExecutor, replicaExecutor);
 
       // ACT
-      final ConsistencyResult result =
-          verifier.verify(10, Duration.ofSeconds(5));
+      final ConsistencyResult result = verifier.verify(10, Duration.ofSeconds(5));
 
       // ASSERT
       assertThat(result.consistencyRatio()).isBetween(0.4, 0.6);
@@ -213,8 +210,7 @@ class ReplicationConsistencyVerifierTest {
       final RedisCommandExecutor replicaExecutor = mockExecutorReturning(key -> key);
       final ReplicationConsistencyVerifier verifier =
           new ReplicationConsistencyVerifier(masterExecutor, replicaExecutor);
-      final ConsistencyResult result =
-          verifier.verify(5, Duration.ofSeconds(5));
+      final ConsistencyResult result = verifier.verify(5, Duration.ofSeconds(5));
 
       // ACT / ASSERT
       result.assertFullConsistency();
@@ -227,16 +223,18 @@ class ReplicationConsistencyVerifierTest {
       final RedisCommandExecutor masterExecutor = mockExecutorReturning(key -> key);
       final java.util.concurrent.atomic.AtomicInteger cnt2 =
           new java.util.concurrent.atomic.AtomicInteger(0);
-      final RedisCommandExecutor replicaExecutor = mockExecutorReturning(
-          key -> cnt2.getAndIncrement() % 2 == 0 ? "(nil)" : "(nil)"); // all nil → definitely partial
+      final RedisCommandExecutor replicaExecutor =
+          mockExecutorReturning(
+              key ->
+                  cnt2.getAndIncrement() % 2 == 0
+                      ? "(nil)"
+                      : "(nil)"); // all nil → definitely partial
       final ReplicationConsistencyVerifier verifier =
           new ReplicationConsistencyVerifier(masterExecutor, replicaExecutor);
-      final ConsistencyResult result =
-          verifier.verify(10, Duration.ofSeconds(1));
+      final ConsistencyResult result = verifier.verify(10, Duration.ofSeconds(1));
 
       // ACT / ASSERT
-      assertThatThrownBy(result::assertFullConsistency)
-          .isInstanceOf(AssertionError.class);
+      assertThatThrownBy(result::assertFullConsistency).isInstanceOf(AssertionError.class);
     }
   }
 
@@ -252,8 +250,7 @@ class ReplicationConsistencyVerifierTest {
       final RedisCommandExecutor replicaExecutor = mockExecutorReturning(key -> key);
       final ReplicationConsistencyVerifier verifier =
           new ReplicationConsistencyVerifier(masterExecutor, replicaExecutor);
-      final ConsistencyResult result =
-          verifier.verify(5, Duration.ofSeconds(5));
+      final ConsistencyResult result = verifier.verify(5, Duration.ofSeconds(5));
 
       // ACT / ASSERT
       result.assertConsistencyAtLeast(0.9);
@@ -267,8 +264,7 @@ class ReplicationConsistencyVerifierTest {
       final RedisCommandExecutor replicaExecutor = mockExecutorReturning(key -> "(nil)");
       final ReplicationConsistencyVerifier verifier =
           new ReplicationConsistencyVerifier(masterExecutor, replicaExecutor);
-      final ConsistencyResult result =
-          verifier.verify(5, Duration.ofSeconds(5));
+      final ConsistencyResult result = verifier.verify(5, Duration.ofSeconds(5));
 
       // ACT / ASSERT
       assertThatThrownBy(() -> result.assertConsistencyAtLeast(0.5))

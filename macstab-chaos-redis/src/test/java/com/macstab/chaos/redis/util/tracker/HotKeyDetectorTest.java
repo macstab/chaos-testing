@@ -17,8 +17,7 @@ import com.macstab.chaos.redis.util.tracker.HotKeyDetector.KeyAccessCount;
 class HotKeyDetectorTest {
 
   private static final String GET_USER1 = "1234.567 [0 127.0.0.1:12345] \"GET\" \"user:123\"";
-  private static final String GET_USER1_AGAIN =
-      "1234.568 [0 127.0.0.1:12345] \"GET\" \"user:123\"";
+  private static final String GET_USER1_AGAIN = "1234.568 [0 127.0.0.1:12345] \"GET\" \"user:123\"";
   private static final String GET_USER2 = "1234.569 [0 127.0.0.1:12345] \"GET\" \"user:456\"";
   private static final String SET_SESSION = "1234.570 [0 127.0.0.1:12345] \"SET\" \"session:abc\"";
   private static final String GET_SESSION = "1234.571 [0 127.0.0.1:12345] \"GET\" \"session:abc\"";

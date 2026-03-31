@@ -124,8 +124,7 @@ public final class DefaultSentinelClusterFactory implements SentinelClusterFacto
   List<GenericContainer<?>> allContainers(final SentinelCluster cluster) {
     return Stream.concat(
             Stream.concat(
-                Stream.of(cluster.getMasterContainer()),
-                cluster.getReplicaContainers().stream()),
+                Stream.of(cluster.getMasterContainer()), cluster.getReplicaContainers().stream()),
             cluster.getSentinelContainers().stream())
         .toList();
   }

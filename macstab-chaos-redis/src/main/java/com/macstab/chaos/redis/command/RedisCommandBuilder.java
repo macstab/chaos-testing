@@ -19,14 +19,14 @@ public final class RedisCommandBuilder {
   /**
    * Standard Redis server port inside the container (6379).
    *
-   * <p>Used as the container-internal port for all Redis node containers. The host-side mapped
-   * port is always random (or explicitly set via {@code @RedisStandalone(port = N)}).
+   * <p>Used as the container-internal port for all Redis node containers. The host-side mapped port
+   * is always random (or explicitly set via {@code @RedisStandalone(port = N)}).
    *
    * <p><strong>Known limitation:</strong> This module assumes Redis listens on this port inside
    * every container. If you start Redis on a non-standard internal port via
    * {@code @RedisStandalone(args = {"--port", "6380"})}, port resolution will silently fail because
-   * {@code getMappedPort(DEFAULT_REDIS_PORT)} looks for the wrong container port.
-   * Non-standard internal ports are not currently supported end-to-end.
+   * {@code getMappedPort(DEFAULT_REDIS_PORT)} looks for the wrong container port. Non-standard
+   * internal ports are not currently supported end-to-end.
    */
   public static final int DEFAULT_REDIS_PORT = 6379;
 
@@ -86,37 +86,40 @@ public final class RedisCommandBuilder {
   /**
    * Build Sentinel startup command (inline config + launch) using default ports.
    *
-   * <p>Sentinel listens on {@value #DEFAULT_SENTINEL_PORT}, monitors master on
-   * {@value #DEFAULT_REDIS_PORT}. Use {@link #buildSentinelStartCommand(String, int, int, int)}
-   * to configure non-standard ports.
+   * <p>Sentinel listens on {@value #DEFAULT_SENTINEL_PORT}, monitors master on {@value
+   * #DEFAULT_REDIS_PORT}. Use {@link #buildSentinelStartCommand(String, int, int, int)} to
+   * configure non-standard ports.
    *
    * @param masterIp master Redis container IP — must not be null
-   * @param quorum   number of Sentinels required to agree on failover
+   * @param quorum number of Sentinels required to agree on failover
    * @return shell command string
    */
   public static String buildSentinelStartCommand(final String masterIp, final int quorum) {
-    return buildSentinelStartCommand(
-        masterIp, DEFAULT_REDIS_PORT, DEFAULT_SENTINEL_PORT, quorum);
+    return buildSentinelStartCommand(masterIp, DEFAULT_REDIS_PORT, DEFAULT_SENTINEL_PORT, quorum);
   }
 
   /**
    * Build Sentinel startup command (inline config + launch) with explicit ports.
    *
-   * @param masterIp       master Redis container IP — must not be null
-   * @param masterPort     Redis master port inside the container (typically 6379)
-   * @param sentinelPort   port this Sentinel will listen on (typically 26379)
-   * @param quorum         number of Sentinels required to agree on failover
+   * @param masterIp master Redis container IP — must not be null
+   * @param masterPort Redis master port inside the container (typically 6379)
+   * @param sentinelPort port this Sentinel will listen on (typically 26379)
+   * @param quorum number of Sentinels required to agree on failover
    * @return shell command string
    */
   public static String buildSentinelStartCommand(
-      final String masterIp,
-      final int masterPort,
-      final int sentinelPort,
-      final int quorum) {
+      final String masterIp, final int masterPort, final int sentinelPort, final int quorum) {
     Objects.requireNonNull(masterIp, "masterIp");
-    return "printf \"port " + sentinelPort + "\\n"
+    return "printf \"port "
+        + sentinelPort
+        + "\\n"
         + "sentinel monitor mymaster "
-        + masterIp + " " + masterPort + " " + quorum + "\\n"
+        + masterIp
+        + " "
+        + masterPort
+        + " "
+        + quorum
+        + "\\n"
         + "sentinel down-after-milliseconds mymaster 2000\\n"
         + "sentinel parallel-syncs mymaster 1\\n"
         + "sentinel failover-timeout mymaster 5000\\n"
@@ -182,8 +185,8 @@ public final class RedisCommandBuilder {
   /**
    * Build SET command for a key/value pair.
    *
-   * @param port  Redis port
-   * @param key   key — must not be null
+   * @param port Redis port
+   * @param key key — must not be null
    * @param value value — must not be null
    * @return redis-cli command string
    */
@@ -197,7 +200,7 @@ public final class RedisCommandBuilder {
    * Build GET command for a key.
    *
    * @param port Redis port
-   * @param key  key — must not be null
+   * @param key key — must not be null
    * @return redis-cli command string
    */
   public static String buildGetCommand(final int port, final String key) {
@@ -209,7 +212,7 @@ public final class RedisCommandBuilder {
    * Build DEL command for a key.
    *
    * @param port Redis port
-   * @param key  key — must not be null
+   * @param key key — must not be null
    * @return redis-cli command string
    */
   public static String buildDelCommand(final int port, final String key) {
@@ -262,7 +265,8 @@ public final class RedisCommandBuilder {
    * @return redis-cli command string
    */
   public static String buildSentinelAnnouncePortCommand(final int port, final int announcePort) {
-    return String.format("redis-cli -p %d CONFIG SET sentinel-announce-port %d", port, announcePort);
+    return String.format(
+        "redis-cli -p %d CONFIG SET sentinel-announce-port %d", port, announcePort);
   }
 
   /**

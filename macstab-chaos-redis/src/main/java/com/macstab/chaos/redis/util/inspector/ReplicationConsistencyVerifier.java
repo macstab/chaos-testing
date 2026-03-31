@@ -36,6 +36,7 @@ import lombok.extern.slf4j.Slf4j;
  * created via {@link #forContainers} (owns connections). {@link #forCommands} is a no-op on close.
  *
  * <p><strong>Example:</strong>
+ *
  * <pre>{@code
  * try (ReplicationConsistencyVerifier verifier =
  *         ReplicationConsistencyVerifier.forContainers(master, replica)) {
@@ -59,12 +60,11 @@ public final class ReplicationConsistencyVerifier implements AutoCloseable {
   /**
    * Creates a verifier backed by the given executors. Use factory methods for convenience.
    *
-   * @param masterExecutor  executor for the master — must not be null
+   * @param masterExecutor executor for the master — must not be null
    * @param replicaExecutor executor for the replica — must not be null
    */
   public ReplicationConsistencyVerifier(
-      final RedisCommandExecutor masterExecutor,
-      final RedisCommandExecutor replicaExecutor) {
+      final RedisCommandExecutor masterExecutor, final RedisCommandExecutor replicaExecutor) {
     this.masterExecutor = Objects.requireNonNull(masterExecutor, "masterExecutor");
     this.replicaExecutor = Objects.requireNonNull(replicaExecutor, "replicaExecutor");
   }
@@ -74,10 +74,10 @@ public final class ReplicationConsistencyVerifier implements AutoCloseable {
   /**
    * Creates a Lettuce-backed verifier connecting to both containers on the default port (6379).
    *
-   * <p>Preferred backend — zero per-key process overhead. Owns both connections;
-   * call {@link #close()} when done or use try-with-resources.
+   * <p>Preferred backend — zero per-key process overhead. Owns both connections; call {@link
+   * #close()} when done or use try-with-resources.
    *
-   * @param master  running master container — must not be null
+   * @param master running master container — must not be null
    * @param replica running replica container — must not be null
    * @return Lettuce-backed verifier (owns its connections)
    */
@@ -91,15 +91,17 @@ public final class ReplicationConsistencyVerifier implements AutoCloseable {
   /**
    * Creates a Lettuce-backed verifier with explicit ports on each container.
    *
-   * @param master      running master container — must not be null
-   * @param masterPort  Redis port inside the master container
-   * @param replica     running replica container — must not be null
+   * @param master running master container — must not be null
+   * @param masterPort Redis port inside the master container
+   * @param replica running replica container — must not be null
    * @param replicaPort Redis port inside the replica container
    * @return Lettuce-backed verifier (owns its connections)
    */
   public static ReplicationConsistencyVerifier forContainers(
-      final GenericContainer<?> master, final int masterPort,
-      final GenericContainer<?> replica, final int replicaPort) {
+      final GenericContainer<?> master,
+      final int masterPort,
+      final GenericContainer<?> replica,
+      final int replicaPort) {
     Objects.requireNonNull(master, "master");
     Objects.requireNonNull(replica, "replica");
     return new ReplicationConsistencyVerifier(
@@ -112,7 +114,7 @@ public final class ReplicationConsistencyVerifier implements AutoCloseable {
    *
    * <p>The caller retains ownership of the connections — {@link #close()} is a no-op.
    *
-   * @param masterCommands  Lettuce sync commands for master — must not be null
+   * @param masterCommands Lettuce sync commands for master — must not be null
    * @param replicaCommands Lettuce sync commands for replica — must not be null
    * @return verifier backed by the given connections (does NOT own them)
    */
@@ -129,37 +131,36 @@ public final class ReplicationConsistencyVerifier implements AutoCloseable {
    *
    * <p>Uses one {@code redis-cli} process per key — suitable for up to ~200 keys per test.
    *
-   * @param master  running master container — must not be null
+   * @param master running master container — must not be null
    * @param replica running replica container — must not be null
    * @return shell-backed verifier
    */
   public static ReplicationConsistencyVerifier forContainersShell(
       final GenericContainer<?> master, final GenericContainer<?> replica) {
     return new ReplicationConsistencyVerifier(
-        new ShellRedisCommandExecutor(master),
-        new ShellRedisCommandExecutor(replica));
+        new ShellRedisCommandExecutor(master), new ShellRedisCommandExecutor(replica));
   }
 
   /**
    * Creates a shell-backed verifier with explicit ports.
    *
-   * @param master      running master container — must not be null
-   * @param masterPort  Redis port inside the master container
-   * @param replica     running replica container — must not be null
+   * @param master running master container — must not be null
+   * @param masterPort Redis port inside the master container
+   * @param replica running replica container — must not be null
    * @param replicaPort Redis port inside the replica container
    * @return shell-backed verifier
    */
   public static ReplicationConsistencyVerifier forContainersShell(
-      final GenericContainer<?> master, final int masterPort,
-      final GenericContainer<?> replica, final int replicaPort) {
+      final GenericContainer<?> master,
+      final int masterPort,
+      final GenericContainer<?> replica,
+      final int replicaPort) {
     return new ReplicationConsistencyVerifier(
         new ShellRedisCommandExecutor(master, masterPort),
         new ShellRedisCommandExecutor(replica, replicaPort));
   }
 
-  /**
-   * Closes owned executors, releasing any Lettuce connections created by this verifier.
-   */
+  /** Closes owned executors, releasing any Lettuce connections created by this verifier. */
   @Override
   public void close() {
     closeQuietly(masterExecutor, "master");
@@ -182,7 +183,7 @@ public final class ReplicationConsistencyVerifier implements AutoCloseable {
    * Verifies replication consistency with a custom timeout.
    *
    * @param keyCount number of unique test keys — must be &gt; 0
-   * @param timeout  maximum wait for replication — must not be null
+   * @param timeout maximum wait for replication — must not be null
    * @return consistency result
    */
   public ConsistencyResult verify(final int keyCount, final Duration timeout) {
@@ -196,13 +197,14 @@ public final class ReplicationConsistencyVerifier implements AutoCloseable {
       keys.forEach(key -> masterExecutor.execute("SET " + key + " " + key));
       return pollForConsistency(keyCount, timeout, keys);
     } finally {
-      keys.forEach(key -> {
-        try {
-          masterExecutor.execute("DEL " + key);
-        } catch (final Exception e) {
-          log.debug("Cleanup failed for key {}", key, e);
-        }
-      });
+      keys.forEach(
+          key -> {
+            try {
+              masterExecutor.execute("DEL " + key);
+            } catch (final Exception e) {
+              log.debug("Cleanup failed for key {}", key, e);
+            }
+          });
     }
   }
 

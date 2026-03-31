@@ -33,7 +33,7 @@ import java.util.function.Supplier;
  *
  * @param <T> connection info type
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 public final class ContainerManager<T> {
 

@@ -14,7 +14,6 @@ import org.junit.jupiter.api.Test;
 import com.macstab.chaos.redis.command.RedisCommandBuilder;
 import com.macstab.chaos.redis.factory.RawSentinelCluster;
 import com.macstab.chaos.redis.factory.SentinelContainerFactory;
-import com.macstab.chaos.redis.util.inspector.ReplicationConsistencyVerifier;
 import com.macstab.chaos.redis.util.inspector.model.ConsistencyResult;
 
 import io.lettuce.core.RedisClient;
@@ -42,7 +41,6 @@ class ReplicationConsistencyVerifierIntegrationTest {
   @BeforeAll
   static void setUp() {
     cluster = SentinelContainerFactory.createSentinelCluster(1, 3, false);
-    
 
     masterClient =
         RedisClient.create(
@@ -57,7 +55,8 @@ class ReplicationConsistencyVerifierIntegrationTest {
         RedisClient.create(
             RedisURI.builder()
                 .withHost(cluster.replicas().get(0).getHost())
-                .withPort(cluster.replicas().get(0).getMappedPort(RedisCommandBuilder.DEFAULT_REDIS_PORT))
+                .withPort(
+                    cluster.replicas().get(0).getMappedPort(RedisCommandBuilder.DEFAULT_REDIS_PORT))
                 .build());
     replicaConnection = replicaClient.connect();
     replicaCommands = replicaConnection.sync();
@@ -103,8 +102,7 @@ class ReplicationConsistencyVerifierIntegrationTest {
     void shouldCloseWithoutError() {
       // ARRANGE
       final ReplicationConsistencyVerifier verifier =
-          ReplicationConsistencyVerifier.forContainers(
-              cluster.master(), cluster.replicas().get(0));
+          ReplicationConsistencyVerifier.forContainers(cluster.master(), cluster.replicas().get(0));
 
       // ACT / ASSERT
       verifier.close();
@@ -122,8 +120,7 @@ class ReplicationConsistencyVerifierIntegrationTest {
       try (final ReplicationConsistencyVerifier verifier =
           ReplicationConsistencyVerifier.forCommands(masterCommands, replicaCommands)) {
         // ACT
-        final ConsistencyResult result =
-            verifier.verify(10, Duration.ofSeconds(10));
+        final ConsistencyResult result = verifier.verify(10, Duration.ofSeconds(10));
 
         // ASSERT
         assertThat(result.consistencyRatio()).isGreaterThanOrEqualTo(0.8);
@@ -142,8 +139,7 @@ class ReplicationConsistencyVerifierIntegrationTest {
       try (final ReplicationConsistencyVerifier verifier =
           ReplicationConsistencyVerifier.forCommands(masterCommands, replicaCommands)) {
         // ACT
-        final ConsistencyResult result =
-            verifier.verify(20, Duration.ofSeconds(10));
+        final ConsistencyResult result = verifier.verify(20, Duration.ofSeconds(10));
 
         // ASSERT
         result.assertConsistencyAtLeast(0.8);
@@ -162,8 +158,7 @@ class ReplicationConsistencyVerifierIntegrationTest {
       try (final ReplicationConsistencyVerifier verifier =
           ReplicationConsistencyVerifier.forCommands(masterCommands, replicaCommands)) {
         // ACT
-        final ConsistencyResult result =
-            verifier.verify(5, Duration.ofSeconds(10));
+        final ConsistencyResult result = verifier.verify(5, Duration.ofSeconds(10));
 
         // ASSERT
         assertThat(result.totalKeys()).isEqualTo(5);

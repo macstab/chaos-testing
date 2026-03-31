@@ -33,8 +33,7 @@ class RawSentinelClusterTest {
     void shouldCreateValid() {
       // ARRANGE & ACT
       final RawSentinelCluster cluster =
-          new RawSentinelCluster(
-              network, master, List.of(replica1), List.of(sentinel1, sentinel2));
+          new RawSentinelCluster(network, master, List.of(replica1), List.of(sentinel1, sentinel2));
 
       // ASSERT
       assertThat(cluster.network()).isSameAs(network);
@@ -82,8 +81,7 @@ class RawSentinelClusterTest {
     @DisplayName("Should call stop on all containers and close network")
     void shouldStopAllContainersAndCloseNetwork() {
       final RawSentinelCluster cluster =
-          new RawSentinelCluster(
-              network, master, List.of(replica1), List.of(sentinel1, sentinel2));
+          new RawSentinelCluster(network, master, List.of(replica1), List.of(sentinel1, sentinel2));
 
       cluster.stop();
 
@@ -103,8 +101,7 @@ class RawSentinelClusterTest {
     @DisplayName("Should call stop when closed")
     void shouldCallStopWhenClosed() {
       final RawSentinelCluster cluster =
-          new RawSentinelCluster(
-              network, master, List.of(replica1), List.of(sentinel1, sentinel2));
+          new RawSentinelCluster(network, master, List.of(replica1), List.of(sentinel1, sentinel2));
 
       cluster.close();
 
@@ -124,8 +121,7 @@ class RawSentinelClusterTest {
     @DisplayName("Should return first sentinel from list")
     void shouldReturnFirstSentinel() {
       final RawSentinelCluster cluster =
-          new RawSentinelCluster(
-              network, master, List.of(replica1), List.of(sentinel1, sentinel2));
+          new RawSentinelCluster(network, master, List.of(replica1), List.of(sentinel1, sentinel2));
 
       assertThat(cluster.firstSentinel()).isSameAs(sentinel1);
     }

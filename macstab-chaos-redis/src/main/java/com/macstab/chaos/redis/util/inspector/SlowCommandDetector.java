@@ -23,6 +23,7 @@ import lombok.extern.slf4j.Slf4j;
  * Stateless — no snapshot required. Safe to reuse across test methods.
  *
  * <p><strong>Two backends, one API:</strong>
+ *
  * <ul>
  *   <li>{@link #forContainer(GenericContainer)} — shell-backed via {@code redis-cli} inside the
  *       container. No Lettuce required. Parses SLOWLOG text output.
@@ -32,6 +33,7 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <p><strong>Wire format note (Lettuce backend):</strong> Lettuce 6.x returns {@code SLOWLOG GET}
  * as {@code List<Object>} where each entry is a {@code List<Object>}:
+ *
  * <pre>
  *   [0] Long    — entry ID
  *   [1] Long    — unix timestamp (seconds)
@@ -42,6 +44,7 @@ import lombok.extern.slf4j.Slf4j;
  * </pre>
  *
  * <p><strong>Example:</strong>
+ *
  * <pre>{@code
  * SlowCommandDetector detector = SlowCommandDetector.forContainer(redisContainer);
  * detector.reset();
@@ -64,12 +67,14 @@ public final class SlowCommandDetector implements AutoCloseable {
   /**
    * Internal strategy for SLOWLOG operations — eliminates nullable fields.
    *
-   * <p>Two implementations: {@link LettuceSlowlogBackend} (typed API, maximum reliability)
-   * and {@link ShellSlowlogBackend} (text parsing via redis-cli).
+   * <p>Two implementations: {@link LettuceSlowlogBackend} (typed API, maximum reliability) and
+   * {@link ShellSlowlogBackend} (text parsing via redis-cli).
    */
   private interface SlowlogBackend {
     void reset();
+
     List<SlowLogEntry> get(int count);
+
     void close();
   }
 
@@ -85,11 +90,18 @@ public final class SlowCommandDetector implements AutoCloseable {
       this.ownedExecutor = ownedExecutor;
     }
 
-    @Override public void reset() { commands.slowlogReset(); }
-    @Override public List<SlowLogEntry> get(final int count) {
+    @Override
+    public void reset() {
+      commands.slowlogReset();
+    }
+
+    @Override
+    public List<SlowLogEntry> get(final int count) {
       return parseLettuceSlowlog(commands.slowlogGet(count));
     }
-    @Override public void close() {
+
+    @Override
+    public void close() {
       if (ownedExecutor != null) {
         ownedExecutor.close();
       }
@@ -104,11 +116,20 @@ public final class SlowCommandDetector implements AutoCloseable {
       this.executor = executor;
     }
 
-    @Override public void reset() { executor.execute("SLOWLOG RESET"); }
-    @Override public List<SlowLogEntry> get(final int count) {
+    @Override
+    public void reset() {
+      executor.execute("SLOWLOG RESET");
+    }
+
+    @Override
+    public List<SlowLogEntry> get(final int count) {
       return parseShellSlowlog(executor.execute("SLOWLOG GET " + count));
     }
-    @Override public void close() { executor.close(); }
+
+    @Override
+    public void close() {
+      executor.close();
+    }
   }
 
   private final SlowlogBackend backend;
@@ -116,9 +137,9 @@ public final class SlowCommandDetector implements AutoCloseable {
   /**
    * Creates a detector using an executor-backed backend.
    *
-   * <p>When passed a {@link LettuceRedisCommandExecutor}, uses the typed Lettuce API internally
-   * via {@link LettuceSlowlogBackend} for maximum reliability. When passed a
-   * {@link ShellRedisCommandExecutor}, uses text parsing via {@link ShellSlowlogBackend}.
+   * <p>When passed a {@link LettuceRedisCommandExecutor}, uses the typed Lettuce API internally via
+   * {@link LettuceSlowlogBackend} for maximum reliability. When passed a {@link
+   * ShellRedisCommandExecutor}, uses text parsing via {@link ShellSlowlogBackend}.
    *
    * @param executor command executor — must not be null
    */
@@ -132,8 +153,8 @@ public final class SlowCommandDetector implements AutoCloseable {
   }
 
   /**
-   * Creates a Lettuce-backed detector using an existing connection.
-   * Use {@link #forCommands(RedisCommands)} for convenience.
+   * Creates a Lettuce-backed detector using an existing connection. Use {@link
+   * #forCommands(RedisCommands)} for convenience.
    *
    * @param redisCommands Lettuce sync commands — must not be null
    */
@@ -162,7 +183,7 @@ public final class SlowCommandDetector implements AutoCloseable {
    * Creates a Lettuce-backed detector connecting to a custom Redis port on the container.
    *
    * @param container running Redis container — must not be null
-   * @param port      Redis port inside the container (mapped port resolved automatically)
+   * @param port Redis port inside the container (mapped port resolved automatically)
    * @return Lettuce-backed detector (owns its connection)
    */
   public static SlowCommandDetector forContainer(
@@ -189,8 +210,8 @@ public final class SlowCommandDetector implements AutoCloseable {
   /**
    * Creates a shell-backed detector for environments where Lettuce is unavailable.
    *
-   * <p>Parses SLOWLOG text output from {@code redis-cli SLOWLOG GET}.
-   * Works in DinD, network-isolated, and Podman container topologies.
+   * <p>Parses SLOWLOG text output from {@code redis-cli SLOWLOG GET}. Works in DinD,
+   * network-isolated, and Podman container topologies.
    *
    * @param container running Redis container — must not be null
    * @return shell-backed detector
@@ -203,7 +224,7 @@ public final class SlowCommandDetector implements AutoCloseable {
    * Creates a shell-backed detector targeting a custom Redis port.
    *
    * @param container running Redis container — must not be null
-   * @param port      Redis port inside the container
+   * @param port Redis port inside the container
    * @return shell-backed detector
    */
   public static SlowCommandDetector forContainerShell(
@@ -211,9 +232,7 @@ public final class SlowCommandDetector implements AutoCloseable {
     return new SlowCommandDetector(new ShellRedisCommandExecutor(container, port));
   }
 
-  /**
-   * Closes the backend, releasing any owned Lettuce connection.
-   */
+  /** Closes the backend, releasing any owned Lettuce connection. */
   @Override
   public void close() {
     try {
@@ -271,11 +290,16 @@ public final class SlowCommandDetector implements AutoCloseable {
     }
 
     if (!exceeding.isEmpty()) {
-      final StringBuilder msg = new StringBuilder("Expected no commands exceeding ")
-          .append(threshold).append(" but found:\n");
+      final StringBuilder msg =
+          new StringBuilder("Expected no commands exceeding ")
+              .append(threshold)
+              .append(" but found:\n");
       for (final SlowLogEntry entry : exceeding) {
-        msg.append("  - ").append(entry.command())
-            .append(" (").append(entry.duration()).append(")\n");
+        msg.append("  - ")
+            .append(entry.command())
+            .append(" (")
+            .append(entry.duration())
+            .append(")\n");
       }
       throw new AssertionError(msg.toString().trim());
     }
@@ -326,7 +350,8 @@ public final class SlowCommandDetector implements AutoCloseable {
       final String clientAddr = entry.size() > 4 ? String.valueOf(entry.get(4)) : "";
       final String clientName = entry.size() > 5 ? String.valueOf(entry.get(5)) : "";
 
-      return new SlowLogEntry(id, timestampSeconds, duration, command, args, clientAddr, clientName);
+      return new SlowLogEntry(
+          id, timestampSeconds, duration, command, args, clientAddr, clientName);
     } catch (final ClassCastException | NullPointerException e) {
       log.debug("Failed to parse SLOWLOG entry: {}", e.getMessage());
       return null;
@@ -347,6 +372,7 @@ public final class SlowCommandDetector implements AutoCloseable {
    * Parses {@code redis-cli SLOWLOG GET} text output into typed entries.
    *
    * <p>redis-cli formats SLOWLOG GET as a numbered list:
+   *
    * <pre>
    *  1) 1) (integer) 14          -- id
    *     2) (integer) 1609459200  -- timestamp
@@ -357,6 +383,7 @@ public final class SlowCommandDetector implements AutoCloseable {
    *     5) "127.0.0.1:54321"    -- client addr
    *     6) ""                   -- client name
    * </pre>
+   *
    * Best-effort parsing — entries with unexpected format are skipped with a debug log.
    *
    * @param output raw redis-cli stdout
@@ -386,17 +413,29 @@ public final class SlowCommandDetector implements AutoCloseable {
       // Top-level entry start: "N) 1) (integer) <id>"
       if (line.matches("\\d+\\).*")) {
         // Save previous entry if complete
-        if (id != null && timestampSeconds != null && durationMicros != null && !cmdParts.isEmpty()) {
-          entries.add(buildShellEntry(id, timestampSeconds, durationMicros,
-              cmdParts, clientAddr, clientName));
+        if (id != null
+            && timestampSeconds != null
+            && durationMicros != null
+            && !cmdParts.isEmpty()) {
+          entries.add(
+              buildShellEntry(
+                  id, timestampSeconds, durationMicros, cmdParts, clientAddr, clientName));
         }
         // Reset state
-        id = null; timestampSeconds = null; durationMicros = null;
-        cmdParts.clear(); clientAddr = ""; clientName = ""; fieldIndex = 0;
+        id = null;
+        timestampSeconds = null;
+        durationMicros = null;
+        cmdParts.clear();
+        clientAddr = "";
+        clientName = "";
+        fieldIndex = 0;
 
         // Parse the first sub-field on this line
         final Long val = extractInteger(line);
-        if (val != null) { id = val; fieldIndex = 1; }
+        if (val != null) {
+          id = val;
+          fieldIndex = 1;
+        }
         continue;
       }
 
@@ -404,32 +443,53 @@ public final class SlowCommandDetector implements AutoCloseable {
       if (line.matches("\\d+\\).*") || line.startsWith("   ") || line.startsWith("\t")) {
         final String stripped = line.replaceAll("^\\d+\\)\\s*", "").trim();
         switch (fieldIndex) {
-          case 1 -> { timestampSeconds = extractInteger(stripped); fieldIndex = 2; }
-          case 2 -> { durationMicros = extractInteger(stripped); fieldIndex = 3; }
-          case 3 -> { cmdParts.add(extractQuotedOrRaw(stripped)); }
-          case 4 -> { clientAddr = extractQuotedOrRaw(stripped); fieldIndex = 5; }
-          case 5 -> { clientName = extractQuotedOrRaw(stripped); fieldIndex = 6; }
-          default -> { /* extra fields, ignore */ }
+          case 1 -> {
+            timestampSeconds = extractInteger(stripped);
+            fieldIndex = 2;
+          }
+          case 2 -> {
+            durationMicros = extractInteger(stripped);
+            fieldIndex = 3;
+          }
+          case 3 -> {
+            cmdParts.add(extractQuotedOrRaw(stripped));
+          }
+          case 4 -> {
+            clientAddr = extractQuotedOrRaw(stripped);
+            fieldIndex = 5;
+          }
+          case 5 -> {
+            clientName = extractQuotedOrRaw(stripped);
+            fieldIndex = 6;
+          }
+          default -> {
+            /* extra fields, ignore */
+          }
         }
       }
     }
 
     // Final entry
     if (id != null && timestampSeconds != null && durationMicros != null && !cmdParts.isEmpty()) {
-      entries.add(buildShellEntry(id, timestampSeconds, durationMicros,
-          cmdParts, clientAddr, clientName));
+      entries.add(
+          buildShellEntry(id, timestampSeconds, durationMicros, cmdParts, clientAddr, clientName));
     }
 
     return entries;
   }
 
   private static SlowLogEntry buildShellEntry(
-      final long id, final long ts, final long durationMicros,
-      final List<String> cmdParts, final String clientAddr, final String clientName) {
+      final long id,
+      final long ts,
+      final long durationMicros,
+      final List<String> cmdParts,
+      final String clientAddr,
+      final String clientName) {
     final String command = cmdParts.isEmpty() ? "" : cmdParts.get(0);
-    final List<String> args = cmdParts.size() > 1 ? cmdParts.subList(1, cmdParts.size()) : List.of();
-    return new SlowLogEntry(id, ts, Duration.ofNanos(durationMicros * 1_000L),
-        command, args, clientAddr, clientName);
+    final List<String> args =
+        cmdParts.size() > 1 ? cmdParts.subList(1, cmdParts.size()) : List.of();
+    return new SlowLogEntry(
+        id, ts, Duration.ofNanos(durationMicros * 1_000L), command, args, clientAddr, clientName);
   }
 
   private static Long extractInteger(final String text) {

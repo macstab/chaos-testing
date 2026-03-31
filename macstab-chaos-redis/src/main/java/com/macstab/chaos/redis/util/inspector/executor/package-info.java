@@ -2,12 +2,13 @@
 /**
  * Strategy abstraction for executing Redis commands in inspector tools.
  *
- * <p>Decouples {@link com.macstab.chaos.redis.util.inspector.SlowCommandDetector},
- * {@link com.macstab.chaos.redis.util.inspector.ConnectionLeakTracker}, and
- * {@link com.macstab.chaos.redis.util.inspector.MemorySnapshotAnalyzer} from any specific
- * Redis client or container runtime.
+ * <p>Decouples {@link com.macstab.chaos.redis.util.inspector.SlowCommandDetector}, {@link
+ * com.macstab.chaos.redis.util.inspector.ConnectionLeakTracker}, and {@link
+ * com.macstab.chaos.redis.util.inspector.MemorySnapshotAnalyzer} from any specific Redis client or
+ * container runtime.
  *
  * <p>Choose the backend that matches your test context:
+ *
  * <ul>
  *   <li>{@link com.macstab.chaos.redis.util.inspector.executor.ShellRedisCommandExecutor} —
  *       container-backed, no Lettuce required, works in any topology

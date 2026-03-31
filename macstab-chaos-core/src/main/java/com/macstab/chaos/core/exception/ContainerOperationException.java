@@ -27,7 +27,7 @@ import com.macstab.chaos.core.util.ContainerIdFormatter;
  * }</pre>
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 public class ContainerOperationException extends ClusterException {
 

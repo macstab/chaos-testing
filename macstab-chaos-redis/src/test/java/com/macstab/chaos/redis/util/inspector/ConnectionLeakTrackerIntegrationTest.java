@@ -19,8 +19,6 @@ import io.lettuce.core.RedisURI;
 import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.api.sync.RedisCommands;
 
-import com.macstab.chaos.redis.util.inspector.ConnectionLeakTracker;
-
 /** Integration tests for {@link ConnectionLeakTracker}. */
 @Testcontainers
 @DisplayName("ConnectionLeakTracker — Integration")

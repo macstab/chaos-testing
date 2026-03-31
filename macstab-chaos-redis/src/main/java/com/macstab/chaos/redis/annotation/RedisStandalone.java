@@ -153,13 +153,14 @@ public @interface RedisStandalone {
    * <p>Default: {@code []} (no extra args)
    *
    * <p><strong>Example:</strong>
+   *
    * <pre>{@code
    * @RedisStandalone(args = {"--requirepass", "secret", "--maxclients", "100"})
    * }</pre>
    *
    * <p><strong>Port argument limitation:</strong> Do NOT use {@code --port} here to change the
-   * internal Redis port. The module resolves the mapped host port via
-   * {@code getMappedPort(RedisCommandBuilder.DEFAULT_REDIS_PORT)} — if the container listens on a
+   * internal Redis port. The module resolves the mapped host port via {@code
+   * getMappedPort(RedisCommandBuilder.DEFAULT_REDIS_PORT)} — if the container listens on a
    * different port, connection info will be wrong and MONITOR-based tools will fail to connect.
    * Internal port configuration is not currently supported end-to-end.
    *

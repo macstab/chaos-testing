@@ -25,23 +25,27 @@ import lombok.extern.slf4j.Slf4j;
  * Useful for detecting connection pool leaks in integration tests.
  *
  * <p><strong>Backend:</strong> Works with any container via {@link #forContainer(GenericContainer)}
- * (shell-backed, no Lettuce required), or with an existing Lettuce connection via
- * {@link #forCommands(RedisCommands)}.
+ * (shell-backed, no Lettuce required), or with an existing Lettuce connection via {@link
+ * #forCommands(RedisCommands)}.
  *
  * <p><strong>Lifecycle — one instance per test method:</strong>
+ *
  * <pre>
  *   &#64;BeforeEach
  *   void setUp() {
  *       tracker = ConnectionLeakTracker.forContainer(redisContainer);
  *   }
  * </pre>
+ *
  * Do not share instances across test methods. {@link #snapshot()} resets state — calling it
  * mid-test discards the previous baseline.
  *
  * <p><strong>Thread safety:</strong> The snapshot reference is held in an {@link AtomicReference}.
- * Designed for single-threaded test execution only — concurrent {@link #snapshot()} calls will race.
+ * Designed for single-threaded test execution only — concurrent {@link #snapshot()} calls will
+ * race.
  *
  * <p><strong>Example:</strong>
+ *
  * <pre>{@code
  * ConnectionLeakTracker tracker = ConnectionLeakTracker.forContainer(redisContainer);
  * tracker.snapshot();
@@ -74,9 +78,9 @@ public final class ConnectionLeakTracker implements AutoCloseable {
   /**
    * Creates a Lettuce-backed tracker by connecting to the container's mapped Redis port.
    *
-   * <p>This is the default and preferred backend. Lettuce provides connection reuse, efficient
-   * I/O, and zero per-call process overhead. The tracker owns the connection — call
-   * {@link #close()} when done, or use try-with-resources.
+   * <p>This is the default and preferred backend. Lettuce provides connection reuse, efficient I/O,
+   * and zero per-call process overhead. The tracker owns the connection — call {@link #close()}
+   * when done, or use try-with-resources.
    *
    * @param container running Redis container — must not be null
    * @return Lettuce-backed tracker (owns its connection)
@@ -89,7 +93,7 @@ public final class ConnectionLeakTracker implements AutoCloseable {
    * Creates a Lettuce-backed tracker connecting to a custom Redis port on the container.
    *
    * @param container running Redis container — must not be null
-   * @param port      Redis port inside the container (mapped port is resolved automatically)
+   * @param port Redis port inside the container (mapped port is resolved automatically)
    * @return Lettuce-backed tracker (owns its connection)
    */
   public static ConnectionLeakTracker forContainer(
@@ -116,8 +120,8 @@ public final class ConnectionLeakTracker implements AutoCloseable {
   /**
    * Creates a shell-backed tracker for environments where Lettuce is unavailable.
    *
-   * <p>Uses {@code redis-cli} inside the container. No connection management required.
-   * Useful for DinD, network-isolated, or Podman container topologies.
+   * <p>Uses {@code redis-cli} inside the container. No connection management required. Useful for
+   * DinD, network-isolated, or Podman container topologies.
    *
    * @param container running Redis container — must not be null
    * @return shell-backed tracker
@@ -130,7 +134,7 @@ public final class ConnectionLeakTracker implements AutoCloseable {
    * Creates a shell-backed tracker targeting a custom Redis port.
    *
    * @param container running Redis container — must not be null
-   * @param port      Redis port inside the container
+   * @param port Redis port inside the container
    * @return shell-backed tracker
    */
   public static ConnectionLeakTracker forContainerShell(
@@ -190,7 +194,7 @@ public final class ConnectionLeakTracker implements AutoCloseable {
   /**
    * Asserts that no connection leaks occurred since the snapshot.
    *
-   * @throws AssertionError        if new connections are present
+   * @throws AssertionError if new connections are present
    * @throws IllegalStateException if no snapshot was taken
    */
   public void assertNoLeaks() {

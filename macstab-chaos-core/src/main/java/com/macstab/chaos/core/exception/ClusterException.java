@@ -17,7 +17,7 @@ package com.macstab.chaos.core.exception;
  * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 public class ClusterException extends RuntimeException {
 

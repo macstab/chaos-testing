@@ -90,8 +90,8 @@ public final class TransactionAnalyzer {
   /**
    * Returns commands that were executed outside of any transaction context.
    *
-   * <p>A command is "outside" if it appears when no MULTI is open, or if a MULTI was opened
-   * but never closed with EXEC or DISCARD (open transaction at end of capture).
+   * <p>A command is "outside" if it appears when no MULTI is open, or if a MULTI was opened but
+   * never closed with EXEC or DISCARD (open transaction at end of capture).
    *
    * @return list of command lines outside transactions (never null)
    */
@@ -122,9 +122,7 @@ public final class TransactionAnalyzer {
     return cachedResult;
   }
 
-  /**
-   * Internal result holder for transaction analysis.
-   */
+  /** Internal result holder for transaction analysis. */
   private static final class TransactionAnalysisResult {
     int completedCount = 0;
     int discardedCount = 0;
@@ -135,8 +133,8 @@ public final class TransactionAnalyzer {
   /**
    * Analyzes all captured commands for transaction patterns.
    *
-   * <p>Tracks MULTI/EXEC/DISCARD boundaries. Commands inside an unclosed transaction (MULTI with
-   * no subsequent EXEC or DISCARD) are treated as outside any transaction context.
+   * <p>Tracks MULTI/EXEC/DISCARD boundaries. Commands inside an unclosed transaction (MULTI with no
+   * subsequent EXEC or DISCARD) are treated as outside any transaction context.
    *
    * @return analysis result with counts and averages
    */

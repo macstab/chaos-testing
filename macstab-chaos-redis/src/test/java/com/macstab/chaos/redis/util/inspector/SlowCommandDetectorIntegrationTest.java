@@ -129,9 +129,10 @@ class SlowCommandDetectorIntegrationTest {
         // ASSERT
         assertThat(result).isSameAs(detector);
         // slowlog-log-slower-than 0 logs SLOWLOG RESET itself — filter it out
-        final var commands2 = detector.getSlowCommands().stream()
-            .filter(e -> !e.command().equalsIgnoreCase("SLOWLOG"))
-            .toList();
+        final var commands2 =
+            detector.getSlowCommands().stream()
+                .filter(e -> !e.command().equalsIgnoreCase("SLOWLOG"))
+                .toList();
         assertThat(commands2).isEmpty();
       }
     }
@@ -174,9 +175,10 @@ class SlowCommandDetectorIntegrationTest {
         detector.reset();
 
         // ASSERT — filter out SLOWLOG RESET itself (captured when slowlog-log-slower-than=0)
-        final var remaining = detector.getSlowCommands().stream()
-            .filter(e -> !e.command().equalsIgnoreCase("SLOWLOG"))
-            .toList();
+        final var remaining =
+            detector.getSlowCommands().stream()
+                .filter(e -> !e.command().equalsIgnoreCase("SLOWLOG"))
+                .toList();
         assertThat(remaining).isEmpty();
       }
     }

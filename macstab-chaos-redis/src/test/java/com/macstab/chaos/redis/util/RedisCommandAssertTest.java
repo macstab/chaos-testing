@@ -1,7 +1,6 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.redis.util;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
@@ -10,10 +9,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import com.macstab.chaos.redis.util.RedisCommandTracker;
 import com.macstab.chaos.redis.util.assertion.RedisCommandAssert;
-import com.macstab.chaos.redis.util.assertion.CommandCountAssert;
-import com.macstab.chaos.redis.util.assertion.RatioAssert;
 
 /** Comprehensive unit tests for {@link RedisCommandAssert}. */
 @DisplayName("RedisCommandAssert")

@@ -39,7 +39,7 @@ import lombok.Getter;
  * }</pre>
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 @Getter
 public class NetworkChaosException extends ClusterException {

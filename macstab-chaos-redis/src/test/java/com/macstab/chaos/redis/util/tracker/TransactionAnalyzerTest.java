@@ -155,8 +155,7 @@ class TransactionAnalyzerTest {
     void shouldNotCountDiscardedInAverage() {
       // Only completed transaction has 2 commands, discarded has 1 but is ignored
       final TransactionAnalyzer analyzer =
-          new TransactionAnalyzer(
-              List.of(MULTI, SET_1, GET_1, EXEC, MULTI, SET_2, DISCARD));
+          new TransactionAnalyzer(List.of(MULTI, SET_1, GET_1, EXEC, MULTI, SET_2, DISCARD));
 
       assertThat(analyzer.getAverageCommandsPerTransaction()).isEqualTo(2.0);
     }
@@ -232,8 +231,7 @@ class TransactionAnalyzerTest {
     @DisplayName("Should return summary matching individual methods")
     void shouldReturnSummaryMatchingMethods() {
       final TransactionAnalyzer analyzer =
-          new TransactionAnalyzer(
-              List.of(MULTI, SET_1, SET_2, EXEC, MULTI, GET_1, DISCARD, PING));
+          new TransactionAnalyzer(List.of(MULTI, SET_1, SET_2, EXEC, MULTI, GET_1, DISCARD, PING));
 
       final TransactionSummary summary = analyzer.getSummary();
 

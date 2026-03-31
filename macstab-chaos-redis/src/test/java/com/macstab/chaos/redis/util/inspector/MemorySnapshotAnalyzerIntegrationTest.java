@@ -13,7 +13,6 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
-import com.macstab.chaos.redis.util.inspector.MemorySnapshotAnalyzer;
 import com.macstab.chaos.redis.util.inspector.model.MemorySnapshot;
 
 import io.lettuce.core.RedisClient;
@@ -79,7 +78,8 @@ class MemorySnapshotAnalyzerIntegrationTest {
     @DisplayName("Should create shell-backed analyzer")
     void shouldCreateShellAnalyzer() {
       // ARRANGE / ACT
-      try (final MemorySnapshotAnalyzer analyzer = MemorySnapshotAnalyzer.forContainerShell(redis)) {
+      try (final MemorySnapshotAnalyzer analyzer =
+          MemorySnapshotAnalyzer.forContainerShell(redis)) {
         // ASSERT
         assertThat(analyzer).isNotNull();
       }
@@ -89,7 +89,8 @@ class MemorySnapshotAnalyzerIntegrationTest {
     @DisplayName("Shell backend should snapshot and return non-zero memory")
     void shouldSnapshotViaShell() {
       // ARRANGE
-      try (final MemorySnapshotAnalyzer analyzer = MemorySnapshotAnalyzer.forContainerShell(redis)) {
+      try (final MemorySnapshotAnalyzer analyzer =
+          MemorySnapshotAnalyzer.forContainerShell(redis)) {
         // ACT
         analyzer.snapshot();
         final MemorySnapshot snapshot = analyzer.getSnapshot();
@@ -103,7 +104,8 @@ class MemorySnapshotAnalyzerIntegrationTest {
     @DisplayName("Shell backend should report positive delta after writes")
     void shouldReportPositiveDeltaViaShell() {
       // ARRANGE
-      try (final MemorySnapshotAnalyzer analyzer = MemorySnapshotAnalyzer.forContainerShell(redis)) {
+      try (final MemorySnapshotAnalyzer analyzer =
+          MemorySnapshotAnalyzer.forContainerShell(redis)) {
         analyzer.snapshot();
 
         // ACT
@@ -126,8 +128,7 @@ class MemorySnapshotAnalyzerIntegrationTest {
     @DisplayName("Should show positive delta after writing keys")
     void shouldShowPositiveDelta() {
       // ARRANGE
-      try (final MemorySnapshotAnalyzer analyzer =
-          MemorySnapshotAnalyzer.forCommands(commands)) {
+      try (final MemorySnapshotAnalyzer analyzer = MemorySnapshotAnalyzer.forCommands(commands)) {
         analyzer.snapshot();
 
         // ACT
@@ -150,8 +151,7 @@ class MemorySnapshotAnalyzerIntegrationTest {
     @DisplayName("Should pass with large tolerance after write and delete")
     void shouldPassWithLargeTolerance() {
       // ARRANGE
-      try (final MemorySnapshotAnalyzer analyzer =
-          MemorySnapshotAnalyzer.forCommands(commands)) {
+      try (final MemorySnapshotAnalyzer analyzer = MemorySnapshotAnalyzer.forCommands(commands)) {
         analyzer.snapshot();
 
         // ACT
@@ -176,8 +176,7 @@ class MemorySnapshotAnalyzerIntegrationTest {
     @DisplayName("Should return non-zero used memory")
     void shouldReturnNonZeroMemory() {
       // ARRANGE
-      try (final MemorySnapshotAnalyzer analyzer =
-          MemorySnapshotAnalyzer.forCommands(commands)) {
+      try (final MemorySnapshotAnalyzer analyzer = MemorySnapshotAnalyzer.forCommands(commands)) {
         // ACT
         final MemorySnapshot snapshot = analyzer.getCurrent();
 

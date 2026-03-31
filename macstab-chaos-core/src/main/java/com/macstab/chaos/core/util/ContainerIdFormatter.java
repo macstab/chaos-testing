@@ -37,7 +37,7 @@ package com.macstab.chaos.core.util;
  * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  */
 import lombok.extern.slf4j.Slf4j;
 

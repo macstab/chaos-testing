@@ -80,8 +80,8 @@ public final class DefaultStandaloneContainerInstanceFactory
   /**
    * Builds a configured Redis container (not started).
    *
-   * <p>Package-private to allow direct unit testing of container configuration (image, ports,
-   * args, capabilities) without starting Docker.
+   * <p>Package-private to allow direct unit testing of container configuration (image, ports, args,
+   * capabilities) without starting Docker.
    *
    * @param annotation annotation driving container configuration — must not be null
    * @return configured container ready to start (never null)
@@ -118,8 +118,7 @@ public final class DefaultStandaloneContainerInstanceFactory
    * @param container running container — must not be null
    * @param annotation source annotation — must not be null
    */
-  void installNetworkTools(
-      final GenericContainer<?> container, final RedisStandalone annotation) {
+  void installNetworkTools(final GenericContainer<?> container, final RedisStandalone annotation) {
     if (!annotation.enableNetworkChaos()) {
       return;
     }

@@ -11,8 +11,8 @@ import org.testcontainers.utility.DockerImageName;
 import com.github.dockerjava.api.model.Capability;
 import com.macstab.chaos.core.extension.ChaosPlugin;
 import com.macstab.chaos.redis.annotation.RedisStandalone;
-import com.macstab.chaos.redis.command.RedisCommandBuilder;
 import com.macstab.chaos.redis.api.StandaloneRedis;
+import com.macstab.chaos.redis.command.RedisCommandBuilder;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -57,7 +57,8 @@ public final class RedisPlugin implements ChaosPlugin<RedisStandalone> {
     container.withExposedPorts(RedisCommandBuilder.DEFAULT_REDIS_PORT);
 
     if (annotation.port() > 0) {
-      container.setPortBindings(List.of(annotation.port() + ":" + RedisCommandBuilder.DEFAULT_REDIS_PORT));
+      container.setPortBindings(
+          List.of(annotation.port() + ":" + RedisCommandBuilder.DEFAULT_REDIS_PORT));
     }
 
     if (annotation.args().length > 0) {
@@ -80,7 +81,8 @@ public final class RedisPlugin implements ChaosPlugin<RedisStandalone> {
   public Object createConnectionInfo(
       final GenericContainer<?> container, final RedisStandalone annotation) {
 
-    return new StandaloneRedis(container.getHost(), container.getMappedPort(RedisCommandBuilder.DEFAULT_REDIS_PORT));
+    return new StandaloneRedis(
+        container.getHost(), container.getMappedPort(RedisCommandBuilder.DEFAULT_REDIS_PORT));
   }
 
   @Override

@@ -30,9 +30,7 @@ public record SlowLogEntry(
     String clientAddr,
     String clientName) {
 
-  /**
-   * Canonical constructor — defensively copies args to ensure immutability.
-   */
+  /** Canonical constructor — defensively copies args to ensure immutability. */
   public SlowLogEntry {
     Objects.requireNonNull(duration, "duration");
     Objects.requireNonNull(command, "command");

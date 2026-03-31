@@ -230,7 +230,10 @@ public final class SentinelCluster implements ExtensionContext.Store.CloseableRe
    */
   public List<RedisConnectionInfo> getReplicas() {
     return replicas.stream()
-        .map(r -> new RedisConnectionInfo(r.getHost(), r.getMappedPort(RedisCommandBuilder.DEFAULT_REDIS_PORT)))
+        .map(
+            r ->
+                new RedisConnectionInfo(
+                    r.getHost(), r.getMappedPort(RedisCommandBuilder.DEFAULT_REDIS_PORT)))
         .toList();
   }
 
@@ -239,7 +242,10 @@ public final class SentinelCluster implements ExtensionContext.Store.CloseableRe
    */
   public List<RedisConnectionInfo> getSentinels() {
     return sentinels.stream()
-        .map(s -> new RedisConnectionInfo(s.getHost(), s.getMappedPort(RedisCommandBuilder.DEFAULT_SENTINEL_PORT)))
+        .map(
+            s ->
+                new RedisConnectionInfo(
+                    s.getHost(), s.getMappedPort(RedisCommandBuilder.DEFAULT_SENTINEL_PORT)))
         .toList();
   }
 
@@ -269,9 +275,19 @@ public final class SentinelCluster implements ExtensionContext.Store.CloseableRe
    */
   public SentinelRedis toSentinelRedis() {
     final List<Endpoint> sentinelEndpoints =
-        sentinels.stream().map(s -> new Endpoint(s.getHost(), s.getMappedPort(RedisCommandBuilder.DEFAULT_SENTINEL_PORT))).toList();
+        sentinels.stream()
+            .map(
+                s ->
+                    new Endpoint(
+                        s.getHost(), s.getMappedPort(RedisCommandBuilder.DEFAULT_SENTINEL_PORT)))
+            .toList();
     final List<Endpoint> replicaEndpoints =
-        replicas.stream().map(r -> new Endpoint(r.getHost(), r.getMappedPort(RedisCommandBuilder.DEFAULT_REDIS_PORT))).toList();
+        replicas.stream()
+            .map(
+                r ->
+                    new Endpoint(
+                        r.getHost(), r.getMappedPort(RedisCommandBuilder.DEFAULT_REDIS_PORT)))
+            .toList();
     return new SentinelRedis(
         getMasterHost(), getMasterPort(), masterName, sentinelEndpoints, replicaEndpoints);
   }
@@ -287,9 +303,10 @@ public final class SentinelCluster implements ExtensionContext.Store.CloseableRe
    */
   public ControlFacade getControl() {
     return controlFacade.updateAndGet(
-        existing -> existing != null
-            ? existing
-            : ControlFacade.create(getAllContainers(), buildContainerIndexMap()));
+        existing ->
+            existing != null
+                ? existing
+                : ControlFacade.create(getAllContainers(), buildContainerIndexMap()));
   }
 
   /**

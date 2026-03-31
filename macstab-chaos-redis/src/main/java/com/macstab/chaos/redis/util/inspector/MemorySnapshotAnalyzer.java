@@ -23,16 +23,18 @@ import lombok.extern.slf4j.Slf4j;
  * memory footprint.
  *
  * <p><strong>Backend:</strong> Works with any container via {@link #forContainer(GenericContainer)}
- * (shell-backed, no Lettuce required), or with an existing Lettuce connection via
- * {@link #forCommands(RedisCommands)}.
+ * (shell-backed, no Lettuce required), or with an existing Lettuce connection via {@link
+ * #forCommands(RedisCommands)}.
  *
  * <p><strong>Lifecycle — one instance per test method:</strong>
+ *
  * <pre>
  *   &#64;BeforeEach
  *   void setUp() {
  *       analyzer = MemorySnapshotAnalyzer.forContainer(redisContainer);
  *   }
  * </pre>
+ *
  * Do not share instances across test methods. {@link #snapshot()} resets state. Results may vary
  * depending on Redis background operations (AOF rewrite, RDB save) — use a reasonable tolerance.
  *
@@ -40,6 +42,7 @@ import lombok.extern.slf4j.Slf4j;
  * Designed for single-threaded test execution only.
  *
  * <p><strong>Example:</strong>
+ *
  * <pre>{@code
  * MemorySnapshotAnalyzer analyzer = MemorySnapshotAnalyzer.forContainer(redisContainer);
  * analyzer.snapshot();
@@ -71,8 +74,8 @@ public final class MemorySnapshotAnalyzer implements AutoCloseable {
   /**
    * Creates a Lettuce-backed analyzer by connecting to the container's mapped Redis port.
    *
-   * <p>This is the default and preferred backend. The analyzer owns the connection — call
-   * {@link #close()} when done, or use try-with-resources.
+   * <p>This is the default and preferred backend. The analyzer owns the connection — call {@link
+   * #close()} when done, or use try-with-resources.
    *
    * @param container running Redis container — must not be null
    * @return Lettuce-backed analyzer (owns its connection)
@@ -85,7 +88,7 @@ public final class MemorySnapshotAnalyzer implements AutoCloseable {
    * Creates a Lettuce-backed analyzer connecting to a custom Redis port on the container.
    *
    * @param container running Redis container — must not be null
-   * @param port      Redis port inside the container (mapped port is resolved automatically)
+   * @param port Redis port inside the container (mapped port is resolved automatically)
    * @return Lettuce-backed analyzer (owns its connection)
    */
   public static MemorySnapshotAnalyzer forContainer(
@@ -123,7 +126,7 @@ public final class MemorySnapshotAnalyzer implements AutoCloseable {
    * Creates a shell-backed analyzer targeting a custom Redis port.
    *
    * @param container running Redis container — must not be null
-   * @param port      Redis port inside the container
+   * @param port Redis port inside the container
    * @return shell-backed analyzer
    */
   public static MemorySnapshotAnalyzer forContainerShell(
@@ -131,9 +134,7 @@ public final class MemorySnapshotAnalyzer implements AutoCloseable {
     return new MemorySnapshotAnalyzer(new ShellRedisCommandExecutor(container, port));
   }
 
-  /**
-   * Closes the underlying executor, releasing any owned Lettuce connection.
-   */
+  /** Closes the underlying executor, releasing any owned Lettuce connection. */
   @Override
   public void close() {
     try {
@@ -195,7 +196,7 @@ public final class MemorySnapshotAnalyzer implements AutoCloseable {
    * Asserts that memory growth does not exceed the given tolerance.
    *
    * @param toleranceBytes maximum acceptable memory growth in bytes (0 = strict equality)
-   * @throws AssertionError        if memory delta exceeds tolerance
+   * @throws AssertionError if memory delta exceeds tolerance
    * @throws IllegalStateException if no snapshot was taken
    */
   public void assertNoMemoryLeak(final long toleranceBytes) {

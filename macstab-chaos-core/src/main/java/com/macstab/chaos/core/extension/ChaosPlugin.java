@@ -119,7 +119,7 @@ import org.testcontainers.containers.GenericContainer;
  *
  * @param <A> Chaos testing annotation type (e.g., {@code RedisStandalone})
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  * @see ChaosTestingExtension
  */
 public interface ChaosPlugin<A extends Annotation> {

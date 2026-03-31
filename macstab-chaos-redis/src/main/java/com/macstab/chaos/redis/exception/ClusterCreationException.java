@@ -57,7 +57,7 @@ public final class ClusterCreationException extends ClusterException {
    * Creates a cluster creation exception with message and cause (no component index).
    *
    * @param message error description
-   * @param cause   underlying cause
+   * @param cause underlying cause
    */
   public ClusterCreationException(final String message, final Throwable cause) {
     super(message, cause);

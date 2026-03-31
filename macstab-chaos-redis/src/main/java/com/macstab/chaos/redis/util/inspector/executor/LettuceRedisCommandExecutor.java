@@ -1,7 +1,6 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.redis.util.inspector.executor;
 
-import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 
@@ -18,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
  * overhead of {@link ShellRedisCommandExecutor} and reuses the existing network connection.
  *
  * <p>Supports the command subset used by inspector tools:
+ *
  * <ul>
  *   <li>{@code SLOWLOG RESET}
  *   <li>{@code SLOWLOG GET [count]}
@@ -32,13 +32,14 @@ import lombok.extern.slf4j.Slf4j;
  * nested list — inspect via {@link com.macstab.chaos.redis.util.inspector.SlowCommandDetector}
  * which uses typed Lettuce methods directly for SLOWLOG parsing.
  *
- * <p><strong>SLOWLOG support:</strong> {@code SLOWLOG RESET} is supported (dispatches to
- * {@code slowlogReset()}). {@code SLOWLOG GET} is intentionally NOT supported via
- * {@link #execute(String)} — Lettuce returns it as {@code List<Object>}, not a string.
- * {@link com.macstab.chaos.redis.util.inspector.SlowCommandDetector} handles SLOWLOG GET
- * internally through its {@code LettuceSlowlogBackend} using the typed {@code slowlogGet(int)} API.
+ * <p><strong>SLOWLOG support:</strong> {@code SLOWLOG RESET} is supported (dispatches to {@code
+ * slowlogReset()}). {@code SLOWLOG GET} is intentionally NOT supported via {@link #execute(String)}
+ * — Lettuce returns it as {@code List<Object>}, not a string. {@link
+ * com.macstab.chaos.redis.util.inspector.SlowCommandDetector} handles SLOWLOG GET internally
+ * through its {@code LettuceSlowlogBackend} using the typed {@code slowlogGet(int)} API.
  *
  * <p><strong>Example:</strong>
+ *
  * <pre>{@code
  * RedisCommandExecutor executor = new LettuceRedisCommandExecutor(redisCommands);
  * SlowCommandDetector detector = SlowCommandDetector.forCommands(redisCommands);
@@ -52,7 +53,7 @@ import lombok.extern.slf4j.Slf4j;
 public final class LettuceRedisCommandExecutor implements RedisCommandExecutor, AutoCloseable {
 
   private final RedisCommands<String, String> redisCommands;
-  private final RedisClient ownedClient;             // non-null only when we created the client
+  private final RedisClient ownedClient; // non-null only when we created the client
   private final StatefulRedisConnection<String, String> ownedConnection; // same
 
   /**
@@ -77,7 +78,7 @@ public final class LettuceRedisCommandExecutor implements RedisCommandExecutor, 
    *
    * @param host Redis host — must not be null
    * @param port Redis mapped port (1–65535)
-   * @throws NullPointerException     if host is null
+   * @throws NullPointerException if host is null
    * @throws IllegalArgumentException if port is out of range
    */
   public LettuceRedisCommandExecutor(final String host, final int port) {
@@ -94,10 +95,10 @@ public final class LettuceRedisCommandExecutor implements RedisCommandExecutor, 
   /**
    * Returns the underlying Lettuce sync commands.
    *
-   * <p><strong>Internal use only.</strong> Used by
-   * {@link com.macstab.chaos.redis.util.inspector.SlowCommandDetector} to access typed SLOWLOG
-   * operations ({@code slowlogGet(int)}) that cannot be expressed as a string command.
-   * Not intended for general use.
+   * <p><strong>Internal use only.</strong> Used by {@link
+   * com.macstab.chaos.redis.util.inspector.SlowCommandDetector} to access typed SLOWLOG operations
+   * ({@code slowlogGet(int)}) that cannot be expressed as a string command. Not intended for
+   * general use.
    *
    * @return sync Redis commands (never null)
    */
@@ -170,8 +171,9 @@ public final class LettuceRedisCommandExecutor implements RedisCommandExecutor, 
         return Objects.toString(redisCommands.del(key), "");
       }
       throw new RedisCommandExecutionException(
-          "Unsupported command for LettuceRedisCommandExecutor: " + redisCommand
-          + ". Use SlowCommandDetector.forCommands() for SLOWLOG operations.");
+          "Unsupported command for LettuceRedisCommandExecutor: "
+              + redisCommand
+              + ". Use SlowCommandDetector.forCommands() for SLOWLOG operations.");
     } catch (final RedisCommandExecutionException e) {
       throw e;
     } catch (final Exception e) {

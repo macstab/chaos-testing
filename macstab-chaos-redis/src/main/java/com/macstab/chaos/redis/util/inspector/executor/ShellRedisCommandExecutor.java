@@ -14,13 +14,14 @@ import lombok.extern.slf4j.Slf4j;
  * {@link RedisCommandExecutor} that executes commands via {@code redis-cli} inside a Testcontainers
  * container using {@link Shell#exec(GenericContainer, String)}.
  *
- * <p>No Lettuce dependency required. Works with any Redis container topology including Docker-in-Docker,
- * network-isolated containers, and Podman-managed containers.
+ * <p>No Lettuce dependency required. Works with any Redis container topology including
+ * Docker-in-Docker, network-isolated containers, and Podman-managed containers.
  *
  * <p>The Redis port is configurable. Use the default constant {@link #DEFAULT_REDIS_PORT} (6379)
  * for standard Redis instances, or pass a custom port for non-standard deployments.
  *
  * <p><strong>Example:</strong>
+ *
  * <pre>{@code
  * RedisCommandExecutor executor = new ShellRedisCommandExecutor(container);
  * String output = executor.execute("INFO memory");
@@ -38,9 +39,9 @@ public final class ShellRedisCommandExecutor implements RedisCommandExecutor {
   /**
    * Default Redis port used when no explicit port is provided.
    *
-   * <p>Intentionally redeclared here (rather than referencing
-   * {@link com.macstab.chaos.redis.command.RedisCommandBuilder#DEFAULT_REDIS_PORT}) to keep
-   * the {@code executor} package free of dependencies on the {@code command} package.
+   * <p>Intentionally redeclared here (rather than referencing {@link
+   * com.macstab.chaos.redis.command.RedisCommandBuilder#DEFAULT_REDIS_PORT}) to keep the {@code
+   * executor} package free of dependencies on the {@code command} package.
    */
   public static final int DEFAULT_REDIS_PORT = 6379;
 
@@ -61,8 +62,8 @@ public final class ShellRedisCommandExecutor implements RedisCommandExecutor {
    * Creates an executor targeting a custom port.
    *
    * @param container Redis container — must not be null and must be running
-   * @param port      Redis port inside the container (e.g., 6379, 6380, 26379)
-   * @throws NullPointerException     if container is null
+   * @param port Redis port inside the container (e.g., 6379, 6380, 26379)
+   * @throws NullPointerException if container is null
    * @throws IllegalArgumentException if port is not in range 1–65535
    */
   public ShellRedisCommandExecutor(final GenericContainer<?> container, final int port) {

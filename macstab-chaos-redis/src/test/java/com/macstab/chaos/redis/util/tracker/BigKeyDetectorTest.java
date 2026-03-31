@@ -16,8 +16,7 @@ import com.macstab.chaos.redis.util.tracker.BigKeyDetector.KeySizeEntry;
 @DisplayName("BigKeyDetector")
 class BigKeyDetectorTest {
 
-  private static final String SET_SMALL =
-      "1234.567 [0 127.0.0.1:12345] \"SET\" \"key1\" \"small\"";
+  private static final String SET_SMALL = "1234.567 [0 127.0.0.1:12345] \"SET\" \"key1\" \"small\"";
   private static final String SET_MEDIUM =
       "1234.568 [0 127.0.0.1:12345] \"SET\" \"key2\" \"medium-value\"";
   private static final String SET_LARGE =
@@ -275,7 +274,8 @@ class BigKeyDetectorTest {
     @Test
     @DisplayName("Should skip lines without values")
     void shouldSkipLinesWithoutValues() {
-      final BigKeyDetector detector = new BigKeyDetector(List.of(GET_COMMAND, PING_COMMAND, SET_SMALL));
+      final BigKeyDetector detector =
+          new BigKeyDetector(List.of(GET_COMMAND, PING_COMMAND, SET_SMALL));
 
       final List<KeySizeEntry> bigKeys = detector.getBigKeys(10);
 
@@ -287,11 +287,7 @@ class BigKeyDetectorTest {
     @DisplayName("Should ignore malformed lines")
     void shouldIgnoreMalformedLines() {
       final List<String> commands =
-          List.of(
-              "malformed line",
-              SET_SMALL,
-              "another malformed",
-              SET_MEDIUM);
+          List.of("malformed line", SET_SMALL, "another malformed", SET_MEDIUM);
 
       final BigKeyDetector detector = new BigKeyDetector(commands);
 

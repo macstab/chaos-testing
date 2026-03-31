@@ -1,7 +1,6 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.redis.util.tracker;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;

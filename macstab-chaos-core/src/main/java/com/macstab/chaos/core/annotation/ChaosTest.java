@@ -84,7 +84,7 @@ import com.macstab.chaos.core.extension.ChaosTestingExtension;
  * }</pre>
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 2.0
+ * @since 1.0
  * @see ChaosTestingExtension
  * @see Resources
  */
