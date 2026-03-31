@@ -132,7 +132,7 @@ public final class ToxiproxyOrchestrator {
       final ContainerContext ctx = ContainerContext.of(container);
       lifecycle.ensureRunning(ctx);
       final ProxyConfiguration result = proxyOps.createProxy(ctx, proxyConfig);
-      activeProxies.put(proxyConfig.getProxyName(), proxyConfig);
+      activeProxies.put(proxyConfig.proxyName(), proxyConfig);
       return result;
     } catch (final ChaosOperationFailedException e) {
       throw e;
@@ -167,7 +167,7 @@ public final class ToxiproxyOrchestrator {
       // Remove the specific iptables rule if we know the ports
       final ProxyConfiguration config = activeProxies.remove(proxyName);
       if (config != null) {
-        networkRedirect.removeRedirect(ctx, config.getServicePort(), config.getProxyPort());
+        networkRedirect.removeRedirect(ctx, config.servicePort(), config.proxyPort());
       }
 
       // Delete proxy from Toxiproxy API (removes all its toxics automatically)

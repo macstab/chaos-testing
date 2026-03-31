@@ -24,9 +24,9 @@ class ProxyConfigurationTest {
     void shouldCreateValidConfiguration() {
       ProxyConfiguration config = new ProxyConfiguration("redis", 6379, 16379, "localhost");
 
-      assertThat(config.getProxyName()).isEqualTo("redis");
-      assertThat(config.getServicePort()).isEqualTo(6379);
-      assertThat(config.getProxyPort()).isEqualTo(16379);
+      assertThat(config.proxyName()).isEqualTo("redis");
+      assertThat(config.servicePort()).isEqualTo(6379);
+      assertThat(config.proxyPort()).isEqualTo(16379);
     }
 
     @Test
@@ -41,7 +41,7 @@ class ProxyConfigurationTest {
     @DisplayName("should allow empty name (validated at Toxiproxy API level)")
     void shouldAllowEmptyName() {
       ProxyConfiguration config = new ProxyConfiguration("", 6379, 16379, "localhost");
-      assertThat(config.getProxyName()).isEmpty();
+      assertThat(config.proxyName()).isEmpty();
     }
 
     @Test
@@ -81,8 +81,8 @@ class ProxyConfigurationTest {
     void shouldAllowPort1() {
       ProxyConfiguration config = new ProxyConfiguration("test", 1, 2, "localhost");
 
-      assertThat(config.getServicePort()).isEqualTo(1);
-      assertThat(config.getProxyPort()).isEqualTo(2);
+      assertThat(config.servicePort()).isEqualTo(1);
+      assertThat(config.proxyPort()).isEqualTo(2);
     }
 
     @Test
@@ -90,8 +90,8 @@ class ProxyConfigurationTest {
     void shouldAllowPort65535() {
       ProxyConfiguration config = new ProxyConfiguration("test", 65535, 65534, "localhost");
 
-      assertThat(config.getServicePort()).isEqualTo(65535);
-      assertThat(config.getProxyPort()).isEqualTo(65534);
+      assertThat(config.servicePort()).isEqualTo(65535);
+      assertThat(config.proxyPort()).isEqualTo(65534);
     }
 
     @Test
@@ -100,8 +100,8 @@ class ProxyConfigurationTest {
       // Not recommended, but technically valid
       ProxyConfiguration config = new ProxyConfiguration("test", 6379, 6379, "localhost");
 
-      assertThat(config.getServicePort()).isEqualTo(6379);
-      assertThat(config.getProxyPort()).isEqualTo(6379);
+      assertThat(config.servicePort()).isEqualTo(6379);
+      assertThat(config.proxyPort()).isEqualTo(6379);
     }
   }
 

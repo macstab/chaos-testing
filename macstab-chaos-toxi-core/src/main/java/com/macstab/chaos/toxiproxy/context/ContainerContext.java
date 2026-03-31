@@ -2,6 +2,7 @@
 package com.macstab.chaos.toxiproxy.context;
 
 import java.util.Objects;
+import lombok.NonNull;
 
 import org.testcontainers.containers.GenericContainer;
 
@@ -48,7 +49,7 @@ public final class ContainerContext {
   private final Shell shell;
 
   private ContainerContext(
-      final GenericContainer<?> container, final Platform platform, final Shell shell) {
+      @NonNull final GenericContainer<?> container, @NonNull final Platform platform, @NonNull final Shell shell) {
     this.container = container;
     this.platform = platform;
     this.shell = shell;
@@ -64,7 +65,7 @@ public final class ContainerContext {
    * @return fully resolved context
    * @throws NullPointerException if container is null
    */
-  public static ContainerContext of(final GenericContainer<?> container) {
+  public static ContainerContext of(@NonNull final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
     final Platform platform = PlatformDetector.detect(container);
     final Shell shell = platform.getDefaultShell();
@@ -84,7 +85,7 @@ public final class ContainerContext {
    * @throws NullPointerException if any argument is null
    */
   public static ContainerContext of(
-      final GenericContainer<?> container, final Platform platform, final Shell shell) {
+      @NonNull final GenericContainer<?> container, @NonNull final Platform platform, @NonNull final Shell shell) {
     Objects.requireNonNull(container, "container must not be null");
     Objects.requireNonNull(platform, "platform must not be null");
     Objects.requireNonNull(shell, "shell must not be null");

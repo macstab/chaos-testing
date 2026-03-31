@@ -77,30 +77,30 @@ public final class ProxyOperationsManager implements ProxyOperations {
       if (status.isReady()) {
         log.debug(
             "Proxy '{}' already configured and listening on port {}",
-            proxyConfig.getProxyName(),
-            proxyConfig.getProxyPort());
+            proxyConfig.proxyName(),
+            proxyConfig.proxyPort());
         return proxyConfig;
       }
 
       if (status.existsInApi() && !status.listening()) {
         log.warn(
             "Proxy '{}' exists in API but port {} not listening — recreating",
-            proxyConfig.getProxyName(),
-            proxyConfig.getProxyPort());
-        apiClient.deleteProxy(ctx, proxyConfig.getProxyName());
+            proxyConfig.proxyName(),
+            proxyConfig.proxyPort());
+        apiClient.deleteProxy(ctx, proxyConfig.proxyName());
       }
 
       apiClient.createProxy(ctx, proxyConfig);
-      networkRedirect.setupRedirect(ctx, proxyConfig.getServicePort(), proxyConfig.getProxyPort());
-      validateProxyReady(ctx, proxyConfig.getProxyPort());
+      networkRedirect.setupRedirect(ctx, proxyConfig.servicePort(), proxyConfig.proxyPort());
+      validateProxyReady(ctx, proxyConfig.proxyPort());
 
       log.info(
           "Created proxy '{}': {}:{} → proxy:{} → localhost:{}",
-          proxyConfig.getProxyName(),
-          proxyConfig.getContainerHostname(),
-          proxyConfig.getServicePort(),
-          proxyConfig.getProxyPort(),
-          proxyConfig.getServicePort());
+          proxyConfig.proxyName(),
+          proxyConfig.containerHostname(),
+          proxyConfig.servicePort(),
+          proxyConfig.proxyPort(),
+          proxyConfig.servicePort());
 
       return proxyConfig;
 
@@ -178,8 +178,8 @@ public final class ProxyOperationsManager implements ProxyOperations {
   private ProxyStatus checkProxyStatus(
       final ContainerContext ctx, final ProxyConfiguration proxyConfig) throws Exception {
 
-    final boolean existsInApi = apiClient.proxyExists(ctx, proxyConfig.getProxyName());
-    final boolean listening = isPortListening(ctx, proxyConfig.getProxyPort());
+    final boolean existsInApi = apiClient.proxyExists(ctx, proxyConfig.proxyName());
+    final boolean listening = isPortListening(ctx, proxyConfig.proxyPort());
     return new ProxyStatus(existsInApi, listening);
   }
 

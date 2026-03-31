@@ -3,6 +3,7 @@ package com.macstab.chaos.toxiproxy.network;
 
 import java.io.IOException;
 import java.util.Objects;
+import lombok.NonNull;
 
 import org.testcontainers.containers.Container.ExecResult;
 
@@ -23,7 +24,7 @@ import lombok.extern.slf4j.Slf4j;
 public final class NetworkRedirectManager implements NetworkRedirect {
 
   @Override
-  public void setupRedirect(final ContainerContext ctx, final int servicePort, final int proxyPort)
+  public void setupRedirect(@NonNull final ContainerContext ctx, final int servicePort, final int proxyPort)
       throws IOException {
 
     Objects.requireNonNull(ctx, "ctx must not be null");
@@ -53,7 +54,7 @@ public final class NetworkRedirectManager implements NetworkRedirect {
   }
 
   @Override
-  public void removeRedirect(final ContainerContext ctx, final int servicePort, final int proxyPort)
+  public void removeRedirect(@NonNull final ContainerContext ctx, final int servicePort, final int proxyPort)
       throws IOException {
 
     Objects.requireNonNull(ctx, "ctx must not be null");
@@ -83,7 +84,7 @@ public final class NetworkRedirectManager implements NetworkRedirect {
   }
 
   @Override
-  public void clearAllRedirects(final ContainerContext ctx) throws IOException {
+  public void clearAllRedirects(@NonNull final ContainerContext ctx) throws IOException {
 
     Objects.requireNonNull(ctx, "ctx must not be null");
 

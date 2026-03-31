@@ -2,6 +2,7 @@
 package com.macstab.chaos.toxiproxy.config;
 
 import java.util.Objects;
+import lombok.NonNull;
 
 /**
  * Configuration for Toxiproxy operations.
@@ -229,7 +230,7 @@ public final class ToxiproxyConfig {
      * @param apiUrl API URL (e.g., "http://localhost:8474")
      * @return this builder
      */
-    public Builder apiUrl(final String apiUrl) {
+    public Builder apiUrl(@NonNull final String apiUrl) {
       this.apiUrl = apiUrl;
       return this;
     }

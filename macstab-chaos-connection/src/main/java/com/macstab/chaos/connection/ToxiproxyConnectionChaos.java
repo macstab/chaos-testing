@@ -205,7 +205,7 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
         apiClient.deleteProxy(ctx, entry.getKey());
         final ProxyConfiguration proxyConfig = entry.getValue();
         networkRedirect.removeRedirect(
-            ctx, proxyConfig.getServicePort(), proxyConfig.getProxyPort());
+            ctx, proxyConfig.servicePort(), proxyConfig.proxyPort());
         log.debug("Removed connection proxy: {}", entry.getKey());
       } catch (final Exception e) {
         log.debug("Failed to remove proxy {} during reset: {}", entry.getKey(), e.getMessage());

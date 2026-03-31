@@ -4,6 +4,7 @@ package com.macstab.chaos.toxiproxy.api;
 import java.io.IOException;
 import java.util.List;
 import java.util.Objects;
+import lombok.NonNull;
 import java.util.regex.Pattern;
 
 import org.testcontainers.containers.Container.ExecResult;
@@ -40,12 +41,12 @@ public final class ToxiproxyApiClientImpl implements ToxiproxyApiClient {
    * @param apiUrl Toxiproxy API base URL (e.g., "http://localhost:8474")
    * @throws NullPointerException if apiUrl is null
    */
-  public ToxiproxyApiClientImpl(final String apiUrl) {
+  public ToxiproxyApiClientImpl(@NonNull final String apiUrl) {
     this.apiUrl = Objects.requireNonNull(apiUrl, "apiUrl must not be null");
   }
 
   @Override
-  public boolean isApiReady(final ContainerContext ctx) {
+  public boolean isApiReady(@NonNull final ContainerContext ctx) {
     Objects.requireNonNull(ctx, "ctx must not be null");
 
     try {
@@ -59,7 +60,7 @@ public final class ToxiproxyApiClientImpl implements ToxiproxyApiClient {
   }
 
   @Override
-  public boolean proxyExists(final ContainerContext ctx, final String proxyName)
+  public boolean proxyExists(@NonNull final ContainerContext ctx, @NonNull final String proxyName)
       throws IOException {
 
     Objects.requireNonNull(ctx, "ctx must not be null");
@@ -76,14 +77,14 @@ public final class ToxiproxyApiClientImpl implements ToxiproxyApiClient {
   }
 
   @Override
-  public void createProxy(final ContainerContext ctx, final ProxyConfiguration config)
+  public void createProxy(@NonNull final ContainerContext ctx, final ProxyConfiguration config)
       throws IOException {
 
     Objects.requireNonNull(ctx, "ctx must not be null");
     Objects.requireNonNull(config, "config must not be null");
 
     executeApiCall(
-        "Failed to create proxy: " + config.getProxyName(),
+        "Failed to create proxy: " + config.proxyName(),
         () -> {
           final String command =
               ctx.http().buildPostJsonRequest(apiUrl + "/proxies", buildProxyJson(config));
@@ -92,15 +93,15 @@ public final class ToxiproxyApiClientImpl implements ToxiproxyApiClient {
           if (result.getExitCode() != 0) {
             throw new IOException(
                 String.format(
-                    "Failed to create proxy '%s': %s", config.getProxyName(), result.getStderr()));
+                    "Failed to create proxy '%s': %s", config.proxyName(), result.getStderr()));
           }
 
-          log.debug("Created proxy '{}' via API", config.getProxyName());
+          log.debug("Created proxy '{}' via API", config.proxyName());
         });
   }
 
   @Override
-  public void deleteProxy(final ContainerContext ctx, final String proxyName) throws IOException {
+  public void deleteProxy(@NonNull final ContainerContext ctx, @NonNull final String proxyName) throws IOException {
     Objects.requireNonNull(ctx, "ctx must not be null");
     Objects.requireNonNull(proxyName, "proxyName must not be null");
 
@@ -122,7 +123,7 @@ public final class ToxiproxyApiClientImpl implements ToxiproxyApiClient {
 
   @Override
   public boolean toxicExists(
-      final ContainerContext ctx, final String proxyName, final String toxicName)
+      @NonNull final ContainerContext ctx, @NonNull final String proxyName, @NonNull final String toxicName)
       throws IOException {
 
     Objects.requireNonNull(ctx, "ctx must not be null");
@@ -138,7 +139,7 @@ public final class ToxiproxyApiClientImpl implements ToxiproxyApiClient {
   }
 
   @Override
-  public List<String> listToxics(final ContainerContext ctx, final String proxyName)
+  public List<String> listToxics(@NonNull final ContainerContext ctx, @NonNull final String proxyName)
       throws IOException {
 
     Objects.requireNonNull(ctx, "ctx must not be null");
@@ -163,11 +164,11 @@ public final class ToxiproxyApiClientImpl implements ToxiproxyApiClient {
 
   @Override
   public void addToxic(
-      final ContainerContext ctx,
-      final String proxyName,
-      final String toxicName,
-      final String toxicType,
-      final String attributes,
+      @NonNull final ContainerContext ctx,
+      @NonNull final String proxyName,
+      @NonNull final String toxicName,
+      @NonNull final String toxicType,
+      @NonNull final String attributes,
       final double toxicity)
       throws IOException {
 
@@ -199,7 +200,7 @@ public final class ToxiproxyApiClientImpl implements ToxiproxyApiClient {
 
   @Override
   public void deleteToxic(
-      final ContainerContext ctx, final String proxyName, final String toxicName)
+      @NonNull final ContainerContext ctx, @NonNull final String proxyName, @NonNull final String toxicName)
       throws IOException {
 
     Objects.requireNonNull(ctx, "ctx must not be null");
@@ -282,7 +283,7 @@ public final class ToxiproxyApiClientImpl implements ToxiproxyApiClient {
     return String.format(
         "{\"name\":\"%s\",\"listen\":\"0.0.0.0:%d\","
             + "\"upstream\":\"localhost:%d\",\"enabled\":true}",
-        config.getProxyName(), config.getProxyPort(), config.getServicePort());
+        config.proxyName(), config.proxyPort(), config.servicePort());
   }
 
   /**
@@ -295,9 +296,9 @@ public final class ToxiproxyApiClientImpl implements ToxiproxyApiClient {
    * @return JSON string
    */
   private String buildToxicJson(
-      final String toxicName,
-      final String toxicType,
-      final String attributes,
+      @NonNull final String toxicName,
+      @NonNull final String toxicType,
+      @NonNull final String attributes,
       final double toxicity) {
 
     return String.format(

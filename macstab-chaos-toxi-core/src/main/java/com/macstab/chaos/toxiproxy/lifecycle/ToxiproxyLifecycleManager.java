@@ -3,6 +3,7 @@ package com.macstab.chaos.toxiproxy.lifecycle;
 
 import java.io.IOException;
 import java.util.Objects;
+import lombok.NonNull;
 
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
 import com.macstab.chaos.toxiproxy.api.ToxiproxyApiClient;
@@ -64,7 +65,7 @@ public final class ToxiproxyLifecycleManager implements ToxiproxyLifecycle {
   }
 
   @Override
-  public void ensureRunning(final ContainerContext ctx) throws IOException {
+  public void ensureRunning(@NonNull final ContainerContext ctx) throws IOException {
     Objects.requireNonNull(ctx, "ctx must not be null");
 
     if (!ctx.container().isRunning()) {
@@ -84,7 +85,7 @@ public final class ToxiproxyLifecycleManager implements ToxiproxyLifecycle {
   }
 
   @Override
-  public void stop(final ContainerContext ctx) throws IOException {
+  public void stop(@NonNull final ContainerContext ctx) throws IOException {
     Objects.requireNonNull(ctx, "ctx must not be null");
 
     if (!ctx.container().isRunning()) {
@@ -102,7 +103,7 @@ public final class ToxiproxyLifecycleManager implements ToxiproxyLifecycle {
   }
 
   @Override
-  public boolean isHealthy(final ContainerContext ctx) {
+  public boolean isHealthy(@NonNull final ContainerContext ctx) {
     Objects.requireNonNull(ctx, "ctx must not be null");
 
     if (!ctx.container().isRunning()) {
@@ -125,7 +126,7 @@ public final class ToxiproxyLifecycleManager implements ToxiproxyLifecycle {
    * @param ctx resolved container context
    * @throws ChaosOperationFailedException if the start command fails
    */
-  private void startToxiproxyServer(final ContainerContext ctx) {
+  private void startToxiproxyServer(@NonNull final ContainerContext ctx) {
     try {
       final String startCmd =
           String.format(
@@ -146,7 +147,7 @@ public final class ToxiproxyLifecycleManager implements ToxiproxyLifecycle {
    * @throws ChaosOperationFailedException if the API does not become ready within configured
    *     timeout
    */
-  private void waitForApiReady(final ContainerContext ctx) {
+  private void waitForApiReady(@NonNull final ContainerContext ctx) throws IOException {
     final long deadline = System.currentTimeMillis() + config.startupTimeoutMs();
 
     while (System.currentTimeMillis() < deadline) {
@@ -156,7 +157,7 @@ public final class ToxiproxyLifecycleManager implements ToxiproxyLifecycle {
       sleepOrThrow(config.pollIntervalMs());
     }
 
-    throw new ChaosOperationFailedException(
+    throw new IOException(
         "Toxiproxy did not start within " + config.startupTimeoutMs() + "ms");
   }
 
@@ -166,12 +167,12 @@ public final class ToxiproxyLifecycleManager implements ToxiproxyLifecycle {
    * @param millis milliseconds to sleep
    * @throws ChaosOperationFailedException if the thread is interrupted
    */
-  private void sleepOrThrow(final int millis) {
+  private void sleepOrThrow(final int millis) throws IOException {
     try {
       Thread.sleep(millis);
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
-      throw new ChaosOperationFailedException("Interrupted while waiting for Toxiproxy startup", e);
+      throw new IOException("Interrupted while waiting for Toxiproxy startup", e);
     }
   }
 }

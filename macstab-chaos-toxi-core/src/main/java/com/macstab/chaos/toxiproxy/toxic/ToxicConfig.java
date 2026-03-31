@@ -68,7 +68,7 @@ package com.macstab.chaos.toxiproxy.toxic;
  * @see com.macstab.chaos.proxy.ProxyChaosProvider
  */
 public sealed interface ToxicConfig
-    permits LatencyToxic, TimeoutToxic, BandwidthToxic, SlowCloseToxic, LimitDataToxic, DownToxic {
+    permits AbstractToxic {
 
   /**
    * Unique name for this toxic within its proxy.

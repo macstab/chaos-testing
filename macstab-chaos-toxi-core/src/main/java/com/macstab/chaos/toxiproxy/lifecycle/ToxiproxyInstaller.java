@@ -3,6 +3,7 @@ package com.macstab.chaos.toxiproxy.lifecycle;
 
 import java.util.List;
 import java.util.Objects;
+import lombok.NonNull;
 
 import org.testcontainers.containers.Container.ExecResult;
 
