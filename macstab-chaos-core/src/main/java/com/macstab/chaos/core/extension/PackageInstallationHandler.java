@@ -3,7 +3,6 @@ package com.macstab.chaos.core.extension;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -11,10 +10,9 @@ import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.extension.internal.ContainerResolver;
 import com.macstab.chaos.core.extension.internal.ValidationUtils;
-import com.macstab.chaos.core.platform.Platform;
-import com.macstab.chaos.core.platform.PlatformDetector;
 import com.macstab.chaos.core.platform.Tool;
 import com.macstab.chaos.core.util.PackageInstaller;
+import com.macstab.chaos.core.util.ToolPackage;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -52,50 +50,38 @@ public final class PackageInstallationHandler {
       return;
     }
 
-    // Merge packages and tools
     final List<String> packages = AnnotationMerger.mergePackages(annotations);
     final List<Tool> tools = AnnotationMerger.mergeTools(annotations);
-    final boolean verify = AnnotationMerger.requiresVerification(annotations);
 
     if (packages.isEmpty() && tools.isEmpty()) {
       return;
     }
 
-    // Validate
     for (final String pkg : packages) {
       ValidationUtils.validatePackageName(pkg);
     }
 
-    // Detect platform
-    final Platform platform = PlatformDetector.detect(container);
-
-    // Translate tools to packages
-    final List<String> translatedPackages = new ArrayList<>(packages);
-    for (final Tool tool : tools) {
-      final String packageName = platform.getPackageName(tool);
-      translatedPackages.add(packageName);
-    }
-
-    // Install
-    log.info(
-        "Installing {} package(s) on container '{}': {}",
-        translatedPackages.size(),
-        field.getName(),
-        translatedPackages);
-
     try {
-      PackageInstaller.install(container, translatedPackages, verify);
+      // @InstallTools — platform-resolved, label-guarded, single install per container lifetime
+      if (!tools.isEmpty()) {
+        PackageInstaller.ensureInstalled(container, tools.toArray(new Tool[0]));
+      }
 
-      log.info(
-          "Successfully installed {} package(s) on container '{}'",
-          translatedPackages.size(),
-          field.getName());
+      // @InstallPackages — raw package names, escape-hatch via ToolPackage, label-guarded
+      if (!packages.isEmpty()) {
+        final ToolPackage[] toolPackages = packages.stream()
+            .map(pkg -> ToolPackage.ofSame(pkg))
+            .toArray(ToolPackage[]::new);
+        PackageInstaller.ensureInstalled(container, toolPackages);
+      }
+
+      log.info("Ensured installation on container '{}': tools={}, packages={}",
+          field.getName(), tools, packages);
 
     } catch (final Exception e) {
       throw new IllegalStateException(
-          String.format(
-              "Failed to install packages on container '%s': %s", field.getName(), e.getMessage()),
-          e);
+          String.format("Failed to install on container '%s': %s",
+              field.getName(), e.getMessage()), e);
     }
   }
 }

@@ -384,6 +384,46 @@ class AbstractLinuxPlatformComprehensiveTest {
     }
 
     @Test
+    @DisplayName("Should return cpulimit for CPULIMIT")
+    void shouldReturnCpulimit() {
+      Platform platform = new TestLinuxPlatform();
+      assertThat(platform.getPackageName(Tool.CPULIMIT)).isEqualTo("cpulimit");
+      assertThat(platform.getBinaryName(Tool.CPULIMIT)).isEqualTo("cpulimit");
+    }
+
+    @Test
+    @DisplayName("Should return util-linux / taskset for TASKSET")
+    void shouldReturnTaskset() {
+      Platform platform = new TestLinuxPlatform();
+      assertThat(platform.getPackageName(Tool.TASKSET)).isEqualTo("util-linux");
+      assertThat(platform.getBinaryName(Tool.TASKSET)).isEqualTo("taskset");
+    }
+
+    @Test
+    @DisplayName("Should return util-linux / renice for RENICE")
+    void shouldReturnRenice() {
+      Platform platform = new TestLinuxPlatform();
+      assertThat(platform.getPackageName(Tool.RENICE)).isEqualTo("util-linux");
+      assertThat(platform.getBinaryName(Tool.RENICE)).isEqualTo("renice");
+    }
+
+    @Test
+    @DisplayName("Should return coreutils / nproc for NPROC")
+    void shouldReturnNproc() {
+      Platform platform = new TestLinuxPlatform();
+      assertThat(platform.getPackageName(Tool.NPROC)).isEqualTo("coreutils");
+      assertThat(platform.getBinaryName(Tool.NPROC)).isEqualTo("nproc");
+    }
+
+    @Test
+    @DisplayName("TASKSET and RENICE resolve to same package util-linux")
+    void tasksetAndReniceSharePackage() {
+      Platform platform = new TestLinuxPlatform();
+      assertThat(platform.getPackageName(Tool.TASKSET))
+          .isEqualTo(platform.getPackageName(Tool.RENICE));
+    }
+
+    @Test
     @DisplayName(
         "getBinaryName() falls back to packageName when binaryName is null (CA_CERTIFICATES)")
     void getBinaryName_shouldFallbackToPackageName_whenBinaryNameNull() {

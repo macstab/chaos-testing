@@ -50,6 +50,10 @@ public abstract class AbstractLinuxPlatform implements Platform {
     tools.put(Tool.IPROUTE, new ToolMapping("iproute2", "ip"));
     tools.put(Tool.PYTHON, new ToolMapping("python3", "python3"));
     tools.put(Tool.STRESS_NG, new ToolMapping("stress-ng", "stress-ng"));
+    tools.put(Tool.CPULIMIT, new ToolMapping("cpulimit", "cpulimit"));
+    tools.put(Tool.TASKSET, new ToolMapping("util-linux", "taskset"));
+    tools.put(Tool.RENICE, new ToolMapping("util-linux", "renice"));
+    tools.put(Tool.NPROC, new ToolMapping("coreutils", "nproc"));
     return tools;
   }
 
