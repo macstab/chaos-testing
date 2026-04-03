@@ -348,6 +348,69 @@ class PackageInstallerIntegrationTest {
     }
   }
 
+  // ==================== ensureInstalled Integration Tests ====================
+
+  @Nested
+  @DisplayName("ensureInstalled()")
+  class EnsureInstalledIntegrationTests {
+
+    @Container
+    private static final GenericContainer<?> alpine =
+        new GenericContainer<>(DockerImageName.parse("alpine:3.19"))
+            .withCommand("sleep", "infinity");
+
+    @Test
+    @DisplayName("installs missing tools and sets labels on first call")
+    void installsAndLabelsOnFirstCall() {
+      // GIVEN — clean container, no labels set
+      assertThat(alpine.getLabels())
+          .doesNotContainKey(PackageInstaller.LABEL_PREFIX + "stress-ng");
+
+      // WHEN
+      PackageInstaller.ensureInstalled(alpine,
+          ToolPackage.ofSame("stress-ng"),
+          ToolPackage.ofSame("cpulimit"));
+
+      // THEN — binaries present and labels set
+      assertThat(PackageInstaller.isInstalled(alpine, "stress-ng", "cpulimit")).isTrue();
+      assertThat(alpine.getLabels())
+          .containsKey(PackageInstaller.LABEL_PREFIX + "stress-ng")
+          .containsKey(PackageInstaller.LABEL_PREFIX + "cpulimit");
+    }
+
+    @Test
+    @DisplayName("skips install on second call — labels already present")
+    void skipsOnSecondCall() {
+      // GIVEN — first call installs and labels
+      PackageInstaller.ensureInstalled(alpine, ToolPackage.ofSame("stress-ng"));
+      assertThat(alpine.getLabels())
+          .containsKey(PackageInstaller.LABEL_PREFIX + "stress-ng");
+
+      // WHEN — second call (should be a no-op)
+      final long start = System.currentTimeMillis();
+      PackageInstaller.ensureInstalled(alpine, ToolPackage.ofSame("stress-ng"));
+      final long elapsed = System.currentTimeMillis() - start;
+
+      // THEN — returns in well under 1s (no Docker exec)
+      assertThat(elapsed).isLessThan(500);
+    }
+
+    @Test
+    @DisplayName("deduplicates packages — single install for taskset and renice sharing util-linux")
+    void deduplicatesPackages() {
+      // WHEN — two tools, one package
+      PackageInstaller.ensureInstalled(alpine,
+          ToolPackage.of("taskset", "util-linux"),
+          ToolPackage.of("renice", "util-linux"));
+
+      // THEN — both binaries available, both labelled
+      assertThat(PackageInstaller.isInstalled(alpine, "taskset", "renice")).isTrue();
+      assertThat(alpine.getLabels())
+          .containsKey(PackageInstaller.LABEL_PREFIX + "taskset")
+          .containsKey(PackageInstaller.LABEL_PREFIX + "renice");
+    }
+  }
+
   // ==================== Multi-Distribution Tests ====================
 
   @Nested

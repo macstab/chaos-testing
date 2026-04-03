@@ -2,7 +2,9 @@
 package com.macstab.chaos.cpu;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Objects;
+import java.util.function.Supplier;
 
 import org.testcontainers.containers.GenericContainer;
 
@@ -11,145 +13,295 @@ import com.macstab.chaos.core.exception.ChaosConfigurationException;
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
 import com.macstab.chaos.core.util.PackageInstaller;
 import com.macstab.chaos.core.util.Shell;
+import com.macstab.chaos.cpu.command.StressNgCommandBuilder;
+
+import lombok.extern.slf4j.Slf4j;
 
 /**
- * CPU chaos using inside-container tools.
+ * CPU chaos using inside-container userspace tools ({@code stress-ng}, {@code cpulimit},
+ * {@code taskset}, {@code renice}).
+ *
+ * <p>All operations work in any unprivileged Linux container without additional capabilities,
+ * cgroup write access, or privileged mode. Command construction is fully delegated to
+ * {@link StressNgCommandBuilder}. Observability queries are delegated to {@link CpuObservability}.
+ *
+ * <p>Registered as the {@code CpuChaos} SPI provider via
+ * {@code META-INF/services/com.macstab.chaos.core.api.CpuChaos}.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
+@Slf4j
 public final class CgroupsCpuChaos implements CpuChaos {
+
+  /** Delay after starting stress-ng before querying its PID via /proc/comm. */
+  private static final long STRESS_NG_STARTUP_MS = 200;
+
+  /** Timeout for stress-ng graceful SIGTERM shutdown (can take up to 3s on real Linux). */
+  private static final long STRESS_NG_SHUTDOWN_TIMEOUT_MS = 5_000;
+
+  /** Timeout for cpulimit process to exit after SIGKILL. */
+  private static final long CPULIMIT_SHUTDOWN_TIMEOUT_MS = 2_000;
+
+  /** Poll interval for waitUntilGone loop. */
+  private static final long WAIT_POLL_INTERVAL_MS = 100;
+
+  private final StressNgCommandBuilder cmd = StressNgCommandBuilder.INSTANCE;
+  private final CpuObservability observe = new CpuObservability(cmd);
+
+  // ==================== Throttling ====================
 
   @Override
   public void throttle(final GenericContainer<?> container, final int percentage) {
     Objects.requireNonNull(container, "container must not be null");
-    validatePercentage(percentage);
     validateContainerRunning(container);
-
     installTools(container);
     killCpuLimit(container);
-
-    final int pid = 1;
-
-    try {
-      final var result =
-          container.execInContainer(
-              Shell.SH,
-              Shell.FLAG_C,
-              String.format("cpulimit -l %d -p %d >/dev/null 2>&1 &", percentage, pid));
-
-      if (result.getExitCode() != 0) {
-        throw new ChaosOperationFailedException("Failed to start cpulimit: " + result.getStderr());
-      }
-
-      log.info("Throttled CPU to {}% (PID {})", percentage, pid);
-    } catch (final Exception e) {
-      throw new ChaosOperationFailedException("Failed to throttle CPU", e);
-    }
+    // percentage range validated by builder (throws ChaosConfigurationException)
+    exec(container, cmd.buildThrottleCommand(1, percentage), "throttle CPU");
+    log.info("Throttled CPU to {}% (PID 1)", percentage);
   }
 
   @Override
-  public void stress(final GenericContainer<?> container, final int workers) {
+  public void throttle(
+      final GenericContainer<?> container, final int percentage, final Duration duration) {
     Objects.requireNonNull(container, "container must not be null");
-
-    if (workers < 1) {
-      throw new ChaosConfigurationException(
-          String.format("workers must be >= 1, got: %d", workers));
+    Objects.requireNonNull(duration, "duration must not be null");
+    if (duration.toSeconds() <= 0) {
+      throw new ChaosConfigurationException("duration must be > 0, got: " + duration);
     }
-
     validateContainerRunning(container);
     installTools(container);
-    killStressNg(container);
+    // percentage range validated by builder (throws ChaosConfigurationException)
+    exec(container, cmd.buildThrottleWithDurationCommand(1, percentage, duration.toSeconds()),
+        "throttle CPU with duration");
+    log.info("Throttled CPU to {}% for {}s (auto-reset)", percentage, duration.toSeconds());
+  }
 
-    try {
-      final var result =
-          container.execInContainer(
-              Shell.SH,
-              Shell.FLAG_C,
-              String.format("stress-ng --cpu %d --timeout 0 >/dev/null 2>&1 &", workers));
+  // ==================== Stress Injection ====================
 
-      if (result.getExitCode() != 0) {
-        throw new ChaosOperationFailedException("Failed to start stress-ng: " + result.getStderr());
-      }
-
-      log.info("Started CPU stress: {} workers", workers);
-    } catch (final Exception e) {
-      throw new ChaosOperationFailedException("Failed to start CPU stress", e);
-    }
+  @Override
+  public void stress(final GenericContainer<?> container, final int workers) {
+    runStressor(container, workers, () -> cmd.buildStressCpuCommand(workers), "CPU");
   }
 
   @Override
   public void stress(
       final GenericContainer<?> container, final int workers, final Duration duration) {
+    runStressorWithTimeout(container, workers, duration,
+        () -> cmd.buildStressCpuWithTimeoutCommand(workers, duration.toSeconds()), "CPU");
+  }
+
+  @Override
+  public void stressWithThrottle(
+      final GenericContainer<?> container, final int workers, final int percentage) {
     Objects.requireNonNull(container, "container must not be null");
-    Objects.requireNonNull(duration, "duration must not be null");
-
-    if (workers < 1) {
-      throw new ChaosConfigurationException(
-          String.format("workers must be >= 1, got: %d", workers));
-    }
-
+    // Build commands eagerly — builder validates workers/percentage, throws ChaosConfigurationException
+    final String startStressCmd = cmd.buildStressCpuCommand(workers);
+    final String startThrottleTemplate = cmd.buildThrottleCommand(1, percentage); // validates percentage; pid replaced later
     validateContainerRunning(container);
     installTools(container);
     killStressNg(container);
-
-    final long seconds = duration.toSeconds();
+    killCpuLimit(container);
 
     try {
-      final var result =
-          container.execInContainer(
-              Shell.SH,
-              Shell.FLAG_C,
-              String.format(
-                  "stress-ng --cpu %d --timeout %ds >/dev/null 2>&1 &", workers, seconds));
+      execShell(container, startStressCmd);
+      Thread.sleep(STRESS_NG_STARTUP_MS);
 
-      if (result.getExitCode() != 0) {
-        throw new ChaosOperationFailedException("Failed to start stress-ng: " + result.getStderr());
+      final var pidResult = container.execInContainer(
+          Shell.SH, Shell.FLAG_C, cmd.buildFindLowestPidByCommCommand("stress-ng"));
+      if (pidResult.getExitCode() != 0 || pidResult.getStdout().isBlank()) {
+        throw new ChaosOperationFailedException("stress-ng did not start");
       }
-
-      log.info("Started CPU stress: {} workers for {}s", workers, seconds);
+      final int stressPid = Integer.parseInt(pidResult.getStdout().trim());
+      execShell(container, cmd.buildThrottleCommand(stressPid, percentage));
+      log.info("Started stress+throttle: {} workers at {}%", workers, percentage);
+    } catch (final ChaosOperationFailedException e) {
+      throw e;
     } catch (final Exception e) {
-      throw new ChaosOperationFailedException("Failed to start CPU stress with timeout", e);
+      throw new ChaosOperationFailedException("Failed to start stress with throttle", e);
     }
   }
+
+  @Override
+  public void stressCache(final GenericContainer<?> container, final int workers) {
+    runStressor(container, workers, () -> cmd.buildStressCacheCommand(workers), "cache");
+  }
+
+  @Override
+  public void stressCache(
+      final GenericContainer<?> container, final int workers, final Duration duration) {
+    runStressorWithTimeout(container, workers, duration,
+        () -> cmd.buildStressCacheWithTimeoutCommand(workers, duration.toSeconds()), "cache");
+  }
+
+  @Override
+  public void stressCacheLine(final GenericContainer<?> container, final int workers) {
+    runStressor(container, workers, () -> cmd.buildStressCacheLineCommand(workers), "cache-line");
+  }
+
+  @Override
+  public void stressContextSwitch(final GenericContainer<?> container, final int workers) {
+    runStressor(container, workers, () -> cmd.buildStressContextSwitchCommand(workers), "context-switch");
+  }
+
+  @Override
+  public void stressThreadSwitch(final GenericContainer<?> container, final int workers) {
+    runStressor(container, workers, () -> cmd.buildStressThreadSwitchCommand(workers), "thread-switch");
+  }
+
+  @Override
+  public void stressBranchPredictor(final GenericContainer<?> container, final int workers) {
+    runStressor(container, workers, () -> cmd.buildStressBranchPredictorCommand(workers), "branch-predictor");
+  }
+
+  @Override
+  public void stressTimerInterrupts(final GenericContainer<?> container, final int workers) {
+    runStressor(container, workers, () -> cmd.buildStressTimerInterruptsCommand(workers), "timer-interrupt");
+  }
+
+  @Override
+  public void stressMatrix(final GenericContainer<?> container, final int workers) {
+    runStressor(container, workers, () -> cmd.buildStressMatrixCommand(workers), "matrix");
+  }
+
+  @Override
+  public void stressMatrix(
+      final GenericContainer<?> container, final int workers, final Duration duration) {
+    runStressorWithTimeout(container, workers, duration,
+        () -> cmd.buildStressMatrixWithTimeoutCommand(workers, duration.toSeconds()), "matrix");
+  }
+
+  // ==================== CPU Affinity ====================
+
+  @Override
+  public void pinToCoreMask(final GenericContainer<?> container, final long affinityMask) {
+    Objects.requireNonNull(container, "container must not be null");
+    if (affinityMask <= 0) {
+      throw new ChaosConfigurationException(
+          "affinityMask must be > 0, got: 0x" + Long.toHexString(affinityMask));
+    }
+    validateContainerRunning(container);
+    exec(container, cmd.buildPinToMaskCommand(1, affinityMask),
+        "pin CPU affinity to mask 0x" + Long.toHexString(affinityMask));
+    log.info("Pinned PID 1 to CPU mask 0x{}", Long.toHexString(affinityMask));
+  }
+
+  // ==================== Process Priority ====================
+
+  @Override
+  public void degradePriority(final GenericContainer<?> container, final int niceValue) {
+    Objects.requireNonNull(container, "container must not be null");
+    if (niceValue < 0 || niceValue > 19) {
+      throw new ChaosConfigurationException(
+          "niceValue must be in [0, 19] for unprivileged containers, got: " + niceValue);
+    }
+    validateContainerRunning(container);
+    exec(container, cmd.buildSetNiceValueCommand(1, niceValue), "degrade CPU priority");
+    log.info("Degraded PID 1 priority to nice={}", niceValue);
+  }
+
+  @Override
+  public void resetPriority(final GenericContainer<?> container) {
+    Objects.requireNonNull(container, "container must not be null");
+    if (!container.isRunning()) {
+      return;
+    }
+    trySilent(container, cmd.buildSetNiceValueCommand(1, 0));
+    log.info("Reset PID 1 priority to nice=0");
+  }
+
+  // ==================== Observability (delegated) ====================
 
   @Override
   public int getCurrentUsage(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
     validateContainerRunning(container);
-
     try {
-      final var result = container.execInContainer("cat", "/proc/stat");
-
-      if (result.getExitCode() != 0) {
-        throw new ChaosOperationFailedException("Failed to read /proc/stat: " + result.getStderr());
-      }
-
-      log.debug("CPU stat: {}", result.getStdout());
-      return 0; // TODO: Parse CPU usage properly
+      return observe.getCurrentUsage(container);
+    } catch (final ChaosOperationFailedException e) {
+      throw e;
     } catch (final Exception e) {
       throw new ChaosOperationFailedException("Failed to read CPU usage", e);
     }
   }
 
   @Override
+  public int getAvailableCores(final GenericContainer<?> container) {
+    Objects.requireNonNull(container, "container must not be null");
+    validateContainerRunning(container);
+    try {
+      return observe.getAvailableCores(container);
+    } catch (final ChaosOperationFailedException e) {
+      throw e;
+    } catch (final Exception e) {
+      throw new ChaosOperationFailedException("Failed to get available cores", e);
+    }
+  }
+
+  @Override
+  public boolean isThrottled(final GenericContainer<?> container) {
+    Objects.requireNonNull(container, "container must not be null");
+    return container.isRunning() && observe.isThrottled(container);
+  }
+
+  @Override
+  public boolean isStressed(final GenericContainer<?> container) {
+    Objects.requireNonNull(container, "container must not be null");
+    return container.isRunning() && observe.isStressed(container);
+  }
+
+  @Override
+  public boolean isAffinityPinned(final GenericContainer<?> container) {
+    Objects.requireNonNull(container, "container must not be null");
+    return container.isRunning() && observe.isAffinityPinned(container);
+  }
+
+  @Override
+  public long getPinnedCoreMask(final GenericContainer<?> container) {
+    Objects.requireNonNull(container, "container must not be null");
+    validateContainerRunning(container);
+    return observe.readAffinityMask(container);
+  }
+
+  @Override
+  public int getNiceValue(final GenericContainer<?> container) {
+    Objects.requireNonNull(container, "container must not be null");
+    validateContainerRunning(container);
+    try {
+      return observe.getNiceValue(container);
+    } catch (final ChaosOperationFailedException e) {
+      throw e;
+    } catch (final Exception e) {
+      throw new ChaosOperationFailedException("Failed to read nice value", e);
+    }
+  }
+
+  // ==================== Lifecycle ====================
+
+  @Override
   public void installTools(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
     validateContainerRunning(container);
-
-    log.debug("Installing CPU chaos tools (stress-ng, cpulimit)");
+    log.debug("Installing CPU chaos tools (stress-ng, cpulimit, util-linux, procps)");
     PackageInstaller.install(container, "stress-ng", "cpulimit");
+    PackageInstaller.install(container, List.of("util-linux", "procps"), false);
   }
 
   @Override
   public void reset(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
-
     if (!container.isRunning()) {
       return;
     }
 
     killCpuLimit(container);
     killStressNg(container);
+    waitUntilGone(container, "stress-ng", STRESS_NG_SHUTDOWN_TIMEOUT_MS);
+    waitUntilGone(container, "cpulimit", CPULIMIT_SHUTDOWN_TIMEOUT_MS);
+
+    final int cores = observe.getAvailableCoresSilent(container);
+    trySilent(container, cmd.buildPinToMaskCommand(1, CpuObservability.computeFullMask(cores)));
+    trySilent(container, cmd.buildSetNiceValueCommand(1, 0));
 
     log.info("Reset CPU chaos");
   }
@@ -159,38 +311,125 @@ public final class CgroupsCpuChaos implements CpuChaos {
     return true;
   }
 
-  private void validatePercentage(final int percentage) {
-    if (percentage < 1 || percentage > 100) {
-      throw new ChaosConfigurationException(
-          String.format("percentage must be in [1, 100], got: %d", percentage));
+  // ==================== Private: Stressor Templates ====================
+
+  /**
+   * Template for indefinite stressor methods. Validates first, then builds command, installs,
+   * kills previous, executes, logs. Command is deferred via {@link Supplier} to ensure validation
+   * exceptions ({@link ChaosConfigurationException}) are thrown before builder-level
+   * {@link IllegalArgumentException}.
+   */
+  /**
+   * Template for indefinite stressor methods. The {@code commandSupplier} is invoked first so
+   * that builder validation (workers range → {@link ChaosConfigurationException}) fires before
+   * any container side effects.
+   */
+  private void runStressor(
+      final GenericContainer<?> container,
+      final int workers,
+      final Supplier<String> commandSupplier,
+      final String label) {
+    Objects.requireNonNull(container, "container must not be null");
+    // Invoke supplier first: builder validates workers, throws ChaosConfigurationException if invalid
+    final String command = commandSupplier.get();
+    validateContainerRunning(container);
+    installTools(container);
+    killStressNg(container);
+    exec(container, command, label + " stress");
+    log.info("Started {} stress: {} workers", label, workers);
+  }
+
+  /**
+   * Template for time-bounded stressor methods. Command is built (and validated) before any
+   * container side effects.
+   */
+  private void runStressorWithTimeout(
+      final GenericContainer<?> container,
+      final int workers,
+      final Duration duration,
+      final Supplier<String> commandSupplier,
+      final String label) {
+    Objects.requireNonNull(container, "container must not be null");
+    Objects.requireNonNull(duration, "duration must not be null");
+    // Invoke supplier first: builder validates workers, throws ChaosConfigurationException if invalid
+    final String command = commandSupplier.get();
+    validateContainerRunning(container);
+    installTools(container);
+    killStressNg(container);
+    exec(container, command, label + " stress with timeout");
+    log.info("Started {} stress: {} workers for {}s", label, workers, duration.toSeconds());
+  }
+
+  // ==================== Private: Execution ====================
+
+  /** Executes a shell command; throws ChaosOperationFailedException on non-zero exit. */
+  private void exec(final GenericContainer<?> container, final String command, final String label) {
+    try {
+      execShell(container, command);
+    } catch (final ChaosOperationFailedException e) {
+      throw e;
+    } catch (final Exception e) {
+      throw new ChaosOperationFailedException("Failed to " + label, e);
     }
   }
+
+  private void execShell(final GenericContainer<?> container, final String command)
+      throws Exception {
+    final var result = container.execInContainer(Shell.SH, Shell.FLAG_C, command);
+    if (result.getExitCode() != 0) {
+      throw new ChaosOperationFailedException("Shell command failed: " + result.getStderr());
+    }
+  }
+
+  private void trySilent(final GenericContainer<?> container, final String command) {
+    try {
+      final var result = container.execInContainer(Shell.SH, Shell.FLAG_C, command);
+      log.debug("trySilent exit={}", result.getExitCode());
+    } catch (final Exception e) {
+      log.debug("trySilent ignored: {}", e.getMessage());
+    }
+  }
+
+  // ==================== Private: Process Lifecycle ====================
+
+  private void killCpuLimit(final GenericContainer<?> container) {
+    trySilent(container, cmd.buildKillAllByCommSigKillCommand("cpulimit"));
+  }
+
+  private void killStressNg(final GenericContainer<?> container) {
+    // SIGKILL the parent first — parent dies, workers become orphans.
+    // Then SIGKILL all remaining workers (which now can't be respawned).
+    // SIGTERM is unreliable: Docker Desktop's LinuxKit kernel may not deliver it,
+    // and PID 1 in containers ignores SIGTERM unless it registers a handler.
+    trySilent(container, cmd.buildKillAllByCommPrefixSigKillCommand("stress-ng"));
+  }
+
+  private void waitUntilGone(
+      final GenericContainer<?> container, final String name, final long timeoutMs) {
+    final long deadline = System.currentTimeMillis() + timeoutMs;
+    while (System.currentTimeMillis() < deadline) {
+      try {
+        final var result = container.execInContainer(Shell.SH, Shell.FLAG_C,
+            cmd.buildIsRunningByCommPrefixCommand(name));
+        if (result.getExitCode() != 0) {
+          return;
+        }
+        Thread.sleep(WAIT_POLL_INTERVAL_MS);
+      } catch (final InterruptedException e) {
+        Thread.currentThread().interrupt();
+        return;
+      } catch (final Exception e) {
+        return;
+      }
+    }
+    log.warn("waitUntilGone: {} did not exit within {}ms", name, timeoutMs);
+  }
+
+  // ==================== Private: Validation ====================
 
   private void validateContainerRunning(final GenericContainer<?> container) {
     if (!container.isRunning()) {
       throw new IllegalStateException("Container is not running");
-    }
-  }
-
-  private void killCpuLimit(final GenericContainer<?> container) {
-    try {
-      final var result = container.execInContainer("pkill", "-9", "cpulimit");
-      if (result.getExitCode() == 0) {
-        log.debug("Killed cpulimit processes");
-      }
-    } catch (final Exception ignored) {
-      // No cpulimit running
-    }
-  }
-
-  private void killStressNg(final GenericContainer<?> container) {
-    try {
-      final var result = container.execInContainer("pkill", "-9", "stress-ng");
-      if (result.getExitCode() == 0) {
-        log.debug("Killed stress-ng processes");
-      }
-    } catch (final Exception ignored) {
-      // No stress-ng running
     }
   }
 }

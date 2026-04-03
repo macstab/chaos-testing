@@ -27,15 +27,14 @@ import org.testcontainers.containers.GenericContainer;
  *
  * <pre>{@code
  * // Add latency to database connections
- * chaos.connection().addLatency(container, "db:5432", Duration.ofMillis(500));
+ * chaos.addLatency(container, "db:5432", Duration.ofMillis(500));
  *
  * // Drop 10% of packets
- * chaos.connection().dropPackets(container, "redis:6379", 0.1);
+ * chaos.dropPackets(container, "redis:6379", 0.1);
  *
- * // Multiple toxics simultaneously
- * chaos.connection()
- *   .addLatency(container, "api:8080", Duration.ofMillis(200))
- *   .limitBandwidth(container, "api:8080", 1024); // 1KB/s
+ * // Multiple toxics on same target (stack independently)
+ * chaos.addLatency(container, "api:8080", Duration.ofMillis(200));
+ * chaos.limitBandwidth(container, "api:8080", 1024);
  * }</pre>
  *
  * @author Christian Schnapka - Macstab GmbH

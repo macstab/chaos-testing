@@ -13,7 +13,9 @@ import static org.mockito.Mockito.when;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -252,6 +254,70 @@ class PackageInstallerTest {
       assertThatThrownBy(() -> PackageInstaller.isInstalled(container, (String[]) null))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("packages");
+    }
+  }
+
+  // ==================== ensureInstalled Tests ====================
+
+  @Nested
+  @DisplayName("ensureInstalled")
+  class EnsureInstalledTests {
+
+    @Test
+    @DisplayName("skips all tools when all labels already present")
+    void skipsWhenAllLabelled() {
+      // GIVEN — container with all tools already labelled
+      final GenericContainer<?> container = mockRunningContainer();
+      final Map<String, String> labels = new HashMap<>();
+      labels.put(PackageInstaller.LABEL_PREFIX + "stress-ng", "true");
+      labels.put(PackageInstaller.LABEL_PREFIX + "cpulimit", "true");
+      when(container.getLabels()).thenReturn(labels);
+
+      // WHEN / THEN — no exception, no install attempted
+      assertThatCode(() -> PackageInstaller.ensureInstalled(container,
+          ToolPackage.ofSame("stress-ng"),
+          ToolPackage.ofSame("cpulimit")))
+          .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("throws NullPointerException for null container")
+    void nullContainer() {
+      assertThatThrownBy(() -> PackageInstaller.ensureInstalled(
+              null, ToolPackage.ofSame("stress-ng")))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("container");
+    }
+
+    @Test
+    @DisplayName("throws NullPointerException for null tools array")
+    void nullTools() {
+      final GenericContainer<?> container = mockRunningContainer();
+      when(container.getLabels()).thenReturn(new HashMap<>());
+      assertThatThrownBy(() -> PackageInstaller.ensureInstalled(
+              container, (ToolPackage[]) null))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("tools");
+    }
+
+    @Test
+    @DisplayName("throws NullPointerException for null element in tools array")
+    void nullToolElement() {
+      final GenericContainer<?> container = mockRunningContainer();
+      when(container.getLabels()).thenReturn(new HashMap<>());
+      assertThatThrownBy(() -> PackageInstaller.ensureInstalled(
+              container, (ToolPackage) null))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("ToolPackage element");
+    }
+
+    @Test
+    @DisplayName("throws IllegalStateException for stopped container")
+    void stoppedContainer() {
+      final GenericContainer<?> container = mockStoppedContainer();
+      assertThatThrownBy(() -> PackageInstaller.ensureInstalled(
+              container, ToolPackage.ofSame("stress-ng")))
+          .isInstanceOf(IllegalStateException.class);
     }
   }
 

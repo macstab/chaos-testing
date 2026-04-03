@@ -2,6 +2,7 @@
 package com.macstab.chaos.core.util;
 
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -17,6 +18,10 @@ import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 public final class PackageInstaller {
+
+  /** Namespace prefix for tool-installation tracking labels on {@link GenericContainer}. */
+  static final String LABEL_PREFIX = "macstab.chaos.pkg.";
+
   /** Private constructor - utility class. */
   private PackageInstaller() {
     throw new UnsupportedOperationException("Utility class - not instantiable");
@@ -96,6 +101,116 @@ public final class PackageInstaller {
    */
   public static void install(final GenericContainer<?> container, final String... packages) {
     install(container, Arrays.asList(packages), true);
+  }
+
+  /**
+   * Ensures the given tools are installed in the container exactly once per container lifetime.
+   *
+   * <p>For each {@link ToolPackage}, installation is skipped if the label
+   * {@code macstab.chaos.pkg.<tool>} is already present on the container's Java object.
+   * The label is set via {@link GenericContainer#withLabel} — a pure in-JVM operation
+   * with zero Docker API overhead. All unlabelled tools are collected, their packages
+   * deduplicated, installed in a single package-manager invocation, verified by binary
+   * name ({@code which <tool>}), then labelled.
+   *
+   * <p><strong>Algorithm:</strong>
+   * <ol>
+   *   <li>Check labels for each tool — collect only those not yet installed
+   *   <li>If all present → return immediately (zero Docker cost)
+   *   <li>Deduplicate packages of missing tools (e.g. taskset + renice → single util-linux)
+   *   <li>Single {@code apk add} / {@code apt-get install} for all missing packages
+   *   <li>Verify each missing tool binary via {@code which}
+   *   <li>Set {@code macstab.chaos.pkg.<tool>=true} label for each newly installed tool
+   * </ol>
+   *
+   * @param container target container (must be started)
+   * @param tools     one or more tool-to-package bindings
+   * @throws NullPointerException        if container or tools is null
+   * @throws IllegalStateException       if container is not started
+   * @throws PackageInstallationException if installation or verification fails
+   */
+  public static void ensureInstalled(
+      final GenericContainer<?> container, final ToolPackage... tools) {
+    Objects.requireNonNull(container, "container");
+    Objects.requireNonNull(tools, "tools");
+    validateContainerRunning(container);
+
+    final List<ToolPackage> missing = collectMissing(container, tools);
+    if (missing.isEmpty()) {
+      log.debug("All tools already installed — skipping");
+      return;
+    }
+
+    final List<String> packagesToInstall = deduplicatePackages(
+        missing.stream().map(ToolPackage::packageName).toList());
+
+    log.info("Installing {} package(s) for {} missing tool(s): {}",
+        packagesToInstall.size(), missing.size(),
+        missing.stream().map(ToolPackage::tool).toList());
+
+    try {
+      executeInstallation(container, packagesToInstall);
+      verifyTools(container, missing);
+      labelInstalled(container, missing);
+    } catch (final Exception e) {
+      handleInstallationError(e, container.getContainerId(), packagesToInstall);
+    }
+  }
+
+  // ==================== Private: ensureInstalled helpers ====================
+
+  /**
+   * Returns the subset of tools not yet marked as installed on the container.
+   *
+   * @param container target container
+   * @param tools     full set of required tools
+   * @return tools whose label is absent from the container
+   */
+  private static List<ToolPackage> collectMissing(
+      final GenericContainer<?> container, final ToolPackage[] tools) {
+    final var labels = container.getLabels();
+    final List<ToolPackage> missing = new ArrayList<>();
+    for (final ToolPackage tool : tools) {
+      Objects.requireNonNull(tool, "ToolPackage element must not be null");
+      if (!labels.containsKey(LABEL_PREFIX + tool.tool())) {
+        missing.add(tool);
+      }
+    }
+    return missing;
+  }
+
+  /**
+   * Verifies each tool binary is reachable via {@code which} after installation.
+   *
+   * <p>Verification uses the tool binary name — not the package name — to correctly
+   * handle cases where they differ (e.g. package {@code util-linux} provides binary {@code taskset}).
+   *
+   * @param container target container
+   * @param tools     tools to verify
+   * @throws PackageInstallationException if any binary is not found
+   */
+  private static void verifyTools(
+      final GenericContainer<?> container, final List<ToolPackage> tools) {
+    for (final ToolPackage tool : tools) {
+      verifyPackage(container, tool.tool());
+    }
+  }
+
+  /**
+   * Marks each tool as installed by setting its label on the container Java object.
+   *
+   * <p>Uses {@link GenericContainer#withLabel} which mutates the internal
+   * {@code ContainerDef.labels} map directly — no Docker API call involved.
+   *
+   * @param container target container
+   * @param tools     newly installed tools to label
+   */
+  private static void labelInstalled(
+      final GenericContainer<?> container, final List<ToolPackage> tools) {
+    for (final ToolPackage tool : tools) {
+      container.withLabel(LABEL_PREFIX + tool.tool(), "true");
+      log.debug("Labelled tool '{}' as installed", tool.tool());
+    }
   }
 
   /**

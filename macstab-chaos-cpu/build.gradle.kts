@@ -20,6 +20,9 @@ dependencies {
     // Testcontainers (already provided by core)
     // SLF4J (already provided by core)
     
+    // Test annotation shared with network module
+    testImplementation(project(":macstab-chaos-network"))
+
     // Test dependencies
     testImplementation("org.testcontainers:junit-jupiter:1.20.4")
     testImplementation("org.assertj:assertj-core:3.24.2")

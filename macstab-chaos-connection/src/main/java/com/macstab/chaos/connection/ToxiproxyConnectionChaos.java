@@ -20,10 +20,11 @@ import com.macstab.chaos.toxiproxy.lifecycle.ToxiproxyLifecycleManager;
 import com.macstab.chaos.toxiproxy.network.NetworkRedirectManager;
 import com.macstab.chaos.toxiproxy.toxic.BandwidthToxic;
 import com.macstab.chaos.toxiproxy.toxic.DownToxic;
-import com.macstab.chaos.toxiproxy.toxic.ToxicConfig;
 import com.macstab.chaos.toxiproxy.toxic.LatencyToxic;
+import com.macstab.chaos.toxiproxy.toxic.LimitDataToxic;
 import com.macstab.chaos.toxiproxy.toxic.SlowCloseToxic;
 import com.macstab.chaos.toxiproxy.toxic.TimeoutToxic;
+import com.macstab.chaos.toxiproxy.toxic.ToxicConfig;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -171,24 +172,169 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
     final TargetAddress addr = TargetAddress.parse(target);
     final ContainerContext ctx = ensureProxyFor(container, addr);
 
-    // Disable proxy entirely — all connections refused
-    try {
-      apiClient.deleteProxy(ctx, proxyName(addr));
-    } catch (final Exception e) {
-      throw new ChaosOperationFailedException("Failed to reject connections for " + target, e);
-    }
+    // Use DownToxic(toxicity=1.0) — drops all data without closing the connection.
+    // This is atomic: no delete/recreate race window. All new connections are silently dropped.
+    final DownToxic toxic = DownToxic.builder().name("reject").toxicity(1.0).build();
+    addToxicSafe(ctx, proxyName(addr), toxic, target, "reject connections");
+    log.info("Rejecting all connections to {}", target);
+  }
 
-    // Recreate proxy in disabled state
+  /**
+   * Truncate connection after {@code bytes} cumulative bytes transmitted.
+   *
+   * <p>Simulates mid-stream disconnect — client receives a partial response and must handle
+   * {@code SocketException} / {@code EOFException}. Tests reconnection logic and partial-read
+   * resilience.
+   *
+   * @param container target container (must be running)
+   * @param target target host:port
+   * @param bytes byte threshold (0 = disconnect immediately on first data)
+   * @throws IllegalArgumentException if bytes is negative
+   */
+  public void truncateConnection(
+      final GenericContainer<?> container, final String target, final long bytes) {
+    Objects.requireNonNull(container, "container must not be null");
+    Objects.requireNonNull(target, "target must not be null");
+    if (bytes < 0) {
+      throw new IllegalArgumentException("bytes must be >= 0, got: " + bytes);
+    }
+    validateRunning(container);
+
+    final TargetAddress addr = TargetAddress.parse(target);
+    final ContainerContext ctx = ensureProxyFor(container, addr);
+
+    final LimitDataToxic toxic = LimitDataToxic.builder().name("limit_data").bytes(bytes).build();
+    addToxicSafe(ctx, proxyName(addr), toxic, target, "truncate connection");
+    log.info("Truncating connection to {} after {} bytes", target, bytes);
+  }
+
+  /**
+   * Add latency with jitter — realistic network simulation.
+   *
+   * <p>Actual per-chunk delay varies uniformly in {@code [latency - jitter, latency + jitter]}.
+   * More realistic than fixed latency for simulating real-world network variability.
+   *
+   * @param container target container (must be running)
+   * @param target target host:port
+   * @param latency base delay
+   * @param jitter jitter amplitude (must be ≥ 0)
+   */
+  public void addLatencyWithJitter(
+      final GenericContainer<?> container,
+      final String target,
+      final Duration latency,
+      final Duration jitter) {
+    Objects.requireNonNull(container, "container must not be null");
+    Objects.requireNonNull(target, "target must not be null");
+    Objects.requireNonNull(latency, "latency must not be null");
+    Objects.requireNonNull(jitter, "jitter must not be null");
+    if (jitter.isNegative()) {
+      throw new IllegalArgumentException("jitter must be >= 0, got: " + jitter);
+    }
+    validateRunning(container);
+
+    final TargetAddress addr = TargetAddress.parse(target);
+    final ContainerContext ctx = ensureProxyFor(container, addr);
+
+    final LatencyToxic toxic = LatencyToxic.builder()
+        .name("latency")
+        .latencyMs((int) latency.toMillis())
+        .jitterMs((int) jitter.toMillis())
+        .build();
+    addToxicSafe(ctx, proxyName(addr), toxic, target, "latency with jitter");
+    log.info("Added {}ms ±{}ms jitter latency to {}", latency.toMillis(), jitter.toMillis(), target);
+  }
+
+  /**
+   * Remove a specific toxic from a target's proxy by name.
+   *
+   * <p>No-op if the toxic does not exist.
+   *
+   * @param container target container (must be running)
+   * @param target target host:port
+   * @param toxicName name of the toxic to remove (e.g., "latency", "down")
+   */
+  public void removeToxic(
+      final GenericContainer<?> container, final String target, final String toxicName) {
+    Objects.requireNonNull(container, "container must not be null");
+    Objects.requireNonNull(target, "target must not be null");
+    Objects.requireNonNull(toxicName, "toxicName must not be null");
+    validateRunning(container);
+
+    final TargetAddress addr = TargetAddress.parse(target);
+    final ContainerContext ctx = ContainerContext.of(container);
+
     try {
-      final ProxyConfiguration config = ownedProxies.get(proxyName(addr));
-      if (config != null) {
-        apiClient.createProxy(ctx, config);
+      apiClient.deleteToxic(ctx, proxyName(addr), toxicName);
+      log.info("Removed toxic '{}' from {}", toxicName, target);
+    } catch (final Exception e) {
+      log.debug("removeToxic '{}' on {} — not found or already removed: {}", toxicName, target, e.getMessage());
+    }
+  }
+
+  /**
+   * Remove all toxics from a target's proxy, restoring it to clean pass-through.
+   *
+   * <p>The proxy itself stays active — only faults are removed. Use this for per-test cleanup
+   * when you want to reuse the proxy across test methods.
+   *
+   * @param container target container (must be running)
+   * @param target target host:port
+   */
+  public void removeAllToxics(
+      final GenericContainer<?> container, final String target) {
+    Objects.requireNonNull(container, "container must not be null");
+    Objects.requireNonNull(target, "target must not be null");
+    validateRunning(container);
+
+    final TargetAddress addr = TargetAddress.parse(target);
+    final ContainerContext ctx = ContainerContext.of(container);
+
+    try {
+      for (final String name : apiClient.listToxics(ctx, proxyName(addr))) {
+        try {
+          apiClient.deleteToxic(ctx, proxyName(addr), name);
+        } catch (final Exception e) {
+          log.debug("Failed to remove toxic '{}' from {}: {}", name, target, e.getMessage());
+        }
       }
+      log.info("Removed all toxics from {}", target);
     } catch (final Exception e) {
-      log.debug("Proxy re-creation for disable failed (expected on some Toxiproxy versions)", e);
+      log.debug("removeAllToxics on {} — proxy may not exist: {}", target, e.getMessage());
+    }
+  }
+
+  /**
+   * Reset chaos for a single target only — surgical cleanup without disturbing other targets.
+   *
+   * <p>Removes the proxy and iptables rule for {@code target} only. All other targets and the
+   * Toxiproxy process itself remain active.
+   *
+   * @param container target container (must be running)
+   * @param target target host:port to reset
+   */
+  public void reset(final GenericContainer<?> container, final String target) {
+    Objects.requireNonNull(container, "container must not be null");
+    Objects.requireNonNull(target, "target must not be null");
+    if (!container.isRunning()) {
+      return;
     }
 
-    log.info("Rejected all connections to {}", target);
+    final TargetAddress addr = TargetAddress.parse(target);
+    final String name = proxyName(addr);
+    final ProxyConfiguration proxyConfig = ownedProxies.remove(name);
+    if (proxyConfig == null) {
+      return; // not owned by this instance
+    }
+
+    final ContainerContext ctx = ContainerContext.of(container);
+    try {
+      apiClient.deleteProxy(ctx, name);
+      networkRedirect.removeRedirect(ctx, proxyConfig.servicePort(), proxyConfig.proxyPort());
+      log.info("Reset connection chaos for target {}", target);
+    } catch (final Exception e) {
+      log.debug("Failed to reset target {}: {}", target, e.getMessage());
+    }
   }
 
   /** Removes only proxies created by this module — safe for concurrent use with proxy module. */
@@ -212,8 +358,9 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
         log.debug("Failed to remove proxy {} during reset: {}", entry.getKey(), e.getMessage());
       }
     }
+    final int removed = ownedProxies.size();
     ownedProxies.clear();
-    log.info("Reset connection chaos (removed {} proxies)", ownedProxies.size());
+    log.info("Reset connection chaos (removed {} proxies)", removed);
   }
 
   @Override

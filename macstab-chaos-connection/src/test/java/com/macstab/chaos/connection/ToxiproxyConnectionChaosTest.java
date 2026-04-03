@@ -112,15 +112,19 @@ class ToxiproxyConnectionChaosTest {
   }
 
   @Test
-  @DisplayName("should reset chaos")
+  @DisplayName("should reset chaos — proxy removed, Toxiproxy still running")
   void shouldReset() throws Exception {
     final String target = "google.com:443";
     chaos.addLatency(container, target, Duration.ofMillis(50));
 
     chaos.reset(container);
 
-    // Toxiproxy should be stopped
-    assertThat(container.execInContainer("pgrep", "toxiproxy-server").getExitCode()).isNotZero();
+    // Toxiproxy process stays alive (surgical reset)
+    assertThat(container.execInContainer("/bin/sh", "-c",
+        "curl -s -f http://localhost:8474/proxies").getExitCode()).isZero();
+    // But the proxy itself is gone
+    assertThat(container.execInContainer("/bin/sh", "-c",
+        "curl -s -f http://localhost:8474/proxies/conn_google_com_443").getExitCode()).isNotZero();
   }
 
   @Test

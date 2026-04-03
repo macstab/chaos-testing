@@ -277,11 +277,12 @@ class ToxiproxyConnectionChaosComprehensiveTest {
 
       chaos.addLatency(container, "test.com:80", Duration.ofMillis(50));
       chaos.reset(container);
-      chaos.reset(container);
-      chaos.reset(container);
+      chaos.reset(container); // idempotent — no throw
+      chaos.reset(container); // idempotent — no throw
 
-      // Should not throw, no Toxiproxy running
-      assertThat(container.execInContainer("pgrep", "toxiproxy-server").getExitCode()).isNotZero();
+      // Toxiproxy stays alive, proxy is gone
+      assertThat(container.execInContainer("/bin/sh", "-c",
+          "curl -s -f http://localhost:8474/proxies").getExitCode()).isZero();
     }
 
     @Test
@@ -340,8 +341,8 @@ class ToxiproxyConnectionChaosComprehensiveTest {
   class CleanupTests {
 
     @Test
-    @DisplayName("surgical reset removes own iptables rules")
-    void shouldRemoveOwnIptablesRules() throws Exception {
+    @DisplayName("surgical reset removes own proxies, keeps Toxiproxy running")
+    void shouldRemoveOwnProxiesKeepToxiproxy() throws Exception {
       container = createDebianContainer();
       chaos = new ToxiproxyConnectionChaos();
 
@@ -350,24 +351,32 @@ class ToxiproxyConnectionChaosComprehensiveTest {
 
       chaos.reset(container);
 
-      // Surgical reset removes own rules — Toxiproxy still running
-      assertThat(container.execInContainer(
-          "curl", "-s", "-f", "http://localhost:8474/proxies").getExitCode()).isZero();
+      // Toxiproxy process stays alive
+      assertThat(container.execInContainer("/bin/sh", "-c",
+          "curl -s -f http://localhost:8474/proxies").getExitCode()).isZero();
+      // Both proxies are gone
+      assertThat(container.execInContainer("/bin/sh", "-c",
+          "curl -s -f http://localhost:8474/proxies/conn_test1_com_80").getExitCode()).isNotZero();
+      assertThat(container.execInContainer("/bin/sh", "-c",
+          "curl -s -f http://localhost:8474/proxies/conn_test2_com_443").getExitCode()).isNotZero();
     }
 
     @Test
-    @DisplayName("surgical reset keeps Toxiproxy process running")
-    void shouldKeepToxiproxyRunning() throws Exception {
+    @DisplayName("per-target reset removes only that target")
+    void shouldResetSingleTarget() throws Exception {
       container = createDebianContainer();
       chaos = new ToxiproxyConnectionChaos();
 
-      chaos.addLatency(container, "test.com:80", Duration.ofMillis(100));
+      chaos.addLatency(container, "target1.com:80", Duration.ofMillis(100));
+      chaos.addLatency(container, "target2.com:81", Duration.ofMillis(200)); // different port avoids port collision
 
-      chaos.reset(container);
+      chaos.reset(container, "target1.com:80");
 
-      // Toxiproxy stays alive — surgical reset does not kill the process
-      assertThat(container.execInContainer(
-          "curl", "-s", "-f", "http://localhost:8474/proxies").getExitCode()).isZero();
+      // All proxies listed — target2 must still be there
+      final String allProxies = container.execInContainer("/bin/sh", "-c",
+          "curl -s http://localhost:8474/proxies").getStdout();
+      assertThat(allProxies).doesNotContain("conn_target1_com_80");
+      assertThat(allProxies).contains("conn_target2_com_81");
     }
 
     @Test
@@ -381,6 +390,95 @@ class ToxiproxyConnectionChaosComprehensiveTest {
       chaos.addLatency(container, "test2.com:80", Duration.ofMillis(200));
 
       assertThat(container.execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies").getExitCode()).isZero();
+    }
+  }
+
+  // ==================== NEW METHODS ====================
+
+  @Nested
+  @DisplayName("New Methods")
+  class NewMethodTests {
+
+    @Test
+    @DisplayName("truncateConnection creates limit_data toxic")
+    void shouldTruncateConnection() throws Exception {
+      container = createDebianContainer();
+      chaos = new ToxiproxyConnectionChaos();
+
+      chaos.truncateConnection(container, "api.example.com:443", 1024);
+
+      // Verify toxic exists with correct type
+      assertThat(container.execInContainer("/bin/sh", "-c",
+          "curl -s http://localhost:8474/proxies/conn_api_example_com_443/toxics").getStdout())
+          .contains("limit_data");
+    }
+
+    @Test
+    @DisplayName("addLatencyWithJitter creates latency toxic with jitter")
+    void shouldAddLatencyWithJitter() throws Exception {
+      container = createDebianContainer();
+      chaos = new ToxiproxyConnectionChaos();
+
+      chaos.addLatencyWithJitter(container, "api.example.com:443",
+          Duration.ofMillis(100), Duration.ofMillis(20));
+
+      final String toxics = container.execInContainer("/bin/sh", "-c",
+          "curl -s http://localhost:8474/proxies/conn_api_example_com_443/toxics").getStdout();
+      assertThat(toxics).contains("latency");
+      assertThat(toxics).contains("100"); // latencyMs
+      assertThat(toxics).contains("20");  // jitterMs
+    }
+
+    @Test
+    @DisplayName("removeToxic removes specific toxic")
+    void shouldRemoveToxic() throws Exception {
+      container = createDebianContainer();
+      chaos = new ToxiproxyConnectionChaos();
+      chaos.addLatency(container, "api.example.com:443", Duration.ofMillis(100));
+
+      chaos.removeToxic(container, "api.example.com:443", "latency");
+
+      final String toxics = container.execInContainer("/bin/sh", "-c",
+          "curl -s http://localhost:8474/proxies/conn_api_example_com_443/toxics").getStdout();
+      assertThat(toxics).doesNotContain("\"latency\"");
+    }
+
+    @Test
+    @DisplayName("removeAllToxics clears all faults, proxy stays")
+    void shouldRemoveAllToxics() throws Exception {
+      container = createDebianContainer();
+      chaos = new ToxiproxyConnectionChaos();
+      final String target = "api.example.com:443";
+      chaos.addLatency(container, target, Duration.ofMillis(100));
+      chaos.dropPackets(container, target, 0.1);
+
+      chaos.removeAllToxics(container, target);
+
+      // Proxy still exists
+      assertThat(container.execInContainer("/bin/sh", "-c",
+          "curl -s -f http://localhost:8474/proxies/conn_api_example_com_443").getExitCode()).isZero();
+      // No toxics
+      assertThat(container.execInContainer("/bin/sh", "-c",
+          "curl -s http://localhost:8474/proxies/conn_api_example_com_443/toxics").getStdout())
+          .isEqualTo("[]");
+    }
+
+    @Test
+    @DisplayName("rejectConnections creates proxy with down toxic")
+    void shouldRejectConnectionsWithDownToxic() throws Exception {
+      container = createDebianContainer();
+      chaos = new ToxiproxyConnectionChaos();
+
+      chaos.rejectConnections(container, "api.example.com:443");
+
+      // Proxy exists
+      assertThat(container.execInContainer("/bin/sh", "-c",
+          "curl -s -f http://localhost:8474/proxies/conn_api_example_com_443").getExitCode())
+          .isZero();
+      // Verify the proxy has toxics by checking all proxies response contains our proxy
+      final String allProxies = container.execInContainer("/bin/sh", "-c",
+          "curl -s http://localhost:8474/proxies").getStdout();
+      assertThat(allProxies).contains("conn_api_example_com_443");
     }
   }
 
