@@ -62,7 +62,11 @@ class ToxiproxyConnectionChaosComprehensiveTest {
 
       chaos.addLatency(container, "google.com:443", Duration.ofMillis(100));
 
-      assertThat(container.execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies").getExitCode()).isZero();
+      assertThat(
+              container
+                  .execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies")
+                  .getExitCode())
+          .isZero();
     }
 
     @Test
@@ -78,7 +82,11 @@ class ToxiproxyConnectionChaosComprehensiveTest {
       chaos.timeoutConnections(container, target, Duration.ofMillis(500));
       chaos.slowClose(container, target, Duration.ofMillis(200));
 
-      assertThat(container.execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies").getExitCode()).isZero();
+      assertThat(
+              container
+                  .execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies")
+                  .getExitCode())
+          .isZero();
     }
   }
 
@@ -94,7 +102,11 @@ class ToxiproxyConnectionChaosComprehensiveTest {
 
       chaos.addLatency(container, "google.com:443", Duration.ofMillis(100));
 
-      assertThat(container.execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies").getExitCode()).isZero();
+      assertThat(
+              container
+                  .execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies")
+                  .getExitCode())
+          .isZero();
     }
 
     @Test
@@ -105,7 +117,11 @@ class ToxiproxyConnectionChaosComprehensiveTest {
 
       chaos.dropPackets(container, "example.com:80", 0.3);
 
-      assertThat(container.execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies").getExitCode()).isZero();
+      assertThat(
+              container
+                  .execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies")
+                  .getExitCode())
+          .isZero();
     }
   }
 
@@ -127,7 +143,11 @@ class ToxiproxyConnectionChaosComprehensiveTest {
       chaos.addLatency(container, target, Duration.ofMillis(20));
 
       // Toxiproxy should have 3 latency toxics
-      assertThat(container.execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies").getExitCode()).isZero();
+      assertThat(
+              container
+                  .execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies")
+                  .getExitCode())
+          .isZero();
     }
 
     @Test
@@ -140,7 +160,11 @@ class ToxiproxyConnectionChaosComprehensiveTest {
       chaos.addLatency(container, "api2.example.com:443", Duration.ofMillis(200));
       chaos.addLatency(container, "api3.example.com:443", Duration.ofMillis(300));
 
-      assertThat(container.execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies").getExitCode()).isZero();
+      assertThat(
+              container
+                  .execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies")
+                  .getExitCode())
+          .isZero();
     }
 
     @ParameterizedTest
@@ -152,7 +176,11 @@ class ToxiproxyConnectionChaosComprehensiveTest {
 
       chaos.dropPackets(container, "test.com:80", rate);
 
-      assertThat(container.execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies").getExitCode()).isZero();
+      assertThat(
+              container
+                  .execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies")
+                  .getExitCode())
+          .isZero();
     }
 
     @ParameterizedTest
@@ -164,7 +192,11 @@ class ToxiproxyConnectionChaosComprehensiveTest {
 
       chaos.limitBandwidth(container, "download.example.com:443", bytesPerSecond);
 
-      assertThat(container.execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies").getExitCode()).isZero();
+      assertThat(
+              container
+                  .execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies")
+                  .getExitCode())
+          .isZero();
     }
   }
 
@@ -281,8 +313,11 @@ class ToxiproxyConnectionChaosComprehensiveTest {
       chaos.reset(container); // idempotent — no throw
 
       // Toxiproxy stays alive, proxy is gone
-      assertThat(container.execInContainer("/bin/sh", "-c",
-          "curl -s -f http://localhost:8474/proxies").getExitCode()).isZero();
+      assertThat(
+              container
+                  .execInContainer("/bin/sh", "-c", "curl -s -f http://localhost:8474/proxies")
+                  .getExitCode())
+          .isZero();
     }
 
     @Test
@@ -295,7 +330,11 @@ class ToxiproxyConnectionChaosComprehensiveTest {
       chaos.reset(container);
       chaos.addLatency(container, "test2.com:80", Duration.ofMillis(200));
 
-      assertThat(container.execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies").getExitCode()).isZero();
+      assertThat(
+              container
+                  .execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies")
+                  .getExitCode())
+          .isZero();
     }
 
     @Test
@@ -308,7 +347,11 @@ class ToxiproxyConnectionChaosComprehensiveTest {
       chaos.addLatency(container, "host1.com:443", Duration.ofMillis(50));
       chaos.addLatency(container, "host2.com:443", Duration.ofMillis(100));
 
-      assertThat(container.execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies").getExitCode()).isZero();
+      assertThat(
+              container
+                  .execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies")
+                  .getExitCode())
+          .isZero();
     }
 
     @Test
@@ -319,7 +362,11 @@ class ToxiproxyConnectionChaosComprehensiveTest {
 
       chaos.addLatency(container, "slow.com:80", Duration.ofSeconds(30));
 
-      assertThat(container.execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies").getExitCode()).isZero();
+      assertThat(
+              container
+                  .execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies")
+                  .getExitCode())
+          .isZero();
     }
 
     @Test
@@ -330,7 +377,11 @@ class ToxiproxyConnectionChaosComprehensiveTest {
 
       chaos.addLatency(container, "fast.com:80", Duration.ZERO);
 
-      assertThat(container.execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies").getExitCode()).isZero();
+      assertThat(
+              container
+                  .execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies")
+                  .getExitCode())
+          .isZero();
     }
   }
 
@@ -352,13 +403,26 @@ class ToxiproxyConnectionChaosComprehensiveTest {
       chaos.reset(container);
 
       // Toxiproxy process stays alive
-      assertThat(container.execInContainer("/bin/sh", "-c",
-          "curl -s -f http://localhost:8474/proxies").getExitCode()).isZero();
+      assertThat(
+              container
+                  .execInContainer("/bin/sh", "-c", "curl -s -f http://localhost:8474/proxies")
+                  .getExitCode())
+          .isZero();
       // Both proxies are gone
-      assertThat(container.execInContainer("/bin/sh", "-c",
-          "curl -s -f http://localhost:8474/proxies/conn_test1_com_80").getExitCode()).isNotZero();
-      assertThat(container.execInContainer("/bin/sh", "-c",
-          "curl -s -f http://localhost:8474/proxies/conn_test2_com_443").getExitCode()).isNotZero();
+      assertThat(
+              container
+                  .execInContainer(
+                      "/bin/sh", "-c", "curl -s -f http://localhost:8474/proxies/conn_test1_com_80")
+                  .getExitCode())
+          .isNotZero();
+      assertThat(
+              container
+                  .execInContainer(
+                      "/bin/sh",
+                      "-c",
+                      "curl -s -f http://localhost:8474/proxies/conn_test2_com_443")
+                  .getExitCode())
+          .isNotZero();
     }
 
     @Test
@@ -368,13 +432,18 @@ class ToxiproxyConnectionChaosComprehensiveTest {
       chaos = new ToxiproxyConnectionChaos();
 
       chaos.addLatency(container, "target1.com:80", Duration.ofMillis(100));
-      chaos.addLatency(container, "target2.com:81", Duration.ofMillis(200)); // different port avoids port collision
+      chaos.addLatency(
+          container,
+          "target2.com:81",
+          Duration.ofMillis(200)); // different port avoids port collision
 
       chaos.reset(container, "target1.com:80");
 
       // All proxies listed — target2 must still be there
-      final String allProxies = container.execInContainer("/bin/sh", "-c",
-          "curl -s http://localhost:8474/proxies").getStdout();
+      final String allProxies =
+          container
+              .execInContainer("/bin/sh", "-c", "curl -s http://localhost:8474/proxies")
+              .getStdout();
       assertThat(allProxies).doesNotContain("conn_target1_com_80");
       assertThat(allProxies).contains("conn_target2_com_81");
     }
@@ -389,7 +458,11 @@ class ToxiproxyConnectionChaosComprehensiveTest {
       chaos.reset(container);
       chaos.addLatency(container, "test2.com:80", Duration.ofMillis(200));
 
-      assertThat(container.execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies").getExitCode()).isZero();
+      assertThat(
+              container
+                  .execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies")
+                  .getExitCode())
+          .isZero();
     }
   }
 
@@ -408,8 +481,13 @@ class ToxiproxyConnectionChaosComprehensiveTest {
       chaos.truncateConnection(container, "api.example.com:443", 1024);
 
       // Verify toxic exists with correct type
-      assertThat(container.execInContainer("/bin/sh", "-c",
-          "curl -s http://localhost:8474/proxies/conn_api_example_com_443/toxics").getStdout())
+      assertThat(
+              container
+                  .execInContainer(
+                      "/bin/sh",
+                      "-c",
+                      "curl -s http://localhost:8474/proxies/conn_api_example_com_443/toxics")
+                  .getStdout())
           .contains("limit_data");
     }
 
@@ -419,14 +497,19 @@ class ToxiproxyConnectionChaosComprehensiveTest {
       container = createDebianContainer();
       chaos = new ToxiproxyConnectionChaos();
 
-      chaos.addLatencyWithJitter(container, "api.example.com:443",
-          Duration.ofMillis(100), Duration.ofMillis(20));
+      chaos.addLatencyWithJitter(
+          container, "api.example.com:443", Duration.ofMillis(100), Duration.ofMillis(20));
 
-      final String toxics = container.execInContainer("/bin/sh", "-c",
-          "curl -s http://localhost:8474/proxies/conn_api_example_com_443/toxics").getStdout();
+      final String toxics =
+          container
+              .execInContainer(
+                  "/bin/sh",
+                  "-c",
+                  "curl -s http://localhost:8474/proxies/conn_api_example_com_443/toxics")
+              .getStdout();
       assertThat(toxics).contains("latency");
       assertThat(toxics).contains("100"); // latencyMs
-      assertThat(toxics).contains("20");  // jitterMs
+      assertThat(toxics).contains("20"); // jitterMs
     }
 
     @Test
@@ -438,8 +521,13 @@ class ToxiproxyConnectionChaosComprehensiveTest {
 
       chaos.removeToxic(container, "api.example.com:443", "latency");
 
-      final String toxics = container.execInContainer("/bin/sh", "-c",
-          "curl -s http://localhost:8474/proxies/conn_api_example_com_443/toxics").getStdout();
+      final String toxics =
+          container
+              .execInContainer(
+                  "/bin/sh",
+                  "-c",
+                  "curl -s http://localhost:8474/proxies/conn_api_example_com_443/toxics")
+              .getStdout();
       assertThat(toxics).doesNotContain("\"latency\"");
     }
 
@@ -455,11 +543,22 @@ class ToxiproxyConnectionChaosComprehensiveTest {
       chaos.removeAllToxics(container, target);
 
       // Proxy still exists
-      assertThat(container.execInContainer("/bin/sh", "-c",
-          "curl -s -f http://localhost:8474/proxies/conn_api_example_com_443").getExitCode()).isZero();
+      assertThat(
+              container
+                  .execInContainer(
+                      "/bin/sh",
+                      "-c",
+                      "curl -s -f http://localhost:8474/proxies/conn_api_example_com_443")
+                  .getExitCode())
+          .isZero();
       // No toxics
-      assertThat(container.execInContainer("/bin/sh", "-c",
-          "curl -s http://localhost:8474/proxies/conn_api_example_com_443/toxics").getStdout())
+      assertThat(
+              container
+                  .execInContainer(
+                      "/bin/sh",
+                      "-c",
+                      "curl -s http://localhost:8474/proxies/conn_api_example_com_443/toxics")
+                  .getStdout())
           .isEqualTo("[]");
     }
 
@@ -472,12 +571,19 @@ class ToxiproxyConnectionChaosComprehensiveTest {
       chaos.rejectConnections(container, "api.example.com:443");
 
       // Proxy exists
-      assertThat(container.execInContainer("/bin/sh", "-c",
-          "curl -s -f http://localhost:8474/proxies/conn_api_example_com_443").getExitCode())
+      assertThat(
+              container
+                  .execInContainer(
+                      "/bin/sh",
+                      "-c",
+                      "curl -s -f http://localhost:8474/proxies/conn_api_example_com_443")
+                  .getExitCode())
           .isZero();
       // Verify the proxy has toxics by checking all proxies response contains our proxy
-      final String allProxies = container.execInContainer("/bin/sh", "-c",
-          "curl -s http://localhost:8474/proxies").getStdout();
+      final String allProxies =
+          container
+              .execInContainer("/bin/sh", "-c", "curl -s http://localhost:8474/proxies")
+              .getStdout();
       assertThat(allProxies).contains("conn_api_example_com_443");
     }
   }
@@ -499,7 +605,11 @@ class ToxiproxyConnectionChaosComprehensiveTest {
       chaos.dropPackets(container, target, 0.2);
       chaos.limitBandwidth(container, target, 1024 * 50);
 
-      assertThat(container.execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies").getExitCode()).isZero();
+      assertThat(
+              container
+                  .execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies")
+                  .getExitCode())
+          .isZero();
     }
 
     @Test
@@ -516,7 +626,11 @@ class ToxiproxyConnectionChaosComprehensiveTest {
       chaos.slowClose(container, target, Duration.ofMillis(200));
       chaos.rejectConnections(container, target);
 
-      assertThat(container.execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies").getExitCode()).isZero();
+      assertThat(
+              container
+                  .execInContainer("curl", "-s", "-f", "http://localhost:8474/proxies")
+                  .getExitCode())
+          .isZero();
     }
   }
 

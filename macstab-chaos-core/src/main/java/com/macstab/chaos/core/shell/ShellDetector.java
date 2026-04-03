@@ -22,12 +22,13 @@ public final class ShellDetector {
   /**
    * Detect best available shell in container.
    *
-   * <p>Priority order: bash → sh (busybox/dash)
+   * <p>Priority order: bash → ash (BusyBox /bin/sh on Alpine) → generic /bin/sh
    *
    * @param container container
    * @return shell instance
    * @throws IllegalStateException if no shell found
    */
+  @SuppressWarnings("deprecation")
   public static Shell detect(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
 
@@ -38,13 +39,41 @@ public final class ShellDetector {
       return bash;
     }
 
-    // Fallback to sh (busybox on Alpine, dash on Debian minimal)
+    // Check if /bin/sh is BusyBox ash (Alpine)
+    if (isBusyBoxSh(container)) {
+      final Shell ash = new AshShell();
+      log.debug("Detected shell: {} (BusyBox ash)", ash.getType());
+      return ash;
+    }
+
+    // Generic /bin/sh fallback (dash on Debian minimal, etc.)
     final Shell sh = new BusyboxShell();
     if (sh.isAvailable(container)) {
-      log.debug("Detected shell: {}", sh.getType());
+      log.debug("Detected shell: {} (generic /bin/sh)", sh.getType());
       return sh;
     }
 
-    throw new IllegalStateException("No shell found in container (tried: bash, sh)");
+    throw new IllegalStateException("No shell found in container (tried: bash, ash, sh)");
+  }
+
+  /**
+   * Checks if {@code /bin/sh} is provided by BusyBox (Alpine Linux).
+   *
+   * <p>BusyBox {@code --help} outputs a line containing {@code "BusyBox"}. This distinguishes
+   * Alpine's ash from Debian's dash or other /bin/sh implementations.
+   *
+   * @param container container to check
+   * @return {@code true} if /bin/sh is BusyBox
+   */
+  private static boolean isBusyBoxSh(final GenericContainer<?> container) {
+    try {
+      final var result = container.execInContainer("/bin/sh", "--help");
+      // BusyBox outputs help to stderr
+      final String output = result.getStdout() + result.getStderr();
+      return output.contains("BusyBox");
+    } catch (final Exception e) {
+      log.debug("BusyBox detection failed: {}", e.getMessage());
+      return false;
+    }
   }
 }

@@ -3,13 +3,13 @@ package com.macstab.chaos.toxiproxy.network;
 
 import java.io.IOException;
 import java.util.Objects;
-import lombok.NonNull;
 
 import org.testcontainers.containers.Container.ExecResult;
 
 import com.macstab.chaos.core.command.network.NetworkCommandBuilder;
 import com.macstab.chaos.toxiproxy.context.ContainerContext;
 
+import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -20,28 +20,31 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <p>This class is stateless. It does not track which rules it has installed, does not cache the
  * container reference, and does not perform platform detection. All execution context arrives via
- * {@link ContainerContext}. The {@link com.macstab.chaos.core.command.network.NetworkCommandBuilder}
- * is retrieved from {@link ContainerContext#platform()} on each call — if the platform abstraction
- * changes the iptables command syntax for a new distribution, no change to this class is required.
+ * {@link ContainerContext}. The {@link
+ * com.macstab.chaos.core.command.network.NetworkCommandBuilder} is retrieved from {@link
+ * ContainerContext#platform()} on each call — if the platform abstraction changes the iptables
+ * command syntax for a new distribution, no change to this class is required.
  *
  * <h2>Statelessness Implication: No Rule Tracking</h2>
  *
  * <p>Because this class does not track installed rules, it cannot know whether a given port pair
  * has an existing redirect, whether duplicates were added, or whether a previous cleanup failed
- * partially. Higher-level orchestration ({@link com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator})
- * is responsible for ensuring setup and teardown are symmetric. Rule tracking at this level would
- * require shared mutable state across instances, introducing concurrency risk for marginal benefit.
+ * partially. Higher-level orchestration ({@link
+ * com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator}) is responsible for ensuring setup and
+ * teardown are symmetric. Rule tracking at this level would require shared mutable state across
+ * instances, introducing concurrency risk for marginal benefit.
  *
  * <h2>Failure Handling Pattern</h2>
  *
  * <p>Each method wraps command execution in a try-catch that distinguishes:
+ *
  * <ul>
  *   <li>Checked {@link IOException} from the shell layer — re-thrown directly.
  *   <li>Any other {@link Exception} — wrapped as {@link IOException} with context message.
  * </ul>
- * This ensures callers only need to handle {@link IOException} regardless of whether the
- * underlying failure is a shell execution error, a Docker API error, or an unexpected runtime
- * exception.
+ *
+ * This ensures callers only need to handle {@link IOException} regardless of whether the underlying
+ * failure is a shell execution error, a Docker API error, or an unexpected runtime exception.
  *
  * <h2>Non-Zero Exit on clearAllRedirects</h2>
  *
@@ -58,7 +61,8 @@ import lombok.extern.slf4j.Slf4j;
 public final class NetworkRedirectManager implements NetworkRedirect {
 
   @Override
-  public void setupRedirect(@NonNull final ContainerContext ctx, final int servicePort, final int proxyPort)
+  public void setupRedirect(
+      @NonNull final ContainerContext ctx, final int servicePort, final int proxyPort)
       throws IOException {
 
     Objects.requireNonNull(ctx, "ctx must not be null");
@@ -88,7 +92,8 @@ public final class NetworkRedirectManager implements NetworkRedirect {
   }
 
   @Override
-  public void removeRedirect(@NonNull final ContainerContext ctx, final int servicePort, final int proxyPort)
+  public void removeRedirect(
+      @NonNull final ContainerContext ctx, final int servicePort, final int proxyPort)
       throws IOException {
 
     Objects.requireNonNull(ctx, "ctx must not be null");

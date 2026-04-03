@@ -2,7 +2,6 @@
 package com.macstab.chaos.core.model;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -62,8 +61,12 @@ class MemoryPressureInfoTest {
     void toStringContainsValues() {
       final var info = new MemoryPressureInfo(1.1, 2.2, 3.3, 4.4, 5.5, 6.6);
       assertThat(info.toString())
-          .contains("1.1").contains("2.2").contains("3.3")
-          .contains("4.4").contains("5.5").contains("6.6");
+          .contains("1.1")
+          .contains("2.2")
+          .contains("3.3")
+          .contains("4.4")
+          .contains("5.5")
+          .contains("6.6");
     }
   }
 }

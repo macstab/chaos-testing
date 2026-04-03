@@ -4,19 +4,10 @@ package com.macstab.chaos.core.shell;
 /**
  * Busybox shell implementation.
  *
- * <p>Used in Alpine Linux (minimal containers).
- *
- * <p><strong>Limitations:</strong>
- *
- * <ul>
- *   <li>No /dev/tcp support
- *   <li>No process substitution
- *   <li>No arrays
- *   <li>Limited built-ins
- * </ul>
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @deprecated Use {@link AshShell} instead. BusyBox {@code /bin/sh} on Alpine is the ash applet.
  */
+@Deprecated(forRemoval = true, since = "1.1")
 public final class BusyboxShell extends AbstractShell {
 
   @Override
@@ -29,6 +20,7 @@ public final class BusyboxShell extends AbstractShell {
     return "/bin/sh";
   }
 
+  @SuppressWarnings("removal")
   @Override
   public boolean supportsDevTcp() {
     return false;

@@ -118,8 +118,8 @@ public interface CpuChaos extends ChaosProvider {
   /**
    * Throttle container CPU to {@code percentage} of one core via {@code cpulimit -p 1}.
    *
-   * <p>Throttle is permanent until {@link #reset(GenericContainer)} is called. Use
-   * {@link #throttle(GenericContainer, int, Duration)} for auto-releasing throttle.
+   * <p>Throttle is permanent until {@link #reset(GenericContainer)} is called. Use {@link
+   * #throttle(GenericContainer, int, Duration)} for auto-releasing throttle.
    *
    * <p><strong>Models:</strong> Kubernetes {@code resources.limits.cpu} / noisy-neighbour quota.
    *
@@ -326,8 +326,8 @@ public interface CpuChaos extends ChaosProvider {
   /**
    * Flood user-space co-routine context switches via {@code stress-ng --context}.
    *
-   * <p>Each worker rapidly switches between two user-space execution contexts using POSIX
-   * {@code swapcontext()}, stressing the TLB and the kernel scheduler under virtual-thread-heavy
+   * <p>Each worker rapidly switches between two user-space execution contexts using POSIX {@code
+   * swapcontext()}, stressing the TLB and the kernel scheduler under virtual-thread-heavy
    * workloads.
    *
    * <p><strong>Models:</strong> Project Loom virtual-thread overhead, coroutine library performance
@@ -354,14 +354,14 @@ public interface CpuChaos extends ChaosProvider {
   void stressContextSwitch(GenericContainer<?> container, int workers);
 
   /**
-   * Flood kernel thread context switches via pipe-synchronized yield pairs
-   * ({@code stress-ng --switch}).
+   * Flood kernel thread context switches via pipe-synchronized yield pairs ({@code stress-ng
+   * --switch}).
    *
    * <p>Worker pairs ping-pong across a pipe to maximise scheduler invocations per second. Models
    * highly concurrent, lock-heavy thread pools where context switches dominate CPU time.
    *
-   * <p><strong>Models:</strong> Thread-pool scheduler saturation, lock-convoy scenarios,
-   * wake-up latency under scheduler pressure.
+   * <p><strong>Models:</strong> Thread-pool scheduler saturation, lock-convoy scenarios, wake-up
+   * latency under scheduler pressure.
    *
    * <p><strong>Example:</strong>
    *
@@ -389,7 +389,8 @@ public interface CpuChaos extends ChaosProvider {
    * Inject CPU branch-predictor misprediction stalls via {@code stress-ng --branch}.
    *
    * <p>Forces the CPU branch predictor to mispredict on every iteration, flushing the instruction
-   * pipeline. Highly architecture-sensitive - results vary significantly between microarchitectures.
+   * pipeline. Highly architecture-sensitive - results vary significantly between
+   * microarchitectures.
    *
    * <p><strong>Models:</strong> JIT hotspot pipeline stalls, decision-tree traversal on
    * unpredictable data, V8/JVM JIT regression detection under prediction pressure.
@@ -445,12 +446,11 @@ public interface CpuChaos extends ChaosProvider {
   void stressTimerInterrupts(GenericContainer<?> container, int workers);
 
   /**
-   * Stress FPU/SIMD pipelines via floating-point matrix operations
-   * ({@code stress-ng --matrix}).
+   * Stress FPU/SIMD pipelines via floating-point matrix operations ({@code stress-ng --matrix}).
    *
    * <p>Performs dense floating-point matrix multiplications, exercising SIMD units
-   * (SSE4.2/AVX2/NEON) and the FPU pipeline. Causes thermal throttling under sustained load on
-   * real hardware.
+   * (SSE4.2/AVX2/NEON) and the FPU pipeline. Causes thermal throttling under sustained load on real
+   * hardware.
    *
    * <p><strong>Models:</strong> Numerical/ML inference workload interference, SIMD regression
    * testing, codec / signal-processing co-location degradation.
@@ -567,8 +567,8 @@ public interface CpuChaos extends ChaosProvider {
   /**
    * Restore PID 1's nice value to {@code 0} (normal priority).
    *
-   * <p><strong>Note:</strong> Requires {@code CAP_SYS_NICE} or root to restore from a non-zero
-   * nice value back to 0. In unprivileged containers, this call will fail if the nice value was
+   * <p><strong>Note:</strong> Requires {@code CAP_SYS_NICE} or root to restore from a non-zero nice
+   * value back to 0. In unprivileged containers, this call will fail if the nice value was
    * previously raised. Use {@link #reset(GenericContainer)} for full cleanup instead - it will
    * attempt restore and silently ignore failures.
    *
@@ -584,8 +584,8 @@ public interface CpuChaos extends ChaosProvider {
   /**
    * Returns current CPU usage calculated from a two-sample {@code /proc/stat} delta over 500 ms.
    *
-   * <p>Returns the overall CPU busy percentage (0–100) summed across all available cores divided
-   * by the total available time. Example: 1 worker on a 4-core system yields roughly 25%.
+   * <p>Returns the overall CPU busy percentage (0–100) summed across all available cores divided by
+   * the total available time. Example: 1 worker on a 4-core system yields roughly 25%.
    *
    * <p><strong>Example:</strong>
    *
@@ -606,8 +606,8 @@ public interface CpuChaos extends ChaosProvider {
   /**
    * Returns the number of CPU cores visible to the container via {@code nproc}.
    *
-   * <p>Falls back to counting {@code processor} entries in {@code /proc/cpuinfo} when
-   * {@code nproc} is unavailable.
+   * <p>Falls back to counting {@code processor} entries in {@code /proc/cpuinfo} when {@code nproc}
+   * is unavailable.
    *
    * <p><strong>Example:</strong>
    *
@@ -653,8 +653,8 @@ public interface CpuChaos extends ChaosProvider {
   /**
    * Returns {@code true} if PID 1's CPU affinity is restricted to fewer cores than available.
    *
-   * <p>Reads the affinity mask via {@code taskset -p 1} and compares the number of set bits
-   * against the total available core count. Returns {@code false} if the container is not running.
+   * <p>Reads the affinity mask via {@code taskset -p 1} and compares the number of set bits against
+   * the total available core count. Returns {@code false} if the container is not running.
    *
    * @param container target container
    * @return {@code true} if affinity is pinned to a strict subset of available cores
@@ -665,8 +665,8 @@ public interface CpuChaos extends ChaosProvider {
   /**
    * Returns PID 1's current CPU affinity mask as a bitmask.
    *
-   * <p>Reads the mask via {@code taskset -p 1}. A value with all bits set (e.g., {@code 0xfff} on
-   * a 12-vCPU system) means unrestricted.
+   * <p>Reads the mask via {@code taskset -p 1}. A value with all bits set (e.g., {@code 0xfff} on a
+   * 12-vCPU system) means unrestricted.
    *
    * <p><strong>Example:</strong>
    *

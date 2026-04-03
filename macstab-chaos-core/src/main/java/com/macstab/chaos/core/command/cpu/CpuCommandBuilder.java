@@ -17,9 +17,9 @@ package com.macstab.chaos.core.command.cpu;
  *
  * <p><strong>Process detection strategy:</strong>
  *
- * <p>All process lifecycle commands use {@code /proc/comm} exclusively - no dependency on
- * {@code pgrep}, {@code pkill}, or {@code ps}, which may be absent in minimal container images
- * (e.g., {@code redis:7.4}).
+ * <p>All process lifecycle commands use {@code /proc/comm} exclusively - no dependency on {@code
+ * pgrep}, {@code pkill}, or {@code ps}, which may be absent in minimal container images (e.g.,
+ * {@code redis:7.4}).
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see com.macstab.chaos.cpu.command.StressNgCommandBuilder
@@ -45,8 +45,8 @@ public interface CpuCommandBuilder {
    * → stdout: "743"
    * </pre>
    *
-   * @param exactCommName exact {@code comm} name to match (e.g., {@code "stress-ng"},
-   *     {@code "cpulimit"})
+   * @param exactCommName exact {@code comm} name to match (e.g., {@code "stress-ng"}, {@code
+   *     "cpulimit"})
    * @return shell command string
    */
   String buildFindLowestPidByCommCommand(String exactCommName);
@@ -94,8 +94,8 @@ public interface CpuCommandBuilder {
    * Build command to send {@code SIGKILL (-9)} to all processes matching the exact {@code comm}
    * name.
    *
-   * <p>Iterates all matching {@code /proc/[0-9]* /comm} entries and kills every match. Safe to
-   * call when no matching process exists - exits {@code 0} in all cases.
+   * <p>Iterates all matching {@code /proc/[0-9]* /comm} entries and kills every match. Safe to call
+   * when no matching process exists - exits {@code 0} in all cases.
    *
    * <p><strong>Use case:</strong> Kill all {@code cpulimit} instances (typically only one, but
    * defensive).
@@ -116,12 +116,11 @@ public interface CpuCommandBuilder {
   String buildKillAllByCommPrefixSigKillCommand(String commPrefix);
 
   /**
-   * Build command to send {@code SIGTERM (-15)} to the lowest-PID process matching the exact
-   * {@code comm} name.
+   * Build command to send {@code SIGTERM (-15)} to the lowest-PID process matching the exact {@code
+   * comm} name.
    *
-   * <p>Only the parent process (lowest PID) is signalled. Worker children are expected to
-   * terminate as a result of parent-coordinated shutdown. Safe to call when no matching process
-   * exists.
+   * <p>Only the parent process (lowest PID) is signalled. Worker children are expected to terminate
+   * as a result of parent-coordinated shutdown. Safe to call when no matching process exists.
    *
    * <p><strong>Use case:</strong> Gracefully stop {@code stress-ng} - SIGTERM allows the parent to
    * clean up worker PIDs before exiting. SIGKILL on workers causes them to be respawned by the
@@ -137,8 +136,8 @@ public interface CpuCommandBuilder {
   /**
    * Build command to start CPU compute stress workers that run until explicitly killed.
    *
-   * <p>Runs {@code stress-ng --cpu <workers> --timeout 0} in the background. Each worker executes
-   * a tight compute loop, consuming 100% of one CPU core.
+   * <p>Runs {@code stress-ng --cpu <workers> --timeout 0} in the background. Each worker executes a
+   * tight compute loop, consuming 100% of one CPU core.
    *
    * <p><strong>Use cases:</strong> CPU saturation, noisy-neighbor simulation, thread-pool
    * exhaustion testing.
@@ -183,8 +182,8 @@ public interface CpuCommandBuilder {
   /**
    * Build command to start cache-line false-sharing contention workers.
    *
-   * <p>Runs {@code stress-ng --cacheline <workers>} - each worker hammers adjacent cache lines in
-   * a shared cache page to trigger CPU coherence traffic. Models concurrent multi-threaded
+   * <p>Runs {@code stress-ng --cacheline <workers>} - each worker hammers adjacent cache lines in a
+   * shared cache page to trigger CPU coherence traffic. Models concurrent multi-threaded
    * false-sharing scenarios at the hardware level.
    *
    * <p><strong>Use cases:</strong> False-sharing regressions in concurrent data structures, JVM
@@ -242,11 +241,11 @@ public interface CpuCommandBuilder {
   /**
    * Build command to flood the kernel with high-resolution timer interrupts.
    *
-   * <p>Runs {@code stress-ng --hrtimers <workers>} - arms and cancels a high volume of
-   * {@code CLOCK_REALTIME} high-resolution timers per second, driving interrupt overhead.
+   * <p>Runs {@code stress-ng --hrtimers <workers>} - arms and cancels a high volume of {@code
+   * CLOCK_REALTIME} high-resolution timers per second, driving interrupt overhead.
    *
-   * <p><strong>Use cases:</strong> Interrupt-dense I/O simulation, timer wheel contention,
-   * {@code SCHED_DEADLINE} interference testing.
+   * <p><strong>Use cases:</strong> Interrupt-dense I/O simulation, timer wheel contention, {@code
+   * SCHED_DEADLINE} interference testing.
    *
    * @param workers number of hrtimer worker processes (must be ≥ 1)
    * @return shell command string
@@ -279,8 +278,7 @@ public interface CpuCommandBuilder {
   // ==================== cpulimit Commands ====================
 
   /**
-   * Build command to throttle a process to {@code percentage} of one CPU core via
-   * {@code cpulimit}.
+   * Build command to throttle a process to {@code percentage} of one CPU core via {@code cpulimit}.
    *
    * <p>Runs {@code cpulimit -l <percentage> -p <pid>} in the background. cpulimit enforces the
    * limit by periodically sending {@code SIGSTOP}/{@code SIGCONT} to the target process.
@@ -304,9 +302,9 @@ public interface CpuCommandBuilder {
   /**
    * Build command to throttle a process for {@code seconds}, then auto-release.
    *
-   * <p>Starts {@code cpulimit} in a background subshell, captures its PID, sleeps
-   * {@code seconds}, then kills cpulimit. The release is container-internal - no Java-side
-   * scheduler or thread is involved.
+   * <p>Starts {@code cpulimit} in a background subshell, captures its PID, sleeps {@code seconds},
+   * then kills cpulimit. The release is container-internal - no Java-side scheduler or thread is
+   * involved.
    *
    * <p><strong>Example:</strong>
    *
@@ -325,8 +323,8 @@ public interface CpuCommandBuilder {
   // ==================== taskset Commands ====================
 
   /**
-   * Build command to pin a process to the CPUs represented by {@code affinityMask} via
-   * {@code taskset}.
+   * Build command to pin a process to the CPUs represented by {@code affinityMask} via {@code
+   * taskset}.
    *
    * <p>Applies the affinity mask to an already-running process. Mask bits correspond to CPU
    * indices: bit 0 = CPU 0, bit 1 = CPU 1, etc.
@@ -349,8 +347,8 @@ public interface CpuCommandBuilder {
   /**
    * Build command to read the current CPU affinity mask of a process.
    *
-   * <p>Runs {@code taskset -p <pid>}. Output format:
-   * {@code "pid <N>'s current affinity mask: <hexmask>"}.
+   * <p>Runs {@code taskset -p <pid>}. Output format: {@code "pid <N>'s current affinity mask:
+   * <hexmask>"}.
    *
    * <p><strong>Example:</strong>
    *

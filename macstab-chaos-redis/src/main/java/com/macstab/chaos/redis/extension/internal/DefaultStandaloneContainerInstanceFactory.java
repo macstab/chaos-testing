@@ -1,18 +1,17 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.redis.extension.internal;
 
-import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
-
-import com.macstab.chaos.core.platform.Tool;
-import com.macstab.chaos.core.util.ToolPackage;
 
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
 
 import com.github.dockerjava.api.model.Capability;
+import com.macstab.chaos.core.platform.Tool;
+import com.macstab.chaos.core.util.ToolPackage;
 import com.macstab.chaos.redis.annotation.RedisStandalone;
 import com.macstab.chaos.redis.command.RedisCommandBuilder;
 import com.macstab.chaos.redis.extension.RedisContainerExtension.RedisConnectionInfo;
@@ -145,9 +144,8 @@ public final class DefaultStandaloneContainerInstanceFactory
       return;
     }
     try {
-      final ToolPackage[] toolPackages = Arrays.stream(annotation.packages())
-          .map(ToolPackage::ofSame)
-          .toArray(ToolPackage[]::new);
+      final ToolPackage[] toolPackages =
+          Arrays.stream(annotation.packages()).map(ToolPackage::ofSame).toArray(ToolPackage[]::new);
       packageInstaller.ensureInstalled(container, toolPackages);
       log.info("Packages installed in instance '{}'", annotation.id());
     } catch (final RuntimeException e) {

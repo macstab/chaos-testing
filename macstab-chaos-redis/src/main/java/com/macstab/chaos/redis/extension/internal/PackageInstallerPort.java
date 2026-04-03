@@ -49,8 +49,7 @@ public interface PackageInstallerPort {
         }
 
         @Override
-        public void ensureInstalled(
-            final GenericContainer<?> container, final Tool... tools) {
+        public void ensureInstalled(final GenericContainer<?> container, final Tool... tools) {
           PackageInstaller.ensureInstalled(container, tools);
         }
 
@@ -97,9 +96,9 @@ public interface PackageInstallerPort {
   void ensureInstalled(GenericContainer<?> container, Tool... tools);
 
   /**
-   * Ensures self-describing tools are installed exactly once per container lifetime.
-   * Accepts any {@link ToolDefinition} implementation — built-in {@link ToolPackage}
-   * or user-defined enums from any module.
+   * Ensures self-describing tools are installed exactly once per container lifetime. Accepts any
+   * {@link ToolDefinition} implementation — built-in {@link ToolPackage} or user-defined enums from
+   * any module.
    *
    * @param container target container
    * @param tools tool definitions

@@ -10,8 +10,8 @@ import com.macstab.chaos.core.api.CpuChaos;
 import com.macstab.chaos.core.spi.ChaosProviderRegistry;
 
 /**
- * SPI registration test - verifies {@link CgroupsCpuChaos} is discoverable via
- * {@code META-INF/services}.
+ * SPI registration test - verifies {@link CgroupsCpuChaos} is discoverable via {@code
+ * META-INF/services}.
  *
  * @author Christian Schnapka - Macstab GmbH
  */

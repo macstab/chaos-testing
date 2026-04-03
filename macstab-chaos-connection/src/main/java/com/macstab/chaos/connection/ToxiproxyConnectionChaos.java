@@ -182,9 +182,8 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
   /**
    * Truncate connection after {@code bytes} cumulative bytes transmitted.
    *
-   * <p>Simulates mid-stream disconnect — client receives a partial response and must handle
-   * {@code SocketException} / {@code EOFException}. Tests reconnection logic and partial-read
-   * resilience.
+   * <p>Simulates mid-stream disconnect — client receives a partial response and must handle {@code
+   * SocketException} / {@code EOFException}. Tests reconnection logic and partial-read resilience.
    *
    * @param container target container (must be running)
    * @param target target host:port
@@ -236,13 +235,15 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
     final TargetAddress addr = TargetAddress.parse(target);
     final ContainerContext ctx = ensureProxyFor(container, addr);
 
-    final LatencyToxic toxic = LatencyToxic.builder()
-        .name("latency")
-        .latencyMs((int) latency.toMillis())
-        .jitterMs((int) jitter.toMillis())
-        .build();
+    final LatencyToxic toxic =
+        LatencyToxic.builder()
+            .name("latency")
+            .latencyMs((int) latency.toMillis())
+            .jitterMs((int) jitter.toMillis())
+            .build();
     addToxicSafe(ctx, proxyName(addr), toxic, target, "latency with jitter");
-    log.info("Added {}ms ±{}ms jitter latency to {}", latency.toMillis(), jitter.toMillis(), target);
+    log.info(
+        "Added {}ms ±{}ms jitter latency to {}", latency.toMillis(), jitter.toMillis(), target);
   }
 
   /**
@@ -268,21 +269,24 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
       apiClient.deleteToxic(ctx, proxyName(addr), toxicName);
       log.info("Removed toxic '{}' from {}", toxicName, target);
     } catch (final Exception e) {
-      log.debug("removeToxic '{}' on {} — not found or already removed: {}", toxicName, target, e.getMessage());
+      log.debug(
+          "removeToxic '{}' on {} — not found or already removed: {}",
+          toxicName,
+          target,
+          e.getMessage());
     }
   }
 
   /**
    * Remove all toxics from a target's proxy, restoring it to clean pass-through.
    *
-   * <p>The proxy itself stays active — only faults are removed. Use this for per-test cleanup
-   * when you want to reuse the proxy across test methods.
+   * <p>The proxy itself stays active — only faults are removed. Use this for per-test cleanup when
+   * you want to reuse the proxy across test methods.
    *
    * @param container target container (must be running)
    * @param target target host:port
    */
-  public void removeAllToxics(
-      final GenericContainer<?> container, final String target) {
+  public void removeAllToxics(final GenericContainer<?> container, final String target) {
     Objects.requireNonNull(container, "container must not be null");
     Objects.requireNonNull(target, "target must not be null");
     validateRunning(container);
@@ -351,8 +355,7 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
       try {
         apiClient.deleteProxy(ctx, entry.getKey());
         final ProxyConfiguration proxyConfig = entry.getValue();
-        networkRedirect.removeRedirect(
-            ctx, proxyConfig.servicePort(), proxyConfig.proxyPort());
+        networkRedirect.removeRedirect(ctx, proxyConfig.servicePort(), proxyConfig.proxyPort());
         log.debug("Removed connection proxy: {}", entry.getKey());
       } catch (final Exception e) {
         log.debug("Failed to remove proxy {} during reset: {}", entry.getKey(), e.getMessage());
@@ -419,7 +422,8 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
       final String target,
       final String operation) {
     try {
-      apiClient.addToxic(ctx, proxyName, toxic.name(), toxic.type(), toxic.toJson(), toxic.toxicity());
+      apiClient.addToxic(
+          ctx, proxyName, toxic.name(), toxic.type(), toxic.toJson(), toxic.toxicity());
     } catch (final Exception e) {
       throw new ChaosOperationFailedException("Failed to add " + operation + " to " + target, e);
     }

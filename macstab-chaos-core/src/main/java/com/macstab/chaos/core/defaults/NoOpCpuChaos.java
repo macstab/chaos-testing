@@ -16,8 +16,8 @@ import lombok.extern.slf4j.Slf4j;
  * classpath.
  *
  * <p>All chaos operations throw {@link ChaosProviderNotFoundException}. Lifecycle operations
- * ({@link #installTools}, {@link #reset}, {@link #resetPriority}) are silent no-ops so that
- * cleanup code in {@code @AfterEach} does not fail when the module is absent.
+ * ({@link #installTools}, {@link #reset}, {@link #resetPriority}) are silent no-ops so that cleanup
+ * code in {@code @AfterEach} does not fail when the module is absent.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -184,6 +184,11 @@ public final class NoOpCpuChaos implements CpuChaos {
   @Override
   public void reset(final GenericContainer<?> container) {
     // Silent no-op: safe to call in @AfterEach even when module is absent.
+  }
+
+  @Override
+  public int priority() {
+    return Integer.MAX_VALUE;
   }
 
   @Override

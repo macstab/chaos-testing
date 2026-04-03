@@ -12,20 +12,20 @@ package com.macstab.chaos.toxiproxy.toxic;
  *
  * <h2>Connection Pool Exhaustion Mechanism</h2>
  *
- * <p>This toxic is specifically designed to trigger connection pool exhaustion. If a pool has
- * a maximum size of N connections and the service processes N requests simultaneously, each
- * connection will be held open for {@code delayMs} ms after the response is complete. If the
- * pool's maximum wait time is shorter than {@code delayMs}, requests arriving during this window
- * will fail with a pool timeout exception. This tests whether the application fails fast (pool
- * exhaustion error) or hangs indefinitely.
+ * <p>This toxic is specifically designed to trigger connection pool exhaustion. If a pool has a
+ * maximum size of N connections and the service processes N requests simultaneously, each
+ * connection will be held open for {@code delayMs} ms after the response is complete. If the pool's
+ * maximum wait time is shorter than {@code delayMs}, requests arriving during this window will fail
+ * with a pool timeout exception. This tests whether the application fails fast (pool exhaustion
+ * error) or hangs indefinitely.
  *
  * <h2>Difference from TimeoutToxic</h2>
  *
  * <p>{@link TimeoutToxic} halts data transfer and drops the connection. {@code SlowCloseToxic}
- * completes data transfer normally — the client receives the full response — but the socket
- * cleanup is delayed. This difference is observable: clients that measure "time to first byte"
- * or "time to last byte" are not affected by {@code SlowCloseToxic}, but clients that measure
- * "time to connection available" (i.e., connection pool check-out time) are affected.
+ * completes data transfer normally — the client receives the full response — but the socket cleanup
+ * is delayed. This difference is observable: clients that measure "time to first byte" or "time to
+ * last byte" are not affected by {@code SlowCloseToxic}, but clients that measure "time to
+ * connection available" (i.e., connection pool check-out time) are affected.
  *
  * <h2>Use Cases</h2>
  *
@@ -67,7 +67,9 @@ public final class SlowCloseToxic extends AbstractToxic {
     validateNonNegative(delayMs, "delayMs");
   }
 
-  /** @return new builder (defaults: delayMs=0, toxicity=1.0) */
+  /**
+   * @return new builder (defaults: delayMs=0, toxicity=1.0)
+   */
   public static Builder builder() {
     return new Builder();
   }

@@ -6,22 +6,21 @@ package com.macstab.chaos.toxiproxy.toxic;
  * maximum in kilobytes per second.
  *
  * <p>Uses Toxiproxy's {@code bandwidth} toxic. Toxiproxy applies the rate limit per connection
- * independently using a token bucket algorithm. Each affected connection gets its own token
- * bucket refilled at {@code rateKbps} KB/s — the rate is NOT shared across all connections to
- * the proxy. Twenty concurrent connections with {@code rateKbps=100} each get 100 KB/s, not
- * 5 KB/s each.
+ * independently using a token bucket algorithm. Each affected connection gets its own token bucket
+ * refilled at {@code rateKbps} KB/s — the rate is NOT shared across all connections to the proxy.
+ * Twenty concurrent connections with {@code rateKbps=100} each get 100 KB/s, not 5 KB/s each.
  *
  * <h2>Both Directions Affected</h2>
  *
- * <p>The bandwidth limit applies to both upstream (client → service) and downstream
- * (service → client) traffic. For read-heavy workloads (large Redis HGETALL, large DB result
- * sets), the downstream limit dominates perceived latency. For write-heavy workloads
- * (bulk inserts, large message payloads), the upstream limit dominates.
+ * <p>The bandwidth limit applies to both upstream (client → service) and downstream (service →
+ * client) traffic. For read-heavy workloads (large Redis HGETALL, large DB result sets), the
+ * downstream limit dominates perceived latency. For write-heavy workloads (bulk inserts, large
+ * message payloads), the upstream limit dominates.
  *
  * <h2>Attributes JSON</h2>
  *
- * <p>{@link #toJson()} returns {@code {"rate":{rateKbps}}}. The field is named {@code "rate"},
- * not {@code "rateKbps"} — Toxiproxy's attribute schema uses the short name.
+ * <p>{@link #toJson()} returns {@code {"rate":{rateKbps}}}. The field is named {@code "rate"}, not
+ * {@code "rateKbps"} — Toxiproxy's attribute schema uses the short name.
  *
  * <h2>Use Cases</h2>
  *
@@ -65,7 +64,9 @@ public final class BandwidthToxic extends AbstractToxic {
     validatePositive(rateKbps, "rateKbps");
   }
 
-  /** @return new builder (defaults: rateKbps=100, toxicity=1.0) */
+  /**
+   * @return new builder (defaults: rateKbps=100, toxicity=1.0)
+   */
   public static Builder builder() {
     return new Builder();
   }

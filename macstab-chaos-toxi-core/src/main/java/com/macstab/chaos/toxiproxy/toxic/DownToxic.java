@@ -5,40 +5,41 @@ package com.macstab.chaos.toxiproxy.toxic;
  * Drops all data flowing through the proxy immediately, without delay, simulating a completely
  * unreachable upstream or probabilistic packet loss at the TCP application layer.
  *
- * <p>Uses Toxiproxy's {@code down} toxic, which has no attributes. When active, Toxiproxy does
- * not forward any data through affected connections. The client's socket appears connected at the
- * TCP level (the handshake completes) but no application data flows. Depending on the client's
- * socket read timeout, the client will eventually receive a timeout error or a connection reset.
+ * <p>Uses Toxiproxy's {@code down} toxic, which has no attributes. When active, Toxiproxy does not
+ * forward any data through affected connections. The client's socket appears connected at the TCP
+ * level (the handshake completes) but no application data flows. Depending on the client's socket
+ * read timeout, the client will eventually receive a timeout error or a connection reset.
  *
  * <h2>Difference from Other Drop Toxics</h2>
  *
  * <p>Comparison of connection-drop behavior:
+ *
  * <ul>
- *   <li>{@code DownToxic}: TCP handshake succeeds, but data is silently dropped. Client hangs
- *       until its own read timeout fires. No explicit RST sent.
- *   <li>{@link TimeoutToxic} with {@code timeoutMs=0}: data dropped with explicit TCP RST
- *       after the first data arrival.
+ *   <li>{@code DownToxic}: TCP handshake succeeds, but data is silently dropped. Client hangs until
+ *       its own read timeout fires. No explicit RST sent.
+ *   <li>{@link TimeoutToxic} with {@code timeoutMs=0}: data dropped with explicit TCP RST after the
+ *       first data arrival.
  *   <li>{@link LimitDataToxic} with {@code bytes=0}: TCP RST issued after handshake.
  * </ul>
  *
- * <p>The silent drop behavior of {@code DownToxic} is the most realistic simulation of
- * a "black hole" network — packets arrive but are discarded without acknowledgment, which is
- * what happens with routing loops, firewall DROP rules (as opposed to REJECT), and some
- * network partition scenarios.
+ * <p>The silent drop behavior of {@code DownToxic} is the most realistic simulation of a "black
+ * hole" network — packets arrive but are discarded without acknowledgment, which is what happens
+ * with routing loops, firewall DROP rules (as opposed to REJECT), and some network partition
+ * scenarios.
  *
  * <h2>Probabilistic Use: Packet Loss Simulation</h2>
  *
- * <p>With {@code toxicity < 1.0}, {@code DownToxic} simulates packet loss: each connection
- * has an independent {@code toxicity}-probability of being silently dropped. This is useful for
- * testing retry logic under flaky network conditions. Unlike the kernel-level packet loss
- * simulation in {@link com.macstab.chaos.network.TcNetworkChaos#injectPacketLoss}, this operates
- * at the connection level (not per-packet) — an affected connection drops all its data, not a
- * fraction of packets.
+ * <p>With {@code toxicity < 1.0}, {@code DownToxic} simulates packet loss: each connection has an
+ * independent {@code toxicity}-probability of being silently dropped. This is useful for testing
+ * retry logic under flaky network conditions. Unlike the kernel-level packet loss simulation in
+ * {@link com.macstab.chaos.network.TcNetworkChaos#injectPacketLoss}, this operates at the
+ * connection level (not per-packet) — an affected connection drops all its data, not a fraction of
+ * packets.
  *
  * <h2>Attributes JSON</h2>
  *
- * <p>{@link #toJson()} returns {@code {}} (empty object). The Toxiproxy {@code down} toxic
- * has no configurable attributes in Toxiproxy 2.x; the type itself is the configuration.
+ * <p>{@link #toJson()} returns {@code {}} (empty object). The Toxiproxy {@code down} toxic has no
+ * configurable attributes in Toxiproxy 2.x; the type itself is the configuration.
  *
  * <h2>Use Cases</h2>
  *
@@ -77,7 +78,9 @@ public final class DownToxic extends AbstractToxic {
     super(builder);
   }
 
-  /** @return new builder (defaults: toxicity=1.0) */
+  /**
+   * @return new builder (defaults: toxicity=1.0)
+   */
   public static Builder builder() {
     return new Builder();
   }

@@ -56,10 +56,10 @@ class AbstractLinuxPlatformComprehensiveTest {
   @DisplayName("getRequiredTools()")
   class GetRequiredToolsTest {
     @Test
-    @DisplayName("Should return curl and iptables")
+    @DisplayName("Should return Tool.CURL and Tool.IPTABLES")
     void shouldReturnCurlAndIptables() {
       Platform platform = new TestLinuxPlatform();
-      assertThat(platform.getRequiredTools()).containsExactly("curl", "iptables");
+      assertThat(platform.getRequiredTools()).containsExactly(Tool.CURL, Tool.IPTABLES);
     }
   }
 

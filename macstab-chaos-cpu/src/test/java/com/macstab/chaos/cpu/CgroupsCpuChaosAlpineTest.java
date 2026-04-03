@@ -7,7 +7,6 @@ import static org.awaitility.Awaitility.await;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
-import com.macstab.chaos.network.condition.DisabledOnNonLinuxHost;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -15,6 +14,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
+
 import com.github.dockerjava.api.model.Capability;
 
 /**
@@ -33,8 +33,9 @@ class CgroupsCpuChaosAlpineTest {
 
   @BeforeEach
   void setUp() {
-    container = new GenericContainer<>(DockerImageName.parse("redis:7.4-alpine"))
-        .withCreateContainerCmdModifier(cmd -> cmd.withCapAdd(Capability.SYS_NICE));
+    container =
+        new GenericContainer<>(DockerImageName.parse("redis:7.4-alpine"))
+            .withCreateContainerCmdModifier(cmd -> cmd.withCapAdd(Capability.SYS_NICE));
     container.start();
     chaos = new CgroupsCpuChaos();
   }
@@ -82,7 +83,8 @@ class CgroupsCpuChaosAlpineTest {
     @DisplayName("getCurrentUsage > 0 after stress")
     void usageDetectsStress() {
       chaos.stress(container, 2);
-      await().atMost(10, TimeUnit.SECONDS)
+      await()
+          .atMost(10, TimeUnit.SECONDS)
           .pollInterval(1, TimeUnit.SECONDS)
           .until(() -> chaos.getCurrentUsage(container) > 0);
     }

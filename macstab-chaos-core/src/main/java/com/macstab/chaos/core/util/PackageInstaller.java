@@ -113,25 +113,25 @@ public final class PackageInstaller {
    * package name and binary name per distribution — callers never deal with distro differences.
    *
    * <p><strong>Algorithm:</strong>
+   *
    * <ol>
    *   <li>Check {@code macstab.chaos.pkg.<tool>} label on the container Java object for each tool
    *   <li>All present → return immediately (zero Docker cost, pure in-JVM map lookup)
    *   <li>Detect platform once — resolves {@code apk} / {@code apt-get} / {@code dnf}
    *   <li>Resolve package name per tool via {@link Platform#getPackageName(Tool)}
    *   <li>Deduplicate packages — single install invocation regardless of tool count
-   *   <li>Verify binary via {@code which} using {@link Platform#getBinaryName(Tool)}
-   *       (skipped for tools with no binary, e.g. {@link Tool#CA_CERTIFICATES})
+   *   <li>Verify binary via {@code which} using {@link Platform#getBinaryName(Tool)} (skipped for
+   *       tools with no binary, e.g. {@link Tool#CA_CERTIFICATES})
    *   <li>Set label via {@link GenericContainer#withLabel} — pure in-JVM, no Docker API call
    * </ol>
    *
    * @param container target container (must be started)
-   * @param tools     one or more known tools from the {@link Tool} enum
-   * @throws NullPointerException         if container or tools is null
-   * @throws IllegalStateException        if container is not started
+   * @param tools one or more known tools from the {@link Tool} enum
+   * @throws NullPointerException if container or tools is null
+   * @throws IllegalStateException if container is not started
    * @throws PackageInstallationException if installation or verification fails
    */
-  public static void ensureInstalled(
-      final GenericContainer<?> container, final Tool... tools) {
+  public static void ensureInstalled(final GenericContainer<?> container, final Tool... tools) {
     Objects.requireNonNull(container, "container");
     Objects.requireNonNull(tools, "tools");
     validateContainerRunning(container);
@@ -143,11 +143,14 @@ public final class PackageInstaller {
     }
 
     final Platform platform = PlatformDetector.detect(container);
-    final List<String> packages = deduplicatePackages(
-        missing.stream().map(platform::getPackageName).toList());
+    final List<String> packages =
+        deduplicatePackages(missing.stream().map(platform::getPackageName).toList());
 
-    log.info("Installing {} package(s) for {} missing tool(s): {}",
-        packages.size(), missing.size(), missing);
+    log.info(
+        "Installing {} package(s) for {} missing tool(s): {}",
+        packages.size(),
+        missing.size(),
+        missing);
 
     try {
       executeInstallation(container, packages);
@@ -160,18 +163,18 @@ public final class PackageInstaller {
   /**
    * Ensures the given tools are installed exactly once per container lifetime.
    *
-   * <p>Open extension point — accepts any {@link ToolDefinition} implementation: built-in
-   * {@link ToolPackage} records, or user-defined enums/classes from any module.
-   * No core changes required to add new tools.
+   * <p>Open extension point — accepts any {@link ToolDefinition} implementation: built-in {@link
+   * ToolPackage} records, or user-defined enums/classes from any module. No core changes required
+   * to add new tools.
    *
-   * <p>Uses the same label-guard, dedup, single-install, and verify algorithm as
-   * {@link #ensureInstalled(GenericContainer, Tool...)}. Label key is
-   * {@code macstab.chaos.pkg.<ToolDefinition.tool()>}. Verification uses the binary name directly.
+   * <p>Uses the same label-guard, dedup, single-install, and verify algorithm as {@link
+   * #ensureInstalled(GenericContainer, Tool...)}. Label key is {@code
+   * macstab.chaos.pkg.<ToolDefinition.tool()>}. Verification uses the binary name directly.
    *
    * @param container target container (must be started)
-   * @param tools     one or more {@link ToolDefinition} instances
-   * @throws NullPointerException         if container or tools is null, or any element is null
-   * @throws IllegalStateException        if container is not started
+   * @param tools one or more {@link ToolDefinition} instances
+   * @throws NullPointerException if container or tools is null, or any element is null
+   * @throws IllegalStateException if container is not started
    * @throws PackageInstallationException if installation or verification fails
    */
   public static void ensureInstalled(
@@ -186,11 +189,13 @@ public final class PackageInstaller {
       return;
     }
 
-    final List<String> packages = deduplicatePackages(
-        missing.stream().map(ToolDefinition::packageName).toList());
+    final List<String> packages =
+        deduplicatePackages(missing.stream().map(ToolDefinition::packageName).toList());
 
-    log.info("Installing {} package(s) for {} missing tool(s): {}",
-        packages.size(), missing.size(),
+    log.info(
+        "Installing {} package(s) for {} missing tool(s): {}",
+        packages.size(),
+        missing.size(),
         missing.stream().map(ToolDefinition::tool).toList());
 
     try {
@@ -235,14 +240,12 @@ public final class PackageInstaller {
   /**
    * Verifies tool binaries via {@code which} and sets installation labels.
    *
-   * <p>Tools with no binary (e.g. {@link Tool#CA_CERTIFICATES}) have
-   * {@link Platform#getBinaryName(Tool)} returning {@code null} — verification is skipped
-   * for those, but the label is still set.
+   * <p>Tools with no binary (e.g. {@link Tool#CA_CERTIFICATES}) have {@link
+   * Platform#getBinaryName(Tool)} returning {@code null} — verification is skipped for those, but
+   * the label is still set.
    */
   private static void verifyToolBinaries(
-      final GenericContainer<?> container,
-      final List<Tool> tools,
-      final Platform platform) {
+      final GenericContainer<?> container, final List<Tool> tools, final Platform platform) {
     for (final Tool tool : tools) {
       final String binary = platform.getBinaryName(tool);
       if (binary != null) {

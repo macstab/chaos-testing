@@ -8,8 +8,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import com.macstab.chaos.core.util.ToolDefinition;
-
 /**
  * Unit tests for {@link ToolPackage}.
  *
@@ -78,8 +76,7 @@ class ToolPackageTest {
     @Test
     @DisplayName("throws NullPointerException for null input")
     void nullInput() {
-      assertThatThrownBy(() -> ToolPackage.ofSame(null))
-          .isInstanceOf(NullPointerException.class);
+      assertThatThrownBy(() -> ToolPackage.ofSame(null)).isInstanceOf(NullPointerException.class);
     }
   }
 

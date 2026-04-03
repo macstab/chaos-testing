@@ -115,6 +115,26 @@ public interface ChaosProvider {
   void reset(GenericContainer<?> container);
 
   /**
+   * Provider priority for {@link java.util.ServiceLoader} selection.
+   *
+   * <p>Lower value = higher priority (consistent with {@code jakarta.annotation.Priority}
+   * and Spring {@code @Order}). When multiple providers are registered for the same chaos
+   * interface, the one with the lowest priority value wins.
+   *
+   * <p><strong>Conventions:</strong>
+   * <ul>
+   *   <li>{@code 0} — default for real implementations (do not override unless needed)
+   *   <li>{@code 1..999} — user-defined overrides that should take precedence
+   *   <li>{@code Integer.MAX_VALUE} — NoOp fallback implementations
+   * </ul>
+   *
+   * @return priority value; lower = preferred
+   */
+  default int priority() {
+    return 0;
+  }
+
+  /**
    * Check if this chaos type is supported on current system.
    *
    * <p><strong>Checks:</strong>

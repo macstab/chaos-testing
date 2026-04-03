@@ -1,32 +1,30 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.toxiproxy.toxic;
 
-import lombok.NonNull;
-
 /**
  * Adds fixed latency and optional random jitter to every data chunk flowing through the proxy.
  *
  * <p>Uses Toxiproxy's {@code latency} toxic. Toxiproxy applies the delay to each data chunk
- * individually as it passes through the proxy, in both upstream and downstream directions.
- * This means: a single round-trip (request + response) experiences latency applied twice —
- * once when the request bytes pass from client to upstream, and once when response bytes pass
- * from upstream to client. Tests relying on wall-clock round-trip time should expect
- * approximately {@code 2 × latencyMs} increase per request, not {@code 1 ×}.
+ * individually as it passes through the proxy, in both upstream and downstream directions. This
+ * means: a single round-trip (request + response) experiences latency applied twice — once when the
+ * request bytes pass from client to upstream, and once when response bytes pass from upstream to
+ * client. Tests relying on wall-clock round-trip time should expect approximately {@code 2 ×
+ * latencyMs} increase per request, not {@code 1 ×}.
  *
  * <h2>Jitter Semantics</h2>
  *
- * <p>When {@code jitterMs > 0}, Toxiproxy adds a uniformly distributed random value in
- * {@code [-jitterMs, +jitterMs]} to each chunk's delay. This models real-world network
- * variability (WiFi, mobile, congested links) more accurately than fixed delay. The actual
- * per-chunk delay is therefore {@code latencyMs + U(-jitterMs, +jitterMs)}, where {@code U}
- * denotes a uniform distribution. Setting {@code latencyMs=0, jitterMs=20} produces pure
- * jitter with no baseline delay.
+ * <p>When {@code jitterMs > 0}, Toxiproxy adds a uniformly distributed random value in {@code
+ * [-jitterMs, +jitterMs]} to each chunk's delay. This models real-world network variability (WiFi,
+ * mobile, congested links) more accurately than fixed delay. The actual per-chunk delay is
+ * therefore {@code latencyMs + U(-jitterMs, +jitterMs)}, where {@code U} denotes a uniform
+ * distribution. Setting {@code latencyMs=0, jitterMs=20} produces pure jitter with no baseline
+ * delay.
  *
  * <h2>Attributes JSON</h2>
  *
- * <p>{@link #toJson()} returns {@code {"latency":{latencyMs},"jitter":{jitterMs}}}. This
- * matches Toxiproxy's {@code latency} toxic attribute schema. The field name is {@code "latency"}
- * (not {@code "latencyMs"}) — do not rename.
+ * <p>{@link #toJson()} returns {@code {"latency":{latencyMs},"jitter":{jitterMs}}}. This matches
+ * Toxiproxy's {@code latency} toxic attribute schema. The field name is {@code "latency"} (not
+ * {@code "latencyMs"}) — do not rename.
  *
  * <h2>Use Cases</h2>
  *
@@ -76,7 +74,9 @@ public final class LatencyToxic extends AbstractToxic {
     validateNonNegative(jitterMs, "jitterMs");
   }
 
-  /** @return new builder (defaults: latencyMs=0, jitterMs=0, toxicity=1.0) */
+  /**
+   * @return new builder (defaults: latencyMs=0, jitterMs=0, toxicity=1.0)
+   */
   public static Builder builder() {
     return new Builder();
   }

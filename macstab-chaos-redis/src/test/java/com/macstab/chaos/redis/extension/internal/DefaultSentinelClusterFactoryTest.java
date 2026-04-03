@@ -6,7 +6,6 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 import java.util.List;
 
@@ -101,9 +100,12 @@ class DefaultSentinelClusterFactoryTest {
 
       // ASSERT — ensureInstalled never called when chaos disabled and no packages
       verify(packageInstaller, never())
-          .ensureInstalled(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(Tool[].class));
+          .ensureInstalled(
+              org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(Tool[].class));
       verify(packageInstaller, never())
-          .ensureInstalled(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(ToolPackage[].class));
+          .ensureInstalled(
+              org.mockito.ArgumentMatchers.any(),
+              org.mockito.ArgumentMatchers.any(ToolPackage[].class));
     }
 
     @Test
@@ -118,8 +120,8 @@ class DefaultSentinelClusterFactoryTest {
 
       // ASSERT
       verify(packageInstaller, org.mockito.Mockito.times(1))
-          .ensureInstalled(org.mockito.ArgumentMatchers.any(),
-              org.mockito.ArgumentMatchers.any(Tool[].class));
+          .ensureInstalled(
+              org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(Tool[].class));
     }
 
     @Test
@@ -134,7 +136,8 @@ class DefaultSentinelClusterFactoryTest {
 
       // ASSERT
       verify(packageInstaller, org.mockito.Mockito.times(1))
-          .ensureInstalled(org.mockito.ArgumentMatchers.any(),
+          .ensureInstalled(
+              org.mockito.ArgumentMatchers.any(),
               org.mockito.ArgumentMatchers.any(ToolPackage[].class));
     }
   }
@@ -156,8 +159,8 @@ class DefaultSentinelClusterFactoryTest {
 
       // ASSERT — ensureInstalled called once per container
       verify(packageInstaller, org.mockito.Mockito.times(3))
-          .ensureInstalled(org.mockito.ArgumentMatchers.any(),
-              org.mockito.ArgumentMatchers.any(Tool[].class));
+          .ensureInstalled(
+              org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(Tool[].class));
     }
 
     @Test
@@ -170,16 +173,16 @@ class DefaultSentinelClusterFactoryTest {
 
       org.mockito.Mockito.doThrow(new RuntimeException("exec failed"))
           .when(packageInstaller)
-          .ensureInstalled(org.mockito.ArgumentMatchers.eq(c1),
-              org.mockito.ArgumentMatchers.any(Tool[].class));
+          .ensureInstalled(
+              org.mockito.ArgumentMatchers.eq(c1), org.mockito.ArgumentMatchers.any(Tool[].class));
 
       // ACT — must not throw
       factory.installNetworkTools(cluster, "test-cluster");
 
       // ASSERT — c2 was still attempted despite c1 throwing
       verify(packageInstaller)
-          .ensureInstalled(org.mockito.ArgumentMatchers.eq(c2),
-              org.mockito.ArgumentMatchers.any(Tool[].class));
+          .ensureInstalled(
+              org.mockito.ArgumentMatchers.eq(c2), org.mockito.ArgumentMatchers.any(Tool[].class));
     }
   }
 

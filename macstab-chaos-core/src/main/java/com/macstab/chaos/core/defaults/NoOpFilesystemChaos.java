@@ -31,6 +31,11 @@ public final class NoOpFilesystemChaos implements FilesystemChaos {
 
   /** Always returns false (not supported). */
   @Override
+  public int priority() {
+    return Integer.MAX_VALUE;
+  }
+
+  @Override
   public boolean isSupported() {
     return false;
   }

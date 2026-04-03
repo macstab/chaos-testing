@@ -8,7 +8,6 @@ import static org.awaitility.Awaitility.await;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
-import com.macstab.chaos.network.condition.DisabledOnNonLinuxHost;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -18,15 +17,15 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
-import com.github.dockerjava.api.model.Capability;
 
+import com.github.dockerjava.api.model.Capability;
 import com.macstab.chaos.core.exception.ChaosConfigurationException;
 
 /**
  * Integration tests for {@link CgroupsCpuChaos} (Debian redis:7.4).
  *
- * <p>All tests share a single container per nested class via {@code @BeforeEach/@AfterEach}.
- * Tests requiring SIGTERM-based reset (LinuxKit limitation) are annotated
+ * <p>All tests share a single container per nested class via {@code @BeforeEach/@AfterEach}. Tests
+ * requiring SIGTERM-based reset (LinuxKit limitation) are annotated
  * {@code @DisabledOnNonLinuxHost}. taskset-write and renice operations work in any Testcontainers
  * container via the Moby VM, so those tests run unconditionally on macOS.
  *
@@ -40,11 +39,12 @@ class CgroupsCpuChaosTest {
 
   @BeforeEach
   void setUp() {
-    container = new GenericContainer<>(DockerImageName.parse("redis:7.4"))
-        // SYS_NICE allows taskset -p write and renice across uid boundaries.
-        // redis-server runs as uid 999; execInContainer runs as root (uid 0).
-        // Without this capability, taskset/renice on PID 1 return "Operation not permitted".
-        .withCreateContainerCmdModifier(cmd -> cmd.withCapAdd(Capability.SYS_NICE));
+    container =
+        new GenericContainer<>(DockerImageName.parse("redis:7.4"))
+            // SYS_NICE allows taskset -p write and renice across uid boundaries.
+            // redis-server runs as uid 999; execInContainer runs as root (uid 0).
+            // Without this capability, taskset/renice on PID 1 return "Operation not permitted".
+            .withCreateContainerCmdModifier(cmd -> cmd.withCapAdd(Capability.SYS_NICE));
     container.start();
     chaos = new CgroupsCpuChaos();
   }
@@ -109,8 +109,7 @@ class CgroupsCpuChaosTest {
     @Test
     @DisplayName("rejects null container")
     void rejectsNullContainer() {
-      assertThatThrownBy(() -> chaos.throttle(null, 50))
-          .isInstanceOf(NullPointerException.class);
+      assertThatThrownBy(() -> chaos.throttle(null, 50)).isInstanceOf(NullPointerException.class);
     }
 
     @Test
@@ -148,7 +147,8 @@ class CgroupsCpuChaosTest {
       assertThat(chaos.isThrottled(container)).isTrue();
 
       // THEN — gone after 6s total
-      await().atMost(6, TimeUnit.SECONDS)
+      await()
+          .atMost(6, TimeUnit.SECONDS)
           .pollInterval(500, TimeUnit.MILLISECONDS)
           .until(() -> !chaos.isThrottled(container));
     }
@@ -221,8 +221,7 @@ class CgroupsCpuChaosTest {
     @Test
     @DisplayName("rejects null container")
     void rejectsNullContainer() {
-      assertThatThrownBy(() -> chaos.stress(null, 1))
-          .isInstanceOf(NullPointerException.class);
+      assertThatThrownBy(() -> chaos.stress(null, 1)).isInstanceOf(NullPointerException.class);
     }
   }
 
@@ -569,7 +568,8 @@ class CgroupsCpuChaosTest {
     @DisplayName("getCurrentUsage > 0 after stress")
     void usageDetectsStress() {
       chaos.stress(container, 2);
-      await().atMost(10, TimeUnit.SECONDS)
+      await()
+          .atMost(10, TimeUnit.SECONDS)
           .pollInterval(1, TimeUnit.SECONDS)
           .until(() -> chaos.getCurrentUsage(container) > 0);
     }
@@ -746,15 +746,15 @@ class CgroupsCpuChaosTest {
     @Test
     @DisplayName("returns 0 on negative delta (counter wrap)")
     void zeroOnNegativeDelta() {
-      final long[] first  = {200L, 0L, 100L, 1000L, 20L, 0L, 10L, 0L};
-      final long[] second = {100L, 0L,  50L,  500L, 10L, 0L,  5L, 0L};
+      final long[] first = {200L, 0L, 100L, 1000L, 20L, 0L, 10L, 0L};
+      final long[] second = {100L, 0L, 50L, 500L, 10L, 0L, 5L, 0L};
       assertThat(CpuObservability.computeUsage(first, second)).isZero();
     }
 
     @Test
     @DisplayName("returns 100 when fully busy")
     void hundredWhenFullyBusy() {
-      final long[] first  = {0L, 0L, 0L, 500L, 0L, 0L, 0L, 0L};
+      final long[] first = {0L, 0L, 0L, 500L, 0L, 0L, 0L, 0L};
       final long[] second = {100L, 0L, 0L, 500L, 0L, 0L, 0L, 0L};
       assertThat(CpuObservability.computeUsage(first, second)).isEqualTo(100);
     }
@@ -762,7 +762,7 @@ class CgroupsCpuChaosTest {
     @Test
     @DisplayName("returns 0 when fully idle")
     void zeroWhenFullyIdle() {
-      final long[] first  = {0L, 0L, 0L, 500L, 0L, 0L, 0L, 0L};
+      final long[] first = {0L, 0L, 0L, 500L, 0L, 0L, 0L, 0L};
       final long[] second = {0L, 0L, 0L, 600L, 0L, 0L, 0L, 0L};
       assertThat(CpuObservability.computeUsage(first, second)).isZero();
     }
@@ -770,7 +770,7 @@ class CgroupsCpuChaosTest {
     @Test
     @DisplayName("returns 50 for half-busy")
     void fiftyForHalfBusy() {
-      final long[] first  = {0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L};
+      final long[] first = {0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L};
       final long[] second = {50L, 0L, 0L, 50L, 0L, 0L, 0L, 0L};
       assertThat(CpuObservability.computeUsage(first, second)).isEqualTo(50);
     }
@@ -778,7 +778,7 @@ class CgroupsCpuChaosTest {
     @Test
     @DisplayName("includes iowait in idle delta")
     void includesIowaitInIdle() {
-      final long[] first  = {0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L};
+      final long[] first = {0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L};
       final long[] second = {10L, 0L, 0L, 40L, 50L, 0L, 0L, 0L};
       assertThat(CpuObservability.computeUsage(first, second)).isEqualTo(10);
     }

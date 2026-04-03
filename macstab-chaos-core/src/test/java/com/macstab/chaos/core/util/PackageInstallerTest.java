@@ -17,14 +17,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.macstab.chaos.core.platform.Tool;
-import com.macstab.chaos.core.util.ToolDefinition;
-
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.Container.ExecResult;
 import org.testcontainers.containers.GenericContainer;
+
+import com.macstab.chaos.core.platform.Tool;
 
 /**
  * Comprehensive unit tests for {@link PackageInstaller}.
@@ -277,16 +276,14 @@ class PackageInstallerTest {
       when(container.getLabels()).thenReturn(labels);
 
       // WHEN / THEN — returns immediately, no Docker call
-      assertThatCode(() -> PackageInstaller.ensureInstalled(
-              container, Tool.STRESS_NG, Tool.CURL))
+      assertThatCode(() -> PackageInstaller.ensureInstalled(container, Tool.STRESS_NG, Tool.CURL))
           .doesNotThrowAnyException();
     }
 
     @Test
     @DisplayName("throws NullPointerException for null container")
     void nullContainer() {
-      assertThatThrownBy(() -> PackageInstaller.ensureInstalled(
-              null, Tool.STRESS_NG))
+      assertThatThrownBy(() -> PackageInstaller.ensureInstalled(null, Tool.STRESS_NG))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("container");
     }
@@ -296,8 +293,7 @@ class PackageInstallerTest {
     void nullTools() {
       final GenericContainer<?> container = mockRunningContainer();
       when(container.getLabels()).thenReturn(new HashMap<>());
-      assertThatThrownBy(() -> PackageInstaller.ensureInstalled(
-              container, (Tool[]) null))
+      assertThatThrownBy(() -> PackageInstaller.ensureInstalled(container, (Tool[]) null))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("tools");
     }
@@ -307,8 +303,7 @@ class PackageInstallerTest {
     void nullToolElement() {
       final GenericContainer<?> container = mockRunningContainer();
       when(container.getLabels()).thenReturn(new HashMap<>());
-      assertThatThrownBy(() -> PackageInstaller.ensureInstalled(
-              container, (Tool) null))
+      assertThatThrownBy(() -> PackageInstaller.ensureInstalled(container, (Tool) null))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("Tool element");
     }
@@ -317,8 +312,7 @@ class PackageInstallerTest {
     @DisplayName("throws IllegalStateException for stopped container")
     void stoppedContainer() {
       final GenericContainer<?> container = mockStoppedContainer();
-      assertThatThrownBy(() -> PackageInstaller.ensureInstalled(
-              container, Tool.STRESS_NG))
+      assertThatThrownBy(() -> PackageInstaller.ensureInstalled(container, Tool.STRESS_NG))
           .isInstanceOf(IllegalStateException.class);
     }
   }
@@ -342,8 +336,15 @@ class PackageInstallerTest {
         this.packageName = packageName;
       }
 
-      @Override public String tool()        { return tool; }
-      @Override public String packageName() { return packageName; }
+      @Override
+      public String tool() {
+        return tool;
+      }
+
+      @Override
+      public String packageName() {
+        return packageName;
+      }
     }
 
     @Test
@@ -369,8 +370,8 @@ class PackageInstallerTest {
     @Test
     @DisplayName("throws NullPointerException for null container")
     void nullContainer() {
-      assertThatThrownBy(() -> PackageInstaller.ensureInstalled(
-              null, ToolPackage.ofSame("cpulimit")))
+      assertThatThrownBy(
+              () -> PackageInstaller.ensureInstalled(null, ToolPackage.ofSame("cpulimit")))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("container");
     }
@@ -380,8 +381,7 @@ class PackageInstallerTest {
     void nullTools() {
       final GenericContainer<?> container = mockRunningContainer();
       when(container.getLabels()).thenReturn(new HashMap<>());
-      assertThatThrownBy(() -> PackageInstaller.ensureInstalled(
-              container, (ToolDefinition[]) null))
+      assertThatThrownBy(() -> PackageInstaller.ensureInstalled(container, (ToolDefinition[]) null))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("tools");
     }
@@ -391,8 +391,7 @@ class PackageInstallerTest {
     void nullElement() {
       final GenericContainer<?> container = mockRunningContainer();
       when(container.getLabels()).thenReturn(new HashMap<>());
-      assertThatThrownBy(() -> PackageInstaller.ensureInstalled(
-              container, (ToolDefinition) null))
+      assertThatThrownBy(() -> PackageInstaller.ensureInstalled(container, (ToolDefinition) null))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("ToolDefinition element");
     }
@@ -401,8 +400,7 @@ class PackageInstallerTest {
     @DisplayName("throws IllegalStateException for stopped container")
     void stoppedContainer() {
       final GenericContainer<?> container = mockStoppedContainer();
-      assertThatThrownBy(() -> PackageInstaller.ensureInstalled(
-              container, TestTools.CPULIMIT))
+      assertThatThrownBy(() -> PackageInstaller.ensureInstalled(container, TestTools.CPULIMIT))
           .isInstanceOf(IllegalStateException.class);
     }
   }

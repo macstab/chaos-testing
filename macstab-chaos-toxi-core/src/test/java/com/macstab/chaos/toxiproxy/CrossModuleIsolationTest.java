@@ -4,8 +4,6 @@ package com.macstab.chaos.toxiproxy;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,15 +21,15 @@ import com.macstab.chaos.toxiproxy.lifecycle.ToxiproxyLifecycleManager;
 import com.macstab.chaos.toxiproxy.network.NetworkRedirectManager;
 
 /**
- * Integration test proving that multiple independent modules can share one Toxiproxy process
- * on the same container without interfering with each other's proxy configurations.
+ * Integration test proving that multiple independent modules can share one Toxiproxy process on the
+ * same container without interfering with each other's proxy configurations.
  *
  * <p>Simulates the real-world scenario: proxy module creates "redis" proxy, connection module
- * creates "conn_db_5432" proxy. Each module's surgical reset removes only its own proxy.
- * Shutdown kills everything.
+ * creates "conn_db_5432" proxy. Each module's surgical reset removes only its own proxy. Shutdown
+ * kills everything.
  *
- * <p>This is a single sequential test method because the scenario has strict ordering
- * requirements that cannot be expressed via JUnit 5's {@code @Order} across nested classes.
+ * <p>This is a single sequential test method because the scenario has strict ordering requirements
+ * that cannot be expressed via JUnit 5's {@code @Order} across nested classes.
  *
  * @author Christian Schnapka - Macstab GmbH
  */

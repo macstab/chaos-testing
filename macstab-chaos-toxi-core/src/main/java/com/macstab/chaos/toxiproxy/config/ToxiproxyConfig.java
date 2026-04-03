@@ -2,6 +2,7 @@
 package com.macstab.chaos.toxiproxy.config;
 
 import java.util.Objects;
+
 import lombok.NonNull;
 
 /**
@@ -88,26 +89,26 @@ import lombok.NonNull;
  *
  * <h2>Why Separate Config Object</h2>
  *
- * <p>Timeout and polling values are not constants — they must vary between local development
- * (fast Docker, small timeouts) and CI/CD (slower Docker daemon, slower network, larger timeouts).
+ * <p>Timeout and polling values are not constants — they must vary between local development (fast
+ * Docker, small timeouts) and CI/CD (slower Docker daemon, slower network, larger timeouts).
  * Hardcoding them would require code changes for environment adaptation. A separate config object
  * allows callers to construct environment-appropriate configurations and inject them into
  * orchestrators and managers without modifying any other code.
  *
  * <h2>Immutability and Thread Safety</h2>
  *
- * <p>All fields are {@code private final}. The builder is a separate mutable object; once
- * {@link Builder#build()} is called, the resulting {@code ToxiproxyConfig} is unconditionally
- * immutable and thread-safe. Instances may be shared freely across threads and across modules
- * (proxy module, connection module, cache module) without synchronization.
+ * <p>All fields are {@code private final}. The builder is a separate mutable object; once {@link
+ * Builder#build()} is called, the resulting {@code ToxiproxyConfig} is unconditionally immutable
+ * and thread-safe. Instances may be shared freely across threads and across modules (proxy module,
+ * connection module, cache module) without synchronization.
  *
  * <h2>connectionTimeoutMs and readTimeoutMs: Currently Advisory</h2>
  *
- * <p>The HTTP calls in {@link com.macstab.chaos.toxiproxy.api.ToxiproxyApiClientImpl} are
- * executed via shell ({@code curl}) inside the container. The {@code connectionTimeoutMs} and
- * {@code readTimeoutMs} fields are present for forward compatibility but are not currently
- * forwarded to the {@code curl} command as {@code --connect-timeout} flags. This is a known
- * limitation. Contributors adding direct curl timeout flags should map these values accordingly.
+ * <p>The HTTP calls in {@link com.macstab.chaos.toxiproxy.api.ToxiproxyApiClientImpl} are executed
+ * via shell ({@code curl}) inside the container. The {@code connectionTimeoutMs} and {@code
+ * readTimeoutMs} fields are present for forward compatibility but are not currently forwarded to
+ * the {@code curl} command as {@code --connect-timeout} flags. This is a known limitation.
+ * Contributors adding direct curl timeout flags should map these values accordingly.
  *
  * @see com.macstab.chaos.proxy.ProxyChaosProvider
  * @author Christian Schnapka - Macstab GmbH

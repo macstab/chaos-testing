@@ -75,8 +75,8 @@ public abstract class AbstractLinuxPlatform implements Platform {
   }
 
   @Override
-  public List<String> getRequiredTools() {
-    return List.of("curl", "iptables");
+  public List<Tool> getRequiredTools() {
+    return List.of(Tool.CURL, Tool.IPTABLES);
   }
 
   @Override
@@ -85,9 +85,10 @@ public abstract class AbstractLinuxPlatform implements Platform {
 
     final List<String> missing = new ArrayList<>();
 
-    for (final String tool : getRequiredTools()) {
-      if (!hasCommand(container, tool)) {
-        missing.add(tool);
+    for (final Tool tool : getRequiredTools()) {
+      final String binary = getBinaryName(tool);
+      if (!hasCommand(container, binary)) {
+        missing.add(binary + " (" + tool.name() + ")");
       }
     }
 
@@ -135,9 +136,15 @@ public abstract class AbstractLinuxPlatform implements Platform {
         return getDelegate(container).isAvailable(container);
       }
 
+      @SuppressWarnings("removal")
       @Override
       public boolean supportsDevTcp() {
         return delegate != null && delegate.supportsDevTcp();
+      }
+
+      @Override
+      public boolean supports(final com.macstab.chaos.core.shell.ShellCapability capability) {
+        return delegate != null && delegate.supports(capability);
       }
 
       @Override

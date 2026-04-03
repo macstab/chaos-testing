@@ -6,11 +6,10 @@ import java.util.List;
 import java.util.Objects;
 import java.util.stream.Stream;
 
-import com.macstab.chaos.core.platform.Tool;
-import com.macstab.chaos.core.util.ToolPackage;
-
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.platform.Tool;
+import com.macstab.chaos.core.util.ToolPackage;
 import com.macstab.chaos.redis.annotation.RedisSentinel;
 import com.macstab.chaos.redis.extension.SentinelCluster;
 import com.macstab.chaos.redis.factory.SentinelContainerFactory;
@@ -107,9 +106,8 @@ public final class DefaultSentinelClusterFactory implements SentinelClusterFacto
    */
   void installPackages(
       final SentinelCluster cluster, final String clusterId, final String[] packages) {
-    final ToolPackage[] toolPackages = Arrays.stream(packages)
-        .map(ToolPackage::ofSame)
-        .toArray(ToolPackage[]::new);
+    final ToolPackage[] toolPackages =
+        Arrays.stream(packages).map(ToolPackage::ofSame).toArray(ToolPackage[]::new);
     int success = 0;
     int fail = 0;
     for (final GenericContainer<?> container : allContainers(cluster)) {

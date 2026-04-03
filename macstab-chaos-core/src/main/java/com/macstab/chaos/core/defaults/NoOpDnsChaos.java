@@ -43,6 +43,11 @@ public final class NoOpDnsChaos implements DnsChaos {
   }
 
   @Override
+  public int priority() {
+    return Integer.MAX_VALUE;
+  }
+
+  @Override
   public boolean isSupported() {
     return false;
   }

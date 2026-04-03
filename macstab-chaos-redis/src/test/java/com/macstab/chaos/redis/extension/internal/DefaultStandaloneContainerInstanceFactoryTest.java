@@ -8,8 +8,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import java.util.List;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -249,8 +247,9 @@ class DefaultStandaloneContainerInstanceFactoryTest {
       factory.installAnnotationPackages(container, annotation);
 
       // ASSERT
-      verify(packageInstaller).ensureInstalled(
-          ArgumentMatchers.eq(container), ArgumentMatchers.any(ToolPackage[].class));
+      verify(packageInstaller)
+          .ensureInstalled(
+              ArgumentMatchers.eq(container), ArgumentMatchers.any(ToolPackage[].class));
     }
 
     @Test

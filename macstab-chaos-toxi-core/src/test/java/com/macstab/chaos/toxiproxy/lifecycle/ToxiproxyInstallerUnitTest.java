@@ -16,7 +16,6 @@ import com.macstab.chaos.core.command.http.HttpCommandBuilder;
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
 import com.macstab.chaos.core.platform.Platform;
 import com.macstab.chaos.core.platform.PlatformDetector;
-import com.macstab.chaos.core.platform.Tool;
 import com.macstab.chaos.core.shell.Shell;
 import com.macstab.chaos.toxiproxy.context.ContainerContext;
 import com.macstab.chaos.toxiproxy.support.TestExecResults;
@@ -24,12 +23,13 @@ import com.macstab.chaos.toxiproxy.support.TestExecResults;
 /**
  * Unit tests for {@link ToxiproxyInstaller} failure branches.
  *
- * <p>Uses a real running container for the dependency-installation step (which calls
- * {@code execInContainer} directly) while injecting a mock {@link Shell} to control the
- * shell-dispatched commands ({@code which}, download, chmod) that {@link ToxiproxyInstaller}
- * routes through {@link ContainerContext#shell()}.
+ * <p>Uses a real running container for the dependency-installation step (which calls {@code
+ * execInContainer} directly) while injecting a mock {@link Shell} to control the shell-dispatched
+ * commands ({@code which}, download, chmod) that {@link ToxiproxyInstaller} routes through {@link
+ * ContainerContext#shell()}.
  *
  * <p>Covered branches:
+ *
  * <ul>
  *   <li>{@code isAlreadyInstalled} — exception catch path (shell.exec throws → returns false)
  *   <li>{@code downloadBinary} — non-zero exit code → {@link ChaosOperationFailedException}
@@ -50,9 +50,9 @@ class ToxiproxyInstallerUnitTest {
 
   /**
    * Build a {@link ContainerContext} backed by the real Ubuntu container but with a mock Shell and
-   * a real Platform. {@code installDependencies} runs against the real container (via
-   * {@code execInContainer}). {@code isAlreadyInstalled}, {@code downloadBinary}, and
-   * {@code makeExecutable} all route through the mock shell, giving us full control.
+   * a real Platform. {@code installDependencies} runs against the real container (via {@code
+   * execInContainer}). {@code isAlreadyInstalled}, {@code downloadBinary}, and {@code
+   * makeExecutable} all route through the mock shell, giving us full control.
    */
   private ContainerContext ctxWithMockShell(final Shell mockShell) {
     final Platform realPlatform = PlatformDetector.detect(UBUNTU);
@@ -60,9 +60,9 @@ class ToxiproxyInstallerUnitTest {
   }
 
   /**
-   * Build a {@link ContainerContext} backed by a mock {@link Platform} whose
-   * {@link HttpCommandBuilder} is also mocked. This avoids any real HTTP builder interaction
-   * while keeping the real container for the dependency-install step.
+   * Build a {@link ContainerContext} backed by a mock {@link Platform} whose {@link
+   * HttpCommandBuilder} is also mocked. This avoids any real HTTP builder interaction while keeping
+   * the real container for the dependency-install step.
    */
   private ContainerContext ctxWithMockPlatformAndShell(
       final Platform mockPlatform, final Shell mockShell) {
@@ -85,9 +85,7 @@ class ToxiproxyInstallerUnitTest {
       final var notFound = TestExecResults.failure("toxiproxy-server: not found");
       final var downloadFail = TestExecResults.failure("curl: (6) Could not resolve host");
 
-      when(mockShell.exec(any(), anyString()))
-          .thenReturn(notFound)
-          .thenReturn(downloadFail);
+      when(mockShell.exec(any(), anyString())).thenReturn(notFound).thenReturn(downloadFail);
 
       assertThatThrownBy(() -> installer.install(ctx))
           .isInstanceOf(ChaosOperationFailedException.class)
@@ -126,7 +124,8 @@ class ToxiproxyInstallerUnitTest {
 
       final var notFound = TestExecResults.failure("toxiproxy-server: not found");
       final var downloadOk = TestExecResults.success();
-      final var chmodFail = TestExecResults.failure("chmod: cannot access '/usr/local/bin/toxiproxy-server'");
+      final var chmodFail =
+          TestExecResults.failure("chmod: cannot access '/usr/local/bin/toxiproxy-server'");
 
       when(mockShell.exec(any(), anyString()))
           .thenReturn(notFound)
@@ -165,7 +164,8 @@ class ToxiproxyInstallerUnitTest {
   class IsAlreadyInstalledTests {
 
     @Test
-    @DisplayName("shell.exec throws — caught, install proceeds (download failure proves install path was reached)")
+    @DisplayName(
+        "shell.exec throws — caught, install proceeds (download failure proves install path was reached)")
     void shellExecThrows_catchReturnsFalse_installProceeds() throws Exception {
       final Shell mockShell = mock(Shell.class);
       final ContainerContext ctx = ctxWithMockShell(mockShell);

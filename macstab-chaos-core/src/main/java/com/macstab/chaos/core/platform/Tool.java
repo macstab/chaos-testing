@@ -34,10 +34,14 @@ public enum Tool {
   /** CPU usage limiter (cpulimit binary) */
   CPULIMIT,
 
-  /** CPU affinity tool — sets/gets process CPU core binding (taskset binary, provided by util-linux) */
+  /**
+   * CPU affinity tool — sets/gets process CPU core binding (taskset binary, provided by util-linux)
+   */
   TASKSET,
 
-  /** Process priority tool — adjusts scheduler nice value (renice binary, provided by util-linux) */
+  /**
+   * Process priority tool — adjusts scheduler nice value (renice binary, provided by util-linux)
+   */
   RENICE,
 
   /** Reports number of available CPU cores (nproc binary, provided by coreutils) */

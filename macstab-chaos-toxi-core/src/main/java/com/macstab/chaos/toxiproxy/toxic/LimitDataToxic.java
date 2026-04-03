@@ -6,8 +6,8 @@ package com.macstab.chaos.toxiproxy.toxic;
  * in both directions through the proxy, simulating mid-stream connection failures.
  *
  * <p>Uses Toxiproxy's {@code limit_data} toxic. Toxiproxy maintains a byte counter per affected
- * connection tracking the total of upstream + downstream traffic. Once the counter exceeds
- * {@code bytes}, the connection is immediately closed with a TCP RST. The client receives a partial
+ * connection tracking the total of upstream + downstream traffic. Once the counter exceeds {@code
+ * bytes}, the connection is immediately closed with a TCP RST. The client receives a partial
  * response — it may have received anywhere from 0 to {@code bytes} bytes of the complete response
  * payload.
  *
@@ -16,17 +16,17 @@ package com.macstab.chaos.toxiproxy.toxic;
  * <p>The byte counter includes both directions: client-to-service (request bytes) and
  * service-to-client (response bytes). For a Redis {@code SET} command, the request is ~10–30 bytes
  * and the response is ~5 bytes — total ~35 bytes. Setting {@code bytes=20} would typically
- * interrupt the connection mid-request before the command reaches Redis. Setting
- * {@code bytes=200} with a HGETALL that returns a 150-byte hash would allow the full response
- * to arrive, then close the connection before the next command.
+ * interrupt the connection mid-request before the command reaches Redis. Setting {@code bytes=200}
+ * with a HGETALL that returns a 150-byte hash would allow the full response to arrive, then close
+ * the connection before the next command.
  *
  * <h2>bytes=0 Semantics: Immediate Reset</h2>
  *
  * <p>When {@code bytes=0}, Toxiproxy issues a TCP RST immediately upon connection establishment,
- * before any application data is exchanged. This is subtly different from {@link TimeoutToxic}
- * with {@code timeoutMs=0}: both drop the connection immediately, but {@code LimitDataToxic}
- * with {@code bytes=0} allows the TCP handshake to complete (the client sees a connected socket)
- * before closing, while a refused connection (no Toxiproxy) would fail the handshake entirely.
+ * before any application data is exchanged. This is subtly different from {@link TimeoutToxic} with
+ * {@code timeoutMs=0}: both drop the connection immediately, but {@code LimitDataToxic} with {@code
+ * bytes=0} allows the TCP handshake to complete (the client sees a connected socket) before
+ * closing, while a refused connection (no Toxiproxy) would fail the handshake entirely.
  *
  * <h2>Use Cases</h2>
  *
@@ -68,7 +68,9 @@ public final class LimitDataToxic extends AbstractToxic {
     validateNonNegative(bytes, "bytes");
   }
 
-  /** @return new builder (defaults: bytes=0, toxicity=1.0) */
+  /**
+   * @return new builder (defaults: bytes=0, toxicity=1.0)
+   */
   public static Builder builder() {
     return new Builder();
   }

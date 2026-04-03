@@ -280,15 +280,15 @@ public final class ToxiproxyOrchestrator {
    * @param container container (no-op if not running)
    */
   /**
-   * Surgically removes all proxies owned by this orchestrator instance, without affecting
-   * proxies created by other modules (connection, cache) or killing the Toxiproxy process.
+   * Surgically removes all proxies owned by this orchestrator instance, without affecting proxies
+   * created by other modules (connection, cache) or killing the Toxiproxy process.
    *
-   * <p>Iterates {@code activeProxies}, deletes each proxy from Toxiproxy via the API, removes
-   * its iptables redirect rule, and clears the tracking map. The Toxiproxy process stays
-   * running. Other modules' proxies and iptables rules are untouched.
+   * <p>Iterates {@code activeProxies}, deletes each proxy from Toxiproxy via the API, removes its
+   * iptables redirect rule, and clears the tracking map. The Toxiproxy process stays running. Other
+   * modules' proxies and iptables rules are untouched.
    *
-   * <p>For full container teardown (kill Toxiproxy + flush all iptables), use
-   * {@link #shutdown(GenericContainer)}.
+   * <p>For full container teardown (kill Toxiproxy + flush all iptables), use {@link
+   * #shutdown(GenericContainer)}.
    *
    * @param container target container (no-op if not running)
    */
@@ -317,8 +317,8 @@ public final class ToxiproxyOrchestrator {
   }
 
   /**
-   * Terminates the Toxiproxy process and flushes all iptables NAT rules — destroying every
-   * proxy from every module on this container.
+   * Terminates the Toxiproxy process and flushes all iptables NAT rules — destroying every proxy
+   * from every module on this container.
    *
    * <p><strong>NUCLEAR — use only in {@code @AfterAll}.</strong> This kills the shared Toxiproxy
    * process, severing all TCP connections through all proxies. All iptables redirects are flushed.

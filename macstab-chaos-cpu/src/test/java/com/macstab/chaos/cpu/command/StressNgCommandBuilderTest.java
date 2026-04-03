@@ -45,9 +45,7 @@ class StressNgCommandBuilderTest {
       final String command = builder.buildFindLowestPidByCommCommand("stress-ng");
 
       // THEN
-      assertThat(command)
-          .contains("/proc/[0-9]*/comm")
-          .contains("stress-ng");
+      assertThat(command).contains("/proc/[0-9]*/comm").contains("stress-ng");
     }
 
     @Test
@@ -58,8 +56,8 @@ class StressNgCommandBuilderTest {
 
       // THEN
       assertThat(command)
-          .contains("[0-9]*$")   // grep -o extracts numeric PID
-          .contains("break");    // stops at first (lowest) match
+          .contains("[0-9]*$") // grep -o extracts numeric PID
+          .contains("break"); // stops at first (lowest) match
     }
 
     @Test
@@ -148,9 +146,7 @@ class StressNgCommandBuilderTest {
 
       // THEN
       // prefix pattern: '^stress-ng' (no $ anchor)
-      assertThat(command)
-          .contains("'^stress-ng'")
-          .doesNotContain("'^stress-ng$'");
+      assertThat(command).contains("'^stress-ng'").doesNotContain("'^stress-ng$'");
     }
 
     @Test
@@ -227,9 +223,7 @@ class StressNgCommandBuilderTest {
       final String command = builder.buildKillParentByCommSigTermCommand("stress-ng");
 
       // THEN
-      assertThat(command)
-          .contains("kill -15")
-          .doesNotContain("kill -9");
+      assertThat(command).contains("kill -15").doesNotContain("kill -9");
     }
 
     @Test
@@ -350,9 +344,7 @@ class StressNgCommandBuilderTest {
       final String command = builder.buildStressCpuWithTimeoutCommand(4, 10);
 
       // THEN
-      assertThat(command)
-          .contains("--cpu 4")
-          .contains("--timeout 10s");
+      assertThat(command).contains("--cpu 4").contains("--timeout 10s");
     }
 
     @ParameterizedTest
@@ -406,9 +398,7 @@ class StressNgCommandBuilderTest {
       final String command = builder.buildStressCacheWithTimeoutCommand(2, 15);
 
       // THEN
-      assertThat(command)
-          .contains("--cache 2")
-          .contains("--timeout 15s");
+      assertThat(command).contains("--cache 2").contains("--timeout 15s");
     }
 
     @Test
@@ -557,9 +547,7 @@ class StressNgCommandBuilderTest {
       final String command = builder.buildStressMatrixWithTimeoutCommand(2, 20);
 
       // THEN
-      assertThat(command)
-          .contains("--matrix 2")
-          .contains("--timeout 20s");
+      assertThat(command).contains("--matrix 2").contains("--timeout 20s");
     }
 
     @Test
@@ -584,10 +572,7 @@ class StressNgCommandBuilderTest {
       final String command = builder.buildThrottleCommand(1, 50);
 
       // THEN
-      assertThat(command)
-          .contains("cpulimit")
-          .contains("-l 50")
-          .contains("-p 1");
+      assertThat(command).contains("cpulimit").contains("-l 50").contains("-p 1");
     }
 
     @Test
@@ -660,10 +645,7 @@ class StressNgCommandBuilderTest {
       final String command = builder.buildThrottleWithDurationCommand(42, 75, 10);
 
       // THEN
-      assertThat(command)
-          .contains("-l 75")
-          .contains("-p 42")
-          .contains("sleep 10");
+      assertThat(command).contains("-l 75").contains("-p 42").contains("sleep 10");
     }
 
     @Test
@@ -674,8 +656,8 @@ class StressNgCommandBuilderTest {
 
       // THEN — the entire lifecycle is shell-managed, no Java scheduler involved
       assertThat(command)
-          .contains("CPID=$!")   // capture cpulimit PID inside shell
-          .contains("sleep")     // shell sleep, not Java Thread.sleep
+          .contains("CPID=$!") // capture cpulimit PID inside shell
+          .contains("sleep") // shell sleep, not Java Thread.sleep
           .contains("kill $CPID"); // shell kill
     }
 
@@ -703,11 +685,7 @@ class StressNgCommandBuilderTest {
       final String command = builder.buildPinToMaskCommand(1, 0x1L);
 
       // THEN
-      assertThat(command)
-          .contains("taskset")
-          .contains("-p")
-          .contains("0x1")
-          .contains(" 1");
+      assertThat(command).contains("taskset").contains("-p").contains("0x1").contains(" 1");
     }
 
     @Test
@@ -727,9 +705,7 @@ class StressNgCommandBuilderTest {
       final String command = builder.buildPinToMaskCommand(1, 0x3L);
 
       // THEN — taskset -p modifies existing PID, no exec-mode flags
-      assertThat(command)
-          .startsWith("taskset -p")
-          .doesNotContain("--cpu-list");
+      assertThat(command).startsWith("taskset -p").doesNotContain("--cpu-list");
     }
 
     @ParameterizedTest
@@ -851,10 +827,7 @@ class StressNgCommandBuilderTest {
       final String command = builder.buildSetNiceValueCommand(1, 19);
 
       // THEN
-      assertThat(command)
-          .contains("renice")
-          .contains("19")
-          .contains("-p 1");
+      assertThat(command).contains("renice").contains("19").contains("-p 1");
     }
 
     @ParameterizedTest
@@ -889,10 +862,7 @@ class StressNgCommandBuilderTest {
       final String command = builder.buildGetNiceValueCommand(1);
 
       // THEN
-      assertThat(command)
-          .contains("awk")
-          .contains("$19")
-          .contains("/proc/1/stat");
+      assertThat(command).contains("awk").contains("$19").contains("/proc/1/stat");
     }
 
     @Test

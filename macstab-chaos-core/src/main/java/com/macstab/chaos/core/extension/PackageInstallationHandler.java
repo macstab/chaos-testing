@@ -69,19 +69,21 @@ public final class PackageInstallationHandler {
 
       // @InstallPackages — raw package names, escape-hatch via ToolPackage, label-guarded
       if (!packages.isEmpty()) {
-        final ToolPackage[] toolPackages = packages.stream()
-            .map(pkg -> ToolPackage.ofSame(pkg))
-            .toArray(ToolPackage[]::new);
+        final ToolPackage[] toolPackages =
+            packages.stream().map(pkg -> ToolPackage.ofSame(pkg)).toArray(ToolPackage[]::new);
         PackageInstaller.ensureInstalled(container, toolPackages);
       }
 
-      log.info("Ensured installation on container '{}': tools={}, packages={}",
-          field.getName(), tools, packages);
+      log.info(
+          "Ensured installation on container '{}': tools={}, packages={}",
+          field.getName(),
+          tools,
+          packages);
 
     } catch (final Exception e) {
       throw new IllegalStateException(
-          String.format("Failed to install on container '%s': %s",
-              field.getName(), e.getMessage()), e);
+          String.format("Failed to install on container '%s': %s", field.getName(), e.getMessage()),
+          e);
     }
   }
 }

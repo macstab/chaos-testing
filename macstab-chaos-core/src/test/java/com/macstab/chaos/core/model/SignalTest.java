@@ -46,7 +46,8 @@ class SignalTest {
     @Test
     @DisplayName("all four signals are defined")
     void allFourDefined() {
-      assertThat(Signal.values()).hasSize(4)
+      assertThat(Signal.values())
+          .hasSize(4)
           .containsExactlyInAnyOrder(
               Signal.SIGTERM, Signal.SIGKILL, Signal.SIGSTOP, Signal.SIGCONT);
     }

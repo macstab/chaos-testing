@@ -56,6 +56,11 @@ public final class NoOpProcessChaos implements ProcessChaos {
   }
 
   @Override
+  public int priority() {
+    return Integer.MAX_VALUE;
+  }
+
+  @Override
   public boolean isSupported() {
     return false;
   }

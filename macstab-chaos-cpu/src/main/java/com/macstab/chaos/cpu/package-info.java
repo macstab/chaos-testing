@@ -3,10 +3,10 @@
  *
  * <h2>Entry Point</h2>
  *
- * <p>{@link com.macstab.chaos.cpu.CgroupsCpuChaos} is the single public class in this package.
- * It is registered as the {@code CpuChaos} SPI implementation via
- * {@code META-INF/services/com.macstab.chaos.core.api.CpuChaos} and is discovered automatically
- * by {@code ChaosProviderRegistry} when {@code macstab-chaos-cpu} is on the classpath.
+ * <p>{@link com.macstab.chaos.cpu.CgroupsCpuChaos} is the single public class in this package. It
+ * is registered as the {@code CpuChaos} SPI implementation via {@code
+ * META-INF/services/com.macstab.chaos.core.api.CpuChaos} and is discovered automatically by {@code
+ * ChaosProviderRegistry} when {@code macstab-chaos-cpu} is on the classpath.
  *
  * <h2>Capabilities</h2>
  *

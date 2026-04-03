@@ -61,6 +61,11 @@ public final class NoOpDiskChaos implements DiskChaos {
   }
 
   @Override
+  public int priority() {
+    return Integer.MAX_VALUE;
+  }
+
+  @Override
   public boolean isSupported() {
     return false;
   }

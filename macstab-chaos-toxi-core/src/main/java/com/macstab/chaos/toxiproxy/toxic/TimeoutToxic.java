@@ -5,26 +5,26 @@ package com.macstab.chaos.toxiproxy.toxic;
  * Halts all data flowing through the proxy and forcibly closes the connection after a configurable
  * hang duration.
  *
- * <p>Uses Toxiproxy's {@code timeout} toxic. The toxic intercepts data at the proxy level:
- * when a connection is affected, Toxiproxy stops forwarding data immediately and waits for
- * {@code timeoutMs} milliseconds before issuing a TCP RST to the client. The client experiences
- * a connection that appears to have stalled, then receives a connection error after exactly
- * {@code timeoutMs} milliseconds.
+ * <p>Uses Toxiproxy's {@code timeout} toxic. The toxic intercepts data at the proxy level: when a
+ * connection is affected, Toxiproxy stops forwarding data immediately and waits for {@code
+ * timeoutMs} milliseconds before issuing a TCP RST to the client. The client experiences a
+ * connection that appears to have stalled, then receives a connection error after exactly {@code
+ * timeoutMs} milliseconds.
  *
  * <h2>timeoutMs=0 Semantics</h2>
  *
  * <p>With {@code timeoutMs=0}, Toxiproxy issues the TCP RST on the first data arrival — the
- * connection is dropped as soon as it carries data. This simulates an upstream that accepts
- * the TCP handshake (SYN/SYN-ACK/ACK) but immediately resets on the first payload. This is
- * subtly different from "connection refused" (which fails the SYN-ACK) — clients that distinguish
- * between TCP-refused and TCP-reset may behave differently.
+ * connection is dropped as soon as it carries data. This simulates an upstream that accepts the TCP
+ * handshake (SYN/SYN-ACK/ACK) but immediately resets on the first payload. This is subtly different
+ * from "connection refused" (which fails the SYN-ACK) — clients that distinguish between
+ * TCP-refused and TCP-reset may behave differently.
  *
  * <h2>Difference from DownToxic</h2>
  *
- * <p>{@link DownToxic} drops data without a configurable delay. {@code TimeoutToxic} introduces
- * a measurable hang before the drop, which is essential for testing client-side timeout
- * configuration — you want to verify that the client's configured timeout is shorter than the
- * upstream's failure duration.
+ * <p>{@link DownToxic} drops data without a configurable delay. {@code TimeoutToxic} introduces a
+ * measurable hang before the drop, which is essential for testing client-side timeout configuration
+ * — you want to verify that the client's configured timeout is shorter than the upstream's failure
+ * duration.
  *
  * <h2>Use Cases</h2>
  *
@@ -68,7 +68,9 @@ public final class TimeoutToxic extends AbstractToxic {
     validateNonNegative(timeoutMs, "timeoutMs");
   }
 
-  /** @return new builder (defaults: timeoutMs=0, toxicity=1.0) */
+  /**
+   * @return new builder (defaults: timeoutMs=0, toxicity=1.0)
+   */
   public static Builder builder() {
     return new Builder();
   }

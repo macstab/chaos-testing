@@ -267,12 +267,12 @@ public final class ProxyChaosProvider implements ProxyChaos {
   /**
    * ⛔ Nuclear reset — kills Toxiproxy and removes ALL iptables rules.
    *
-   * <p>Removes all proxies created by this {@code ProxyChaosProvider} instance, without killing
-   * the Toxiproxy process or affecting proxies created by other modules (connection, cache).
-   * Safe for {@code @AfterEach}.
+   * <p>Removes all proxies created by this {@code ProxyChaosProvider} instance, without killing the
+   * Toxiproxy process or affecting proxies created by other modules (connection, cache). Safe for
+   * {@code @AfterEach}.
    *
-   * <p>For full container teardown (kill Toxiproxy + flush all iptables), use
-   * {@link #shutdown(GenericContainer)}.
+   * <p>For full container teardown (kill Toxiproxy + flush all iptables), use {@link
+   * #shutdown(GenericContainer)}.
    *
    * @param container target container (no-op if not running)
    * @see #deleteProxy(GenericContainer, String) for single-proxy removal
@@ -287,8 +287,8 @@ public final class ProxyChaosProvider implements ProxyChaos {
   /**
    * ⛔ Nuclear shutdown — kills the Toxiproxy process and flushes ALL iptables NAT rules.
    *
-   * <p>Destroys every proxy from every module on this container. Only use in {@code @AfterAll}
-   * when the container itself is being discarded. For per-test cleanup, use {@link #reset}.
+   * <p>Destroys every proxy from every module on this container. Only use in {@code @AfterAll} when
+   * the container itself is being discarded. For per-test cleanup, use {@link #reset}.
    *
    * @param container target container (no-op if not running)
    */

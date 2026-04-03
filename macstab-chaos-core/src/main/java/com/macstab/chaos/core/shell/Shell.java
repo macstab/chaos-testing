@@ -62,8 +62,28 @@ public interface Shell {
    * <p>bash supports it, busybox sh does not.
    *
    * @return true if supported
+   * @deprecated Use {@link #supports(ShellCapability)} with {@link ShellCapability#DEV_TCP} instead.
    */
+  @Deprecated(forRemoval = true, since = "1.1")
   boolean supportsDevTcp();
+
+  /**
+   * Query whether this shell supports a specific capability.
+   *
+   * <p>Command builders use this to emit shell-compatible commands. For example:
+   *
+   * <pre>{@code
+   * if (shell.supports(ShellCapability.PROCESS_SUBSTITUTION)) {
+   *     return "diff <(cmd1) <(cmd2)";
+   * } else {
+   *     return "cmd1 > /tmp/a; cmd2 > /tmp/b; diff /tmp/a /tmp/b";
+   * }
+   * }</pre>
+   *
+   * @param capability capability to check
+   * @return {@code true} if supported by this shell
+   */
+  boolean supports(ShellCapability capability);
 
   /**
    * Build port check command for this shell.

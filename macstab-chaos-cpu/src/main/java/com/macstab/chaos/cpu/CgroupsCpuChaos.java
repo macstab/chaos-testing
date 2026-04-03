@@ -2,7 +2,6 @@
 package com.macstab.chaos.cpu;
 
 import java.time.Duration;
-import java.util.List;
 import java.util.Objects;
 import java.util.function.Supplier;
 
@@ -19,15 +18,15 @@ import com.macstab.chaos.cpu.command.StressNgCommandBuilder;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * CPU chaos using inside-container userspace tools ({@code stress-ng}, {@code cpulimit},
- * {@code taskset}, {@code renice}).
+ * CPU chaos using inside-container userspace tools ({@code stress-ng}, {@code cpulimit}, {@code
+ * taskset}, {@code renice}).
  *
  * <p>All operations work in any unprivileged Linux container without additional capabilities,
- * cgroup write access, or privileged mode. Command construction is fully delegated to
- * {@link StressNgCommandBuilder}. Observability queries are delegated to {@link CpuObservability}.
+ * cgroup write access, or privileged mode. Command construction is fully delegated to {@link
+ * StressNgCommandBuilder}. Observability queries are delegated to {@link CpuObservability}.
  *
- * <p>Registered as the {@code CpuChaos} SPI provider via
- * {@code META-INF/services/com.macstab.chaos.core.api.CpuChaos}.
+ * <p>Registered as the {@code CpuChaos} SPI provider via {@code
+ * META-INF/services/com.macstab.chaos.core.api.CpuChaos}.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -73,7 +72,9 @@ public final class CgroupsCpuChaos implements CpuChaos {
     validateContainerRunning(container);
     installTools(container);
     // percentage range validated by builder (throws ChaosConfigurationException)
-    exec(container, cmd.buildThrottleWithDurationCommand(1, percentage, duration.toSeconds()),
+    exec(
+        container,
+        cmd.buildThrottleWithDurationCommand(1, percentage, duration.toSeconds()),
         "throttle CPU with duration");
     log.info("Throttled CPU to {}% for {}s (auto-reset)", percentage, duration.toSeconds());
   }
@@ -88,17 +89,23 @@ public final class CgroupsCpuChaos implements CpuChaos {
   @Override
   public void stress(
       final GenericContainer<?> container, final int workers, final Duration duration) {
-    runStressorWithTimeout(container, workers, duration,
-        () -> cmd.buildStressCpuWithTimeoutCommand(workers, duration.toSeconds()), "CPU");
+    runStressorWithTimeout(
+        container,
+        workers,
+        duration,
+        () -> cmd.buildStressCpuWithTimeoutCommand(workers, duration.toSeconds()),
+        "CPU");
   }
 
   @Override
   public void stressWithThrottle(
       final GenericContainer<?> container, final int workers, final int percentage) {
     Objects.requireNonNull(container, "container must not be null");
-    // Build commands eagerly — builder validates workers/percentage, throws ChaosConfigurationException
+    // Build commands eagerly — builder validates workers/percentage, throws
+    // ChaosConfigurationException
     final String startStressCmd = cmd.buildStressCpuCommand(workers);
-    final String startThrottleTemplate = cmd.buildThrottleCommand(1, percentage); // validates percentage; pid replaced later
+    final String startThrottleTemplate =
+        cmd.buildThrottleCommand(1, percentage); // validates percentage; pid replaced later
     validateContainerRunning(container);
     installTools(container);
     killStressNg(container);
@@ -108,8 +115,9 @@ public final class CgroupsCpuChaos implements CpuChaos {
       execShell(container, startStressCmd);
       Thread.sleep(STRESS_NG_STARTUP_MS);
 
-      final var pidResult = container.execInContainer(
-          Shell.SH, Shell.FLAG_C, cmd.buildFindLowestPidByCommCommand("stress-ng"));
+      final var pidResult =
+          container.execInContainer(
+              Shell.SH, Shell.FLAG_C, cmd.buildFindLowestPidByCommCommand("stress-ng"));
       if (pidResult.getExitCode() != 0 || pidResult.getStdout().isBlank()) {
         throw new ChaosOperationFailedException("stress-ng did not start");
       }
@@ -131,8 +139,12 @@ public final class CgroupsCpuChaos implements CpuChaos {
   @Override
   public void stressCache(
       final GenericContainer<?> container, final int workers, final Duration duration) {
-    runStressorWithTimeout(container, workers, duration,
-        () -> cmd.buildStressCacheWithTimeoutCommand(workers, duration.toSeconds()), "cache");
+    runStressorWithTimeout(
+        container,
+        workers,
+        duration,
+        () -> cmd.buildStressCacheWithTimeoutCommand(workers, duration.toSeconds()),
+        "cache");
   }
 
   @Override
@@ -142,22 +154,32 @@ public final class CgroupsCpuChaos implements CpuChaos {
 
   @Override
   public void stressContextSwitch(final GenericContainer<?> container, final int workers) {
-    runStressor(container, workers, () -> cmd.buildStressContextSwitchCommand(workers), "context-switch");
+    runStressor(
+        container, workers, () -> cmd.buildStressContextSwitchCommand(workers), "context-switch");
   }
 
   @Override
   public void stressThreadSwitch(final GenericContainer<?> container, final int workers) {
-    runStressor(container, workers, () -> cmd.buildStressThreadSwitchCommand(workers), "thread-switch");
+    runStressor(
+        container, workers, () -> cmd.buildStressThreadSwitchCommand(workers), "thread-switch");
   }
 
   @Override
   public void stressBranchPredictor(final GenericContainer<?> container, final int workers) {
-    runStressor(container, workers, () -> cmd.buildStressBranchPredictorCommand(workers), "branch-predictor");
+    runStressor(
+        container,
+        workers,
+        () -> cmd.buildStressBranchPredictorCommand(workers),
+        "branch-predictor");
   }
 
   @Override
   public void stressTimerInterrupts(final GenericContainer<?> container, final int workers) {
-    runStressor(container, workers, () -> cmd.buildStressTimerInterruptsCommand(workers), "timer-interrupt");
+    runStressor(
+        container,
+        workers,
+        () -> cmd.buildStressTimerInterruptsCommand(workers),
+        "timer-interrupt");
   }
 
   @Override
@@ -168,8 +190,12 @@ public final class CgroupsCpuChaos implements CpuChaos {
   @Override
   public void stressMatrix(
       final GenericContainer<?> container, final int workers, final Duration duration) {
-    runStressorWithTimeout(container, workers, duration,
-        () -> cmd.buildStressMatrixWithTimeoutCommand(workers, duration.toSeconds()), "matrix");
+    runStressorWithTimeout(
+        container,
+        workers,
+        duration,
+        () -> cmd.buildStressMatrixWithTimeoutCommand(workers, duration.toSeconds()),
+        "matrix");
   }
 
   // ==================== CPU Affinity ====================
@@ -182,7 +208,9 @@ public final class CgroupsCpuChaos implements CpuChaos {
           "affinityMask must be > 0, got: 0x" + Long.toHexString(affinityMask));
     }
     validateContainerRunning(container);
-    exec(container, cmd.buildPinToMaskCommand(1, affinityMask),
+    exec(
+        container,
+        cmd.buildPinToMaskCommand(1, affinityMask),
         "pin CPU affinity to mask 0x" + Long.toHexString(affinityMask));
     log.info("Pinned PID 1 to CPU mask 0x{}", Long.toHexString(affinityMask));
   }
@@ -283,8 +311,14 @@ public final class CgroupsCpuChaos implements CpuChaos {
   public void installTools(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
     validateContainerRunning(container);
-    PackageInstaller.ensureInstalled(container,
-        Tool.STRESS_NG, Tool.CPULIMIT, Tool.TASKSET, Tool.RENICE, Tool.NPROC, Tool.PROCPS);
+    PackageInstaller.ensureInstalled(
+        container,
+        Tool.STRESS_NG,
+        Tool.CPULIMIT,
+        Tool.TASKSET,
+        Tool.RENICE,
+        Tool.NPROC,
+        Tool.PROCPS);
   }
 
   @Override
@@ -314,15 +348,15 @@ public final class CgroupsCpuChaos implements CpuChaos {
   // ==================== Private: Stressor Templates ====================
 
   /**
-   * Template for indefinite stressor methods. Validates first, then builds command, installs,
-   * kills previous, executes, logs. Command is deferred via {@link Supplier} to ensure validation
-   * exceptions ({@link ChaosConfigurationException}) are thrown before builder-level
-   * {@link IllegalArgumentException}.
+   * Template for indefinite stressor methods. Validates first, then builds command, installs, kills
+   * previous, executes, logs. Command is deferred via {@link Supplier} to ensure validation
+   * exceptions ({@link ChaosConfigurationException}) are thrown before builder-level {@link
+   * IllegalArgumentException}.
    */
   /**
-   * Template for indefinite stressor methods. The {@code commandSupplier} is invoked first so
-   * that builder validation (workers range → {@link ChaosConfigurationException}) fires before
-   * any container side effects.
+   * Template for indefinite stressor methods. The {@code commandSupplier} is invoked first so that
+   * builder validation (workers range → {@link ChaosConfigurationException}) fires before any
+   * container side effects.
    */
   private void runStressor(
       final GenericContainer<?> container,
@@ -330,7 +364,8 @@ public final class CgroupsCpuChaos implements CpuChaos {
       final Supplier<String> commandSupplier,
       final String label) {
     Objects.requireNonNull(container, "container must not be null");
-    // Invoke supplier first: builder validates workers, throws ChaosConfigurationException if invalid
+    // Invoke supplier first: builder validates workers, throws ChaosConfigurationException if
+    // invalid
     final String command = commandSupplier.get();
     validateContainerRunning(container);
     installTools(container);
@@ -351,7 +386,8 @@ public final class CgroupsCpuChaos implements CpuChaos {
       final String label) {
     Objects.requireNonNull(container, "container must not be null");
     Objects.requireNonNull(duration, "duration must not be null");
-    // Invoke supplier first: builder validates workers, throws ChaosConfigurationException if invalid
+    // Invoke supplier first: builder validates workers, throws ChaosConfigurationException if
+    // invalid
     final String command = commandSupplier.get();
     validateContainerRunning(container);
     installTools(container);
@@ -409,8 +445,9 @@ public final class CgroupsCpuChaos implements CpuChaos {
     final long deadline = System.currentTimeMillis() + timeoutMs;
     while (System.currentTimeMillis() < deadline) {
       try {
-        final var result = container.execInContainer(Shell.SH, Shell.FLAG_C,
-            cmd.buildIsRunningByCommPrefixCommand(name));
+        final var result =
+            container.execInContainer(
+                Shell.SH, Shell.FLAG_C, cmd.buildIsRunningByCommPrefixCommand(name));
         if (result.getExitCode() != 0) {
           return;
         }

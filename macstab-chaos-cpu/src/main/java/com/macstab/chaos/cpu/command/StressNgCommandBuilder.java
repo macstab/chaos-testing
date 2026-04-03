@@ -7,8 +7,8 @@ import com.macstab.chaos.core.command.cpu.CpuCommandBuilder;
 import com.macstab.chaos.core.exception.ChaosConfigurationException;
 
 /**
- * {@link CpuCommandBuilder} implementation using {@code stress-ng}, {@code cpulimit},
- * {@code taskset}, and {@code renice}.
+ * {@link CpuCommandBuilder} implementation using {@code stress-ng}, {@code cpulimit}, {@code
+ * taskset}, and {@code renice}.
  *
  * <p>All commands work in any unprivileged Linux container without additional capabilities or
  * kernel modules. No cgroup writes, no {@code --privileged}, no {@code CAP_SYS_ADMIN}.
@@ -25,8 +25,8 @@ import com.macstab.chaos.core.exception.ChaosConfigurationException;
  *
  * <p><strong>Process lifecycle strategy:</strong>
  *
- * <p>All process find/kill commands use /proc/[0-9]&#42;/comm exclusively - no dependency on
- * pgrep, pkill, or ps, which may be absent in minimal images (e.g., redis:7.4).
+ * <p>All process find/kill commands use /proc/[0-9]&#42;/comm exclusively - no dependency on pgrep,
+ * pkill, or ps, which may be absent in minimal images (e.g., redis:7.4).
  *
  * <p><strong>stress-ng SIGTERM handling note:</strong>
  *
@@ -76,8 +76,7 @@ public final class StressNgCommandBuilder implements CpuCommandBuilder {
 
     // grep -rl scans all /proc/*/comm files for an exact name match; exits 0 on first hit.
     return String.format(
-        "grep -rl '^%s$' /proc/[0-9]*/comm 2>/dev/null | grep -q .",
-        exactCommName);
+        "grep -rl '^%s$' /proc/[0-9]*/comm 2>/dev/null | grep -q .", exactCommName);
   }
 
   @Override
@@ -85,9 +84,7 @@ public final class StressNgCommandBuilder implements CpuCommandBuilder {
     Objects.requireNonNull(commPrefix, "commPrefix must not be null");
 
     // Prefix match covers "stress-ng", "stress-ng-cpu", "stress-ng-cache", etc.
-    return String.format(
-        "grep -rl '^%s' /proc/[0-9]*/comm 2>/dev/null | grep -q .",
-        commPrefix);
+    return String.format("grep -rl '^%s' /proc/[0-9]*/comm 2>/dev/null | grep -q .", commPrefix);
   }
 
   @Override
@@ -206,8 +203,7 @@ public final class StressNgCommandBuilder implements CpuCommandBuilder {
   public String buildStressMatrixWithTimeoutCommand(final int workers, final long seconds) {
     validateWorkers(workers);
     validateSeconds(seconds);
-    return String.format(
-        "stress-ng --matrix %d --timeout %ds >/dev/null 2>&1 &", workers, seconds);
+    return String.format("stress-ng --matrix %d --timeout %ds >/dev/null 2>&1 &", workers, seconds);
   }
 
   // ==================== cpulimit Commands ====================

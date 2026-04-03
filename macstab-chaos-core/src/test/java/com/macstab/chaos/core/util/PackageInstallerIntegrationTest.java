@@ -411,8 +411,7 @@ class PackageInstallerIntegrationTest {
 
       // THEN — binary present, label set
       assertThat(PackageInstaller.isInstalled(alpine, "cpulimit")).isTrue();
-      assertThat(alpine.getLabels())
-          .containsKey(PackageInstaller.LABEL_PREFIX + "cpulimit");
+      assertThat(alpine.getLabels()).containsKey(PackageInstaller.LABEL_PREFIX + "cpulimit");
     }
   }
 

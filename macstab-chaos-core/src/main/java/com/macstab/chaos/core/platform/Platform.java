@@ -51,11 +51,11 @@ public interface Platform {
    * Get list of required tools for chaos operations.
    *
    * <p>These tools must be installed before using chaos modules. The framework validates their
-   * presence but does NOT install them.
+   * presence via {@link #getBinaryName(Tool)} resolution.
    *
-   * @return list of required tool names (e.g., "curl", "iptables")
+   * @return immutable list of required {@link Tool} entries
    */
-  List<String> getRequiredTools();
+  List<Tool> getRequiredTools();
 
   /**
    * Validate that all required tools are present in the container.

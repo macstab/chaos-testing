@@ -234,8 +234,7 @@ class LatencyToxicTest {
     @Test
     @DisplayName("cross-region latency: 80ms ± 20ms jitter")
     void crossRegionLatency() {
-      LatencyToxic toxic =
-          LatencyToxic.builder().name("eu-us").latencyMs(80).jitterMs(20).build();
+      LatencyToxic toxic = LatencyToxic.builder().name("eu-us").latencyMs(80).jitterMs(20).build();
 
       assertThat(toxic.latencyMs()).isEqualTo(80);
       assertThat(toxic.jitterMs()).isEqualTo(20);

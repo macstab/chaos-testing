@@ -57,6 +57,11 @@ public final class NoOpMemoryChaos implements MemoryChaos {
   }
 
   @Override
+  public int priority() {
+    return Integer.MAX_VALUE;
+  }
+
+  @Override
   public boolean isSupported() {
     return false;
   }

@@ -14,7 +14,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.testcontainers.containers.GenericContainer;
 
-import com.macstab.chaos.core.exception.ChaosOperationFailedException;
 import com.macstab.chaos.core.platform.Platform;
 import com.macstab.chaos.core.shell.Shell;
 import com.macstab.chaos.toxiproxy.api.ToxiproxyApiClient;

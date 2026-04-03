@@ -2,6 +2,7 @@
 package com.macstab.chaos.core.shell;
 
 import java.util.Objects;
+import java.util.Set;
 
 import org.testcontainers.containers.Container.ExecResult;
 import org.testcontainers.containers.GenericContainer;
@@ -65,5 +66,23 @@ public abstract class AbstractShell implements Shell {
         "curl -s --connect-timeout 1 --max-time 1 http://localhost:%d >/dev/null 2>&1; "
             + "test $? -eq 0 -o $? -eq 52",
         port);
+  }
+
+  /**
+   * Returns the set of capabilities this shell supports.
+   *
+   * <p>Subclasses override to declare their capabilities. The default returns
+   * {@link ShellCapability#COMMAND_SUBSTITUTION} only (POSIX baseline).
+   *
+   * @return immutable set of supported capabilities
+   */
+  protected Set<ShellCapability> capabilities() {
+    return Set.of(ShellCapability.COMMAND_SUBSTITUTION);
+  }
+
+  @Override
+  public final boolean supports(final ShellCapability capability) {
+    Objects.requireNonNull(capability, "capability must not be null");
+    return capabilities().contains(capability);
   }
 }

@@ -1,8 +1,10 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.core.spi;
 
+import java.util.Comparator;
 import java.util.Objects;
 import java.util.ServiceLoader;
+import java.util.stream.StreamSupport;
 
 import com.macstab.chaos.core.api.CacheChaos;
 import com.macstab.chaos.core.api.ConnectionChaos;
@@ -125,28 +127,27 @@ public final class ChaosProviderRegistry {
   }
 
   /**
-   * Load provider via ServiceLoader, fallback to default if not found.
+   * Load provider via ServiceLoader, selecting the one with the lowest {@code priority()}.
    *
-   * @param <T> provider type
+   * <p>All discovered providers are sorted by {@link com.macstab.chaos.core.api.ChaosProvider#priority()}.
+   * The provider with the lowest value wins. NoOp implementations return {@code Integer.MAX_VALUE}
+   * and are therefore always last. If no provider is found at all, {@code defaultImpl} is returned.
+   *
+   * @param <T> provider type (must extend ChaosProvider)
    * @param serviceClass service interface class
-   * @param defaultImpl default no-op implementation
-   * @return first real implementation found, or default
+   * @param defaultImpl default no-op implementation (returned when ServiceLoader finds nothing)
+   * @return provider with lowest priority, or default
    */
+  @SuppressWarnings("unchecked")
   private static <T> T loadProvider(final Class<T> serviceClass, final T defaultImpl) {
     Objects.requireNonNull(serviceClass, "serviceClass must not be null");
     Objects.requireNonNull(defaultImpl, "defaultImpl must not be null");
 
     final ServiceLoader<T> loader = ServiceLoader.load(serviceClass);
 
-    // Return first implementation found
-    for (final T provider : loader) {
-      // Skip if it's the default no-op implementation
-      if (!provider.getClass().getSimpleName().startsWith("NoOp")) {
-        return provider;
-      }
-    }
-
-    // No real implementation found, return no-op
-    return defaultImpl;
+    return StreamSupport.stream(loader.spliterator(), false)
+        .sorted(Comparator.comparingInt(p -> ((com.macstab.chaos.core.api.ChaosProvider) p).priority()))
+        .findFirst()
+        .orElse(defaultImpl);
   }
 }
