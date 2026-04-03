@@ -17,6 +17,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.macstab.chaos.core.platform.Tool;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -257,26 +259,25 @@ class PackageInstallerTest {
     }
   }
 
-  // ==================== ensureInstalled Tests ====================
+  // ==================== ensureInstalled(Tool...) Tests ====================
 
   @Nested
-  @DisplayName("ensureInstalled")
-  class EnsureInstalledTests {
+  @DisplayName("ensureInstalled(Tool...)")
+  class EnsureInstalledToolTests {
 
     @Test
-    @DisplayName("skips all tools when all labels already present")
+    @DisplayName("skips all when all Tool labels already present")
     void skipsWhenAllLabelled() {
-      // GIVEN — container with all tools already labelled
+      // GIVEN — all Tool labels already present
       final GenericContainer<?> container = mockRunningContainer();
       final Map<String, String> labels = new HashMap<>();
-      labels.put(PackageInstaller.LABEL_PREFIX + "stress-ng", "true");
-      labels.put(PackageInstaller.LABEL_PREFIX + "cpulimit", "true");
+      labels.put(PackageInstaller.LABEL_PREFIX + Tool.STRESS_NG.name().toLowerCase(), "true");
+      labels.put(PackageInstaller.LABEL_PREFIX + Tool.CURL.name().toLowerCase(), "true");
       when(container.getLabels()).thenReturn(labels);
 
-      // WHEN / THEN — no exception, no install attempted
-      assertThatCode(() -> PackageInstaller.ensureInstalled(container,
-          ToolPackage.ofSame("stress-ng"),
-          ToolPackage.ofSame("cpulimit")))
+      // WHEN / THEN — returns immediately, no Docker call
+      assertThatCode(() -> PackageInstaller.ensureInstalled(
+              container, Tool.STRESS_NG, Tool.CURL))
           .doesNotThrowAnyException();
     }
 
@@ -284,7 +285,69 @@ class PackageInstallerTest {
     @DisplayName("throws NullPointerException for null container")
     void nullContainer() {
       assertThatThrownBy(() -> PackageInstaller.ensureInstalled(
-              null, ToolPackage.ofSame("stress-ng")))
+              null, Tool.STRESS_NG))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("container");
+    }
+
+    @Test
+    @DisplayName("throws NullPointerException for null tools array")
+    void nullTools() {
+      final GenericContainer<?> container = mockRunningContainer();
+      when(container.getLabels()).thenReturn(new HashMap<>());
+      assertThatThrownBy(() -> PackageInstaller.ensureInstalled(
+              container, (Tool[]) null))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("tools");
+    }
+
+    @Test
+    @DisplayName("throws NullPointerException for null element in tools array")
+    void nullToolElement() {
+      final GenericContainer<?> container = mockRunningContainer();
+      when(container.getLabels()).thenReturn(new HashMap<>());
+      assertThatThrownBy(() -> PackageInstaller.ensureInstalled(
+              container, (Tool) null))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("Tool element");
+    }
+
+    @Test
+    @DisplayName("throws IllegalStateException for stopped container")
+    void stoppedContainer() {
+      final GenericContainer<?> container = mockStoppedContainer();
+      assertThatThrownBy(() -> PackageInstaller.ensureInstalled(
+              container, Tool.STRESS_NG))
+          .isInstanceOf(IllegalStateException.class);
+    }
+  }
+
+  // ==================== ensureInstalled(ToolPackage...) Tests ====================
+
+  @Nested
+  @DisplayName("ensureInstalled(ToolPackage...)")
+  class EnsureInstalledToolPackageTests {
+
+    @Test
+    @DisplayName("skips all when all ToolPackage labels already present")
+    void skipsWhenAllLabelled() {
+      // GIVEN — labels set for both tools
+      final GenericContainer<?> container = mockRunningContainer();
+      final Map<String, String> labels = new HashMap<>();
+      labels.put(PackageInstaller.LABEL_PREFIX + "cpulimit", "true");
+      when(container.getLabels()).thenReturn(labels);
+
+      // WHEN / THEN
+      assertThatCode(() -> PackageInstaller.ensureInstalled(
+              container, ToolPackage.ofSame("cpulimit")))
+          .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("throws NullPointerException for null container")
+    void nullContainer() {
+      assertThatThrownBy(() -> PackageInstaller.ensureInstalled(
+              null, ToolPackage.ofSame("cpulimit")))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("container");
     }
@@ -301,8 +364,8 @@ class PackageInstallerTest {
     }
 
     @Test
-    @DisplayName("throws NullPointerException for null element in tools array")
-    void nullToolElement() {
+    @DisplayName("throws NullPointerException for null element")
+    void nullElement() {
       final GenericContainer<?> container = mockRunningContainer();
       when(container.getLabels()).thenReturn(new HashMap<>());
       assertThatThrownBy(() -> PackageInstaller.ensureInstalled(
@@ -316,7 +379,7 @@ class PackageInstallerTest {
     void stoppedContainer() {
       final GenericContainer<?> container = mockStoppedContainer();
       assertThatThrownBy(() -> PackageInstaller.ensureInstalled(
-              container, ToolPackage.ofSame("stress-ng")))
+              container, ToolPackage.ofSame("cpulimit")))
           .isInstanceOf(IllegalStateException.class);
     }
   }

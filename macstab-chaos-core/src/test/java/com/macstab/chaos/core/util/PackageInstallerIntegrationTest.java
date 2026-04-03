@@ -16,6 +16,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 import com.macstab.chaos.core.exception.PackageInstallationException;
+import com.macstab.chaos.core.platform.Tool;
 
 /**
  * Integration tests for {@link PackageInstaller} using real containers.
@@ -360,54 +361,58 @@ class PackageInstallerIntegrationTest {
             .withCommand("sleep", "infinity");
 
     @Test
-    @DisplayName("installs missing tools and sets labels on first call")
+    @DisplayName("installs Tool.STRESS_NG and sets label on first call")
     void installsAndLabelsOnFirstCall() {
-      // GIVEN — clean container, no labels set
-      assertThat(alpine.getLabels())
-          .doesNotContainKey(PackageInstaller.LABEL_PREFIX + "stress-ng");
+      // GIVEN — label not yet set
+      final String labelKey = PackageInstaller.LABEL_PREFIX + Tool.STRESS_NG.name().toLowerCase();
+      assertThat(alpine.getLabels()).doesNotContainKey(labelKey);
 
       // WHEN
-      PackageInstaller.ensureInstalled(alpine,
-          ToolPackage.ofSame("stress-ng"),
-          ToolPackage.ofSame("cpulimit"));
+      PackageInstaller.ensureInstalled(alpine, Tool.STRESS_NG);
 
-      // THEN — binaries present and labels set
-      assertThat(PackageInstaller.isInstalled(alpine, "stress-ng", "cpulimit")).isTrue();
-      assertThat(alpine.getLabels())
-          .containsKey(PackageInstaller.LABEL_PREFIX + "stress-ng")
-          .containsKey(PackageInstaller.LABEL_PREFIX + "cpulimit");
+      // THEN — binary present, label set
+      assertThat(PackageInstaller.isInstalled(alpine, "stress-ng")).isTrue();
+      assertThat(alpine.getLabels()).containsKey(labelKey);
     }
 
     @Test
-    @DisplayName("skips install on second call — labels already present")
+    @DisplayName("skips install on second call — label already present")
     void skipsOnSecondCall() {
       // GIVEN — first call installs and labels
-      PackageInstaller.ensureInstalled(alpine, ToolPackage.ofSame("stress-ng"));
-      assertThat(alpine.getLabels())
-          .containsKey(PackageInstaller.LABEL_PREFIX + "stress-ng");
+      PackageInstaller.ensureInstalled(alpine, Tool.STRESS_NG);
 
-      // WHEN — second call (should be a no-op)
+      // WHEN — second call
       final long start = System.currentTimeMillis();
-      PackageInstaller.ensureInstalled(alpine, ToolPackage.ofSame("stress-ng"));
+      PackageInstaller.ensureInstalled(alpine, Tool.STRESS_NG);
       final long elapsed = System.currentTimeMillis() - start;
 
-      // THEN — returns in well under 1s (no Docker exec)
+      // THEN — pure in-JVM label lookup, no Docker exec
       assertThat(elapsed).isLessThan(500);
     }
 
     @Test
-    @DisplayName("deduplicates packages — single install for taskset and renice sharing util-linux")
+    @DisplayName("deduplicates packages — Tool.IPROUTE and Tool.IPTABLES in one install")
     void deduplicatesPackages() {
-      // WHEN — two tools, one package
-      PackageInstaller.ensureInstalled(alpine,
-          ToolPackage.of("taskset", "util-linux"),
-          ToolPackage.of("renice", "util-linux"));
+      // WHEN — two tools installed together
+      PackageInstaller.ensureInstalled(alpine, Tool.IPROUTE, Tool.IPTABLES);
 
-      // THEN — both binaries available, both labelled
-      assertThat(PackageInstaller.isInstalled(alpine, "taskset", "renice")).isTrue();
+      // THEN — both binaries present, both labelled
+      assertThat(PackageInstaller.isInstalled(alpine, "ip", "iptables")).isTrue();
       assertThat(alpine.getLabels())
-          .containsKey(PackageInstaller.LABEL_PREFIX + "taskset")
-          .containsKey(PackageInstaller.LABEL_PREFIX + "renice");
+          .containsKey(PackageInstaller.LABEL_PREFIX + Tool.IPROUTE.name().toLowerCase())
+          .containsKey(PackageInstaller.LABEL_PREFIX + Tool.IPTABLES.name().toLowerCase());
+    }
+
+    @Test
+    @DisplayName("ToolPackage escape-hatch: installs cpulimit not in Tool enum")
+    void toolPackageEscapeHatch() {
+      // WHEN — cpulimit is not in Tool enum, use ToolPackage
+      PackageInstaller.ensureInstalled(alpine, ToolPackage.ofSame("cpulimit"));
+
+      // THEN — binary present, label set
+      assertThat(PackageInstaller.isInstalled(alpine, "cpulimit")).isTrue();
+      assertThat(alpine.getLabels())
+          .containsKey(PackageInstaller.LABEL_PREFIX + "cpulimit");
     }
   }
 
