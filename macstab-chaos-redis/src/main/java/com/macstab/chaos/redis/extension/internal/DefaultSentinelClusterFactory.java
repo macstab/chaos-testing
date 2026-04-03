@@ -1,9 +1,13 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.redis.extension.internal;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Stream;
+
+import com.macstab.chaos.core.platform.Tool;
+import com.macstab.chaos.core.util.ToolPackage;
 
 import org.testcontainers.containers.GenericContainer;
 
@@ -87,9 +91,7 @@ public final class DefaultSentinelClusterFactory implements SentinelClusterFacto
   void installNetworkTools(final SentinelCluster cluster, final String clusterId) {
     for (final GenericContainer<?> container : allContainers(cluster)) {
       try {
-        if (!packageInstaller.isInstalled(container, "tc")) {
-          packageInstaller.install(container, "iproute2", "iptables");
-        }
+        packageInstaller.ensureInstalled(container, Tool.IPROUTE, Tool.IPTABLES);
       } catch (final Exception e) {
         log.warn("Failed to install network tools in cluster '{}': {}", clusterId, e.getMessage());
       }
@@ -105,11 +107,14 @@ public final class DefaultSentinelClusterFactory implements SentinelClusterFacto
    */
   void installPackages(
       final SentinelCluster cluster, final String clusterId, final String[] packages) {
+    final ToolPackage[] toolPackages = Arrays.stream(packages)
+        .map(ToolPackage::ofSame)
+        .toArray(ToolPackage[]::new);
     int success = 0;
     int fail = 0;
     for (final GenericContainer<?> container : allContainers(cluster)) {
       try {
-        packageInstaller.install(container, List.of(packages), true);
+        packageInstaller.ensureInstalled(container, toolPackages);
         success++;
       } catch (final Exception e) {
         fail++;
@@ -117,7 +122,7 @@ public final class DefaultSentinelClusterFactory implements SentinelClusterFacto
       }
     }
     log.info(
-        "Packages installed {}/{} containers in cluster '{}'", success, success + fail, clusterId);
+        "Packages ensured {}/{} containers in cluster '{}'", success, success + fail, clusterId);
   }
 
   /** Returns all containers in the cluster (master + replicas + sentinels). */

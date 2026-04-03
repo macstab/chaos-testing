@@ -21,6 +21,8 @@ import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.platform.Tool;
+import com.macstab.chaos.core.util.ToolPackage;
 import com.macstab.chaos.redis.annotation.RedisStandalone;
 import com.macstab.chaos.redis.extension.RedisContainerExtension.Store;
 
@@ -174,41 +176,24 @@ class DefaultStandaloneContainerInstanceFactoryTest {
       // ACT
       factory.installNetworkTools(container, annotation);
 
-      // ASSERT
-      verify(packageInstaller, never()).isInstalled(ArgumentMatchers.any(), ArgumentMatchers.any());
-    }
-
-    @Test
-    @DisplayName("Skips install when tc is already installed")
-    void shouldSkipInstallWhenTcPresent() {
-      // ARRANGE
-      final GenericContainer<?> container = mock(GenericContainer.class);
-      final RedisStandalone annotation =
-          buildAnnotation("id", "7.4", 0, new String[0], true, new String[0]);
-      when(packageInstaller.isInstalled(container, "tc")).thenReturn(true);
-
-      // ACT
-      factory.installNetworkTools(container, annotation);
-
-      // ASSERT
+      // ASSERT — ensureInstalled never called when chaos disabled
       verify(packageInstaller, never())
-          .install(ArgumentMatchers.any(), ArgumentMatchers.any(String[].class));
+          .ensureInstalled(ArgumentMatchers.any(), ArgumentMatchers.any(Tool[].class));
     }
 
     @Test
-    @DisplayName("Installs iproute2 and iptables when tc is absent")
-    void shouldInstallToolsWhenTcAbsent() {
+    @DisplayName("Calls ensureInstalled with IPROUTE and IPTABLES when chaos enabled")
+    void shouldEnsureInstalledWhenChaosEnabled() {
       // ARRANGE
       final GenericContainer<?> container = mock(GenericContainer.class);
       final RedisStandalone annotation =
           buildAnnotation("id", "7.4", 0, new String[0], true, new String[0]);
-      when(packageInstaller.isInstalled(container, "tc")).thenReturn(false);
 
       // ACT
       factory.installNetworkTools(container, annotation);
 
       // ASSERT
-      verify(packageInstaller).install(container, "iproute2", "iptables");
+      verify(packageInstaller).ensureInstalled(container, Tool.IPROUTE, Tool.IPTABLES);
     }
 
     @Test
@@ -218,8 +203,9 @@ class DefaultStandaloneContainerInstanceFactoryTest {
       final GenericContainer<?> container = mock(GenericContainer.class);
       final RedisStandalone annotation =
           buildAnnotation("id", "7.4", 0, new String[0], true, new String[0]);
-      when(packageInstaller.isInstalled(container, "tc"))
-          .thenThrow(new RuntimeException("exec failed"));
+      doThrow(new RuntimeException("exec failed"))
+          .when(packageInstaller)
+          .ensureInstalled(ArgumentMatchers.eq(container), ArgumentMatchers.any(Tool[].class));
 
       // ACT — must not throw
       factory.installNetworkTools(container, annotation);
@@ -252,8 +238,8 @@ class DefaultStandaloneContainerInstanceFactoryTest {
     }
 
     @Test
-    @DisplayName("Installs specified packages with verification")
-    void shouldInstallPackagesWithVerification() {
+    @DisplayName("Calls ensureInstalled with ToolPackages for specified packages")
+    void shouldEnsureInstalledPackages() {
       // ARRANGE
       final GenericContainer<?> container = mock(GenericContainer.class);
       final RedisStandalone annotation =
@@ -263,7 +249,8 @@ class DefaultStandaloneContainerInstanceFactoryTest {
       factory.installAnnotationPackages(container, annotation);
 
       // ASSERT
-      verify(packageInstaller).install(container, List.of("curl", "jq"), true);
+      verify(packageInstaller).ensureInstalled(
+          ArgumentMatchers.eq(container), ArgumentMatchers.any(ToolPackage[].class));
     }
 
     @Test
@@ -275,10 +262,8 @@ class DefaultStandaloneContainerInstanceFactoryTest {
           buildAnnotation("id", "7.4", 0, new String[0], false, new String[] {"curl"});
       doThrow(new RuntimeException("package not found"))
           .when(packageInstaller)
-          .install(
-              ArgumentMatchers.eq(container),
-              ArgumentMatchers.any(java.util.Collection.class),
-              ArgumentMatchers.anyBoolean());
+          .ensureInstalled(
+              ArgumentMatchers.eq(container), ArgumentMatchers.any(ToolPackage[].class));
 
       // ACT — must not throw
       factory.installAnnotationPackages(container, annotation);

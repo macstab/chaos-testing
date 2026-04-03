@@ -19,6 +19,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.platform.Tool;
+import com.macstab.chaos.core.util.ToolPackage;
 import com.macstab.chaos.redis.annotation.RedisSentinel;
 import com.macstab.chaos.redis.extension.SentinelCluster;
 
@@ -97,36 +99,33 @@ class DefaultSentinelClusterFactoryTest {
       // ACT
       factory.installExtras(cluster, annotation);
 
-      // ASSERT — neither installNetworkTools nor installPackages should touch the installer
+      // ASSERT — ensureInstalled never called when chaos disabled and no packages
       verify(packageInstaller, never())
-          .isInstalled(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+          .ensureInstalled(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(Tool[].class));
       verify(packageInstaller, never())
-          .install(
-              org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(String[].class));
+          .ensureInstalled(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(ToolPackage[].class));
     }
 
     @Test
-    @DisplayName("Calls installNetworkTools when enableNetworkChaos=true")
-    void shouldInstallNetworkToolsWhenChaosEnabled() {
-      // ARRANGE — master only (1 container) so verify(times(1)) is exact
+    @DisplayName("Calls ensureInstalled with IPROUTE/IPTABLES when enableNetworkChaos=true")
+    void shouldEnsureInstalledNetworkToolsWhenChaosEnabled() {
+      // ARRANGE — master only (1 container)
       final SentinelCluster cluster = buildCluster(0, 0);
       final RedisSentinel annotation = buildAnnotation("id", true, new String[0]);
-      when(packageInstaller.isInstalled(
-              org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq("tc")))
-          .thenReturn(true);
 
       // ACT
       factory.installExtras(cluster, annotation);
 
       // ASSERT
       verify(packageInstaller, org.mockito.Mockito.times(1))
-          .isInstalled(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq("tc"));
+          .ensureInstalled(org.mockito.ArgumentMatchers.any(),
+              org.mockito.ArgumentMatchers.any(Tool[].class));
     }
 
     @Test
-    @DisplayName("Calls installPackages when packages are specified")
-    void shouldInstallPackagesWhenSpecified() {
-      // ARRANGE — master only (1 container) so verify(times(1)) is exact
+    @DisplayName("Calls ensureInstalled with ToolPackages when packages are specified")
+    void shouldEnsureInstalledPackagesWhenSpecified() {
+      // ARRANGE — master only (1 container)
       final SentinelCluster cluster = buildCluster(0, 0);
       final RedisSentinel annotation = buildAnnotation("id", false, new String[] {"curl", "jq"});
 
@@ -135,10 +134,8 @@ class DefaultSentinelClusterFactoryTest {
 
       // ASSERT
       verify(packageInstaller, org.mockito.Mockito.times(1))
-          .install(
-              org.mockito.ArgumentMatchers.any(),
-              org.mockito.ArgumentMatchers.eq(List.of("curl", "jq")),
-              org.mockito.ArgumentMatchers.eq(true));
+          .ensureInstalled(org.mockito.ArgumentMatchers.any(),
+              org.mockito.ArgumentMatchers.any(ToolPackage[].class));
     }
   }
 
@@ -149,41 +146,18 @@ class DefaultSentinelClusterFactoryTest {
   class InstallNetworkToolsTests {
 
     @Test
-    @DisplayName("Skips install when tc is already installed")
-    void shouldSkipInstallWhenTcAlreadyPresent() {
-      // ARRANGE
-      final SentinelCluster cluster = buildCluster(0, 1);
-      when(packageInstaller.isInstalled(
-              org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq("tc")))
-          .thenReturn(true);
+    @DisplayName("Calls ensureInstalled with IPROUTE and IPTABLES per container")
+    void shouldEnsureInstalledPerContainer() {
+      // ARRANGE — master + 1 replica + 1 sentinel = 3 containers
+      final SentinelCluster cluster = buildCluster(1, 1);
 
       // ACT
       factory.installNetworkTools(cluster, "test-cluster");
 
-      // ASSERT
-      verify(packageInstaller, never())
-          .install(
-              org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(String[].class));
-    }
-
-    @Test
-    @DisplayName("Installs iproute2 and iptables when tc is absent")
-    void shouldInstallToolsWhenTcAbsent() {
-      // ARRANGE — master only (1 container) so verify(times(1)) is exact
-      final SentinelCluster cluster = buildCluster(0, 0);
-      when(packageInstaller.isInstalled(
-              org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq("tc")))
-          .thenReturn(false);
-
-      // ACT
-      factory.installNetworkTools(cluster, "test-cluster");
-
-      // ASSERT
-      verify(packageInstaller, org.mockito.Mockito.times(1))
-          .install(
-              org.mockito.ArgumentMatchers.any(),
-              org.mockito.ArgumentMatchers.eq("iproute2"),
-              org.mockito.ArgumentMatchers.eq("iptables"));
+      // ASSERT — ensureInstalled called once per container
+      verify(packageInstaller, org.mockito.Mockito.times(3))
+          .ensureInstalled(org.mockito.ArgumentMatchers.any(),
+              org.mockito.ArgumentMatchers.any(Tool[].class));
     }
 
     @Test
@@ -194,35 +168,18 @@ class DefaultSentinelClusterFactoryTest {
       final GenericContainer<?> c2 = mock(GenericContainer.class);
       final SentinelCluster cluster = buildClusterFromContainers(c1, List.of(), List.of(c2));
 
-      when(packageInstaller.isInstalled(
-              org.mockito.ArgumentMatchers.eq(c1), org.mockito.ArgumentMatchers.eq("tc")))
-          .thenThrow(new RuntimeException("exec failed"));
-      when(packageInstaller.isInstalled(
-              org.mockito.ArgumentMatchers.eq(c2), org.mockito.ArgumentMatchers.eq("tc")))
-          .thenReturn(true);
+      org.mockito.Mockito.doThrow(new RuntimeException("exec failed"))
+          .when(packageInstaller)
+          .ensureInstalled(org.mockito.ArgumentMatchers.eq(c1),
+              org.mockito.ArgumentMatchers.any(Tool[].class));
 
       // ACT — must not throw
       factory.installNetworkTools(cluster, "test-cluster");
 
-      // ASSERT — c2 was still checked despite c1 throwing
-      verify(packageInstaller).isInstalled(c2, "tc");
-    }
-
-    @Test
-    @DisplayName("Runs against all containers (master + replicas + sentinels)")
-    void shouldRunAgainstAllContainers() {
-      // ARRANGE
-      final SentinelCluster cluster = buildCluster(1, 2);
-      when(packageInstaller.isInstalled(
-              org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq("tc")))
-          .thenReturn(true);
-
-      // ACT
-      factory.installNetworkTools(cluster, "test-cluster");
-
-      // ASSERT — isInstalled called for master + 1 replica + 2 sentinels = 4 containers
-      verify(packageInstaller, org.mockito.Mockito.times(4))
-          .isInstalled(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq("tc"));
+      // ASSERT — c2 was still attempted despite c1 throwing
+      verify(packageInstaller)
+          .ensureInstalled(org.mockito.ArgumentMatchers.eq(c2),
+              org.mockito.ArgumentMatchers.any(Tool[].class));
     }
   }
 
@@ -233,8 +190,8 @@ class DefaultSentinelClusterFactoryTest {
   class InstallPackagesTests {
 
     @Test
-    @DisplayName("Installs packages in every container")
-    void shouldInstallInEveryContainer() {
+    @DisplayName("Ensures packages in every container via ensureInstalled")
+    void shouldEnsureInstalledInEveryContainer() {
       // ARRANGE
       final SentinelCluster cluster = buildCluster(1, 1);
       final String[] packages = {"curl", "jq"};
@@ -244,10 +201,9 @@ class DefaultSentinelClusterFactoryTest {
 
       // ASSERT — called for master + 1 replica + 1 sentinel = 3 containers
       verify(packageInstaller, org.mockito.Mockito.times(3))
-          .install(
+          .ensureInstalled(
               org.mockito.ArgumentMatchers.any(),
-              org.mockito.ArgumentMatchers.eq(List.of("curl", "jq")),
-              org.mockito.ArgumentMatchers.eq(true));
+              org.mockito.ArgumentMatchers.any(ToolPackage[].class));
     }
 
     @Test
@@ -260,20 +216,18 @@ class DefaultSentinelClusterFactoryTest {
 
       doThrow(new RuntimeException("install failed"))
           .when(packageInstaller)
-          .install(
+          .ensureInstalled(
               org.mockito.ArgumentMatchers.eq(bad),
-              org.mockito.ArgumentMatchers.any(java.util.Collection.class),
-              org.mockito.ArgumentMatchers.anyBoolean());
+              org.mockito.ArgumentMatchers.any(ToolPackage[].class));
 
       // ACT — must not throw
       factory.installPackages(cluster, "test-cluster", new String[] {"vim"});
 
       // ASSERT — good container was still attempted
       verify(packageInstaller)
-          .install(
+          .ensureInstalled(
               org.mockito.ArgumentMatchers.eq(good),
-              org.mockito.ArgumentMatchers.any(java.util.Collection.class),
-              org.mockito.ArgumentMatchers.anyBoolean());
+              org.mockito.ArgumentMatchers.any(ToolPackage[].class));
     }
   }
 

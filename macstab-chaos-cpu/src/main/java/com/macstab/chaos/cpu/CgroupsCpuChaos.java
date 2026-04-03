@@ -11,6 +11,7 @@ import org.testcontainers.containers.GenericContainer;
 import com.macstab.chaos.core.api.CpuChaos;
 import com.macstab.chaos.core.exception.ChaosConfigurationException;
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
+import com.macstab.chaos.core.platform.Tool;
 import com.macstab.chaos.core.util.PackageInstaller;
 import com.macstab.chaos.core.util.Shell;
 import com.macstab.chaos.cpu.command.StressNgCommandBuilder;
@@ -282,9 +283,8 @@ public final class CgroupsCpuChaos implements CpuChaos {
   public void installTools(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
     validateContainerRunning(container);
-    log.debug("Installing CPU chaos tools (stress-ng, cpulimit, util-linux, procps)");
-    PackageInstaller.install(container, "stress-ng", "cpulimit");
-    PackageInstaller.install(container, List.of("util-linux", "procps"), false);
+    PackageInstaller.ensureInstalled(container,
+        Tool.STRESS_NG, Tool.CPULIMIT, Tool.TASKSET, Tool.RENICE, Tool.NPROC, Tool.PROCPS);
   }
 
   @Override

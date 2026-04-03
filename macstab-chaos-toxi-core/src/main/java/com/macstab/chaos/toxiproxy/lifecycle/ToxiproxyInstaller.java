@@ -168,15 +168,8 @@ public final class ToxiproxyInstaller {
    * @param ctx container context
    */
   private void installDependencies(final ContainerContext ctx) {
-    final String caCertsPackage = ctx.platform().getPackageName(Tool.CA_CERTIFICATES);
-    final String curlPackage = ctx.platform().getPackageName(Tool.CURL);
-    final String iptablesPackage = ctx.platform().getPackageName(Tool.IPTABLES);
-
-    // ca-certificates has no binary to verify — skip verification
-    PackageInstaller.install(ctx.container(), List.of(caCertsPackage), false);
-
-    // curl and iptables have binaries — verify installation
-    PackageInstaller.install(ctx.container(), curlPackage, iptablesPackage);
+    PackageInstaller.ensureInstalled(ctx.container(),
+        Tool.CA_CERTIFICATES, Tool.CURL, Tool.IPTABLES);
   }
 
   /**

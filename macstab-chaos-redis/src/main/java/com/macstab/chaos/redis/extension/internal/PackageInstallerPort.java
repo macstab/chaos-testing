@@ -5,7 +5,9 @@ import java.util.Collection;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.platform.Tool;
 import com.macstab.chaos.core.util.PackageInstaller;
+import com.macstab.chaos.core.util.ToolPackage;
 
 /**
  * Abstraction over {@link PackageInstaller} to enable unit testing of classes that install packages
@@ -44,6 +46,18 @@ public interface PackageInstallerPort {
             final boolean verify) {
           PackageInstaller.install(container, packages, verify);
         }
+
+        @Override
+        public void ensureInstalled(
+            final GenericContainer<?> container, final Tool... tools) {
+          PackageInstaller.ensureInstalled(container, tools);
+        }
+
+        @Override
+        public void ensureInstalled(
+            final GenericContainer<?> container, final ToolPackage... tools) {
+          PackageInstaller.ensureInstalled(container, tools);
+        }
       };
 
   /**
@@ -71,4 +85,22 @@ public interface PackageInstallerPort {
    * @param verify if {@code true}, verifies installation after install
    */
   void install(GenericContainer<?> container, Collection<String> packages, boolean verify);
+
+  /**
+   * Ensures known {@link Tool}s are installed exactly once per container lifetime.
+   * Platform-resolved, label-guarded.
+   *
+   * @param container target container
+   * @param tools tools to ensure are installed
+   */
+  void ensureInstalled(GenericContainer<?> container, Tool... tools);
+
+  /**
+   * Ensures raw-package tools are installed exactly once per container lifetime.
+   * Label-guarded escape hatch for packages not in the {@link Tool} enum.
+   *
+   * @param container target container
+   * @param tools tool-to-package bindings
+   */
+  void ensureInstalled(GenericContainer<?> container, ToolPackage... tools);
 }

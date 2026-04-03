@@ -1,9 +1,13 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.redis.extension.internal;
 
+import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+
+import com.macstab.chaos.core.platform.Tool;
+import com.macstab.chaos.core.util.ToolPackage;
 
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
@@ -123,9 +127,7 @@ public final class DefaultStandaloneContainerInstanceFactory
       return;
     }
     try {
-      if (!packageInstaller.isInstalled(container, "tc")) {
-        packageInstaller.install(container, "iproute2", "iptables");
-      }
+      packageInstaller.ensureInstalled(container, Tool.IPROUTE, Tool.IPTABLES);
     } catch (final RuntimeException e) {
       log.warn("Network tools install failed for '{}': {}", annotation.id(), e.getMessage());
     }
@@ -143,7 +145,10 @@ public final class DefaultStandaloneContainerInstanceFactory
       return;
     }
     try {
-      packageInstaller.install(container, List.of(annotation.packages()), true);
+      final ToolPackage[] toolPackages = Arrays.stream(annotation.packages())
+          .map(ToolPackage::ofSame)
+          .toArray(ToolPackage[]::new);
+      packageInstaller.ensureInstalled(container, toolPackages);
       log.info("Packages installed in instance '{}'", annotation.id());
     } catch (final RuntimeException e) {
       log.warn("Package install failed for '{}': {}", annotation.id(), e.getMessage());
