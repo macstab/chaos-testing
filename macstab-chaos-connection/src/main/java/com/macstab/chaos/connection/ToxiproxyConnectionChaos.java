@@ -16,7 +16,9 @@ import com.macstab.chaos.toxiproxy.api.ToxiproxyApiClientImpl;
 import com.macstab.chaos.toxiproxy.config.ProxyConfiguration;
 import com.macstab.chaos.toxiproxy.config.ToxiproxyConfig;
 import com.macstab.chaos.toxiproxy.context.ContainerContext;
+import com.macstab.chaos.toxiproxy.lifecycle.ToxiproxyLifecycle;
 import com.macstab.chaos.toxiproxy.lifecycle.ToxiproxyLifecycleManager;
+import com.macstab.chaos.toxiproxy.network.NetworkRedirect;
 import com.macstab.chaos.toxiproxy.network.NetworkRedirectManager;
 import com.macstab.chaos.toxiproxy.toxic.BandwidthToxic;
 import com.macstab.chaos.toxiproxy.toxic.DownToxic;
@@ -48,9 +50,9 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
   private static final Pattern VALID_HOSTNAME = Pattern.compile("^[a-zA-Z0-9._-]+$");
 
   private final ToxiproxyConfig config;
-  private final ToxiproxyLifecycleManager lifecycle;
+  private final ToxiproxyLifecycle lifecycle;
   private final ToxiproxyApiClient apiClient;
-  private final NetworkRedirectManager networkRedirect;
+  private final NetworkRedirect networkRedirect;
 
   /** Tracks proxies this module created — only these are removed on reset. */
   private final Map<String, ProxyConfiguration> ownedProxies = new ConcurrentHashMap<>();
@@ -66,6 +68,25 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
     this.lifecycle = new ToxiproxyLifecycleManager(config);
     this.apiClient = new ToxiproxyApiClientImpl(config.apiUrl());
     this.networkRedirect = new NetworkRedirectManager();
+  }
+
+  /**
+   * Package-private constructor for unit testing — accepts collaborator mocks/stubs.
+   *
+   * @param config          Toxiproxy configuration
+   * @param lifecycle       lifecycle manager (mock in tests)
+   * @param apiClient       Toxiproxy API client (mock in tests)
+   * @param networkRedirect network redirect manager (mock in tests)
+   */
+  ToxiproxyConnectionChaos(
+      final ToxiproxyConfig config,
+      final ToxiproxyLifecycle lifecycle,
+      final ToxiproxyApiClient apiClient,
+      final NetworkRedirect networkRedirect) {
+    this.config = Objects.requireNonNull(config, "config");
+    this.lifecycle = Objects.requireNonNull(lifecycle, "lifecycle");
+    this.apiClient = Objects.requireNonNull(apiClient, "apiClient");
+    this.networkRedirect = Objects.requireNonNull(networkRedirect, "networkRedirect");
   }
 
   @Override
