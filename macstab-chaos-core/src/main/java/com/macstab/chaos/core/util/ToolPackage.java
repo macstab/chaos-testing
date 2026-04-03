@@ -29,7 +29,7 @@ import java.util.Objects;
  * @param packageName package name passed to the platform package manager (must not be blank)
  * @author Christian Schnapka - Macstab GmbH
  */
-public record ToolPackage(String tool, String packageName) {
+public record ToolPackage(String tool, String packageName) implements ToolDefinition {
 
   /**
    * Compact canonical constructor — validates both fields are non-null and non-blank.

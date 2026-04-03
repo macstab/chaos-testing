@@ -8,6 +8,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import com.macstab.chaos.core.util.ToolDefinition;
+
 /**
  * Unit tests for {@link ToolPackage}.
  *
@@ -78,6 +80,31 @@ class ToolPackageTest {
     void nullInput() {
       assertThatThrownBy(() -> ToolPackage.ofSame(null))
           .isInstanceOf(NullPointerException.class);
+    }
+  }
+
+  @Nested
+  @DisplayName("ToolDefinition contract")
+  class ToolDefinitionContract {
+
+    @Test
+    @DisplayName("ToolPackage implements ToolDefinition")
+    void implementsToolDefinition() {
+      assertThat(ToolPackage.ofSame("curl")).isInstanceOf(ToolDefinition.class);
+    }
+
+    @Test
+    @DisplayName("tool() satisfies ToolDefinition.tool()")
+    void toolMethodSatisfiesInterface() {
+      final ToolDefinition td = ToolPackage.of("taskset", "util-linux");
+      assertThat(td.tool()).isEqualTo("taskset");
+    }
+
+    @Test
+    @DisplayName("packageName() satisfies ToolDefinition.packageName()")
+    void packageNameMethodSatisfiesInterface() {
+      final ToolDefinition td = ToolPackage.of("taskset", "util-linux");
+      assertThat(td.packageName()).isEqualTo("util-linux");
     }
   }
 

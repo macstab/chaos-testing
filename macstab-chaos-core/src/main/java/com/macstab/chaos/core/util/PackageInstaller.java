@@ -160,43 +160,43 @@ public final class PackageInstaller {
   /**
    * Ensures the given tools are installed exactly once per container lifetime.
    *
-   * <p>Escape-hatch overload for tools <strong>not</strong> present in the {@link Tool} enum —
-   * for example, annotation-declared user packages ({@code @RedisStandalone(packages={"my-lib"})}
-   * or chaos-module-specific binaries not yet promoted to the enum (e.g. {@code cpulimit}).
+   * <p>Open extension point — accepts any {@link ToolDefinition} implementation: built-in
+   * {@link ToolPackage} records, or user-defined enums/classes from any module.
+   * No core changes required to add new tools.
    *
    * <p>Uses the same label-guard, dedup, single-install, and verify algorithm as
    * {@link #ensureInstalled(GenericContainer, Tool...)}. Label key is
-   * {@code macstab.chaos.pkg.<tool-binary-name>}. Verification uses the binary name directly.
+   * {@code macstab.chaos.pkg.<ToolDefinition.tool()>}. Verification uses the binary name directly.
    *
    * @param container target container (must be started)
-   * @param tools     one or more explicit tool-to-package bindings
-   * @throws NullPointerException         if container or tools is null
+   * @param tools     one or more {@link ToolDefinition} instances
+   * @throws NullPointerException         if container or tools is null, or any element is null
    * @throws IllegalStateException        if container is not started
    * @throws PackageInstallationException if installation or verification fails
    */
   public static void ensureInstalled(
-      final GenericContainer<?> container, final ToolPackage... tools) {
+      final GenericContainer<?> container, final ToolDefinition... tools) {
     Objects.requireNonNull(container, "container");
     Objects.requireNonNull(tools, "tools");
     validateContainerRunning(container);
 
-    final List<ToolPackage> missing = collectMissingToolPackages(container, tools);
+    final List<ToolDefinition> missing = collectMissingDefinitions(container, tools);
     if (missing.isEmpty()) {
       log.debug("All tools already installed — skipping");
       return;
     }
 
     final List<String> packages = deduplicatePackages(
-        missing.stream().map(ToolPackage::packageName).toList());
+        missing.stream().map(ToolDefinition::packageName).toList());
 
     log.info("Installing {} package(s) for {} missing tool(s): {}",
         packages.size(), missing.size(),
-        missing.stream().map(ToolPackage::tool).toList());
+        missing.stream().map(ToolDefinition::tool).toList());
 
     try {
       executeInstallation(container, packages);
-      missing.forEach(tp -> verifyPackage(container, tp.tool()));
-      missing.forEach(tp -> container.withLabel(LABEL_PREFIX + tp.tool(), "true"));
+      missing.forEach(td -> verifyPackage(container, td.tool()));
+      missing.forEach(td -> container.withLabel(LABEL_PREFIX + td.tool(), "true"));
     } catch (final Exception e) {
       handleInstallationError(e, container.getContainerId(), packages);
     }
@@ -218,15 +218,15 @@ public final class PackageInstaller {
     return missing;
   }
 
-  /** Collects {@link ToolPackage} entries whose label is absent from the container. */
-  private static List<ToolPackage> collectMissingToolPackages(
-      final GenericContainer<?> container, final ToolPackage[] tools) {
+  /** Collects {@link ToolDefinition} entries whose label is absent from the container. */
+  private static List<ToolDefinition> collectMissingDefinitions(
+      final GenericContainer<?> container, final ToolDefinition[] tools) {
     final var labels = container.getLabels();
-    final List<ToolPackage> missing = new ArrayList<>();
-    for (final ToolPackage tp : tools) {
-      Objects.requireNonNull(tp, "ToolPackage element must not be null");
-      if (!labels.containsKey(LABEL_PREFIX + tp.tool())) {
-        missing.add(tp);
+    final List<ToolDefinition> missing = new ArrayList<>();
+    for (final ToolDefinition td : tools) {
+      Objects.requireNonNull(td, "ToolDefinition element must not be null");
+      if (!labels.containsKey(LABEL_PREFIX + td.tool())) {
+        missing.add(td);
       }
     }
     return missing;

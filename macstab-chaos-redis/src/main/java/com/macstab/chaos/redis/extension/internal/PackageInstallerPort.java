@@ -7,6 +7,7 @@ import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.platform.Tool;
 import com.macstab.chaos.core.util.PackageInstaller;
+import com.macstab.chaos.core.util.ToolDefinition;
 import com.macstab.chaos.core.util.ToolPackage;
 
 /**
@@ -55,7 +56,7 @@ public interface PackageInstallerPort {
 
         @Override
         public void ensureInstalled(
-            final GenericContainer<?> container, final ToolPackage... tools) {
+            final GenericContainer<?> container, final ToolDefinition... tools) {
           PackageInstaller.ensureInstalled(container, tools);
         }
       };
@@ -96,11 +97,12 @@ public interface PackageInstallerPort {
   void ensureInstalled(GenericContainer<?> container, Tool... tools);
 
   /**
-   * Ensures raw-package tools are installed exactly once per container lifetime.
-   * Label-guarded escape hatch for packages not in the {@link Tool} enum.
+   * Ensures self-describing tools are installed exactly once per container lifetime.
+   * Accepts any {@link ToolDefinition} implementation — built-in {@link ToolPackage}
+   * or user-defined enums from any module.
    *
    * @param container target container
-   * @param tools tool-to-package bindings
+   * @param tools tool definitions
    */
-  void ensureInstalled(GenericContainer<?> container, ToolPackage... tools);
+  void ensureInstalled(GenericContainer<?> container, ToolDefinition... tools);
 }

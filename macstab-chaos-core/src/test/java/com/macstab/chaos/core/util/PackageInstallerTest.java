@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.macstab.chaos.core.platform.Tool;
+import com.macstab.chaos.core.util.ToolDefinition;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -322,24 +323,46 @@ class PackageInstallerTest {
     }
   }
 
-  // ==================== ensureInstalled(ToolPackage...) Tests ====================
+  // ==================== ensureInstalled(ToolDefinition...) Tests ====================
 
   @Nested
-  @DisplayName("ensureInstalled(ToolPackage...)")
-  class EnsureInstalledToolPackageTests {
+  @DisplayName("ensureInstalled(ToolDefinition...)")
+  class EnsureInstalledToolDefinitionTests {
+
+    /** In-test enum implementing ToolDefinition — simulates user-defined tool catalogue. */
+    enum TestTools implements ToolDefinition {
+      CPULIMIT("cpulimit", "cpulimit"),
+      CUSTOM_AGENT("my-agent", "my-agent-pkg");
+
+      private final String tool;
+      private final String packageName;
+
+      TestTools(final String tool, final String packageName) {
+        this.tool = tool;
+        this.packageName = packageName;
+      }
+
+      @Override public String tool()        { return tool; }
+      @Override public String packageName() { return packageName; }
+    }
 
     @Test
-    @DisplayName("skips all when all ToolPackage labels already present")
-    void skipsWhenAllLabelled() {
-      // GIVEN — labels set for both tools
+    @DisplayName("ToolPackage is a ToolDefinition")
+    void toolPackageIsToolDefinition() {
+      assertThat(ToolPackage.ofSame("curl")).isInstanceOf(ToolDefinition.class);
+    }
+
+    @Test
+    @DisplayName("user-defined enum implementing ToolDefinition skips when label present")
+    void skipsWhenLabelPresent() {
+      // GIVEN
       final GenericContainer<?> container = mockRunningContainer();
       final Map<String, String> labels = new HashMap<>();
       labels.put(PackageInstaller.LABEL_PREFIX + "cpulimit", "true");
       when(container.getLabels()).thenReturn(labels);
 
-      // WHEN / THEN
-      assertThatCode(() -> PackageInstaller.ensureInstalled(
-              container, ToolPackage.ofSame("cpulimit")))
+      // WHEN / THEN — no install attempted
+      assertThatCode(() -> PackageInstaller.ensureInstalled(container, TestTools.CPULIMIT))
           .doesNotThrowAnyException();
     }
 
@@ -358,7 +381,7 @@ class PackageInstallerTest {
       final GenericContainer<?> container = mockRunningContainer();
       when(container.getLabels()).thenReturn(new HashMap<>());
       assertThatThrownBy(() -> PackageInstaller.ensureInstalled(
-              container, (ToolPackage[]) null))
+              container, (ToolDefinition[]) null))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("tools");
     }
@@ -369,9 +392,9 @@ class PackageInstallerTest {
       final GenericContainer<?> container = mockRunningContainer();
       when(container.getLabels()).thenReturn(new HashMap<>());
       assertThatThrownBy(() -> PackageInstaller.ensureInstalled(
-              container, (ToolPackage) null))
+              container, (ToolDefinition) null))
           .isInstanceOf(NullPointerException.class)
-          .hasMessageContaining("ToolPackage element");
+          .hasMessageContaining("ToolDefinition element");
     }
 
     @Test
@@ -379,7 +402,7 @@ class PackageInstallerTest {
     void stoppedContainer() {
       final GenericContainer<?> container = mockStoppedContainer();
       assertThatThrownBy(() -> PackageInstaller.ensureInstalled(
-              container, ToolPackage.ofSame("cpulimit")))
+              container, TestTools.CPULIMIT))
           .isInstanceOf(IllegalStateException.class);
     }
   }
