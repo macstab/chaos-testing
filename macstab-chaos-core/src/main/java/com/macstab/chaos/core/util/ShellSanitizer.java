@@ -9,12 +9,12 @@ import com.macstab.chaos.core.exception.ChaosConfigurationException;
 /**
  * Validates arguments before they are interpolated into shell command strings.
  *
- * <p>Rejects (throws) rather than escapes — for tool names, process names, and package
- * names, shell metacharacters are always invalid. Rejection is safe by construction
- * and avoids the fragility of context-dependent escaping.
+ * <p>Rejects (throws) rather than escapes — for tool names, process names, and package names, shell
+ * metacharacters are always invalid. Rejection is safe by construction and avoids the fragility of
+ * context-dependent escaping.
  *
- * <p><strong>Allowed characters:</strong> {@code [a-zA-Z0-9._-]} — covers all legitimate
- * tool names, package names, and process names across Debian, Alpine, RHEL, and Fedora.
+ * <p><strong>Allowed characters:</strong> {@code [a-zA-Z0-9._-]} — covers all legitimate tool
+ * names, package names, and process names across Debian, Alpine, RHEL, and Fedora.
  *
  * <p><strong>Usage:</strong>
  *
@@ -37,11 +37,11 @@ public final class ShellSanitizer {
   /**
    * Validates that the given value contains only safe characters for shell interpolation.
    *
-   * @param value     the value to validate
+   * @param value the value to validate
    * @param paramName parameter name for error messages
    * @return the validated value (pass-through for fluent usage)
-   * @throws NullPointerException          if value or paramName is null
-   * @throws ChaosConfigurationException   if value is blank or contains unsafe characters
+   * @throws NullPointerException if value or paramName is null
+   * @throws ChaosConfigurationException if value is blank or contains unsafe characters
    */
   public static String validateArgument(final String value, final String paramName) {
     Objects.requireNonNull(value, paramName + " must not be null");

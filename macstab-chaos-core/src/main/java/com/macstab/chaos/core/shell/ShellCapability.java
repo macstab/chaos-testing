@@ -4,9 +4,9 @@ package com.macstab.chaos.core.shell;
 /**
  * Shell feature capabilities for conditional command generation.
  *
- * <p>Command builders may query {@link Shell#supports(ShellCapability)} to emit
- * shell-compatible commands. For example, a builder targeting bash can use process
- * substitution ({@code <()}), while one targeting ash must use temporary files.
+ * <p>Command builders may query {@link Shell#supports(ShellCapability)} to emit shell-compatible
+ * commands. For example, a builder targeting bash can use process substitution ({@code <()}), while
+ * one targeting ash must use temporary files.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see Shell#supports(ShellCapability)

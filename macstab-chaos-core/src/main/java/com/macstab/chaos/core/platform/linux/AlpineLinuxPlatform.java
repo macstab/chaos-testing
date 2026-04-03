@@ -29,7 +29,7 @@ public final class AlpineLinuxPlatform extends AbstractLinuxPlatform {
   protected Map<Tool, ToolMapping> getToolOverrides() {
     // Alpine mostly uses same names, but some differ
     return Map.of(
-        // Alpine uses specific Python versions
-        Tool.PYTHON, new ToolMapping("python3", "python3"));
+        Tool.PYTHON, new ToolMapping("python3", "python3"),
+        Tool.FAKETIME, new ToolMapping("libfaketime", "faketime"));
   }
 }

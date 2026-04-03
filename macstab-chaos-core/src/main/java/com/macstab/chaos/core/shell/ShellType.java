@@ -14,7 +14,7 @@ public enum ShellType {
   ASH,
 
   /** Busybox shell (Alpine Linux) */
-  @Deprecated(forRemoval = true, since = "1.1")
+  @Deprecated(forRemoval = true, since = "1.0")
   BUSYBOX,
 
   /** Debian Almquist Shell (minimal Debian containers) */

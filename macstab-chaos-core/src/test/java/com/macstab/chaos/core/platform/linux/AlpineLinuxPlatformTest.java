@@ -83,6 +83,18 @@ class AlpineLinuxPlatformTest {
     void shouldTranslateStressNgToStressNg() {
       assertThat(platform.getPackageName(Tool.STRESS_NG)).isEqualTo("stress-ng");
     }
+
+    @Test
+    @DisplayName("should translate FAKETIME to libfaketime (Alpine override)")
+    void shouldTranslateFaketimeToLibfaketime() {
+      assertThat(platform.getPackageName(Tool.FAKETIME)).isEqualTo("libfaketime");
+    }
+
+    @Test
+    @DisplayName("FAKETIME binary is still faketime despite Alpine package name")
+    void faketimeBinaryUnchanged() {
+      assertThat(platform.getBinaryName(Tool.FAKETIME)).isEqualTo("faketime");
+    }
   }
 
   @Nested

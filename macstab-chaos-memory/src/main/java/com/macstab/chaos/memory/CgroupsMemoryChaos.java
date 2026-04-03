@@ -10,15 +10,19 @@ import com.macstab.chaos.core.api.MemoryChaos;
 import com.macstab.chaos.core.exception.ChaosConfigurationException;
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
 import com.macstab.chaos.core.model.MemoryPressureInfo;
+import com.macstab.chaos.core.platform.Tool;
 import com.macstab.chaos.core.util.PackageInstaller;
 import com.macstab.chaos.core.util.ResourceParser;
 import com.macstab.chaos.core.util.Shell;
+
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Memory chaos using inside-container tools.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
+@Slf4j
 public final class CgroupsMemoryChaos implements MemoryChaos {
   private static final Pattern VALID_SIZE = Pattern.compile("^\\d+[KMG]$");
   private static final long MAX_MEMORY_BYTES = 128L * 1024 * 1024 * 1024; // 128GB
@@ -42,7 +46,7 @@ public final class CgroupsMemoryChaos implements MemoryChaos {
 
     validateSizeFormat(threshold);
 
-    final long bytes = ResourceParser.parseBytes(threshold);
+    final long bytes = ResourceParser.parseMemoryBytes(threshold);
     stress(container, threshold);
 
     log.info("Set memory pressure threshold: {} ({} bytes)", threshold, bytes);
@@ -56,7 +60,7 @@ public final class CgroupsMemoryChaos implements MemoryChaos {
     validateSizeFormat(size);
     validateContainerRunning(container);
 
-    final long bytes = ResourceParser.parseBytes(size);
+    final long bytes = ResourceParser.parseMemoryBytes(size);
 
     if (bytes > MAX_MEMORY_BYTES) {
       throw new ChaosConfigurationException(
@@ -113,7 +117,7 @@ public final class CgroupsMemoryChaos implements MemoryChaos {
 
   @Override
   public void installTools(final GenericContainer<?> container) {
-    PackageInstaller.install(container, "stress-ng");
+    PackageInstaller.ensureInstalled(container, Tool.STRESS_NG);
   }
 
   @Override

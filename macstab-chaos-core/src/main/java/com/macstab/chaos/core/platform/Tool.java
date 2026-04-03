@@ -45,5 +45,11 @@ public enum Tool {
   RENICE,
 
   /** Reports number of available CPU cores (nproc binary, provided by coreutils) */
-  NPROC
+  NPROC,
+
+  /** CoreDNS — DNS server for DNS chaos injection */
+  COREDNS,
+
+  /** libfaketime — intercepts time-related syscalls for time chaos (Alpine: libfaketime) */
+  FAKETIME
 }

@@ -6,16 +6,18 @@ import java.util.Set;
 /**
  * Almquist shell (ash) via BusyBox — the default shell on Alpine Linux containers.
  *
- * <p>{@code /bin/sh} on Alpine is a symlink to {@code /bin/busybox}, which dispatches to the
- * {@code ash} applet. Ash is POSIX-compliant but does not support bash-specific features
- * (process substitution, brace expansion, arrays, {@code /dev/tcp}).
+ * <p>{@code /bin/sh} on Alpine is a symlink to {@code /bin/busybox}, which dispatches to the {@code
+ * ash} applet. Ash is POSIX-compliant but does not support bash-specific features (process
+ * substitution, brace expansion, arrays, {@code /dev/tcp}).
  *
  * <p><strong>Capabilities:</strong>
+ *
  * <ul>
  *   <li>{@link ShellCapability#COMMAND_SUBSTITUTION} — POSIX {@code $()} syntax
  * </ul>
  *
  * <p><strong>Not supported:</strong>
+ *
  * <ul>
  *   <li>{@code /dev/tcp} — use {@code curl} or {@code nc} instead
  *   <li>Process substitution ({@code <()}) — use temp files

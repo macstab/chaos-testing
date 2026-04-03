@@ -129,9 +129,10 @@ public final class ChaosProviderRegistry {
   /**
    * Load provider via ServiceLoader, selecting the one with the lowest {@code priority()}.
    *
-   * <p>All discovered providers are sorted by {@link com.macstab.chaos.core.api.ChaosProvider#priority()}.
-   * The provider with the lowest value wins. NoOp implementations return {@code Integer.MAX_VALUE}
-   * and are therefore always last. If no provider is found at all, {@code defaultImpl} is returned.
+   * <p>All discovered providers are sorted by {@link
+   * com.macstab.chaos.core.api.ChaosProvider#priority()}. The provider with the lowest value wins.
+   * NoOp implementations return {@code Integer.MAX_VALUE} and are therefore always last. If no
+   * provider is found at all, {@code defaultImpl} is returned.
    *
    * @param <T> provider type (must extend ChaosProvider)
    * @param serviceClass service interface class
@@ -146,7 +147,8 @@ public final class ChaosProviderRegistry {
     final ServiceLoader<T> loader = ServiceLoader.load(serviceClass);
 
     return StreamSupport.stream(loader.spliterator(), false)
-        .sorted(Comparator.comparingInt(p -> ((com.macstab.chaos.core.api.ChaosProvider) p).priority()))
+        .sorted(
+            Comparator.comparingInt(p -> ((com.macstab.chaos.core.api.ChaosProvider) p).priority()))
         .findFirst()
         .orElse(defaultImpl);
   }

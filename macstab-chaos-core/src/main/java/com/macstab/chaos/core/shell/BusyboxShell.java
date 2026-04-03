@@ -7,7 +7,7 @@ package com.macstab.chaos.core.shell;
  * @author Christian Schnapka - Macstab GmbH
  * @deprecated Use {@link AshShell} instead. BusyBox {@code /bin/sh} on Alpine is the ash applet.
  */
-@Deprecated(forRemoval = true, since = "1.1")
+@Deprecated(forRemoval = true, since = "1.0")
 public final class BusyboxShell extends AbstractShell {
 
   @Override

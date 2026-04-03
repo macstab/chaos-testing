@@ -62,7 +62,8 @@ public interface Shell {
    * <p>bash supports it, busybox sh does not.
    *
    * @return true if supported
-   * @deprecated Use {@link #supports(ShellCapability)} with {@link ShellCapability#DEV_TCP} instead.
+   * @deprecated Use {@link #supports(ShellCapability)} with {@link ShellCapability#DEV_TCP}
+   *     instead.
    */
   @Deprecated(forRemoval = true, since = "1.1")
   boolean supportsDevTcp();

@@ -54,6 +54,8 @@ public abstract class AbstractLinuxPlatform implements Platform {
     tools.put(Tool.TASKSET, new ToolMapping("util-linux", "taskset"));
     tools.put(Tool.RENICE, new ToolMapping("util-linux", "renice"));
     tools.put(Tool.NPROC, new ToolMapping("coreutils", "nproc"));
+    tools.put(Tool.COREDNS, new ToolMapping("coredns", "coredns"));
+    tools.put(Tool.FAKETIME, new ToolMapping("faketime", "faketime"));
     return tools;
   }
 

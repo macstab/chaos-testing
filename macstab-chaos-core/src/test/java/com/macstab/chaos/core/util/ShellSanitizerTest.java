@@ -25,11 +25,19 @@ class ShellSanitizerTest {
   class ValidArguments {
 
     @ParameterizedTest
-    @ValueSource(strings = {
-        "stress-ng", "cpulimit", "util-linux", "iproute2",
-        "ca-certificates", "python3", "redis-server",
-        "my.package.name", "tool_v2", "a"
-    })
+    @ValueSource(
+        strings = {
+          "stress-ng",
+          "cpulimit",
+          "util-linux",
+          "iproute2",
+          "ca-certificates",
+          "python3",
+          "redis-server",
+          "my.package.name",
+          "tool_v2",
+          "a"
+        })
     @DisplayName("accepts safe argument and returns it unchanged")
     void acceptsSafeArguments(final String value) {
       assertThat(ShellSanitizer.validateArgument(value, "tool")).isEqualTo(value);
@@ -41,21 +49,22 @@ class ShellSanitizerTest {
   class RejectedArguments {
 
     @ParameterizedTest
-    @ValueSource(strings = {
-        "stress'ng",    // single quote — shell escape
-        "tool\"name",   // double quote
-        "tool`cmd`",    // backtick — command substitution
-        "tool$var",     // dollar — variable expansion
-        "tool;rm",      // semicolon — command chaining
-        "tool|grep",    // pipe
-        "tool&bg",      // ampersand — background
-        "tool>out",     // output redirect
-        "tool<in",      // input redirect
-        "tool(x)",      // subshell
-        "tool\\n",      // backslash
-        "tool name",    // space
-        "tool\nnewline" // newline
-    })
+    @ValueSource(
+        strings = {
+          "stress'ng", // single quote — shell escape
+          "tool\"name", // double quote
+          "tool`cmd`", // backtick — command substitution
+          "tool$var", // dollar — variable expansion
+          "tool;rm", // semicolon — command chaining
+          "tool|grep", // pipe
+          "tool&bg", // ampersand — background
+          "tool>out", // output redirect
+          "tool<in", // input redirect
+          "tool(x)", // subshell
+          "tool\\n", // backslash
+          "tool name", // space
+          "tool\nnewline" // newline
+        })
     @DisplayName("rejects unsafe argument")
     void rejectsUnsafeArgument(final String value) {
       assertThatThrownBy(() -> ShellSanitizer.validateArgument(value, "tool"))

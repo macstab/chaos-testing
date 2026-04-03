@@ -8,8 +8,11 @@ import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.api.TimeChaos;
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
+import com.macstab.chaos.core.platform.Tool;
 import com.macstab.chaos.core.util.PackageInstaller;
 import com.macstab.chaos.core.util.Shell;
+
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Time chaos using libfaketime with dynamic updates.
@@ -19,6 +22,7 @@ import com.macstab.chaos.core.util.Shell;
  *
  * @author Christian Schnapka - Macstab GmbH
  */
+@Slf4j
 public final class LibfaketimeTimeChaos implements TimeChaos {
   private static final String TIMESTAMP_FILE = "/tmp/faketime";
 
@@ -89,7 +93,7 @@ public final class LibfaketimeTimeChaos implements TimeChaos {
     Objects.requireNonNull(container, "container must not be null");
 
     log.debug("Installing libfaketime");
-    PackageInstaller.install(container, "faketime");
+    PackageInstaller.ensureInstalled(container, Tool.FAKETIME);
 
     try {
       // Create timestamp file

@@ -9,8 +9,11 @@ import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.api.DnsChaos;
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
+import com.macstab.chaos.core.platform.Tool;
 import com.macstab.chaos.core.util.PackageInstaller;
 import com.macstab.chaos.core.util.Shell;
+
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * DNS chaos using CoreDNS inside container.
@@ -19,6 +22,7 @@ import com.macstab.chaos.core.util.Shell;
  *
  * @author Christian Schnapka - Macstab GmbH
  */
+@Slf4j
 public final class IptablesDnsChaos implements DnsChaos {
 
   // Configuration
@@ -189,7 +193,7 @@ public final class IptablesDnsChaos implements DnsChaos {
     Objects.requireNonNull(container, "container must not be null");
 
     log.debug("Installing DNS chaos tools (coredns, iptables)");
-    PackageInstaller.install(container, "coredns", "iptables");
+    PackageInstaller.ensureInstalled(container, Tool.COREDNS, Tool.IPTABLES);
 
     try {
       // Create directory

@@ -25,9 +25,7 @@ class ShellCapabilityTest {
     @DisplayName("supports all capabilities")
     void supportsAll() {
       for (final ShellCapability cap : ShellCapability.values()) {
-        assertThat(bash.supports(cap))
-            .as("Bash should support %s", cap)
-            .isTrue();
+        assertThat(bash.supports(cap)).as("Bash should support %s", cap).isTrue();
       }
     }
   }

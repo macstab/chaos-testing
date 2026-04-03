@@ -71,8 +71,8 @@ public abstract class AbstractShell implements Shell {
   /**
    * Returns the set of capabilities this shell supports.
    *
-   * <p>Subclasses override to declare their capabilities. The default returns
-   * {@link ShellCapability#COMMAND_SUBSTITUTION} only (POSIX baseline).
+   * <p>Subclasses override to declare their capabilities. The default returns {@link
+   * ShellCapability#COMMAND_SUBSTITUTION} only (POSIX baseline).
    *
    * @return immutable set of supported capabilities
    */

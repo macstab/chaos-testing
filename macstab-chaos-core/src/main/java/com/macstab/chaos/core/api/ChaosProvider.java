@@ -117,11 +117,12 @@ public interface ChaosProvider {
   /**
    * Provider priority for {@link java.util.ServiceLoader} selection.
    *
-   * <p>Lower value = higher priority (consistent with {@code jakarta.annotation.Priority}
-   * and Spring {@code @Order}). When multiple providers are registered for the same chaos
-   * interface, the one with the lowest priority value wins.
+   * <p>Lower value = higher priority (consistent with {@code jakarta.annotation.Priority} and
+   * Spring {@code @Order}). When multiple providers are registered for the same chaos interface,
+   * the one with the lowest priority value wins.
    *
    * <p><strong>Conventions:</strong>
+   *
    * <ul>
    *   <li>{@code 0} — default for real implementations (do not override unless needed)
    *   <li>{@code 1..999} — user-defined overrides that should take precedence

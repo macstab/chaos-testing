@@ -424,6 +424,22 @@ class AbstractLinuxPlatformComprehensiveTest {
     }
 
     @Test
+    @DisplayName("Should return coredns for COREDNS")
+    void shouldReturnCoredns() {
+      Platform platform = new TestLinuxPlatform();
+      assertThat(platform.getPackageName(Tool.COREDNS)).isEqualTo("coredns");
+      assertThat(platform.getBinaryName(Tool.COREDNS)).isEqualTo("coredns");
+    }
+
+    @Test
+    @DisplayName("Should return faketime for FAKETIME (Debian default)")
+    void shouldReturnFaketime() {
+      Platform platform = new TestLinuxPlatform();
+      assertThat(platform.getPackageName(Tool.FAKETIME)).isEqualTo("faketime");
+      assertThat(platform.getBinaryName(Tool.FAKETIME)).isEqualTo("faketime");
+    }
+
+    @Test
     @DisplayName(
         "getBinaryName() falls back to packageName when binaryName is null (CA_CERTIFICATES)")
     void getBinaryName_shouldFallbackToPackageName_whenBinaryNameNull() {

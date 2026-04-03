@@ -12,14 +12,15 @@ import java.util.Set;
  */
 public final class BashShell extends AbstractShell {
 
-  private static final Set<ShellCapability> CAPABILITIES = Set.of(
-      ShellCapability.COMMAND_SUBSTITUTION,
-      ShellCapability.DEV_TCP,
-      ShellCapability.PROCESS_SUBSTITUTION,
-      ShellCapability.BRACE_EXPANSION,
-      ShellCapability.EXTENDED_TEST,
-      ShellCapability.ARRAYS,
-      ShellCapability.ASSOCIATIVE_ARRAYS);
+  private static final Set<ShellCapability> CAPABILITIES =
+      Set.of(
+          ShellCapability.COMMAND_SUBSTITUTION,
+          ShellCapability.DEV_TCP,
+          ShellCapability.PROCESS_SUBSTITUTION,
+          ShellCapability.BRACE_EXPANSION,
+          ShellCapability.EXTENDED_TEST,
+          ShellCapability.ARRAYS,
+          ShellCapability.ASSOCIATIVE_ARRAYS);
 
   @Override
   public ShellType getType() {

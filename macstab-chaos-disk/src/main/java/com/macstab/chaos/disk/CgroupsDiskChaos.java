@@ -9,14 +9,18 @@ import org.testcontainers.containers.GenericContainer;
 import com.macstab.chaos.core.api.DiskChaos;
 import com.macstab.chaos.core.exception.ChaosConfigurationException;
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
+import com.macstab.chaos.core.platform.Tool;
 import com.macstab.chaos.core.util.PackageInstaller;
 import com.macstab.chaos.core.util.Shell;
+
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Disk chaos using inside-container tools.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
+@Slf4j
 public final class CgroupsDiskChaos implements DiskChaos {
   private static final Pattern SAFE_PATH = Pattern.compile("^[a-zA-Z0-9/_.-]+$");
   private static final int MAX_FILL_PERCENTAGE = 95; // Safety limit
@@ -134,7 +138,7 @@ public final class CgroupsDiskChaos implements DiskChaos {
 
   @Override
   public void installTools(final GenericContainer<?> container) {
-    PackageInstaller.install(container, "stress-ng");
+    PackageInstaller.ensureInstalled(container, Tool.STRESS_NG);
   }
 
   @Override

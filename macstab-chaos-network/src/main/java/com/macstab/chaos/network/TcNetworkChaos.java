@@ -11,6 +11,7 @@ import com.macstab.chaos.core.api.NetworkChaos;
 import com.macstab.chaos.core.exception.ChaosConfigurationException;
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
 import com.macstab.chaos.core.util.ContainerNetworkUtils;
+import com.macstab.chaos.core.platform.Tool;
 import com.macstab.chaos.core.util.PackageInstaller;
 
 import lombok.extern.slf4j.Slf4j;
@@ -319,7 +320,7 @@ public final class TcNetworkChaos implements NetworkChaos {
   @Override
   public void installTools(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
-    PackageInstaller.install(container, "iproute2", "iptables");
+    PackageInstaller.ensureInstalled(container, Tool.IPROUTE, Tool.IPTABLES);
   }
 
   @Override
