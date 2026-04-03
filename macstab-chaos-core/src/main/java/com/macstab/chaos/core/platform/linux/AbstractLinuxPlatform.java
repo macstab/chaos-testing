@@ -227,7 +227,7 @@ public abstract class AbstractLinuxPlatform implements Platform {
           String.format("Tool %s not supported on %s", tool, getDistribution()));
     }
 
-    return mapping.binaryName() != null ? mapping.binaryName() : mapping.packageName();
+    return mapping.binaryName();  // null = no binary to verify (e.g. CA_CERTIFICATES)
   }
 
   private ToolMapping getToolMapping(final Tool tool) {

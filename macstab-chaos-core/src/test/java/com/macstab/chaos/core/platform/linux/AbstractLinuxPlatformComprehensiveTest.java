@@ -441,12 +441,11 @@ class AbstractLinuxPlatformComprehensiveTest {
 
     @Test
     @DisplayName(
-        "getBinaryName() falls back to packageName when binaryName is null (CA_CERTIFICATES)")
+        "getBinaryName() returns null for CA_CERTIFICATES (no binary to verify)")
     void getBinaryName_shouldFallbackToPackageName_whenBinaryNameNull() {
-      // CA_CERTIFICATES has ToolMapping("ca-certificates", null) → binaryName() is null
-      // getBinaryName() must return packageName as fallback
+      // CA_CERTIFICATES has ToolMapping("ca-certificates", null) — no binary to verify
       Platform platform = new TestLinuxPlatform();
-      assertThat(platform.getBinaryName(Tool.CA_CERTIFICATES)).isEqualTo("ca-certificates");
+      assertThat(platform.getBinaryName(Tool.CA_CERTIFICATES)).isNull();
     }
 
     @Test
