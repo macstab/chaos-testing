@@ -92,7 +92,12 @@ public final class CgroupsCpuChaos implements CpuChaos {
 
   /** Known init process names that are NOT the main application. */
   private static final java.util.Set<String> KNOWN_INIT_NAMES =
-      java.util.Set.of("tini", "dumb-init", "s6-svscan", "s6-supervise");
+      java.util.Set.of(
+          "tini",          // standalone tini binary
+          "docker-init",   // Docker's built-in --init (wraps tini internally)
+          "dumb-init",     // Yelp dumb-init
+          "s6-svscan",     // s6 supervision suite
+          "s6-supervise"); // s6 service supervisor
 
   private final StressNgCommandBuilder cmd;
   private final CpuObservability observe;
