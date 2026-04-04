@@ -43,7 +43,8 @@ class ChaosTestingExtensionIntegrationTest {
   @Test
   @DisplayName("should inject connection info parameter")
   void shouldInjectConnectionInfoParameter(final MockConnectionInfo info) {
-    assertThat(info.getHost()).isEqualTo("localhost");
+    // host is environment-dependent: 'localhost' on Docker Desktop, bridge IP on Linux/devcontainer
+    assertThat(info.getHost()).isNotBlank();
     assertThat(info.getPort()).isGreaterThan(1024);
   }
 
