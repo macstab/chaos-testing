@@ -87,47 +87,34 @@ class StressNgCommandBuilderTest {
     @Test
     @DisplayName("uses grep with anchored exact match")
     void usesAnchoredExactMatch() {
-      // WHEN
       final String command = builder.buildIsRunningByCommExactCommand("cpulimit");
-
-      // THEN
       assertThat(command).contains("'^cpulimit$'");
     }
 
     @Test
     @DisplayName("scans /proc/comm files")
     void scansSlashProcComm() {
-      // WHEN
       final String command = builder.buildIsRunningByCommExactCommand("cpulimit");
-
-      // THEN
       assertThat(command).contains("/proc/[0-9]*/comm");
     }
 
     @Test
     @DisplayName("suppresses errors from missing /proc entries")
     void suppressesErrors() {
-      // WHEN
       final String command = builder.buildIsRunningByCommExactCommand("cpulimit");
-
-      // THEN
       assertThat(command).contains("2>/dev/null");
     }
 
     @Test
-    @DisplayName("exit code reflects presence — grep -q pipelines")
+    @DisplayName("exit code reflects presence — grep -q pipeline")
     void usesGrepQForExitCode() {
-      // WHEN
       final String command = builder.buildIsRunningByCommExactCommand("cpulimit");
-
-      // THEN
       assertThat(command).contains("grep -q .");
     }
 
     @Test
     @DisplayName("rejects null comm name")
     void rejectsNullCommName() {
-      // WHEN / THEN
       assertThatThrownBy(() -> builder.buildIsRunningByCommExactCommand(null))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("exactCommName must not be null");
@@ -139,30 +126,30 @@ class StressNgCommandBuilderTest {
   class IsRunningByCommPrefixCommand {
 
     @Test
-    @DisplayName("uses prefix match (no end anchor)")
+    @DisplayName("uses prefix grep to find matching comm files")
     void usesPrefixMatch() {
-      // WHEN
       final String command = builder.buildIsRunningByCommPrefixCommand("stress-ng");
-
-      // THEN
-      // prefix pattern: '^stress-ng' (no $ anchor)
-      assertThat(command).contains("'^stress-ng'").doesNotContain("'^stress-ng$'");
+      // grep finds matching comm files, then for-loop checks zombie state
+      assertThat(command).contains("grep -rl '^stress-ng' /proc/[0-9]*/comm");
     }
 
     @Test
-    @DisplayName("covers stress-ng worker variants via prefix")
-    void coverWorkerVariants() {
-      // WHEN
+    @DisplayName("filters zombie state Z from /proc/stat")
+    void filtersZombieState() {
       final String command = builder.buildIsRunningByCommPrefixCommand("stress-ng");
+      assertThat(command).contains("awk").contains("!= \"Z\"");
+    }
 
-      // THEN — prefix matches stress-ng-cpu, stress-ng-cache, etc.
-      assertThat(command).contains("'^stress-ng'");
+    @Test
+    @DisplayName("exits 0 on first non-zombie match, 1 if all zombies")
+    void exitCodeSemantics() {
+      final String command = builder.buildIsRunningByCommPrefixCommand("stress-ng");
+      assertThat(command).contains("exit 0").contains("exit 1");
     }
 
     @Test
     @DisplayName("rejects null comm prefix")
     void rejectsNullCommPrefix() {
-      // WHEN / THEN
       assertThatThrownBy(() -> builder.buildIsRunningByCommPrefixCommand(null))
           .isInstanceOf(NullPointerException.class)
           .hasMessageContaining("commPrefix must not be null");
