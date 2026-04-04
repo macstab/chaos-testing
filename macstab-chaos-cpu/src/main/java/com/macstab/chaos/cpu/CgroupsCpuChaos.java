@@ -51,6 +51,13 @@ public final class CgroupsCpuChaos implements CpuChaos {
   /** Poll interval for waitUntilGone loop. */
   private static final long WAIT_POLL_INTERVAL_MS = 50;
 
+  /** Label key for caching the resolved main application PID. */
+  private static final String LABEL_MAIN_PID = "macstab.chaos.pid.main";
+
+  /** Known init process names that are NOT the main application. */
+  private static final java.util.Set<String> KNOWN_INIT_NAMES =
+      java.util.Set.of("tini", "dumb-init", "s6-svscan", "s6-supervise");
+
   private final StressNgCommandBuilder cmd = StressNgCommandBuilder.INSTANCE;
   private final CpuObservability observe = new CpuObservability(cmd);
 
@@ -63,7 +70,7 @@ public final class CgroupsCpuChaos implements CpuChaos {
     installTools(container);
     killCpuLimit(container);
     // percentage range validated by builder (throws ChaosConfigurationException)
-    exec(container, cmd.buildThrottleCommand(1, percentage), "throttle CPU");
+    exec(container, cmd.buildThrottleCommand(resolveMainPid(container), percentage), "throttle CPU");
     waitUntilStarted(container, "cpulimit");
     log.info("Throttled CPU to {}% (PID 1)", percentage);
   }
@@ -113,7 +120,7 @@ public final class CgroupsCpuChaos implements CpuChaos {
     // ChaosConfigurationException
     final String startStressCmd = cmd.buildStressCpuCommand(workers);
     final String startThrottleTemplate =
-        cmd.buildThrottleCommand(1, percentage); // validates percentage; pid replaced later
+        cmd.buildThrottleCommand(resolveMainPid(container), percentage); // validates percentage; pid replaced later
     validateContainerRunning(container);
     installTools(container);
     killStressNg(container);
@@ -218,7 +225,7 @@ public final class CgroupsCpuChaos implements CpuChaos {
     validateContainerRunning(container);
     exec(
         container,
-        cmd.buildPinToMaskCommand(1, affinityMask),
+        cmd.buildPinToMaskCommand(resolveMainPid(container), affinityMask),
         "pin CPU affinity to mask 0x" + Long.toHexString(affinityMask));
     log.info("Pinned PID 1 to CPU mask 0x{}", Long.toHexString(affinityMask));
   }
@@ -233,7 +240,7 @@ public final class CgroupsCpuChaos implements CpuChaos {
           "niceValue must be in [0, 19] for unprivileged containers, got: " + niceValue);
     }
     validateContainerRunning(container);
-    exec(container, cmd.buildSetNiceValueCommand(1, niceValue), "degrade CPU priority");
+    exec(container, cmd.buildSetNiceValueCommand(resolveMainPid(container), niceValue), "degrade CPU priority");
     log.info("Degraded PID 1 priority to nice={}", niceValue);
   }
 
@@ -243,7 +250,7 @@ public final class CgroupsCpuChaos implements CpuChaos {
     if (!container.isRunning()) {
       return;
     }
-    trySilent(container, cmd.buildSetNiceValueCommand(1, 0));
+    trySilent(container, cmd.buildSetNiceValueCommand(resolveMainPid(container), 0));
     log.info("Reset PID 1 priority to nice=0");
   }
 
@@ -290,14 +297,14 @@ public final class CgroupsCpuChaos implements CpuChaos {
   @Override
   public boolean isAffinityPinned(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
-    return container.isRunning() && observe.isAffinityPinned(container);
+    return container.isRunning() && observe.isAffinityPinned(container, resolveMainPid(container));
   }
 
   @Override
   public long getPinnedCoreMask(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
     validateContainerRunning(container);
-    return observe.readAffinityMask(container);
+    return observe.readAffinityMask(container, resolveMainPid(container));
   }
 
   @Override
@@ -305,7 +312,7 @@ public final class CgroupsCpuChaos implements CpuChaos {
     Objects.requireNonNull(container, "container must not be null");
     validateContainerRunning(container);
     try {
-      return observe.getNiceValue(container);
+      return observe.getNiceValue(container, resolveMainPid(container));
     } catch (final ChaosOperationFailedException e) {
       throw e;
     } catch (final Exception e) {
@@ -342,8 +349,8 @@ public final class CgroupsCpuChaos implements CpuChaos {
     waitUntilGone(container, "cpulimit", CPULIMIT_SHUTDOWN_TIMEOUT_MS);
 
     final int cores = observe.getAvailableCoresSilent(container);
-    trySilent(container, cmd.buildPinToMaskCommand(1, CpuObservability.computeFullMask(cores)));
-    trySilent(container, cmd.buildSetNiceValueCommand(1, 0));
+    trySilent(container, cmd.buildPinToMaskCommand(resolveMainPid(container), CpuObservability.computeFullMask(cores)));
+    trySilent(container, cmd.buildSetNiceValueCommand(resolveMainPid(container), 0));
 
     log.info("Reset CPU chaos");
   }
@@ -471,6 +478,56 @@ public final class CgroupsCpuChaos implements CpuChaos {
       }
     }
     log.warn("waitUntilGone: {} did not exit within {}ms", name, timeoutMs);
+  }
+
+  // ==================== Private: PID Resolution ====================
+
+  /**
+   * Resolves the main application PID inside the container.
+   *
+   * <p>Handles containers with and without an init system (tini, dumb-init, etc.).
+   * Result is cached on the container via label {@code macstab.chaos.pid.main}.
+   * Users can override by setting that label before first chaos operation.
+   *
+   * <p><strong>Detection logic:</strong>
+   * <ol>
+   *   <li>Check label — if set, return cached value
+   *   <li>Read {@code /proc/1/comm} — if it's a known init, find first child
+   *   <li>Otherwise PID 1 IS the main application
+   * </ol>
+   *
+   * @param container target container (must be running)
+   * @return main application PID
+   */
+  private int resolveMainPid(final GenericContainer<?> container) {
+    // Check label cache (or user override)
+    final String cached = container.getLabels().get(LABEL_MAIN_PID);
+    if (cached != null) {
+      return Integer.parseInt(cached);
+    }
+
+    int pid = 1; // default
+    try {
+      final var commResult = container.execInContainer(Shell.SH, Shell.FLAG_C, "cat /proc/1/comm");
+      if (commResult.getExitCode() == 0) {
+        final String comm = commResult.getStdout().trim();
+        if (KNOWN_INIT_NAMES.contains(comm)) {
+          // PID 1 is an init system — find the main application (first child)
+          final var childResult = container.execInContainer(
+              Shell.SH, Shell.FLAG_C, "cat /proc/1/task/1/children");
+          if (childResult.getExitCode() == 0 && !childResult.getStdout().isBlank()) {
+            final String firstChild = childResult.getStdout().trim().split("\\s+")[0];
+            pid = Integer.parseInt(firstChild);
+            log.info("Init detected ({}), main application PID: {}", comm, pid);
+          }
+        }
+      }
+    } catch (final Exception e) {
+      log.debug("PID resolution failed, defaulting to PID 1: {}", e.getMessage());
+    }
+
+    container.withLabel(LABEL_MAIN_PID, String.valueOf(pid));
+    return pid;
   }
 
   // ==================== Private: Startup Detection ====================

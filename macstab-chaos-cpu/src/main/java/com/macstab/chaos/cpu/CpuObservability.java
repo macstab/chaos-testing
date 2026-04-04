@@ -103,9 +103,9 @@ final class CpuObservability {
 
   // ==================== Affinity ====================
 
-  boolean isAffinityPinned(final GenericContainer<?> container) {
+  boolean isAffinityPinned(final GenericContainer<?> container, final int pid) {
     try {
-      final long currentMask = readAffinityMask(container);
+      final long currentMask = readAffinityMask(container, pid);
       final int cores = getAvailableCores(container);
       return currentMask != computeFullMask(cores);
     } catch (final Exception e) {
@@ -129,14 +129,14 @@ final class CpuObservability {
     return cores >= Long.SIZE ? -1L : (1L << cores) - 1;
   }
 
-  long readAffinityMask(final GenericContainer<?> container) {
+  long readAffinityMask(final GenericContainer<?> container, final int pid) {
     try {
       final var result =
-          container.execInContainer(Shell.SH, Shell.FLAG_C, cmd.buildGetAffinityMaskCommand(1));
+          container.execInContainer(Shell.SH, Shell.FLAG_C, cmd.buildGetAffinityMaskCommand(pid));
       if (result.getExitCode() != 0) {
-        throw new ChaosOperationFailedException("taskset -p 1 failed: " + result.getStderr());
+        throw new ChaosOperationFailedException(
+            "taskset -p " + pid + " failed: " + result.getStderr());
       }
-      // Output: "pid 1's current affinity mask: fff"
       final String output = result.getStdout().trim();
       final String hexMask = output.substring(output.lastIndexOf(' ') + 1);
       return Long.parseLong(hexMask, 16);
@@ -149,12 +149,12 @@ final class CpuObservability {
 
   // ==================== Nice Value ====================
 
-  int getNiceValue(final GenericContainer<?> container) throws Exception {
+  int getNiceValue(final GenericContainer<?> container, final int pid) throws Exception {
     final var result =
-        container.execInContainer(Shell.SH, Shell.FLAG_C, cmd.buildGetNiceValueCommand(1));
+        container.execInContainer(Shell.SH, Shell.FLAG_C, cmd.buildGetNiceValueCommand(pid));
     if (result.getExitCode() != 0 || result.getStdout().isBlank()) {
       throw new ChaosOperationFailedException(
-          "Failed to read nice value from /proc/1/stat: " + result.getStderr());
+          "Failed to read nice value from /proc/" + pid + "/stat: " + result.getStderr());
     }
     return Integer.parseInt(result.getStdout().trim());
   }
