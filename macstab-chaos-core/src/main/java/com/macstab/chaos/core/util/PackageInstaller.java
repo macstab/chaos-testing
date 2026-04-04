@@ -23,7 +23,7 @@ import lombok.extern.slf4j.Slf4j;
 public final class PackageInstaller {
 
   /** Namespace prefix for tool-installation tracking labels on {@link GenericContainer}. */
-  static final String LABEL_PREFIX = "macstab.chaos.pkg.";
+  public static final String LABEL_PREFIX = "macstab.chaos.pkg.";
 
   /** Private constructor - utility class. */
   private PackageInstaller() {

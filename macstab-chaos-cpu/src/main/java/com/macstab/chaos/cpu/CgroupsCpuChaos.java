@@ -32,14 +32,14 @@ import lombok.extern.slf4j.Slf4j;
  * application. But when {@code --init} is used (recommended for zombie reaping), PID 1 is the
  * init system (tini, dumb-init, etc.) and the application runs as a child.
  *
- * <p>This class transparently handles both cases via {@code resolveMainPid}:
+ * <p>This class transparently handles both cases via {@link ContainerPidResolver}:
  *
  * <pre>
  * WITHOUT --init:              WITH --init:
  * PID 1: redis-server          PID 1: tini
  *                               PID 7: redis-server
  *
- * resolveMainPid = 1           resolveMainPid = 7
+ * resolved PID = 1             resolved PID = 7
  * </pre>
  *
  * <p>Detection reads {@code /proc/1/comm} to identify known init systems, then finds the first
@@ -69,35 +69,37 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public final class CgroupsCpuChaos implements CpuChaos {
 
-  /** Delay after starting stress-ng before querying its PID via /proc/comm. */
+  /**
+   * Delay after starting stress-ng before querying its PID for stressWithThrottle.
+   *
+   * <p>50ms: stress-ng forks worker processes immediately; the parent PID is visible
+   * in /proc within 1-2ms on modern kernels. 50ms provides comfortable headroom
+   * across DinD, Docker Desktop, and native Linux environments.
+   */
   private static final long STRESS_NG_STARTUP_MS = 50;
 
-  /** Max time to wait for a backgrounded process to appear in /proc. */
-  private static final long PROCESS_STARTUP_TIMEOUT_MS = 2_000;
-
-  /** Poll interval for process startup detection. */
-  private static final long STARTUP_POLL_INTERVAL_MS = 10;
-
-  /** Timeout for stress-ng process to disappear after SIGKILL + tini reap. */
+  /**
+   * Maximum time to wait for stress-ng to disappear after SIGKILL.
+   *
+   * <p>With tini/docker-init as PID 1, orphaned processes are reaped within milliseconds.
+   * 1000ms is a generous upper bound for slow DinD environments.
+   */
   private static final long STRESS_NG_SHUTDOWN_TIMEOUT_MS = 1_000;
 
-  /** Timeout for cpulimit process to disappear after SIGKILL + tini reap. */
+  /**
+   * Maximum time to wait for cpulimit to disappear after SIGKILL.
+   *
+   * <p>Same rationale as {@link #STRESS_NG_SHUTDOWN_TIMEOUT_MS}.
+   */
   private static final long CPULIMIT_SHUTDOWN_TIMEOUT_MS = 1_000;
 
-  /** Poll interval for waitUntilGone loop. */
-  private static final long WAIT_POLL_INTERVAL_MS = 50;
-
-  /** Label key for caching the resolved main application PID. */
-  private static final String LABEL_MAIN_PID = "macstab.chaos.pid.main";
-
-  /** Known init process names that are NOT the main application. */
-  private static final java.util.Set<String> KNOWN_INIT_NAMES =
-      java.util.Set.of(
-          "tini",          // standalone tini binary
-          "docker-init",   // Docker's built-in --init (wraps tini internally)
-          "dumb-init",     // Yelp dumb-init
-          "s6-svscan",     // s6 supervision suite
-          "s6-supervise"); // s6 service supervisor
+  /**
+   * Maximum time to wait for a backgrounded process to appear in /proc after exec.
+   *
+   * <p>Background processes ({@code cmd &}) may not be visible in /proc when the
+   * shell exec returns. 2000ms covers the slowest DinD environments observed.
+   */
+  private static final long PROCESS_STARTUP_TIMEOUT_MS = 2_000;
 
   private final StressNgCommandBuilder cmd;
   private final CpuObservability observe;
@@ -128,8 +130,8 @@ public final class CgroupsCpuChaos implements CpuChaos {
     installTools(container);
     killCpuLimit(container);
     // percentage range validated by builder (throws ChaosConfigurationException)
-    exec(container, cmd.buildThrottleCommand(resolveMainPid(container), percentage), "throttle CPU");
-    waitUntilStarted(container, "cpulimit");
+    exec(container, cmd.buildThrottleCommand(ContainerPidResolver.resolve(container), percentage), "throttle CPU");
+    ProcessPoller.waitUntilStarted(container, "cpulimit", PROCESS_STARTUP_TIMEOUT_MS);
     log.info("Throttled CPU to {}% (PID 1)", percentage);
   }
 
@@ -148,7 +150,7 @@ public final class CgroupsCpuChaos implements CpuChaos {
         container,
         cmd.buildThrottleWithDurationCommand(1, percentage, duration.toSeconds()),
         "throttle CPU with duration");
-    waitUntilStarted(container, "cpulimit");
+    ProcessPoller.waitUntilStarted(container, "cpulimit", PROCESS_STARTUP_TIMEOUT_MS);
     log.info("Throttled CPU to {}% for {}s (auto-reset)", percentage, duration.toSeconds());
   }
 
@@ -178,7 +180,7 @@ public final class CgroupsCpuChaos implements CpuChaos {
     // ChaosConfigurationException
     final String startStressCmd = cmd.buildStressCpuCommand(workers);
     final String startThrottleTemplate =
-        cmd.buildThrottleCommand(resolveMainPid(container), percentage); // validates percentage; pid replaced later
+        cmd.buildThrottleCommand(ContainerPidResolver.resolve(container), percentage); // validates percentage; pid replaced later
     validateContainerRunning(container);
     installTools(container);
     killStressNg(container);
@@ -283,7 +285,7 @@ public final class CgroupsCpuChaos implements CpuChaos {
     validateContainerRunning(container);
     exec(
         container,
-        cmd.buildPinToMaskCommand(resolveMainPid(container), affinityMask),
+        cmd.buildPinToMaskCommand(ContainerPidResolver.resolve(container), affinityMask),
         "pin CPU affinity to mask 0x" + Long.toHexString(affinityMask));
     log.info("Pinned PID 1 to CPU mask 0x{}", Long.toHexString(affinityMask));
   }
@@ -298,7 +300,7 @@ public final class CgroupsCpuChaos implements CpuChaos {
           "niceValue must be in [0, 19] for unprivileged containers, got: " + niceValue);
     }
     validateContainerRunning(container);
-    exec(container, cmd.buildSetNiceValueCommand(resolveMainPid(container), niceValue), "degrade CPU priority");
+    exec(container, cmd.buildSetNiceValueCommand(ContainerPidResolver.resolve(container), niceValue), "degrade CPU priority");
     log.info("Degraded PID 1 priority to nice={}", niceValue);
   }
 
@@ -308,7 +310,7 @@ public final class CgroupsCpuChaos implements CpuChaos {
     if (!container.isRunning()) {
       return;
     }
-    trySilent(container, cmd.buildSetNiceValueCommand(resolveMainPid(container), 0));
+    trySilent(container, cmd.buildSetNiceValueCommand(ContainerPidResolver.resolve(container), 0));
     log.info("Reset PID 1 priority to nice=0");
   }
 
@@ -355,14 +357,14 @@ public final class CgroupsCpuChaos implements CpuChaos {
   @Override
   public boolean isAffinityPinned(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
-    return container.isRunning() && observe.isAffinityPinned(container, resolveMainPid(container));
+    return container.isRunning() && observe.isAffinityPinned(container, ContainerPidResolver.resolve(container));
   }
 
   @Override
   public long getPinnedCoreMask(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
     validateContainerRunning(container);
-    return observe.readAffinityMask(container, resolveMainPid(container));
+    return observe.readAffinityMask(container, ContainerPidResolver.resolve(container));
   }
 
   @Override
@@ -370,7 +372,7 @@ public final class CgroupsCpuChaos implements CpuChaos {
     Objects.requireNonNull(container, "container must not be null");
     validateContainerRunning(container);
     try {
-      return observe.getNiceValue(container, resolveMainPid(container));
+      return observe.getNiceValue(container, ContainerPidResolver.resolve(container));
     } catch (final ChaosOperationFailedException e) {
       throw e;
     } catch (final Exception e) {
@@ -403,12 +405,12 @@ public final class CgroupsCpuChaos implements CpuChaos {
 
     killCpuLimit(container);
     killStressNg(container);
-    waitUntilGone(container, "stress-ng", STRESS_NG_SHUTDOWN_TIMEOUT_MS);
-    waitUntilGone(container, "cpulimit", CPULIMIT_SHUTDOWN_TIMEOUT_MS);
+    ProcessPoller.waitUntilGone(container, "stress-ng", STRESS_NG_SHUTDOWN_TIMEOUT_MS);
+    ProcessPoller.waitUntilGone(container, "cpulimit", CPULIMIT_SHUTDOWN_TIMEOUT_MS);
 
     final int cores = observe.getAvailableCoresSilent(container);
-    trySilent(container, cmd.buildPinToMaskCommand(resolveMainPid(container), CpuObservability.computeFullMask(cores)));
-    trySilent(container, cmd.buildSetNiceValueCommand(resolveMainPid(container), 0));
+    trySilent(container, cmd.buildPinToMaskCommand(ContainerPidResolver.resolve(container), CpuObservability.computeFullMask(cores)));
+    trySilent(container, cmd.buildSetNiceValueCommand(ContainerPidResolver.resolve(container), 0));
 
     log.info("Reset CPU chaos");
   }
@@ -511,137 +513,6 @@ public final class CgroupsCpuChaos implements CpuChaos {
     // SIGTERM is unreliable: Docker Desktop's LinuxKit kernel may not deliver it,
     // and PID 1 in containers ignores SIGTERM unless it registers a handler.
     trySilent(container, cmd.buildKillAllByCommPrefixSigKillCommand("stress-ng"));
-  }
-
-  private void waitUntilGone(
-      final GenericContainer<?> container, final String name, final long timeoutMs) {
-    // Fast grep-based check — with tini as init, processes are fully reaped (no zombies).
-    // The zombie-aware filter in buildIsRunningByCommPrefixCommand is for user-facing
-    // observability (isStressed/isThrottled), not for internal cleanup polling.
-    final String fastCheck = String.format(
-        "grep -rl '^%s' /proc/[0-9]*/comm 2>/dev/null | grep -q .", name);
-    final long deadline = System.currentTimeMillis() + timeoutMs;
-    while (System.currentTimeMillis() < deadline) {
-      try {
-        final var result = container.execInContainer(Shell.SH, Shell.FLAG_C, fastCheck);
-        if (result.getExitCode() != 0) {
-          return;
-        }
-        Thread.sleep(WAIT_POLL_INTERVAL_MS);
-      } catch (final InterruptedException e) {
-        Thread.currentThread().interrupt();
-        return;
-      } catch (final Exception e) {
-        return;
-      }
-    }
-    log.warn("waitUntilGone: {} did not exit within {}ms", name, timeoutMs);
-  }
-
-  // ==================== Private: PID Resolution ====================
-
-  /**
-   * Resolves the main application PID inside the container.
-   *
-   * <p>Many containers use an init system ({@code --init} flag / tini / dumb-init) as PID 1
-   * to properly reap zombie processes and forward signals. In these containers, the main
-   * application is <em>not</em> PID 1 — it's a child of the init process.
-   *
-   * <p>This method transparently detects both configurations:
-   *
-   * <pre>{@code
-   * Container without --init:     Container with --init:
-   * PID 1: redis-server            PID 1: tini
-   * → resolveMainPid = 1            PID 7: redis-server
-   *                                → resolveMainPid = 7
-   * }</pre>
-   *
-   * <p><strong>Detection algorithm:</strong>
-   * <ol>
-   *   <li>Check label {@code macstab.chaos.pid.main} — if set (cached or user-override), return it
-   *   <li>Read {@code /proc/1/comm} — compare against known init names (tini, dumb-init, s6)
-   *   <li>If init detected: read {@code /proc/1/task/1/children} → first child PID = main app
-   *   <li>If no init: PID 1 = main application
-   * </ol>
-   *
-   * <p><strong>Result caching:</strong> Stored via {@link GenericContainer#withLabel} on the
-   * container's Java object — pure in-JVM, zero Docker API overhead. Subsequent calls
-   * return the cached PID from a HashMap lookup.
-   *
-   * <p><strong>User override:</strong> Set the label before the first chaos operation:
-   * <pre>{@code
-   * container.withLabel("macstab.chaos.pid.main", "42");
-   * }</pre>
-   *
-   * @param container target container (must be running)
-   * @return main application PID (never 0, defaults to 1 on detection failure)
-   */
-  private int resolveMainPid(final GenericContainer<?> container) {
-    // Check label cache (or user override)
-    final String cached = container.getLabels().get(LABEL_MAIN_PID);
-    if (cached != null) {
-      return Integer.parseInt(cached);
-    }
-
-    int pid = 1; // default
-    try {
-      final var commResult = container.execInContainer(Shell.SH, Shell.FLAG_C, "cat /proc/1/comm");
-      if (commResult.getExitCode() == 0) {
-        final String comm = commResult.getStdout().trim();
-        if (KNOWN_INIT_NAMES.contains(comm)) {
-          // PID 1 is an init system — find the main application (first direct child).
-          // Scan /proc/*/status for PPid: 1 — works on all Linux kernels and container runtimes.
-          // More reliable than /proc/1/task/1/children which requires CONFIG_CHECKPOINT_RESTORE.
-          final String findChildCmd =
-              "for f in /proc/[0-9]*/status; do "
-                  + "grep -q '^PPid:[[:space:]]*1$' \"$f\" 2>/dev/null "
-                  + "&& grep '^Pid:' \"$f\" | awk '{print $2}' && break; "
-                  + "done";
-          final var childResult = container.execInContainer(Shell.SH, Shell.FLAG_C, findChildCmd);
-          if (childResult.getExitCode() == 0 && !childResult.getStdout().isBlank()) {
-            pid = Integer.parseInt(childResult.getStdout().trim());
-            log.info("Init detected ({}), main application PID: {}", comm, pid);
-          }
-        }
-      }
-    } catch (final Exception e) {
-      log.debug("PID resolution failed, defaulting to PID 1: {}", e.getMessage());
-    }
-
-    container.withLabel(LABEL_MAIN_PID, String.valueOf(pid));
-    return pid;
-  }
-
-  // ==================== Private: Startup Detection ====================
-
-  /**
-   * Polls until a backgrounded process appears in /proc/comm.
-   *
-   * <p>Background processes ({@code cmd &}) return exit 0 immediately from the shell.
-   * The actual process may not yet be visible in {@code /proc} when the exec returns.
-   * This method polls until the process appears or the timeout expires.
-   *
-   * @param container target container
-   * @param commName  exact comm name to wait for (e.g. "cpulimit", "stress-ng")
-   */
-  private void waitUntilStarted(final GenericContainer<?> container, final String commName) {
-    final String check = cmd.buildIsRunningByCommExactCommand(commName);
-    final long deadline = System.currentTimeMillis() + PROCESS_STARTUP_TIMEOUT_MS;
-    while (System.currentTimeMillis() < deadline) {
-      try {
-        final var result = container.execInContainer(Shell.SH, Shell.FLAG_C, check);
-        if (result.getExitCode() == 0) {
-          return;
-        }
-        Thread.sleep(STARTUP_POLL_INTERVAL_MS);
-      } catch (final InterruptedException e) {
-        Thread.currentThread().interrupt();
-        return;
-      } catch (final Exception e) {
-        return;
-      }
-    }
-    log.warn("waitUntilStarted: {} did not appear within {}ms", commName, PROCESS_STARTUP_TIMEOUT_MS);
   }
 
   // ==================== Private: Validation ====================
