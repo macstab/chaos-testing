@@ -25,6 +25,42 @@ import lombok.extern.slf4j.Slf4j;
  * cgroup write access, or privileged mode. Command construction is fully delegated to {@link
  * StressNgCommandBuilder}. Observability queries are delegated to {@link CpuObservability}.
  *
+ * <h2>Init-Aware PID Resolution</h2>
+ *
+ * <p>Operations that target the main application process (throttle, affinity pinning, priority
+ * degradation) must know its PID. In containers without an init system, PID 1 <em>is</em> the
+ * application. But when {@code --init} is used (recommended for zombie reaping), PID 1 is the
+ * init system (tini, dumb-init, etc.) and the application runs as a child.
+ *
+ * <p>This class transparently handles both cases via {@code resolveMainPid}:
+ *
+ * <pre>
+ * WITHOUT --init:              WITH --init:
+ * PID 1: redis-server          PID 1: tini
+ *                               PID 7: redis-server
+ *
+ * resolveMainPid = 1           resolveMainPid = 7
+ * </pre>
+ *
+ * <p>Detection reads {@code /proc/1/comm} to identify known init systems, then finds the first
+ * child via {@code /proc/1/task/1/children}. The result is cached on the container Java object
+ * via label {@code macstab.chaos.pid.main} -- zero overhead after first resolution.
+ *
+ * <p><strong>User override:</strong> Set the label before the first chaos operation to force
+ * a specific PID:
+ *
+ * <pre>{@code
+ * container.withLabel("macstab.chaos.pid.main", "42");
+ * }</pre>
+ *
+ * <h2>Zombie-Aware Process Detection</h2>
+ *
+ * <p>Process detection via /proc/[0-9]&#42;/comm skips zombie processes (state Z in
+ * /proc/[pid]/stat field 3). SIGKILL'd processes become zombies until reaped by their
+ * parent. Without filtering, isStressed() would return true for dead processes whose
+ * /proc entry is still readable. Using --init (tini) ensures zombies are reaped within
+ * milliseconds. The detection filter is defense-in-depth.
+ *
  * <p>Registered as the {@code CpuChaos} SPI provider via {@code
  * META-INF/services/com.macstab.chaos.core.api.CpuChaos}.
  *
@@ -485,19 +521,38 @@ public final class CgroupsCpuChaos implements CpuChaos {
   /**
    * Resolves the main application PID inside the container.
    *
-   * <p>Handles containers with and without an init system (tini, dumb-init, etc.).
-   * Result is cached on the container via label {@code macstab.chaos.pid.main}.
-   * Users can override by setting that label before first chaos operation.
+   * <p>Many containers use an init system ({@code --init} flag / tini / dumb-init) as PID 1
+   * to properly reap zombie processes and forward signals. In these containers, the main
+   * application is <em>not</em> PID 1 — it's a child of the init process.
    *
-   * <p><strong>Detection logic:</strong>
+   * <p>This method transparently detects both configurations:
+   *
+   * <pre>{@code
+   * Container without --init:     Container with --init:
+   * PID 1: redis-server            PID 1: tini
+   * → resolveMainPid = 1            PID 7: redis-server
+   *                                → resolveMainPid = 7
+   * }</pre>
+   *
+   * <p><strong>Detection algorithm:</strong>
    * <ol>
-   *   <li>Check label — if set, return cached value
-   *   <li>Read {@code /proc/1/comm} — if it's a known init, find first child
-   *   <li>Otherwise PID 1 IS the main application
+   *   <li>Check label {@code macstab.chaos.pid.main} — if set (cached or user-override), return it
+   *   <li>Read {@code /proc/1/comm} — compare against known init names (tini, dumb-init, s6)
+   *   <li>If init detected: read {@code /proc/1/task/1/children} → first child PID = main app
+   *   <li>If no init: PID 1 = main application
    * </ol>
    *
+   * <p><strong>Result caching:</strong> Stored via {@link GenericContainer#withLabel} on the
+   * container's Java object — pure in-JVM, zero Docker API overhead. Subsequent calls
+   * return the cached PID from a HashMap lookup.
+   *
+   * <p><strong>User override:</strong> Set the label before the first chaos operation:
+   * <pre>{@code
+   * container.withLabel("macstab.chaos.pid.main", "42");
+   * }</pre>
+   *
    * @param container target container (must be running)
-   * @return main application PID
+   * @return main application PID (never 0, defaults to 1 on detection failure)
    */
   private int resolveMainPid(final GenericContainer<?> container) {
     // Check label cache (or user override)
