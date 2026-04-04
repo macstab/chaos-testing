@@ -74,17 +74,33 @@ public final class StressNgCommandBuilder implements CpuCommandBuilder {
   public String buildIsRunningByCommExactCommand(final String exactCommName) {
     Objects.requireNonNull(exactCommName, "exactCommName must not be null");
 
-    // grep -rl scans all /proc/*/comm files for an exact name match; exits 0 on first hit.
+    // Exact match on /proc/*/comm, skipping zombie processes (state Z in /proc/*/stat field 3).
+    // Zombies keep their /proc entry readable but are dead — must not count as "running".
     return String.format(
-        "grep -rl '^%s$' /proc/[0-9]*/comm 2>/dev/null | grep -q .", exactCommName);
+        "for f in /proc/[0-9]*/comm; do "
+            + "[ \"$(cat \"$f\" 2>/dev/null)\" = \"%s\" ] || continue; "
+            + "p=\"${f%%%%/comm}\"; p=\"${p##*/}\"; "
+            + "state=$(awk '{print $3}' /proc/$p/stat 2>/dev/null); "
+            + "[ \"$state\" != \"Z\" ] && exit 0; "
+            + "done; exit 1",
+        exactCommName);
   }
 
   @Override
   public String buildIsRunningByCommPrefixCommand(final String commPrefix) {
     Objects.requireNonNull(commPrefix, "commPrefix must not be null");
 
-    // Prefix match covers "stress-ng", "stress-ng-cpu", "stress-ng-cache", etc.
-    return String.format("grep -rl '^%s' /proc/[0-9]*/comm 2>/dev/null | grep -q .", commPrefix);
+    // Prefix match on /proc/*/comm (covers stress-ng, stress-ng-cpu, stress-ng-cache, etc.),
+    // skipping zombie processes (state Z in /proc/*/stat field 3).
+    return String.format(
+        "for f in /proc/[0-9]*/comm; do "
+            + "comm=$(cat \"$f\" 2>/dev/null); "
+            + "echo \"$comm\" | grep -q '^%s' || continue; "
+            + "p=\"${f%%%%/comm}\"; p=\"${p##*/}\"; "
+            + "state=$(awk '{print $3}' /proc/$p/stat 2>/dev/null); "
+            + "[ \"$state\" != \"Z\" ] && exit 0; "
+            + "done; exit 1",
+        commPrefix);
   }
 
   @Override
