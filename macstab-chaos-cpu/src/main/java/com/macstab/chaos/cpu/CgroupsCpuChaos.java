@@ -94,8 +94,25 @@ public final class CgroupsCpuChaos implements CpuChaos {
   private static final java.util.Set<String> KNOWN_INIT_NAMES =
       java.util.Set.of("tini", "dumb-init", "s6-svscan", "s6-supervise");
 
-  private final StressNgCommandBuilder cmd = StressNgCommandBuilder.INSTANCE;
-  private final CpuObservability observe = new CpuObservability(cmd);
+  private final StressNgCommandBuilder cmd;
+  private final CpuObservability observe;
+
+  /** Production constructor — uses shared singleton command builder. */
+  public CgroupsCpuChaos() {
+    this.cmd = StressNgCommandBuilder.INSTANCE;
+    this.observe = new CpuObservability(cmd);
+  }
+
+  /**
+   * Package-private testability constructor — accepts collaborators for unit testing.
+   *
+   * @param cmd     command builder (mock or real)
+   * @param observe observability delegate (mock or real)
+   */
+  CgroupsCpuChaos(final StressNgCommandBuilder cmd, final CpuObservability observe) {
+    this.cmd = Objects.requireNonNull(cmd, "cmd must not be null");
+    this.observe = Objects.requireNonNull(observe, "observe must not be null");
+  }
 
   // ==================== Throttling ====================
 
@@ -567,12 +584,17 @@ public final class CgroupsCpuChaos implements CpuChaos {
       if (commResult.getExitCode() == 0) {
         final String comm = commResult.getStdout().trim();
         if (KNOWN_INIT_NAMES.contains(comm)) {
-          // PID 1 is an init system — find the main application (first child)
-          final var childResult = container.execInContainer(
-              Shell.SH, Shell.FLAG_C, "cat /proc/1/task/1/children");
+          // PID 1 is an init system — find the main application (first direct child).
+          // Scan /proc/*/status for PPid: 1 — works on all Linux kernels and container runtimes.
+          // More reliable than /proc/1/task/1/children which requires CONFIG_CHECKPOINT_RESTORE.
+          final String findChildCmd =
+              "for f in /proc/[0-9]*/status; do "
+                  + "grep -q '^PPid:[[:space:]]*1$' \"$f\" 2>/dev/null "
+                  + "&& grep '^Pid:' \"$f\" | awk '{print $2}' && break; "
+                  + "done";
+          final var childResult = container.execInContainer(Shell.SH, Shell.FLAG_C, findChildCmd);
           if (childResult.getExitCode() == 0 && !childResult.getStdout().isBlank()) {
-            final String firstChild = childResult.getStdout().trim().split("\\s+")[0];
-            pid = Integer.parseInt(firstChild);
+            pid = Integer.parseInt(childResult.getStdout().trim());
             log.info("Init detected ({}), main application PID: {}", comm, pid);
           }
         }

@@ -872,6 +872,42 @@ class StressNgCommandBuilderTest {
     }
   }
 
+  // ==================== KillAllByCommPrefixSigKill ====================
+
+  @Nested
+  @DisplayName("buildKillAllByCommPrefixSigKillCommand")
+  class KillAllByCommPrefixSigKillCommand {
+
+    @Test
+    @DisplayName("uses grep to find matching comm files")
+    void usesGrepForPrefixMatch() {
+      final String command = builder.buildKillAllByCommPrefixSigKillCommand("stress-ng");
+      assertThat(command).contains("grep -rl '^stress-ng' /proc/[0-9]*/comm");
+    }
+
+    @Test
+    @DisplayName("sends SIGKILL (-9)")
+    void sendsSigKill() {
+      final String command = builder.buildKillAllByCommPrefixSigKillCommand("stress-ng");
+      assertThat(command).contains("kill -9");
+    }
+
+    @Test
+    @DisplayName("is idempotent — always exits 0")
+    void isIdempotent() {
+      final String command = builder.buildKillAllByCommPrefixSigKillCommand("stress-ng");
+      assertThat(command).contains("; true");
+    }
+
+    @Test
+    @DisplayName("rejects null comm prefix")
+    void rejectsNullPrefix() {
+      assertThatThrownBy(() -> builder.buildKillAllByCommPrefixSigKillCommand(null))
+          .isInstanceOf(NullPointerException.class)
+          .hasMessageContaining("commPrefix must not be null");
+    }
+  }
+
   // ==================== Singleton Contract ====================
 
   @Nested
