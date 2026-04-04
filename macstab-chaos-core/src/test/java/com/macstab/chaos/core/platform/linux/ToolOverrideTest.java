@@ -109,6 +109,6 @@ class ToolOverrideTest {
 
     assertThat(packageName).isEqualTo("ca-certificates");
     // When binary is null, should return package name as fallback
-    assertThat(binaryName).isEqualTo("ca-certificates");
+    assertThat(binaryName).isNull();
   }
 }

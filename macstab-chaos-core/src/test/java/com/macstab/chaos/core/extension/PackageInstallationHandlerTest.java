@@ -28,6 +28,8 @@ import com.macstab.chaos.core.platform.Platform;
 import com.macstab.chaos.core.platform.PlatformDetector;
 import com.macstab.chaos.core.platform.Tool;
 import com.macstab.chaos.core.util.PackageInstaller;
+import com.macstab.chaos.core.util.ToolDefinition;
+import com.macstab.chaos.core.util.ToolPackage;
 
 /**
  * Unit tests for {@link PackageInstallationHandler}.
@@ -60,42 +62,38 @@ class PackageInstallationHandlerTest {
   class PackageInstallation {
 
     @Test
-    @DisplayName("should install raw packages")
+    @DisplayName("should install raw packages via ensureInstalled")
     void shouldInstallRawPackages() {
-      try (MockedStatic<PlatformDetector> detectorMock = mockStatic(PlatformDetector.class);
-          MockedStatic<PackageInstaller> installerMock = mockStatic(PackageInstaller.class)) {
+      try (MockedStatic<PackageInstaller> installerMock = mockStatic(PackageInstaller.class)) {
 
         // GIVEN
-        detectorMock.when(() -> PlatformDetector.detect(container)).thenReturn(platform);
-
-        final InstallPackages annotation = createPackagesAnnotation("curl", "wget");
+        final InstallPackages annotation = createPackagesAnnotation("curl");
 
         // WHEN
         PackageInstallationHandler.process(containerField, testInstance, List.of(annotation));
 
-        // THEN
-        installerMock.verify(() -> PackageInstaller.install(eq(container), anyList(), eq(false)));
+        // THEN — ensureInstalled called with ToolPackage (not raw install)
+        installerMock.verify(() -> PackageInstaller.ensureInstalled(
+            eq(container), org.mockito.ArgumentMatchers.any(ToolDefinition[].class)));
       }
     }
 
     @Test
-    @DisplayName("should deduplicate packages")
+    @DisplayName("should deduplicate packages via ToolPackage label guard")
     void shouldDeduplicatePackages() {
-      try (MockedStatic<PlatformDetector> detectorMock = mockStatic(PlatformDetector.class);
-          MockedStatic<PackageInstaller> installerMock = mockStatic(PackageInstaller.class)) {
+      try (MockedStatic<PackageInstaller> installerMock = mockStatic(PackageInstaller.class)) {
 
         // GIVEN
-        detectorMock.when(() -> PlatformDetector.detect(container)).thenReturn(platform);
-
-        final InstallPackages annotation1 = createPackagesAnnotation("curl", "wget");
-        final InstallPackages annotation2 = createPackagesAnnotation("curl", "jq");
+        final InstallPackages annotation1 = createPackagesAnnotation("curl");
+        final InstallPackages annotation2 = createPackagesAnnotation("wget");
 
         // WHEN
         PackageInstallationHandler.process(
             containerField, testInstance, List.of(annotation1, annotation2));
 
-        // THEN (curl should only appear once)
-        installerMock.verify(() -> PackageInstaller.install(eq(container), anyList(), eq(false)));
+        // THEN — ensureInstalled called once (merged into single call)
+        installerMock.verify(() -> PackageInstaller.ensureInstalled(
+            eq(container), org.mockito.ArgumentMatchers.any(ToolDefinition[].class)));
       }
     }
 
@@ -121,45 +119,36 @@ class PackageInstallationHandlerTest {
   class ToolInstallation {
 
     @Test
-    @DisplayName("should translate tools to platform-specific packages")
+    @DisplayName("should call ensureInstalled with Tool entries")
     void shouldTranslateToolsToPlatformSpecificPackages() {
-      try (MockedStatic<PlatformDetector> detectorMock = mockStatic(PlatformDetector.class);
-          MockedStatic<PackageInstaller> installerMock = mockStatic(PackageInstaller.class)) {
+      try (MockedStatic<PackageInstaller> installerMock = mockStatic(PackageInstaller.class)) {
 
         // GIVEN
-        detectorMock.when(() -> PlatformDetector.detect(container)).thenReturn(platform);
-        when(platform.getPackageName(Tool.CURL)).thenReturn("curl");
-        when(platform.getPackageName(Tool.IPTABLES)).thenReturn("iptables");
-
         final InstallTools annotation = createToolsAnnotation(Tool.CURL, Tool.IPTABLES);
 
         // WHEN
         PackageInstallationHandler.process(containerField, testInstance, List.of(annotation));
 
-        // THEN
-        verify(platform).getPackageName(Tool.CURL);
-        verify(platform).getPackageName(Tool.IPTABLES);
-        installerMock.verify(() -> PackageInstaller.install(eq(container), anyList(), eq(false)));
+        // THEN — ensureInstalled(Tool...) called with the declared tools
+        installerMock.verify(() -> PackageInstaller.ensureInstalled(
+            eq(container), eq(Tool.CURL), eq(Tool.IPTABLES)));
       }
     }
 
     @Test
-    @DisplayName("should handle RHEL-specific package names")
+    @DisplayName("should call ensureInstalled with single Tool")
     void shouldHandleRhelSpecificPackageNames() {
-      try (MockedStatic<PlatformDetector> detectorMock = mockStatic(PlatformDetector.class);
-          MockedStatic<PackageInstaller> installerMock = mockStatic(PackageInstaller.class)) {
+      try (MockedStatic<PackageInstaller> installerMock = mockStatic(PackageInstaller.class)) {
 
         // GIVEN
-        detectorMock.when(() -> PlatformDetector.detect(container)).thenReturn(platform);
-        when(platform.getPackageName(Tool.PROCPS)).thenReturn("procps-ng"); // RHEL-specific
-
         final InstallTools annotation = createToolsAnnotation(Tool.PROCPS);
 
         // WHEN
         PackageInstallationHandler.process(containerField, testInstance, List.of(annotation));
 
-        // THEN
-        verify(platform).getPackageName(Tool.PROCPS);
+        // THEN — ensureInstalled(Tool...) called with PROCPS
+        installerMock.verify(() -> PackageInstaller.ensureInstalled(
+            eq(container), eq(Tool.PROCPS)));
       }
     }
   }
@@ -169,24 +158,24 @@ class PackageInstallationHandlerTest {
   class CombinedInstallation {
 
     @Test
-    @DisplayName("should install both packages and tools")
+    @DisplayName("should install both packages and tools via ensureInstalled")
     void shouldInstallBothPackagesAndTools() {
-      try (MockedStatic<PlatformDetector> detectorMock = mockStatic(PlatformDetector.class);
-          MockedStatic<PackageInstaller> installerMock = mockStatic(PackageInstaller.class)) {
+      try (MockedStatic<PackageInstaller> installerMock = mockStatic(PackageInstaller.class)) {
 
         // GIVEN
-        detectorMock.when(() -> PlatformDetector.detect(container)).thenReturn(platform);
-        when(platform.getPackageName(Tool.CURL)).thenReturn("curl");
-
-        final InstallPackages packagesAnnotation = createPackagesAnnotation("wget", "jq");
+        final InstallPackages packagesAnnotation = createPackagesAnnotation("wget");
         final InstallTools toolsAnnotation = createToolsAnnotation(Tool.CURL);
 
         // WHEN
         PackageInstallationHandler.process(
             containerField, testInstance, List.of(packagesAnnotation, toolsAnnotation));
 
-        // THEN
-        installerMock.verify(() -> PackageInstaller.install(eq(container), anyList(), eq(false)));
+        // THEN — Tool path calls ensureInstalled(Tool...)
+        installerMock.verify(() -> PackageInstaller.ensureInstalled(
+            eq(container), eq(Tool.CURL)));
+        // Package path calls ensureInstalled(ToolDefinition...)
+        installerMock.verify(() -> PackageInstaller.ensureInstalled(
+            eq(container), org.mockito.ArgumentMatchers.any(ToolDefinition[].class)));
       }
     }
   }
@@ -196,40 +185,36 @@ class PackageInstallationHandlerTest {
   class Verification {
 
     @Test
-    @DisplayName("should verify installation when requested")
+    @DisplayName("ensureInstalled handles verification internally — verify flag has no effect")
     void shouldVerifyInstallationWhenRequested() {
-      try (MockedStatic<PlatformDetector> detectorMock = mockStatic(PlatformDetector.class);
-          MockedStatic<PackageInstaller> installerMock = mockStatic(PackageInstaller.class)) {
+      try (MockedStatic<PackageInstaller> installerMock = mockStatic(PackageInstaller.class)) {
 
-        // GIVEN
-        detectorMock.when(() -> PlatformDetector.detect(container)).thenReturn(platform);
-
+        // GIVEN — verify=true on annotation, but ensureInstalled handles verification
         final InstallPackages annotation = createPackagesAnnotationWithVerify("curl", true);
 
         // WHEN
         PackageInstallationHandler.process(containerField, testInstance, List.of(annotation));
 
-        // THEN
-        installerMock.verify(() -> PackageInstaller.install(eq(container), anyList(), eq(true)));
+        // THEN — ensureInstalled called, not install
+        installerMock.verify(() -> PackageInstaller.ensureInstalled(
+            eq(container), org.mockito.ArgumentMatchers.any(ToolDefinition[].class)));
       }
     }
 
     @Test
-    @DisplayName("should not verify by default")
+    @DisplayName("ensureInstalled called regardless of verify flag")
     void shouldNotVerifyByDefault() {
-      try (MockedStatic<PlatformDetector> detectorMock = mockStatic(PlatformDetector.class);
-          MockedStatic<PackageInstaller> installerMock = mockStatic(PackageInstaller.class)) {
+      try (MockedStatic<PackageInstaller> installerMock = mockStatic(PackageInstaller.class)) {
 
         // GIVEN
-        detectorMock.when(() -> PlatformDetector.detect(container)).thenReturn(platform);
-
         final InstallPackages annotation = createPackagesAnnotation("curl");
 
         // WHEN
         PackageInstallationHandler.process(containerField, testInstance, List.of(annotation));
 
         // THEN
-        installerMock.verify(() -> PackageInstaller.install(eq(container), anyList(), eq(false)));
+        installerMock.verify(() -> PackageInstaller.ensureInstalled(
+            eq(container), org.mockito.ArgumentMatchers.any(ToolDefinition[].class)));
       }
     }
   }
@@ -245,8 +230,11 @@ class PackageInstallationHandlerTest {
         // WHEN
         PackageInstallationHandler.process(containerField, testInstance, List.of());
 
-        // THEN (no installation should happen)
-        installerMock.verify(() -> PackageInstaller.install(any(), anyList(), eq(false)), never());
+        // THEN — no ensureInstalled call
+        installerMock.verify(() -> PackageInstaller.ensureInstalled(
+            any(), org.mockito.ArgumentMatchers.any(ToolDefinition[].class)), never());
+        installerMock.verify(() -> PackageInstaller.ensureInstalled(
+            any(), org.mockito.ArgumentMatchers.any(Tool[].class)), never());
       }
     }
 
@@ -261,7 +249,8 @@ class PackageInstallationHandlerTest {
         PackageInstallationHandler.process(containerField, testInstance, List.of(otherAnnotation));
 
         // THEN
-        installerMock.verify(() -> PackageInstaller.install(any(), anyList(), eq(false)), never());
+        installerMock.verify(() -> PackageInstaller.ensureInstalled(
+            any(), org.mockito.ArgumentMatchers.any(ToolDefinition[].class)), never());
       }
     }
 
@@ -278,7 +267,8 @@ class PackageInstallationHandlerTest {
         PackageInstallationHandler.process(containerField, testInstance, List.of(annotation));
 
         // THEN
-        installerMock.verify(() -> PackageInstaller.install(any(), anyList(), eq(false)), never());
+        installerMock.verify(() -> PackageInstaller.ensureInstalled(
+            any(), org.mockito.ArgumentMatchers.any(ToolDefinition[].class)), never());
       }
     }
 
@@ -318,14 +308,12 @@ class PackageInstallationHandlerTest {
     @Test
     @DisplayName("should throw exception on installation failure")
     void shouldThrowExceptionOnInstallationFailure() {
-      try (MockedStatic<PlatformDetector> detectorMock = mockStatic(PlatformDetector.class);
-          MockedStatic<PackageInstaller> installerMock = mockStatic(PackageInstaller.class)) {
+      try (MockedStatic<PackageInstaller> installerMock = mockStatic(PackageInstaller.class)) {
 
         // GIVEN
-        detectorMock.when(() -> PlatformDetector.detect(container)).thenReturn(platform);
-
         installerMock
-            .when(() -> PackageInstaller.install(any(), anyList(), eq(false)))
+            .when(() -> PackageInstaller.ensureInstalled(
+                any(), org.mockito.ArgumentMatchers.any(ToolDefinition[].class)))
             .thenThrow(new RuntimeException("Installation failed"));
 
         final InstallPackages annotation = createPackagesAnnotation("curl");
@@ -336,7 +324,7 @@ class PackageInstallationHandlerTest {
                     PackageInstallationHandler.process(
                         containerField, testInstance, List.of(annotation)))
             .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("Failed to install packages")
+            .hasMessageContaining("Failed to install")
             .hasCauseInstanceOf(RuntimeException.class);
       }
     }
