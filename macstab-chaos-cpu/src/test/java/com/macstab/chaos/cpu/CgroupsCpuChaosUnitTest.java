@@ -13,16 +13,20 @@ import static org.mockito.Mockito.when;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.Map;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 import org.testcontainers.containers.Container.ExecResult;
 import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.exception.ChaosConfigurationException;
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
+import com.macstab.chaos.core.platform.Tool;
+import com.macstab.chaos.core.util.PackageInstaller;
 import com.macstab.chaos.cpu.command.StressNgCommandBuilder;
 
 /**
@@ -79,8 +83,27 @@ class CgroupsCpuChaosUnitTest {
     when(cmd.buildGetCoreCountCommand()).thenReturn("nproc");
     when(cmd.buildReadCpuStatCommand()).thenReturn("cat /proc/stat");
 
-    // Default exec: success for everything
+    // Default: all execs succeed (must be first — specific stubs override)
     mockExecSuccess();
+
+    // PlatformDetector: Debian via /etc/os-release
+    final ExecResult osRelease = mock(ExecResult.class);
+    when(osRelease.getExitCode()).thenReturn(0);
+    when(osRelease.getStdout()).thenReturn("ID=debian\nVERSION_ID=\"12\"\n");
+    when(container.execInContainer("cat", "/etc/os-release")).thenReturn(osRelease);
+
+    // ShellDetector: bash not available, sh is (non-BusyBox)
+    final ExecResult whichBashFail = mock(ExecResult.class);
+    when(whichBashFail.getExitCode()).thenReturn(1);
+    when(container.execInContainer("which", "/bin/bash")).thenReturn(whichBashFail);
+    final ExecResult whichShOk = mock(ExecResult.class);
+    when(whichShOk.getExitCode()).thenReturn(0);
+    when(container.execInContainer("which", "/bin/sh")).thenReturn(whichShOk);
+    final ExecResult shHelp = mock(ExecResult.class);
+    when(shHelp.getExitCode()).thenReturn(0);
+    when(shHelp.getStdout()).thenReturn("");
+    when(shHelp.getStderr()).thenReturn("");
+    when(container.execInContainer("/bin/sh", "--help")).thenReturn(shHelp);
 
     chaos = new CgroupsCpuChaos(cmd, observe);
   }
@@ -107,74 +130,79 @@ class CgroupsCpuChaosUnitTest {
     @Test
     @DisplayName("uses cached label when present")
     void usesCachedLabel() throws Exception {
-      // GIVEN — label already set to PID 42
-      final var labels = new HashMap<String, String>();
-      labels.put("macstab.chaos.pid.main", "42");
-      when(container.getLabels()).thenReturn(labels);
+      try (MockedStatic<PackageInstaller> pi = org.mockito.Mockito.mockStatic(PackageInstaller.class)) {
+        // GIVEN — label already set to PID 42
+        final var labels = new HashMap<String, String>();
+        labels.put("macstab.chaos.pid.main", "42");
+        when(container.getLabels()).thenReturn(labels);
 
-      // WHEN — throttle triggers resolveMainPid
-      chaos.throttle(container, 50);
+        // WHEN — throttle triggers resolveMainPid
+        chaos.throttle(container, 50);
 
-      // THEN — throttle command built with PID 42, not 1
-      verify(cmd).buildThrottleCommand(42, 50);
+        // THEN — throttle command built with PID 42, not 1
+        verify(cmd).buildThrottleCommand(42, 50);
+      }
     }
 
     @Test
-    @DisplayName("detects tini as PID 1 and resolves first child")
-    void detectsTiniAndResolvesChild() throws Exception {
-      // GIVEN — /proc/1/comm = "tini", /proc/1/task/1/children = "7"
-      final ExecResult commResult = mockExecResult(0, "tini\n");
-      final ExecResult childResult = mockExecResult(0, "7 \n");
+    @DisplayName("detects docker-init as PID 1 and resolves first child")
+    void detectsDockerInitAndResolvesChild() throws Exception {
+      try (MockedStatic<PackageInstaller> pi = org.mockito.Mockito.mockStatic(PackageInstaller.class)) {
+        // GIVEN — /proc/1/comm = "docker-init", PPid scan returns 7
+        final ExecResult commResult = mockExecResult(0, "docker-init\n");
+        final ExecResult childResult = mockExecResult(0, "7\n");
+        when(container.execInContainer("/bin/sh", "-c", "cat /proc/1/comm")).thenReturn(commResult);
+        when(container.execInContainer(org.mockito.ArgumentMatchers.eq("/bin/sh"),
+            org.mockito.ArgumentMatchers.eq("-c"),
+            org.mockito.ArgumentMatchers.contains("PPid"))).thenReturn(childResult);
 
-      when(container.execInContainer("sh", "-c", "cat /proc/1/comm")).thenReturn(commResult);
-      when(container.execInContainer("sh", "-c", "cat /proc/1/task/1/children")).thenReturn(childResult);
+        chaos.throttle(container, 50);
 
-      // WHEN
-      chaos.throttle(container, 50);
-
-      // THEN — built with PID 7
-      verify(cmd).buildThrottleCommand(7, 50);
-    }
-
-    @Test
-    @DisplayName("falls back to PID 1 when /proc/1/comm exec throws")
-    void fallsBackToPid1OnException() throws Exception {
-      // GIVEN — exec throws
-      when(container.execInContainer(anyString(), anyString(), anyString()))
-          .thenThrow(new IOException("exec failed"));
-
-      // WHEN — must not throw
-      assertThatCode(() -> chaos.throttle(container, 50)).doesNotThrowAnyException();
+        verify(cmd).buildThrottleCommand(7, 50);
+      }
     }
 
     @Test
     @DisplayName("uses PID 1 when /proc/1/comm is a normal process (not init)")
     void usesPid1ForNormalProcess() throws Exception {
-      // GIVEN — /proc/1/comm = "redis-server"
-      final ExecResult commResult = mockExecResult(0, "redis-server\n");
-      when(container.execInContainer("sh", "-c", "cat /proc/1/comm")).thenReturn(commResult);
+      try (MockedStatic<PackageInstaller> pi = org.mockito.Mockito.mockStatic(PackageInstaller.class)) {
+        final ExecResult commResult = mockExecResult(0, "redis-server\n");
+        when(container.execInContainer("/bin/sh", "-c", "cat /proc/1/comm")).thenReturn(commResult);
 
-      // WHEN
-      chaos.throttle(container, 50);
+        chaos.throttle(container, 50);
 
-      // THEN — built with PID 1
-      verify(cmd).buildThrottleCommand(1, 50);
+        verify(cmd).buildThrottleCommand(1, 50);
+      }
     }
 
     @Test
-    @DisplayName("falls back to PID 1 when children file is blank")
+    @DisplayName("falls back to PID 1 when comm exec fails")
+    void fallsBackToPid1OnCommFail() throws Exception {
+      try (MockedStatic<PackageInstaller> pi = org.mockito.Mockito.mockStatic(PackageInstaller.class)) {
+        final ExecResult fail = mockExecResult(1, "");
+        when(container.execInContainer("/bin/sh", "-c", "cat /proc/1/comm")).thenReturn(fail);
+
+        chaos.throttle(container, 50);
+
+        verify(cmd).buildThrottleCommand(1, 50);
+      }
+    }
+
+    @Test
+    @DisplayName("falls back to PID 1 when children scan returns blank")
     void fallsBackWhenChildrenBlank() throws Exception {
-      // GIVEN — tini detected but no children
-      final ExecResult commResult = mockExecResult(0, "tini\n");
-      final ExecResult childResult = mockExecResult(0, "   \n");
-      when(container.execInContainer("sh", "-c", "cat /proc/1/comm")).thenReturn(commResult);
-      when(container.execInContainer("sh", "-c", "cat /proc/1/task/1/children")).thenReturn(childResult);
+      try (MockedStatic<PackageInstaller> pi = org.mockito.Mockito.mockStatic(PackageInstaller.class)) {
+        final ExecResult commResult = mockExecResult(0, "docker-init\n");
+        final ExecResult blank = mockExecResult(0, "   \n");
+        when(container.execInContainer("/bin/sh", "-c", "cat /proc/1/comm")).thenReturn(commResult);
+        when(container.execInContainer(org.mockito.ArgumentMatchers.eq("/bin/sh"),
+            org.mockito.ArgumentMatchers.eq("-c"),
+            org.mockito.ArgumentMatchers.contains("PPid"))).thenReturn(blank);
 
-      // WHEN
-      chaos.throttle(container, 50);
+        chaos.throttle(container, 50);
 
-      // THEN — falls back to PID 1
-      verify(cmd).buildThrottleCommand(1, 50);
+        verify(cmd).buildThrottleCommand(1, 50);
+      }
     }
   }
 
@@ -392,22 +420,28 @@ class CgroupsCpuChaosUnitTest {
     @Test
     @DisplayName("exec non-zero exit code wraps as ChaosOperationFailedException")
     void execNonZeroWrapped() throws Exception {
-      final ExecResult failResult = mockExecResult(1, "");
-      when(failResult.getStderr()).thenReturn("command not found");
-      when(container.execInContainer(anyString(), anyString(), anyString())).thenReturn(failResult);
+      try (MockedStatic<PackageInstaller> pi = org.mockito.Mockito.mockStatic(PackageInstaller.class)) {
+        final ExecResult failResult = mock(ExecResult.class);
+        when(failResult.getExitCode()).thenReturn(1);
+        when(failResult.getStdout()).thenReturn("");
+        when(failResult.getStderr()).thenReturn("command not found");
+        when(container.execInContainer(anyString(), anyString(), anyString())).thenReturn(failResult);
 
-      assertThatThrownBy(() -> chaos.stress(container, 1))
-          .isInstanceOf(ChaosOperationFailedException.class);
+        assertThatThrownBy(() -> chaos.stress(container, 1))
+            .isInstanceOf(ChaosOperationFailedException.class);
+      }
     }
 
     @Test
     @DisplayName("exec IOException wraps as ChaosOperationFailedException")
     void execIoExceptionWrapped() throws Exception {
-      when(container.execInContainer(anyString(), anyString(), anyString()))
-          .thenThrow(new IOException("Docker exec failed"));
+      try (MockedStatic<PackageInstaller> pi = org.mockito.Mockito.mockStatic(PackageInstaller.class)) {
+        when(container.execInContainer(anyString(), anyString(), anyString()))
+            .thenThrow(new IOException("Docker exec failed"));
 
-      assertThatThrownBy(() -> chaos.stress(container, 1))
-          .isInstanceOf(ChaosOperationFailedException.class);
+        assertThatThrownBy(() -> chaos.stress(container, 1))
+            .isInstanceOf(ChaosOperationFailedException.class);
+      }
     }
   }
 
@@ -437,22 +471,28 @@ class CgroupsCpuChaosUnitTest {
     @Test
     @DisplayName("throws when stress-ng PID not found after start")
     void throwsWhenStressNgPidNotFound() throws Exception {
-      // stress-ng starts (exit 0) but PID lookup returns empty
-      final ExecResult pidResult = mockExecResult(1, "");
-      when(container.execInContainer("sh", "-c", "find-pid")).thenReturn(pidResult);
+      try (MockedStatic<PackageInstaller> pi = org.mockito.Mockito.mockStatic(PackageInstaller.class)) {
+        final ExecResult pidResult = mockExecResult(1, "");
+        when(container.execInContainer("/bin/sh", "-c", "find-pid")).thenReturn(pidResult);
 
-      assertThatThrownBy(() -> chaos.stressWithThrottle(container, 1, 50))
-          .isInstanceOf(ChaosOperationFailedException.class)
-          .hasMessageContaining("stress-ng did not start");
+        assertThatThrownBy(() -> chaos.stressWithThrottle(container, 1, 50))
+            .isInstanceOf(ChaosOperationFailedException.class)
+            .hasMessageContaining("stress-ng did not start");
+      }
     }
   }
 
   // ==================== Helpers ====================
 
-  @SuppressWarnings("unchecked")
+  @SuppressWarnings({"unchecked", "rawtypes"})
   private void mockExecSuccess() throws Exception {
     final ExecResult successResult = mockExecResult(0, "");
+    // Cover 3-arg (sh -c <cmd>) and 2-arg (cat /etc/os-release) calls
     when(container.execInContainer(anyString(), anyString(), anyString())).thenReturn(successResult);
+    when(container.execInContainer(anyString(), anyString())).thenReturn(successResult);
+    // Cover varargs form used by PackageManager detection
+    when(container.execInContainer(org.mockito.ArgumentMatchers.anyString(),
+        org.mockito.ArgumentMatchers.<String>any())).thenReturn(successResult);
   }
 
   private static ExecResult mockExecResult(final int exitCode, final String stdout) {
