@@ -34,16 +34,16 @@ import lombok.extern.slf4j.Slf4j;
 public final class CgroupsCpuChaos implements CpuChaos {
 
   /** Delay after starting stress-ng before querying its PID via /proc/comm. */
-  private static final long STRESS_NG_STARTUP_MS = 20;
+  private static final long STRESS_NG_STARTUP_MS = 50;
 
-  /** Timeout for stress-ng graceful SIGTERM shutdown (can take up to 3s on real Linux). */
-  private static final long STRESS_NG_SHUTDOWN_TIMEOUT_MS = 5_000;
+  /** Timeout for stress-ng process to disappear after SIGKILL + tini reap. */
+  private static final long STRESS_NG_SHUTDOWN_TIMEOUT_MS = 1_000;
 
-  /** Timeout for cpulimit process to exit after SIGKILL. */
-  private static final long CPULIMIT_SHUTDOWN_TIMEOUT_MS = 2_000;
+  /** Timeout for cpulimit process to disappear after SIGKILL + tini reap. */
+  private static final long CPULIMIT_SHUTDOWN_TIMEOUT_MS = 1_000;
 
   /** Poll interval for waitUntilGone loop. */
-  private static final long WAIT_POLL_INTERVAL_MS = 10;
+  private static final long WAIT_POLL_INTERVAL_MS = 50;
 
   private final StressNgCommandBuilder cmd = StressNgCommandBuilder.INSTANCE;
   private final CpuObservability observe = new CpuObservability(cmd);
@@ -442,12 +442,15 @@ public final class CgroupsCpuChaos implements CpuChaos {
 
   private void waitUntilGone(
       final GenericContainer<?> container, final String name, final long timeoutMs) {
+    // Fast grep-based check — with tini as init, processes are fully reaped (no zombies).
+    // The zombie-aware filter in buildIsRunningByCommPrefixCommand is for user-facing
+    // observability (isStressed/isThrottled), not for internal cleanup polling.
+    final String fastCheck = String.format(
+        "grep -rl '^%s' /proc/[0-9]*/comm 2>/dev/null | grep -q .", name);
     final long deadline = System.currentTimeMillis() + timeoutMs;
     while (System.currentTimeMillis() < deadline) {
       try {
-        final var result =
-            container.execInContainer(
-                Shell.SH, Shell.FLAG_C, cmd.buildIsRunningByCommPrefixCommand(name));
+        final var result = container.execInContainer(Shell.SH, Shell.FLAG_C, fastCheck);
         if (result.getExitCode() != 0) {
           return;
         }
