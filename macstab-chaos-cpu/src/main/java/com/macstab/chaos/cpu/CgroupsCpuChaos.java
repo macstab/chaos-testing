@@ -34,7 +34,7 @@ import lombok.extern.slf4j.Slf4j;
 public final class CgroupsCpuChaos implements CpuChaos {
 
   /** Delay after starting stress-ng before querying its PID via /proc/comm. */
-  private static final long STRESS_NG_STARTUP_MS = 200;
+  private static final long STRESS_NG_STARTUP_MS = 20;
 
   /** Timeout for stress-ng graceful SIGTERM shutdown (can take up to 3s on real Linux). */
   private static final long STRESS_NG_SHUTDOWN_TIMEOUT_MS = 5_000;
@@ -43,7 +43,7 @@ public final class CgroupsCpuChaos implements CpuChaos {
   private static final long CPULIMIT_SHUTDOWN_TIMEOUT_MS = 2_000;
 
   /** Poll interval for waitUntilGone loop. */
-  private static final long WAIT_POLL_INTERVAL_MS = 100;
+  private static final long WAIT_POLL_INTERVAL_MS = 10;
 
   private final StressNgCommandBuilder cmd = StressNgCommandBuilder.INSTANCE;
   private final CpuObservability observe = new CpuObservability(cmd);
