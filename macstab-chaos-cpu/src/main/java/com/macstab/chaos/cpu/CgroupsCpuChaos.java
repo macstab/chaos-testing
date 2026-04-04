@@ -36,6 +36,12 @@ public final class CgroupsCpuChaos implements CpuChaos {
   /** Delay after starting stress-ng before querying its PID via /proc/comm. */
   private static final long STRESS_NG_STARTUP_MS = 50;
 
+  /** Max time to wait for a backgrounded process to appear in /proc. */
+  private static final long PROCESS_STARTUP_TIMEOUT_MS = 2_000;
+
+  /** Poll interval for process startup detection. */
+  private static final long STARTUP_POLL_INTERVAL_MS = 10;
+
   /** Timeout for stress-ng process to disappear after SIGKILL + tini reap. */
   private static final long STRESS_NG_SHUTDOWN_TIMEOUT_MS = 1_000;
 
@@ -58,6 +64,7 @@ public final class CgroupsCpuChaos implements CpuChaos {
     killCpuLimit(container);
     // percentage range validated by builder (throws ChaosConfigurationException)
     exec(container, cmd.buildThrottleCommand(1, percentage), "throttle CPU");
+    waitUntilStarted(container, "cpulimit");
     log.info("Throttled CPU to {}% (PID 1)", percentage);
   }
 
@@ -76,6 +83,7 @@ public final class CgroupsCpuChaos implements CpuChaos {
         container,
         cmd.buildThrottleWithDurationCommand(1, percentage, duration.toSeconds()),
         "throttle CPU with duration");
+    waitUntilStarted(container, "cpulimit");
     log.info("Throttled CPU to {}% for {}s (auto-reset)", percentage, duration.toSeconds());
   }
 
@@ -463,6 +471,38 @@ public final class CgroupsCpuChaos implements CpuChaos {
       }
     }
     log.warn("waitUntilGone: {} did not exit within {}ms", name, timeoutMs);
+  }
+
+  // ==================== Private: Startup Detection ====================
+
+  /**
+   * Polls until a backgrounded process appears in /proc/comm.
+   *
+   * <p>Background processes ({@code cmd &}) return exit 0 immediately from the shell.
+   * The actual process may not yet be visible in {@code /proc} when the exec returns.
+   * This method polls until the process appears or the timeout expires.
+   *
+   * @param container target container
+   * @param commName  exact comm name to wait for (e.g. "cpulimit", "stress-ng")
+   */
+  private void waitUntilStarted(final GenericContainer<?> container, final String commName) {
+    final String check = cmd.buildIsRunningByCommExactCommand(commName);
+    final long deadline = System.currentTimeMillis() + PROCESS_STARTUP_TIMEOUT_MS;
+    while (System.currentTimeMillis() < deadline) {
+      try {
+        final var result = container.execInContainer(Shell.SH, Shell.FLAG_C, check);
+        if (result.getExitCode() == 0) {
+          return;
+        }
+        Thread.sleep(STARTUP_POLL_INTERVAL_MS);
+      } catch (final InterruptedException e) {
+        Thread.currentThread().interrupt();
+        return;
+      } catch (final Exception e) {
+        return;
+      }
+    }
+    log.warn("waitUntilStarted: {} did not appear within {}ms", commName, PROCESS_STARTUP_TIMEOUT_MS);
   }
 
   // ==================== Private: Validation ====================
