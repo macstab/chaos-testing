@@ -3,6 +3,7 @@ package com.macstab.chaos.cpu;
 
 import java.time.Duration;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Supplier;
 
 import org.testcontainers.containers.GenericContainer;
@@ -158,18 +159,15 @@ public final class CgroupsCpuChaos implements CpuChaos {
 
   @Override
   public void stress(final GenericContainer<?> container, final int workers) {
-    runStressor(container, workers, () -> cmd.buildStressCpuCommand(workers), "CPU");
+    executeStressor(container, workers, () -> cmd.buildStressCpuCommand(workers), "CPU", Optional.empty());
   }
 
   @Override
   public void stress(
       final GenericContainer<?> container, final int workers, final Duration duration) {
-    runStressorWithTimeout(
-        container,
-        workers,
-        duration,
+    executeStressor(container, workers,
         () -> cmd.buildStressCpuWithTimeoutCommand(workers, duration.toSeconds()),
-        "CPU");
+        "CPU", Optional.of(duration));
   }
 
   @Override
@@ -208,69 +206,61 @@ public final class CgroupsCpuChaos implements CpuChaos {
 
   @Override
   public void stressCache(final GenericContainer<?> container, final int workers) {
-    runStressor(container, workers, () -> cmd.buildStressCacheCommand(workers), "cache");
+    executeStressor(container, workers, () -> cmd.buildStressCacheCommand(workers), "cache", Optional.empty());
   }
 
   @Override
   public void stressCache(
       final GenericContainer<?> container, final int workers, final Duration duration) {
-    runStressorWithTimeout(
-        container,
-        workers,
-        duration,
+    executeStressor(container, workers,
         () -> cmd.buildStressCacheWithTimeoutCommand(workers, duration.toSeconds()),
-        "cache");
+        "cache", Optional.of(duration));
   }
 
   @Override
   public void stressCacheLine(final GenericContainer<?> container, final int workers) {
-    runStressor(container, workers, () -> cmd.buildStressCacheLineCommand(workers), "cache-line");
+    executeStressor(container, workers, () -> cmd.buildStressCacheLineCommand(workers), "cache-line", Optional.empty());
   }
 
   @Override
   public void stressContextSwitch(final GenericContainer<?> container, final int workers) {
-    runStressor(
-        container, workers, () -> cmd.buildStressContextSwitchCommand(workers), "context-switch");
+    executeStressor(container, workers,
+        () -> cmd.buildStressContextSwitchCommand(workers),
+        "context-switch", Optional.empty());
   }
 
   @Override
   public void stressThreadSwitch(final GenericContainer<?> container, final int workers) {
-    runStressor(
-        container, workers, () -> cmd.buildStressThreadSwitchCommand(workers), "thread-switch");
+    executeStressor(container, workers,
+        () -> cmd.buildStressThreadSwitchCommand(workers),
+        "thread-switch", Optional.empty());
   }
 
   @Override
   public void stressBranchPredictor(final GenericContainer<?> container, final int workers) {
-    runStressor(
-        container,
-        workers,
+    executeStressor(container, workers,
         () -> cmd.buildStressBranchPredictorCommand(workers),
-        "branch-predictor");
+        "branch-predictor", Optional.empty());
   }
 
   @Override
   public void stressTimerInterrupts(final GenericContainer<?> container, final int workers) {
-    runStressor(
-        container,
-        workers,
+    executeStressor(container, workers,
         () -> cmd.buildStressTimerInterruptsCommand(workers),
-        "timer-interrupt");
+        "timer-interrupt", Optional.empty());
   }
 
   @Override
   public void stressMatrix(final GenericContainer<?> container, final int workers) {
-    runStressor(container, workers, () -> cmd.buildStressMatrixCommand(workers), "matrix");
+    executeStressor(container, workers, () -> cmd.buildStressMatrixCommand(workers), "matrix", Optional.empty());
   }
 
   @Override
   public void stressMatrix(
       final GenericContainer<?> container, final int workers, final Duration duration) {
-    runStressorWithTimeout(
-        container,
-        workers,
-        duration,
+    executeStressor(container, workers,
         () -> cmd.buildStressMatrixWithTimeoutCommand(workers, duration.toSeconds()),
-        "matrix");
+        "matrix", Optional.of(duration));
   }
 
   // ==================== CPU Affinity ====================
@@ -420,55 +410,40 @@ public final class CgroupsCpuChaos implements CpuChaos {
     return true;
   }
 
-  // ==================== Private: Stressor Templates ====================
+  // ==================== Private: Stressor Template ====================
 
   /**
-   * Template for indefinite stressor methods. Validates first, then builds command, installs, kills
-   * previous, executes, logs. Command is deferred via {@link Supplier} to ensure validation
-   * exceptions ({@link ChaosConfigurationException}) are thrown before builder-level {@link
-   * IllegalArgumentException}.
+   * Unified template for all stressor executions — indefinite and time-bounded.
+   *
+   * <p>The {@code commandSupplier} is invoked <em>before</em> any container side-effects
+   * so that builder-level validation ({@link ChaosConfigurationException} for invalid workers
+   * or duration) fires immediately without touching the container.
+   *
+   * <p>The optional {@code duration} is used only for log output. The command string
+   * returned by {@code commandSupplier} already encodes the timeout via {@code --timeout Xs}.
+   *
+   * @param container       target container (must be running)
+   * @param workers         number of stressor workers (for log output)
+   * @param commandSupplier builds the shell command; validated eagerly before container ops
+   * @param label           human-readable stressor name (e.g. {@code "CPU"}, {@code "cache"})
+   * @param duration        present for time-bounded runs; empty for indefinite runs
    */
-  /**
-   * Template for indefinite stressor methods. The {@code commandSupplier} is invoked first so that
-   * builder validation (workers range → {@link ChaosConfigurationException}) fires before any
-   * container side effects.
-   */
-  private void runStressor(
+  private void executeStressor(
       final GenericContainer<?> container,
       final int workers,
       final Supplier<String> commandSupplier,
-      final String label) {
+      final String label,
+      final Optional<Duration> duration) {
     Objects.requireNonNull(container, "container must not be null");
-    // Invoke supplier first: builder validates workers, throws ChaosConfigurationException if
-    // invalid
-    final String command = commandSupplier.get();
+    Objects.requireNonNull(duration, "duration must not be null");
+    final String command = commandSupplier.get(); // validates workers/duration eagerly
     validateContainerRunning(container);
     installTools(container);
     killStressNg(container);
     exec(container, command, label + " stress");
-    log.info("Started {} stress: {} workers", label, workers);
-  }
-
-  /**
-   * Template for time-bounded stressor methods. Command is built (and validated) before any
-   * container side effects.
-   */
-  private void runStressorWithTimeout(
-      final GenericContainer<?> container,
-      final int workers,
-      final Duration duration,
-      final Supplier<String> commandSupplier,
-      final String label) {
-    Objects.requireNonNull(container, "container must not be null");
-    Objects.requireNonNull(duration, "duration must not be null");
-    // Invoke supplier first: builder validates workers, throws ChaosConfigurationException if
-    // invalid
-    final String command = commandSupplier.get();
-    validateContainerRunning(container);
-    installTools(container);
-    killStressNg(container);
-    exec(container, command, label + " stress with timeout");
-    log.info("Started {} stress: {} workers for {}s", label, workers, duration.toSeconds());
+    duration.ifPresentOrElse(
+        d -> log.info("Started {} stress: {} workers for {}s", label, workers, d.toSeconds()),
+        () -> log.info("Started {} stress: {} workers", label, workers));
   }
 
   // ==================== Private: Execution ====================
