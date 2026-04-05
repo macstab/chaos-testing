@@ -8,6 +8,7 @@ import java.util.regex.Pattern;
 import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.api.DiskChaos;
+import com.macstab.chaos.core.command.disk.DiskCommandBuilder;
 import com.macstab.chaos.core.exception.ChaosConfigurationException;
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
 import com.macstab.chaos.core.platform.Tool;
@@ -15,6 +16,7 @@ import com.macstab.chaos.core.syscall.SyscallFaultInjector;
 import com.macstab.chaos.core.syscall.SyscallRule;
 import com.macstab.chaos.core.util.PackageInstaller;
 import com.macstab.chaos.core.util.Shell;
+import com.macstab.chaos.disk.command.StressNgDiskCommandBuilder;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -25,11 +27,18 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <ul>
  *   <li><strong>Process-level</strong> — {@code stress-ng --hdd} for I/O load generation,
- *       {@code dd}/{@code fallocate} for disk fill. Works in any container.
+ *       {@code fallocate}/{@code dd} for disk fill. Works in any container.
  *   <li><strong>Syscall-level</strong> — {@code libchaos-io} LD_PRELOAD for per-file
  *       error injection (EIO, ENOSPC), latency, torn writes, and data corruption.
  *       Requires {@link SyscallFaultInjector#prepare} before container start.
  * </ul>
+ *
+ * <h2>Cross-distro compatibility</h2>
+ *
+ * <p>All shell commands are built via {@link DiskCommandBuilder} — an interface whose
+ * {@link StressNgDiskCommandBuilder} implementation uses only POSIX-compatible tools
+ * ({@code /proc/comm}, {@code df -P}, {@code awk}) that work on both GNU coreutils
+ * (Debian/Ubuntu/RHEL) and BusyBox (Alpine).
  *
  * <h2>Usage</h2>
  *
@@ -65,6 +74,24 @@ public final class CgroupsDiskChaos implements DiskChaos {
   /** Pattern for valid size strings (e.g. "500M", "2G", "100K"). */
   private static final Pattern VALID_SIZE = Pattern.compile("^\\d+[KMG]$");
 
+  private final DiskCommandBuilder commands;
+
+  /** Creates a {@code CgroupsDiskChaos} using the default {@link StressNgDiskCommandBuilder}. */
+  public CgroupsDiskChaos() {
+    this(StressNgDiskCommandBuilder.INSTANCE);
+  }
+
+  /**
+   * Creates a {@code CgroupsDiskChaos} with a custom {@link DiskCommandBuilder}.
+   *
+   * <p>Use this constructor in tests to inject a mock or alternative implementation.
+   *
+   * @param commands command builder (must not be null)
+   */
+  public CgroupsDiskChaos(final DiskCommandBuilder commands) {
+    this.commands = Objects.requireNonNull(commands, "commands must not be null");
+  }
+
   // ==================== Stress ====================
 
   @Override
@@ -77,9 +104,7 @@ public final class CgroupsDiskChaos implements DiskChaos {
     installTools(container);
     killStressNg(container);
 
-    exec(container,
-        String.format("stress-ng --hdd %d --timeout 0 >/dev/null 2>&1 &", workers),
-        "disk stress");
+    exec(container, commands.buildStressHddCommand(workers), "disk stress");
     log.info("Started disk stress: {} workers", workers);
   }
 
@@ -99,8 +124,7 @@ public final class CgroupsDiskChaos implements DiskChaos {
     killStressNg(container);
 
     exec(container,
-        String.format("stress-ng --hdd %d --timeout %ds >/dev/null 2>&1 &",
-            workers, duration.toSeconds()),
+        commands.buildStressHddWithTimeoutCommand(workers, duration.toSeconds()),
         "disk stress with duration");
     log.info("Started disk stress: {} workers for {}s", workers, duration.toSeconds());
   }
@@ -120,25 +144,17 @@ public final class CgroupsDiskChaos implements DiskChaos {
     validateRunning(container);
 
     try {
-      final var dfResult = container.execInContainer("df", "-k", mountPoint);
+      final var dfResult = container.execInContainer(
+          Shell.SH, Shell.FLAG_C, commands.buildGetDiskTotalKBCommand(mountPoint));
       if (dfResult.getExitCode() != 0) {
         throw new ChaosOperationFailedException("Failed to get disk size: " + dfResult.getStderr());
       }
 
-      final String[] lines = dfResult.getStdout().split("\n");
-      if (lines.length < 2) {
-        throw new ChaosOperationFailedException("Failed to parse df output");
-      }
-
-      final String[] fields = lines[1].trim().split("\\s+");
-      final long totalKB = Long.parseLong(fields[1]);
+      final long totalKB = Long.parseLong(dfResult.getStdout().trim());
       final long fillKB = (totalKB * percentage) / 100;
       final String loadFile = mountPoint + "/chaos-disk-load";
 
-      exec(container,
-          String.format("rm -f %s && dd if=/dev/zero of=%s bs=1K count=%d 2>&1",
-              loadFile, loadFile, fillKB),
-          "fill disk");
+      exec(container, commands.buildFillDiskByCountKBCommand(loadFile, fillKB), "fill disk");
       log.info("Filled {} to {}% ({} KB)", mountPoint, percentage, fillKB);
     } catch (final ChaosOperationFailedException e) {
       throw e;
@@ -159,8 +175,7 @@ public final class CgroupsDiskChaos implements DiskChaos {
 
     final String loadFile = mountPoint + "/chaos-disk-load";
     exec(container,
-        String.format("rm -f %s && fallocate -l %s %s 2>/dev/null || dd if=/dev/zero of=%s bs=1M count=%d 2>&1",
-            loadFile, size, loadFile, loadFile, parseSizeMB(size)),
+        commands.buildFillDiskBySizeCommand(loadFile, size, parseSizeMB(size)),
         "fill disk by size");
     log.info("Filled {} with {}", mountPoint, size);
   }
@@ -230,14 +245,12 @@ public final class CgroupsDiskChaos implements DiskChaos {
     validateRunning(container);
 
     try {
-      final var result = container.execInContainer("df", "--output=pcent", mountPoint);
+      final var result = container.execInContainer(
+          Shell.SH, Shell.FLAG_C, commands.buildGetDiskUsagePercentCommand(mountPoint));
       if (result.getExitCode() != 0) {
         throw new ChaosOperationFailedException("df failed: " + result.getStderr());
       }
-      // Output: "Use%\n 42%\n"
-      final String output = result.getStdout().trim();
-      final String lastLine = output.substring(output.lastIndexOf('\n') + 1).trim();
-      return Integer.parseInt(lastLine.replace("%", ""));
+      return Integer.parseInt(result.getStdout().trim());
     } catch (final ChaosOperationFailedException e) {
       throw e;
     } catch (final Exception e) {
@@ -251,8 +264,8 @@ public final class CgroupsDiskChaos implements DiskChaos {
     if (!container.isRunning()) return false;
 
     try {
-      final var result = container.execInContainer(Shell.SH, Shell.FLAG_C,
-          "grep -rl '^stress-ng' /proc/[0-9]*/comm 2>/dev/null | grep -q .");
+      final var result = container.execInContainer(
+          Shell.SH, Shell.FLAG_C, commands.buildIsStressedCommand());
       return result.getExitCode() == 0;
     } catch (final Exception e) {
       return false;
@@ -275,8 +288,7 @@ public final class CgroupsDiskChaos implements DiskChaos {
 
     // Remove disk fill files
     try {
-      container.execInContainer(Shell.SH, Shell.FLAG_C,
-          "find / -name 'chaos-disk-load' -delete 2>/dev/null || true");
+      container.execInContainer(Shell.SH, Shell.FLAG_C, commands.buildRemoveFillFilesCommand());
     } catch (final Exception e) {
       log.warn("Failed to remove chaos-disk-load files: {}", e.getMessage());
     }
@@ -313,9 +325,7 @@ public final class CgroupsDiskChaos implements DiskChaos {
 
   private void killStressNg(final GenericContainer<?> container) {
     try {
-      container.execInContainer(Shell.SH, Shell.FLAG_C,
-          "for f in $(grep -rl '^stress-ng' /proc/[0-9]*/comm 2>/dev/null); do "
-              + "p=\"${f%%/comm}\"; p=\"${p##*/}\"; kill -9 \"$p\" 2>/dev/null; done; true");
+      container.execInContainer(Shell.SH, Shell.FLAG_C, commands.buildKillStressNgCommand());
     } catch (final Exception ignored) {
       // no stress-ng running
     }

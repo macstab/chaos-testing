@@ -35,10 +35,12 @@ class CgroupsCpuChaosAlpineTest {
   void setUp() {
     container =
         new GenericContainer<>(DockerImageName.parse("redis:7.4-alpine"))
-            .withCreateContainerCmdModifier(cmd -> {
-                cmd.withCapAdd(Capability.SYS_NICE);
-                cmd.getHostConfig().withInit(Boolean.TRUE);  // tini as PID 1 — reaps orphaned stress-ng zombies
-            });
+            .withCreateContainerCmdModifier(
+                cmd -> {
+                  cmd.withCapAdd(Capability.SYS_NICE);
+                  cmd.getHostConfig()
+                      .withInit(Boolean.TRUE); // tini as PID 1 — reaps orphaned stress-ng zombies
+                });
     container.start();
     chaos = new CgroupsCpuChaos();
   }

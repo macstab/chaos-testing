@@ -61,7 +61,7 @@ import lombok.extern.slf4j.Slf4j;
 public final class SyscallFaultInjector {
 
   /** Path inside the container where the .so is deployed. */
-  static final String LIBRARY_PATH = "/tmp/libchaos-io.so";
+  public static final String LIBRARY_PATH = "/usr/local/lib/libchaos-io.so";
 
   /** Path inside the container for the runtime config file. */
   static final String CONFIG_PATH = "/tmp/.chaos-io.conf";
@@ -129,7 +129,7 @@ public final class SyscallFaultInjector {
     Objects.requireNonNull(rule, "rule must not be null");
     validateActive(container);
 
-    final String fullRule = owner + ":" + rule;
+    final String fullRule = rule + " # " + owner;
     execSilent(container, String.format("echo '%s' >> %s", fullRule, CONFIG_PATH));
     log.debug("Added syscall rule: {}", fullRule);
   }
@@ -151,7 +151,7 @@ public final class SyscallFaultInjector {
 
     final var sb = new StringBuilder();
     for (final String rule : rules) {
-      sb.append(owner).append(':').append(rule).append('\n');
+      sb.append(rule).append(" # ").append(owner).append('\n');
     }
     execSilent(container, String.format("printf '%%s' '%s' >> %s",
         sb.toString().replace("'", "'\\''"), CONFIG_PATH));
@@ -172,7 +172,7 @@ public final class SyscallFaultInjector {
     Objects.requireNonNull(owner, "owner must not be null");
     validateActive(container);
 
-    execSilent(container, String.format("sed -i '/^%s:/d' %s 2>/dev/null || true",
+    execSilent(container, String.format("sed -i '/# %s$/d' %s 2>/dev/null || true",
         owner, CONFIG_PATH));
     log.debug("Removed syscall rules for owner '{}'", owner);
   }

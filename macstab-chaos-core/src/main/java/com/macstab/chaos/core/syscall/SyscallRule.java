@@ -54,7 +54,7 @@ public final class SyscallRule {
     validateOperation(operation);
     Objects.requireNonNull(errno, "errno must not be null");
     validateProbability(probability);
-    return new SyscallRule(String.format("%s:%s:ERRNO:%s:%.4f", path, operation, errno, probability));
+    return new SyscallRule(String.format("%s:%s:%s:%.4f", path, operation, errno, probability));
   }
 
   /**
