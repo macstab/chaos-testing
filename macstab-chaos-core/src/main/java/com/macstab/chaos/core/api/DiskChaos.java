@@ -1,15 +1,23 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.core.api;
 
+import java.time.Duration;
+
 import org.testcontainers.containers.GenericContainer;
 
 /**
  * Disk I/O chaos injection interface.
  *
- * <p>Provides I/O bandwidth limits, IOPS limits, and disk stress using cgroups v2 ({@code io.max})
- * and {@code stress-ng}.
+ * <p>Provides three categories of disk chaos:
  *
- * <p><strong>Real Implementation:</strong> Add dependency:
+ * <ul>
+ *   <li><strong>Stress</strong> — generate heavy I/O load via {@code stress-ng}
+ *   <li><strong>Fill</strong> — consume disk space to test ENOSPC handling
+ *   <li><strong>Syscall fault injection</strong> — inject errors, latency, torn writes,
+ *       and data corruption at the POSIX syscall level via {@code libchaos-io} LD_PRELOAD.
+ *       These require {@link com.macstab.chaos.core.syscall.SyscallFaultInjector#prepare}
+ *       to be called before container start.
+ * </ul>
  *
  * <pre>{@code
  * testImplementation("com.macstab.chaos:macstab-chaos-disk:1.0.0")
@@ -19,54 +27,108 @@ import org.testcontainers.containers.GenericContainer;
  */
 public interface DiskChaos extends ChaosProvider {
 
-  /**
-   * Limit write bandwidth (bytes per second).
-   *
-   * <p>Uses cgroups v2 {@code io.max} (wbps=&lt;bytes&gt;).
-   *
-   * @param container target container
-   * @param bytesPerSecond write limit (e.g., "10M", "1G")
-   */
-  void limitWriteBandwidth(GenericContainer<?> container, String bytesPerSecond);
+  // ==================== Stress ====================
 
   /**
-   * Limit read bandwidth (bytes per second).
+   * Inject disk I/O stress (heavy sequential read/write via stress-ng --hdd).
    *
    * @param container target container
-   * @param bytesPerSecond read limit
+   * @param workers   number of disk workers
    */
-  void limitReadBandwidth(GenericContainer<?> container, String bytesPerSecond);
+  void stressDisk(GenericContainer<?> container, int workers);
 
   /**
-   * Limit read IOPS (operations per second).
+   * Inject disk I/O stress with automatic timeout.
    *
    * @param container target container
-   * @param iops read IOPS limit
+   * @param workers   number of disk workers
+   * @param duration  auto-stop after this duration
    */
-  void limitReadIOPS(GenericContainer<?> container, int iops);
+  void stressDisk(GenericContainer<?> container, int workers, Duration duration);
+
+  // ==================== Fill ====================
 
   /**
-   * Limit write IOPS.
+   * Fill disk to percentage using {@code dd} or {@code fallocate}.
    *
-   * @param container target container
-   * @param iops write IOPS limit
-   */
-  void limitWriteIOPS(GenericContainer<?> container, int iops);
-
-  /**
-   * Fill disk to percentage (stress-ng --hdd).
-   *
-   * @param container target container
+   * @param container  target container
    * @param mountPoint disk mount point ("/data", "/")
-   * @param percentage fill to this percentage (0-100)
+   * @param percentage fill to this percentage (1-95)
    */
   void fillDisk(GenericContainer<?> container, String mountPoint, int percentage);
 
   /**
-   * Inject disk I/O stress (heavy read/write).
+   * Fill disk by absolute size using {@code fallocate}.
+   *
+   * @param container  target container
+   * @param mountPoint disk mount point
+   * @param size       size string (e.g. "500M", "2G")
+   */
+  void fillDiskBySize(GenericContainer<?> container, String mountPoint, String size);
+
+  // ==================== Syscall Fault Injection ====================
+
+  /**
+   * Inject I/O errors on disk operations at the syscall level.
+   *
+   * <p>Requires {@link com.macstab.chaos.core.syscall.SyscallFaultInjector#prepare}
+   * before container start.
+   *
+   * @param container   target container
+   * @param path        path prefix to match (e.g. "/data")
+   * @param operation   syscall: "read", "write", "fsync", "fdatasync", "open", "close"
+   * @param errno       error code: "EIO", "ENOSPC", "EDQUOT", "EROFS", "EACCES"
+   * @param probability trigger probability 0.0-1.0
+   */
+  void injectIOError(
+      GenericContainer<?> container, String path, String operation,
+      String errno, double probability);
+
+  /**
+   * Inject latency on disk operations at the syscall level.
    *
    * @param container target container
-   * @param workers number of disk workers
+   * @param path      path prefix to match
+   * @param operation syscall name
+   * @param latency   delay per operation
    */
-  void stressDisk(GenericContainer<?> container, int workers);
+  void injectIOLatency(
+      GenericContainer<?> container, String path, String operation, Duration latency);
+
+  /**
+   * Inject torn (partial) writes — simulates power loss mid-write.
+   *
+   * @param container   target container
+   * @param path        path prefix to match
+   * @param probability trigger probability 0.0-1.0
+   */
+  void injectTornWrite(GenericContainer<?> container, String path, double probability);
+
+  /**
+   * Inject data corruption on reads — flips random bits in returned buffers.
+   *
+   * @param container   target container
+   * @param path        path prefix to match
+   * @param probability trigger probability 0.0-1.0
+   */
+  void injectCorruptRead(GenericContainer<?> container, String path, double probability);
+
+  // ==================== Observability ====================
+
+  /**
+   * Get current disk usage percentage for a mount point.
+   *
+   * @param container  target container
+   * @param mountPoint mount point to check
+   * @return usage percentage 0-100
+   */
+  int getDiskUsagePercent(GenericContainer<?> container, String mountPoint);
+
+  /**
+   * Check if disk stress is currently active.
+   *
+   * @param container target container
+   * @return true if stress-ng hdd workers are running
+   */
+  boolean isStressed(GenericContainer<?> container);
 }

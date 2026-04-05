@@ -1,6 +1,8 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.core.defaults;
 
+import java.time.Duration;
+
 import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.api.DiskChaos;
@@ -21,22 +23,12 @@ public final class NoOpDiskChaos implements DiskChaos {
       "Disk chaos not available. Add: " + ChaosVersion.formatDependency("macstab-chaos-disk");
 
   @Override
-  public void limitWriteBandwidth(final GenericContainer<?> c, final String b) {
+  public void stressDisk(final GenericContainer<?> c, final int w) {
     throw new ChaosProviderNotFoundException(ERROR_MESSAGE);
   }
 
   @Override
-  public void limitReadBandwidth(final GenericContainer<?> c, final String b) {
-    throw new ChaosProviderNotFoundException(ERROR_MESSAGE);
-  }
-
-  @Override
-  public void limitReadIOPS(final GenericContainer<?> c, final int i) {
-    throw new ChaosProviderNotFoundException(ERROR_MESSAGE);
-  }
-
-  @Override
-  public void limitWriteIOPS(final GenericContainer<?> c, final int i) {
+  public void stressDisk(final GenericContainer<?> c, final int w, final Duration d) {
     throw new ChaosProviderNotFoundException(ERROR_MESSAGE);
   }
 
@@ -46,7 +38,37 @@ public final class NoOpDiskChaos implements DiskChaos {
   }
 
   @Override
-  public void stressDisk(final GenericContainer<?> c, final int w) {
+  public void fillDiskBySize(final GenericContainer<?> c, final String m, final String s) {
+    throw new ChaosProviderNotFoundException(ERROR_MESSAGE);
+  }
+
+  @Override
+  public void injectIOError(final GenericContainer<?> c, final String p, final String o, final String e, final double pr) {
+    throw new ChaosProviderNotFoundException(ERROR_MESSAGE);
+  }
+
+  @Override
+  public void injectIOLatency(final GenericContainer<?> c, final String p, final String o, final Duration l) {
+    throw new ChaosProviderNotFoundException(ERROR_MESSAGE);
+  }
+
+  @Override
+  public void injectTornWrite(final GenericContainer<?> c, final String p, final double pr) {
+    throw new ChaosProviderNotFoundException(ERROR_MESSAGE);
+  }
+
+  @Override
+  public void injectCorruptRead(final GenericContainer<?> c, final String p, final double pr) {
+    throw new ChaosProviderNotFoundException(ERROR_MESSAGE);
+  }
+
+  @Override
+  public int getDiskUsagePercent(final GenericContainer<?> c, final String m) {
+    throw new ChaosProviderNotFoundException(ERROR_MESSAGE);
+  }
+
+  @Override
+  public boolean isStressed(final GenericContainer<?> c) {
     throw new ChaosProviderNotFoundException(ERROR_MESSAGE);
   }
 
