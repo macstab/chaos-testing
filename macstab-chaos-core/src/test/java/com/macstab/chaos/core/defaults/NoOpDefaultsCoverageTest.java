@@ -11,6 +11,8 @@ import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.exception.ChaosProviderNotFoundException;
 import com.macstab.chaos.core.model.Signal;
+import com.macstab.chaos.core.syscall.DiskErrno;
+import com.macstab.chaos.core.syscall.DiskOperation;
 
 /**
  * Coverage tests for all NoOp default implementations.
@@ -92,26 +94,46 @@ class NoOpDefaultsCoverageTest {
     final NoOpDiskChaos sut = new NoOpDiskChaos();
 
     @Test
-    void limitWriteBandwidth_throws() {
-      assertThatThrownBy(() -> sut.limitWriteBandwidth(container, "10MB/s"))
+    void prepareForFaultInjection_throws() {
+      assertThatThrownBy(() -> sut.prepareForFaultInjection(container))
           .isInstanceOf(ChaosProviderNotFoundException.class);
     }
 
     @Test
-    void limitReadBandwidth_throws() {
-      assertThatThrownBy(() -> sut.limitReadBandwidth(container, "10MB/s"))
+    void resetFaultInjection_throws() {
+      assertThatThrownBy(() -> sut.resetFaultInjection(container))
           .isInstanceOf(ChaosProviderNotFoundException.class);
     }
 
     @Test
-    void limitReadIOPS_throws() {
-      assertThatThrownBy(() -> sut.limitReadIOPS(container, 100))
+    void isFaultInjectionActive_throws() {
+      assertThatThrownBy(() -> sut.isFaultInjectionActive(container))
           .isInstanceOf(ChaosProviderNotFoundException.class);
     }
 
     @Test
-    void limitWriteIOPS_throws() {
-      assertThatThrownBy(() -> sut.limitWriteIOPS(container, 100))
+    void injectIOError_throws() {
+      assertThatThrownBy(() -> sut.injectIOError(
+              container, "/data", DiskOperation.WRITE, DiskErrno.EIO, 0.5))
+          .isInstanceOf(ChaosProviderNotFoundException.class);
+    }
+
+    @Test
+    void injectIOLatency_throws() {
+      assertThatThrownBy(() -> sut.injectIOLatency(
+              container, "/data", DiskOperation.FSYNC, Duration.ofMillis(100)))
+          .isInstanceOf(ChaosProviderNotFoundException.class);
+    }
+
+    @Test
+    void injectTornWrite_throws() {
+      assertThatThrownBy(() -> sut.injectTornWrite(container, "/data", 0.1))
+          .isInstanceOf(ChaosProviderNotFoundException.class);
+    }
+
+    @Test
+    void injectCorruptRead_throws() {
+      assertThatThrownBy(() -> sut.injectCorruptRead(container, "/data", 0.1))
           .isInstanceOf(ChaosProviderNotFoundException.class);
     }
 

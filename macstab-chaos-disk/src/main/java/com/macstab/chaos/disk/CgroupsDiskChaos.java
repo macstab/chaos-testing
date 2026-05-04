@@ -12,6 +12,8 @@ import com.macstab.chaos.core.command.disk.DiskCommandBuilder;
 import com.macstab.chaos.core.exception.ChaosConfigurationException;
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
 import com.macstab.chaos.core.platform.Tool;
+import com.macstab.chaos.core.syscall.DiskErrno;
+import com.macstab.chaos.core.syscall.DiskOperation;
 import com.macstab.chaos.core.syscall.SyscallFaultInjector;
 import com.macstab.chaos.core.syscall.SyscallRule;
 import com.macstab.chaos.core.util.PackageInstaller;
@@ -180,12 +182,38 @@ public final class CgroupsDiskChaos implements DiskChaos {
     log.info("Filled {} with {}", mountPoint, size);
   }
 
-  // ==================== Syscall Fault Injection ====================
+  // ==================== Syscall Fault Injection — lifecycle ====================
+
+  @Override
+  public void prepareForFaultInjection(final GenericContainer<?> container) {
+    Objects.requireNonNull(container, "container must not be null");
+    SyscallFaultInjector.prepare(container);
+  }
+
+  @Override
+  public void resetFaultInjection(final GenericContainer<?> container) {
+    Objects.requireNonNull(container, "container must not be null");
+    if (SyscallFaultInjector.isActive(container)) {
+      SyscallFaultInjector.removeRules(container, OWNER);
+      log.info("Reset disk fault injection rules");
+    }
+  }
+
+  @Override
+  public boolean isFaultInjectionActive(final GenericContainer<?> container) {
+    Objects.requireNonNull(container, "container must not be null");
+    return SyscallFaultInjector.isActive(container);
+  }
+
+  // ==================== Syscall Fault Injection — effects ====================
 
   @Override
   public void injectIOError(
-      final GenericContainer<?> container, final String path, final String operation,
-      final String errno, final double probability) {
+      final GenericContainer<?> container,
+      final String path,
+      final DiskOperation operation,
+      final DiskErrno errno,
+      final double probability) {
     Objects.requireNonNull(container, "container must not be null");
     Objects.requireNonNull(path, "path must not be null");
     Objects.requireNonNull(operation, "operation must not be null");
@@ -193,22 +221,29 @@ public final class CgroupsDiskChaos implements DiskChaos {
     validateRunning(container);
 
     SyscallFaultInjector.addRule(container, OWNER,
-        SyscallRule.errno(path, operation, errno, probability).build());
-    log.info("Injected IO error: {}:{} -> {} at {:.0%}", path, operation, errno, probability);
+        SyscallRule.errno(path, operation.toLibchaosToken(), errno.toLibchaosToken(), probability)
+            .build());
+    log.info("Injected IO error: {}:{} -> {} @ {}%",
+        path, operation, errno, (int) (probability * 100));
   }
 
   @Override
   public void injectIOLatency(
-      final GenericContainer<?> container, final String path,
-      final String operation, final Duration latency) {
+      final GenericContainer<?> container,
+      final String path,
+      final DiskOperation operation,
+      final Duration latency) {
     Objects.requireNonNull(container, "container must not be null");
     Objects.requireNonNull(path, "path must not be null");
     Objects.requireNonNull(operation, "operation must not be null");
     Objects.requireNonNull(latency, "latency must not be null");
+    if (latency.isNegative()) {
+      throw new ChaosConfigurationException("latency must not be negative: " + latency);
+    }
     validateRunning(container);
 
     SyscallFaultInjector.addRule(container, OWNER,
-        SyscallRule.latency(path, operation, latency.toMillis()).build());
+        SyscallRule.latency(path, operation.toLibchaosToken(), latency.toMillis()).build());
     log.info("Injected IO latency: {}:{} -> {}ms", path, operation, latency.toMillis());
   }
 
@@ -220,8 +255,8 @@ public final class CgroupsDiskChaos implements DiskChaos {
     validateRunning(container);
 
     SyscallFaultInjector.addRule(container, OWNER,
-        SyscallRule.torn(path, "write", probability).build());
-    log.info("Injected torn writes: {} at {:.0%}", path, probability);
+        SyscallRule.torn(path, DiskOperation.WRITE.toLibchaosToken(), probability).build());
+    log.info("Injected torn writes: {} @ {}%", path, (int) (probability * 100));
   }
 
   @Override
@@ -232,8 +267,8 @@ public final class CgroupsDiskChaos implements DiskChaos {
     validateRunning(container);
 
     SyscallFaultInjector.addRule(container, OWNER,
-        SyscallRule.corrupt(path, "read", probability).build());
-    log.info("Injected corrupt reads: {} at {:.0%}", path, probability);
+        SyscallRule.corrupt(path, DiskOperation.READ.toLibchaosToken(), probability).build());
+    log.info("Injected corrupt reads: {} @ {}%", path, (int) (probability * 100));
   }
 
   // ==================== Observability ====================
@@ -293,10 +328,7 @@ public final class CgroupsDiskChaos implements DiskChaos {
       log.warn("Failed to remove chaos-disk-load files: {}", e.getMessage());
     }
 
-    // Remove syscall fault injection rules for disk module
-    if (SyscallFaultInjector.isActive(container)) {
-      SyscallFaultInjector.removeRules(container, OWNER);
-    }
+    resetFaultInjection(container);
 
     log.info("Reset disk chaos");
   }

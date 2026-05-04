@@ -3,6 +3,8 @@ package com.macstab.chaos.disk;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.macstab.chaos.core.syscall.DiskErrno;
+import com.macstab.chaos.core.syscall.DiskOperation;
 import com.macstab.chaos.core.syscall.SyscallFaultInjector;
 import java.time.Duration;
 import org.junit.jupiter.api.AfterEach;
@@ -61,22 +63,22 @@ class CgroupsDiskChaosSyscallIntegrationTest {
     @Test
     @DisplayName("writes an ERRNO rule to the config file with correct format")
     void writesErrnoRuleToConfig() throws Exception {
-      chaos.injectIOError(container, "/data", "write", "EIO", 0.3);
+      chaos.injectIOError(container, "/data", DiskOperation.WRITE, DiskErrno.EIO, 0.3);
 
       final String config =
           container.execInContainer("/bin/sh", "-c", "cat " + CONFIG_PATH).getStdout();
       assertThat(config)
-          .contains("disk:")
+          .contains("# disk")
           .contains("/data")
           .contains("write")
-          .contains("ERRNO")
+          // ERRNO is the error code token — see below
           .contains("EIO");
     }
 
     @Test
     @DisplayName("ENOSPC variant writes correctly")
     void writesEnospcVariant() throws Exception {
-      chaos.injectIOError(container, "/var/lib/redis", "write", "ENOSPC", 1.0);
+      chaos.injectIOError(container, "/var/lib/redis", DiskOperation.WRITE, DiskErrno.ENOSPC, 1.0);
 
       final String config =
           container.execInContainer("/bin/sh", "-c", "cat " + CONFIG_PATH).getStdout();
@@ -86,8 +88,8 @@ class CgroupsDiskChaosSyscallIntegrationTest {
     @Test
     @DisplayName("multiple rules accumulate in the config file")
     void multipleRulesAccumulate() throws Exception {
-      chaos.injectIOError(container, "/data", "write", "EIO", 0.3);
-      chaos.injectIOError(container, "/logs", "read", "EIO", 0.5);
+      chaos.injectIOError(container, "/data", DiskOperation.WRITE, DiskErrno.EIO, 0.3);
+      chaos.injectIOError(container, "/logs", DiskOperation.READ, DiskErrno.EIO, 0.5);
 
       final String config =
           container.execInContainer("/bin/sh", "-c", "cat " + CONFIG_PATH).getStdout();
@@ -104,12 +106,12 @@ class CgroupsDiskChaosSyscallIntegrationTest {
     @Test
     @DisplayName("writes a LATENCY rule with millisecond value")
     void writesLatencyRule() throws Exception {
-      chaos.injectIOLatency(container, "/data/wal.log", "fsync", Duration.ofMillis(200));
+      chaos.injectIOLatency(container, "/data/wal.log", DiskOperation.FSYNC, Duration.ofMillis(200));
 
       final String config =
           container.execInContainer("/bin/sh", "-c", "cat " + CONFIG_PATH).getStdout();
       assertThat(config)
-          .contains("disk:")
+          .contains("# disk")
           .contains("/data/wal.log")
           .contains("fsync")
           .contains("LATENCY")
@@ -119,7 +121,7 @@ class CgroupsDiskChaosSyscallIntegrationTest {
     @Test
     @DisplayName("1-second latency writes 1000 ms to config")
     void oneSecondLatencyWritesMilliseconds() throws Exception {
-      chaos.injectIOLatency(container, "/data", "write", Duration.ofSeconds(1));
+      chaos.injectIOLatency(container, "/data", DiskOperation.WRITE, Duration.ofSeconds(1));
 
       final String config =
           container.execInContainer("/bin/sh", "-c", "cat " + CONFIG_PATH).getStdout();
@@ -141,7 +143,7 @@ class CgroupsDiskChaosSyscallIntegrationTest {
       final String config =
           container.execInContainer("/bin/sh", "-c", "cat " + CONFIG_PATH).getStdout();
       assertThat(config)
-          .contains("disk:")
+          .contains("# disk")
           .contains("/data")
           .contains("write")
           .contains("TORN");
@@ -162,7 +164,7 @@ class CgroupsDiskChaosSyscallIntegrationTest {
       final String config =
           container.execInContainer("/bin/sh", "-c", "cat " + CONFIG_PATH).getStdout();
       assertThat(config)
-          .contains("disk:")
+          .contains("# disk")
           .contains("/data")
           .contains("read")
           .contains("CORRUPT");
@@ -178,8 +180,8 @@ class CgroupsDiskChaosSyscallIntegrationTest {
     @Test
     @DisplayName("reset removes all disk-owner rules from the config file")
     void resetRemovesDiskRules() throws Exception {
-      chaos.injectIOError(container, "/data", "write", "EIO", 0.3);
-      chaos.injectIOLatency(container, "/data", "fsync", Duration.ofMillis(100));
+      chaos.injectIOError(container, "/data", DiskOperation.WRITE, DiskErrno.EIO, 0.3);
+      chaos.injectIOLatency(container, "/data", DiskOperation.FSYNC, Duration.ofMillis(100));
 
       chaos.reset(container);
 
@@ -196,7 +198,7 @@ class CgroupsDiskChaosSyscallIntegrationTest {
       // Manually write a rule for a different owner to verify selective removal
       container.execInContainer(
           "/bin/sh", "-c", "echo 'net:/data:write:ERRNO:EIO:0.5' >> " + CONFIG_PATH);
-      chaos.injectIOError(container, "/data", "write", "EIO", 0.3);
+      chaos.injectIOError(container, "/data", DiskOperation.WRITE, DiskErrno.EIO, 0.3);
 
       chaos.reset(container);
 

@@ -4,6 +4,8 @@ package com.macstab.chaos.disk;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.dockerjava.api.model.Capability;
+import com.macstab.chaos.core.syscall.DiskErrno;
+import com.macstab.chaos.core.syscall.DiskOperation;
 import com.macstab.chaos.core.syscall.SyscallFaultInjector;
 import java.time.Duration;
 import java.util.Map;
@@ -259,7 +261,7 @@ class CgroupsDiskChaosEndToEndTest {
       container = debianWithLibchaosIo("/chaos-io-data", "50m");
       chaos = new CgroupsDiskChaos();
 
-      chaos.injectIOError(container, "/chaos-io-data", "write", "EIO", 1.0);
+      chaos.injectIOError(container, "/chaos-io-data", DiskOperation.WRITE, DiskErrno.EIO, 1.0);
 
       final var result = container.execInContainer(
           "/bin/sh", "-c",
@@ -278,7 +280,7 @@ class CgroupsDiskChaosEndToEndTest {
       container = debianWithLibchaosIo("/chaos-io-data", "50m");
       chaos = new CgroupsDiskChaos();
 
-      chaos.injectIOError(container, "/chaos-io-data", "write", "ENOSPC", 1.0);
+      chaos.injectIOError(container, "/chaos-io-data", DiskOperation.WRITE, DiskErrno.ENOSPC, 1.0);
 
       final var result = container.execInContainer(
           "/bin/sh", "-c",
@@ -297,7 +299,7 @@ class CgroupsDiskChaosEndToEndTest {
       container = debianWithLibchaosIo("/chaos-io-data", "50m");
       chaos = new CgroupsDiskChaos();
 
-      chaos.injectIOError(container, "/chaos-io-data", "write", "EACCES", 1.0);
+      chaos.injectIOError(container, "/chaos-io-data", DiskOperation.WRITE, DiskErrno.EACCES, 1.0);
 
       final var result = container.execInContainer(
           "/bin/sh", "-c",
@@ -316,7 +318,7 @@ class CgroupsDiskChaosEndToEndTest {
       container = debianWithLibchaosIo("/chaos-io-data", "50m");
       chaos = new CgroupsDiskChaos();
 
-      chaos.injectIOError(container, "/chaos-io-data", "write", "EROFS", 1.0);
+      chaos.injectIOError(container, "/chaos-io-data", DiskOperation.WRITE, DiskErrno.EROFS, 1.0);
 
       final var result = container.execInContainer(
           "/bin/sh", "-c",
@@ -335,7 +337,7 @@ class CgroupsDiskChaosEndToEndTest {
       container = debianWithLibchaosIo("/chaos-io-data", "50m");
       chaos = new CgroupsDiskChaos();
 
-      chaos.injectIOError(container, "/chaos-io-data", "write", "EDQUOT", 1.0);
+      chaos.injectIOError(container, "/chaos-io-data", DiskOperation.WRITE, DiskErrno.EDQUOT, 1.0);
 
       final var result = container.execInContainer(
           "/bin/sh", "-c",
@@ -361,7 +363,7 @@ class CgroupsDiskChaosEndToEndTest {
       container = debianWithLibchaosIo("/chaos-io-data", "50m");
       chaos = new CgroupsDiskChaos();
 
-      chaos.injectIOError(container, "/chaos-io-data", "write", "EIO", 1.0);
+      chaos.injectIOError(container, "/chaos-io-data", DiskOperation.WRITE, DiskErrno.EIO, 1.0);
 
       final var r = container.execInContainer(
           "/bin/sh", "-c",
@@ -383,7 +385,7 @@ class CgroupsDiskChaosEndToEndTest {
       container.start();
       chaos = new CgroupsDiskChaos();
 
-      chaos.injectIOError(container, "/chaos-io-data", "pwrite", "EIO", 1.0);
+      chaos.injectIOError(container, "/chaos-io-data", DiskOperation.PWRITE, DiskErrno.EIO, 1.0);
 
       final var r = container.execInContainer(
           "/bin/sh", "-c",
@@ -409,7 +411,7 @@ class CgroupsDiskChaosEndToEndTest {
           "dd if=/dev/zero of=/chaos-io-data/existing.dat bs=1K count=10 2>/dev/null");
 
       // Now inject read error
-      chaos.injectIOError(container, "/chaos-io-data", "read", "EIO", 1.0);
+      chaos.injectIOError(container, "/chaos-io-data", DiskOperation.READ, DiskErrno.EIO, 1.0);
 
       // Reading the file must fail
       final var r = container.execInContainer(
@@ -427,7 +429,7 @@ class CgroupsDiskChaosEndToEndTest {
       container.execInContainer("/bin/sh", "-c",
           "dd if=/dev/zero of=/chaos-io-data/existing.dat bs=4K count=4 2>/dev/null");
 
-      chaos.injectIOError(container, "/chaos-io-data", "pread", "EIO", 1.0);
+      chaos.injectIOError(container, "/chaos-io-data", DiskOperation.PREAD, DiskErrno.EIO, 1.0);
 
       final var r = container.execInContainer(
           "/bin/sh", "-c",
@@ -445,7 +447,7 @@ class CgroupsDiskChaosEndToEndTest {
       container.execInContainer("/bin/sh", "-c",
           "echo hello > /chaos-io-data/target.txt");
 
-      chaos.injectIOError(container, "/chaos-io-data", "open", "EIO", 1.0);
+      chaos.injectIOError(container, "/chaos-io-data", DiskOperation.OPEN, DiskErrno.EIO, 1.0);
 
       // Any tool that opens a file in /chaos-io-data should fail
       final var r = container.execInContainer(
@@ -460,7 +462,7 @@ class CgroupsDiskChaosEndToEndTest {
       container = debianWithLibchaosIo("/chaos-io-data", "50m");
       chaos = new CgroupsDiskChaos();
 
-      chaos.injectIOError(container, "/chaos-io-data", "fsync", "EIO", 1.0);
+      chaos.injectIOError(container, "/chaos-io-data", DiskOperation.FSYNC, DiskErrno.EIO, 1.0);
 
       // conv=fsync forces an explicit fsync after write
       final var r = container.execInContainer(
@@ -475,7 +477,7 @@ class CgroupsDiskChaosEndToEndTest {
       container = debianWithLibchaosIo("/chaos-io-data", "50m");
       chaos = new CgroupsDiskChaos();
 
-      chaos.injectIOError(container, "/chaos-io-data", "fdatasync", "EIO", 1.0);
+      chaos.injectIOError(container, "/chaos-io-data", DiskOperation.FDATASYNC, DiskErrno.EIO, 1.0);
 
       final var r = container.execInContainer(
           "/bin/sh", "-c",
@@ -489,8 +491,8 @@ class CgroupsDiskChaosEndToEndTest {
       container = debianWithLibchaosIo("/chaos-io-data", "50m");
       chaos = new CgroupsDiskChaos();
 
-      chaos.injectIOError(container, "/chaos-io-data", "write", "EIO", 1.0);
-      chaos.injectIOError(container, "/chaos-io-data", "fsync", "EIO", 1.0);
+      chaos.injectIOError(container, "/chaos-io-data", DiskOperation.WRITE, DiskErrno.EIO, 1.0);
+      chaos.injectIOError(container, "/chaos-io-data", DiskOperation.FSYNC, DiskErrno.EIO, 1.0);
 
       // Both injected — writes fail
       final var before = container.execInContainer(
@@ -520,7 +522,7 @@ class CgroupsDiskChaosEndToEndTest {
       container = debianWithLibchaosIo("/chaos-io-data", "50m");
       chaos = new CgroupsDiskChaos();
 
-      chaos.injectIOLatency(container, "/chaos-io-data", "fsync", Duration.ofMillis(500));
+      chaos.injectIOLatency(container, "/chaos-io-data", DiskOperation.FSYNC, Duration.ofMillis(500));
 
       final long start = System.currentTimeMillis();
       container.execInContainer(
@@ -537,7 +539,7 @@ class CgroupsDiskChaosEndToEndTest {
       container = debianWithLibchaosIo("/chaos-io-data", "50m");
       chaos = new CgroupsDiskChaos();
 
-      chaos.injectIOLatency(container, "/chaos-io-data", "write", Duration.ofMillis(300));
+      chaos.injectIOLatency(container, "/chaos-io-data", DiskOperation.WRITE, Duration.ofMillis(300));
 
       final long start = System.currentTimeMillis();
       container.execInContainer(
@@ -558,7 +560,7 @@ class CgroupsDiskChaosEndToEndTest {
       container.execInContainer("/bin/sh", "-c",
           "dd if=/dev/zero of=/chaos-io-data/r.dat bs=4K count=1 2>/dev/null");
 
-      chaos.injectIOLatency(container, "/chaos-io-data", "read", Duration.ofMillis(300));
+      chaos.injectIOLatency(container, "/chaos-io-data", DiskOperation.READ, Duration.ofMillis(300));
 
       final long start = System.currentTimeMillis();
       container.execInContainer("/bin/sh", "-c",
@@ -574,7 +576,7 @@ class CgroupsDiskChaosEndToEndTest {
       container = debianWithLibchaosIo("/chaos-io-data", "50m");
       chaos = new CgroupsDiskChaos();
 
-      chaos.injectIOLatency(container, "/chaos-io-data", "fdatasync", Duration.ofMillis(300));
+      chaos.injectIOLatency(container, "/chaos-io-data", DiskOperation.FDATASYNC, Duration.ofMillis(300));
 
       final long start = System.currentTimeMillis();
       container.execInContainer("/bin/sh", "-c",
@@ -591,7 +593,7 @@ class CgroupsDiskChaosEndToEndTest {
       container = debianWithLibchaosIo("/chaos-io-data", "50m");
       chaos = new CgroupsDiskChaos();
 
-      chaos.injectIOLatency(container, "/chaos-io-data", "write", Duration.ofMillis(500));
+      chaos.injectIOLatency(container, "/chaos-io-data", DiskOperation.WRITE, Duration.ofMillis(500));
       chaos.reset(container);
 
       // After reset, write should complete well under 500ms (library loaded, rules cleared)
@@ -617,7 +619,7 @@ class CgroupsDiskChaosEndToEndTest {
       container = debianWithLibchaosIo("/chaos-io-data", "50m");
       chaos = new CgroupsDiskChaos();
 
-      chaos.injectIOError(container, "/chaos-io-data", "write", "EIO", 0.5);
+      chaos.injectIOError(container, "/chaos-io-data", DiskOperation.WRITE, DiskErrno.EIO, 0.5);
 
       // Run 20 individual writes; at 50% some will fail and some will succeed
       int failures = 0;
@@ -643,7 +645,7 @@ class CgroupsDiskChaosEndToEndTest {
       container = debianWithLibchaosIo("/chaos-io-data", "50m");
       chaos = new CgroupsDiskChaos();
 
-      chaos.injectIOError(container, "/chaos-io-data", "write", "EIO", 0.1);
+      chaos.injectIOError(container, "/chaos-io-data", DiskOperation.WRITE, DiskErrno.EIO, 0.1);
 
       int successes = 0;
       for (int i = 0; i < 30; i++) {
@@ -777,7 +779,7 @@ class CgroupsDiskChaosEndToEndTest {
       container = alpineWithLibchaosIo("/chaos-io-data", "50m");
       chaos = new CgroupsDiskChaos();
 
-      chaos.injectIOError(container, "/chaos-io-data", "write", "EIO", 1.0);
+      chaos.injectIOError(container, "/chaos-io-data", DiskOperation.WRITE, DiskErrno.EIO, 1.0);
 
       final var r = container.execInContainer("/bin/sh", "-c",
           WITH_LIB + "cp /etc/hostname /chaos-io-data/test.dat 2>&1; echo __exit:$?");
@@ -791,7 +793,7 @@ class CgroupsDiskChaosEndToEndTest {
       container = alpineWithLibchaosIo("/chaos-io-data", "50m");
       chaos = new CgroupsDiskChaos();
 
-      chaos.injectIOLatency(container, "/chaos-io-data", "fsync", Duration.ofMillis(500));
+      chaos.injectIOLatency(container, "/chaos-io-data", DiskOperation.FSYNC, Duration.ofMillis(500));
 
       final long start = System.currentTimeMillis();
       container.execInContainer("/bin/sh", "-c",
@@ -912,7 +914,7 @@ class CgroupsDiskChaosEndToEndTest {
               .getStdout().trim().equals("PONG"));
 
       // Inject 100% write EIO on /data (Redis AOF writes go here)
-      chaos.injectIOError(container, "/data", "write", "EIO", 1.0);
+      chaos.injectIOError(container, "/data", DiskOperation.WRITE, DiskErrno.EIO, 1.0);
 
       // SET with appendfsync=always triggers immediate fsync — must fail with I/O error
       final var setResult = container.execInContainer("redis-cli", "SET", "key1", "value1");
@@ -941,7 +943,7 @@ class CgroupsDiskChaosEndToEndTest {
           .until(() -> container.execInContainer("redis-cli", "PING")
               .getStdout().trim().equals("PONG"));
 
-      chaos.injectIOError(container, "/data", "write", "EIO", 1.0);
+      chaos.injectIOError(container, "/data", DiskOperation.WRITE, DiskErrno.EIO, 1.0);
       chaos.reset(container);
 
       // After reset, SET should succeed
@@ -977,7 +979,7 @@ class CgroupsDiskChaosEndToEndTest {
           .contains("No space left on device");
 
       // EIO via injection
-      chaos.injectIOError(container, "/inject-data", "write", "EIO", 1.0);
+      chaos.injectIOError(container, "/inject-data", DiskOperation.WRITE, DiskErrno.EIO, 1.0);
       final var eioResult = container.execInContainer("/bin/sh", "-c",
           WITH_LIB + "cp /etc/hostname /inject-data/test.dat 2>&1; echo __exit:$?");
       assertThat(eioResult.getStdout() + eioResult.getStderr()).contains("__exit:1");
@@ -1015,7 +1017,7 @@ class CgroupsDiskChaosEndToEndTest {
       // All three simultaneously
       chaos.stressDisk(container, 1);
       chaos.fillDisk(container, "/fill-data", 90);
-      chaos.injectIOError(container, "/inject-data", "write", "EIO", 1.0);
+      chaos.injectIOError(container, "/inject-data", DiskOperation.WRITE, DiskErrno.EIO, 1.0);
 
       // Stress is running
       Awaitility.await().atMost(Duration.ofSeconds(10))
