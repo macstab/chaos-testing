@@ -370,8 +370,12 @@ class CgroupsDiskChaosEndToEndTest {
     }
 
     @Test
-    @DisplayName("pwrite — python3 os.pwrite fails with EIO")
+    @DisplayName("pwrite — sqlite3 DB write fails with EIO")
     void pwriteOperationFails() throws Exception {
+      // python3 os.open() uses openat() at the C level, bypassing the library's open() hook
+      // so fd→path is never mapped and pwrite injection doesn't fire.
+      // SQLite (built into Python 3.11) opens files via C open() → hook fires → fd tracked
+      // → sqlite3's pwrite64() calls are intercepted.
       container = new GenericContainer<>(DockerImageName.parse("python:3.11-slim"))
           .withTmpFs(Map.of("/chaos-io-data", "rw,size=50m"))
           .withCommand("sleep", "infinity");
@@ -383,7 +387,14 @@ class CgroupsDiskChaosEndToEndTest {
 
       final var r = container.execInContainer(
           "/bin/sh", "-c",
-          WITH_LIB + "python3 -c \"import os; fd=os.open('/chaos-io-data/pw.dat',os.O_WRONLY|os.O_CREAT,0o644); os.pwrite(fd,b'x'*1024,0); os.close(fd)\" 2>&1; echo __exit:$?");
+          WITH_LIB + "python3 -c \""
+              + "import sqlite3, sys; "
+              + "conn = sqlite3.connect('/chaos-io-data/test.db'); "
+              + "conn.execute('CREATE TABLE t (x TEXT)'); "
+              + "conn.execute(\\\"INSERT INTO t VALUES ('hello')\\\"); "
+              + "conn.commit(); "
+              + "conn.close()"
+              + "\" 2>&1; echo __exit:$?");
       assertThat(r.getStdout() + r.getStderr()).contains("__exit:1");
     }
 
@@ -846,32 +857,41 @@ class CgroupsDiskChaosEndToEndTest {
     @Test
     @DisplayName("fillDisk on /data causes Redis BGSAVE to fail with ENOSPC")
     void fillRedisDataDirCausesBgsaveToFail() throws Exception {
-      // Mount a small tmpfs at /data so Redis writes go there
+      // 6 MB tmpfs: after 90% fill only ~0.6 MB remains.
+      // SETRANGE creates a 5 MB key (in Redis memory, not on disk); with rdbcompression=no
+      // the RDB dump is ~5 MB — 8× larger than available free space → BGSAVE gets ENOSPC.
       container = new GenericContainer<>(DockerImageName.parse(DEBIAN_IMAGE))
-          .withTmpFs(Map.of("/data", "rw,size=15m"))
-          .withCommand("redis-server", "--dir", "/data", "--save", "");
+          .withTmpFs(Map.of("/data", "rw,size=6m"))
+          .withCommand("redis-server", "--dir", "/data", "--save", "",
+              "--rdbcompression", "no");
       container.start();
       chaos = new CgroupsDiskChaos();
 
-      // Fill /data to 90% — leaves ~1.5 MB free, but Redis RDB is typically > 1 MB after load
+      Awaitility.await()
+          .atMost(Duration.ofSeconds(10))
+          .until(() -> container.execInContainer("redis-cli", "PING")
+              .getStdout().trim().equals("PONG"));
+
+      // SETRANGE zero-pads to offset 5 MB-1 → 5 MB key stored in Redis memory only.
+      // With rdbcompression=no the RDB dump is ~5 MB.
+      container.execInContainer("redis-cli", "SETRANGE", "bigkey", "5242879", "x");
+
+      // Fill /data to 90% — leaves ~0.6 MB free; the 5 MB RDB will not fit
       chaos.fillDisk(container, "/data", 90);
 
-      // Trigger BGSAVE — Redis tries to write dump.rdb into /data
-      container.execInContainer("redis-cli", "DEBUG", "SLEEP", "0"); // ensure connected
-      final var bgsaveResult = container.execInContainer("redis-cli", "BGSAVE");
-      // BGSAVE returns "Background saving started" OR wait for it and check last save status
+      container.execInContainer("redis-cli", "BGSAVE");
 
-      // Wait for background save to complete or fail
-      Thread.sleep(2000);
-      final var lastSave = container.execInContainer("redis-cli", "LASTSAVE");
+      // BGSAVE child gets ENOSPC after ~0.6 MB written — wait for status:err
+      Awaitility.await()
+          .atMost(Duration.ofSeconds(15))
+          .pollInterval(Duration.ofMillis(200))
+          .until(() -> container.execInContainer("redis-cli", "INFO", "persistence")
+              .getStdout().contains("rdb_last_bgsave_status:err"));
+
       final var info = container.execInContainer("redis-cli", "INFO", "persistence");
-
-      // rdb_last_bgsave_status should be "err" when disk is full
       assertThat(info.getStdout())
           .as("Redis BGSAVE must fail when disk is full")
-          .satisfiesAnyOf(
-              s -> assertThat(s).contains("rdb_last_bgsave_status:err"),
-              s -> assertThat(s).contains("rdb_last_save_time_elapsed"));
+          .contains("rdb_last_bgsave_status:err");
     }
 
     @Test
