@@ -37,6 +37,9 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public final class CoreExtension implements BeforeEachCallback {
 
+  /** Creates a core extension instance (used by JUnit 5 SPI). */
+  public CoreExtension() {}
+
   private static final String PROCESSED_KEY = "core.annotations.processed";
 
   @Override

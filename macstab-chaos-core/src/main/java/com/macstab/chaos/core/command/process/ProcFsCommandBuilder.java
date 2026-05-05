@@ -12,6 +12,9 @@ import java.util.Objects;
  */
 public final class ProcFsCommandBuilder implements ProcessCommandBuilder {
 
+  /** Creates a /proc-based process command builder. */
+  public ProcFsCommandBuilder() {}
+
   @Override
   public String buildFindProcessCommand(final String processName) {
     Objects.requireNonNull(processName, "processName must not be null");

@@ -1,46 +1,16 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.core.util;
 
+import lombok.extern.slf4j.Slf4j;
+
 /**
  * Utility for formatting Docker container IDs in logs and error messages.
  *
- * <p><strong>Purpose:</strong> Provide consistent container ID truncation across the test utilities
- * module to improve log readability without losing uniqueness.
- *
- * <p><strong>Rationale:</strong> Docker container IDs are 64-character hex strings (e.g., {@code
- * 06c27a7ed60269392f23dac224bc3eb7f5be70abcc77b25fd10a004bacf099bb}). The first 12 characters are
- * sufficient for uniqueness in most contexts and match Docker CLI conventions ({@code docker ps}
- * shows 12-char IDs by default).
- *
- * <p><strong>Thread Safety:</strong> This class is stateless and thread-safe. All methods are
- * static.
- *
- * <p><strong>Usage Example:</strong>
- *
- * <pre>{@code
- * String containerId = container.getContainerId();
- * // containerId = "06c27a7ed60269392f23dac224bc3eb7f5be70abcc77b25fd10a004bacf099bb"
- *
- * String truncated = ContainerIdFormatter.truncate(containerId);
- * // truncated = "06c27a7ed602"
- *
- * log.info("Starting container: {}", truncated);
- * // Output: "Starting container: 06c27a7ed602"
- * }</pre>
- *
- * <p><strong>Best Practices:</strong>
- *
- * <ul>
- *   <li>Use in all logging statements involving container IDs
- *   <li>Use in exception messages for consistency
- *   <li>DO NOT use when full ID is required (e.g., Docker API calls)
- * </ul>
+ * <p>Docker container IDs are 64-character hex strings. The first 12 characters are sufficient for
+ * uniqueness and match Docker CLI conventions ({@code docker ps} shows 12-char IDs by default).
  *
  * @author Christian Schnapka - Macstab GmbH
- * @since 1.0
  */
-import lombok.extern.slf4j.Slf4j;
-
 @Slf4j
 public final class ContainerIdFormatter {
 

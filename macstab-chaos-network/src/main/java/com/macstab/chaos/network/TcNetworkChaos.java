@@ -10,8 +10,8 @@ import org.testcontainers.containers.GenericContainer;
 import com.macstab.chaos.core.api.NetworkChaos;
 import com.macstab.chaos.core.exception.ChaosConfigurationException;
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
-import com.macstab.chaos.core.util.ContainerNetworkUtils;
 import com.macstab.chaos.core.platform.Tool;
+import com.macstab.chaos.core.util.ContainerNetworkUtils;
 import com.macstab.chaos.core.util.PackageInstaller;
 
 import lombok.extern.slf4j.Slf4j;

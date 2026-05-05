@@ -13,9 +13,19 @@ import com.macstab.chaos.core.util.ChaosVersion;
 
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * No-op {@link DiskChaos} returned when {@code macstab-chaos-disk} is absent from the classpath.
+ *
+ * <p>All active operations throw {@link com.macstab.chaos.core.exception.ChaosProviderNotFoundException}
+ * with a human-readable message. Lifecycle methods ({@code installTools}, {@code reset}) are silent
+ * no-ops.
+ *
+ * @author Christian Schnapka - Macstab GmbH
+ */
 @Slf4j
 public final class NoOpDiskChaos implements DiskChaos {
 
+  /** Creates a no-op disk chaos instance. */
   public NoOpDiskChaos() {}
 
   private static final String NOT_AVAILABLE =
@@ -58,8 +68,11 @@ public final class NoOpDiskChaos implements DiskChaos {
 
   @Override
   public void injectIOError(
-      final GenericContainer<?> c, final String p,
-      final DiskOperation op, final DiskErrno e, final double pr) {
+      final GenericContainer<?> c,
+      final String p,
+      final DiskOperation op,
+      final DiskErrno e,
+      final double pr) {
     throw new ChaosProviderNotFoundException(NOT_AVAILABLE);
   }
 

@@ -7,8 +7,17 @@ import com.macstab.chaos.core.api.FilesystemChaos;
 
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * No-op {@link FilesystemChaos} — all operations are silent no-ops. Returned when no real
+ * filesystem chaos implementation is on the classpath.
+ *
+ * @author Christian Schnapka - Macstab GmbH
+ */
 @Slf4j
 public final class NoOpFilesystemChaos implements FilesystemChaos {
+
+  /** Creates a no-op filesystem chaos implementation. */
+  public NoOpFilesystemChaos() {}
 
   /** No-op fillDisk implementation. */
   @Override

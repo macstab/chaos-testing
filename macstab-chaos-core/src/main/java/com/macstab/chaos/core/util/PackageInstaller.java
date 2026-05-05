@@ -19,6 +19,12 @@ import com.macstab.chaos.core.platform.Tool;
 
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * Installs OS packages inside running Testcontainers containers using the container's native
+ * package manager (apt-get or apk). Deduplicates installs within a container run using labels.
+ *
+ * @author Christian Schnapka - Macstab GmbH
+ */
 @Slf4j
 public final class PackageInstaller {
 

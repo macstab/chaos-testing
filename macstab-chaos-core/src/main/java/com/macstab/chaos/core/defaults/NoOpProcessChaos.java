@@ -14,6 +14,12 @@ import com.macstab.chaos.core.util.ChaosVersion;
 
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * No-op {@link ProcessChaos} returned when {@code macstab-chaos-process} is absent from the
+ * classpath. All active operations throw {@link com.macstab.chaos.core.exception.ChaosProviderNotFoundException}.
+ *
+ * @author Christian Schnapka - Macstab GmbH
+ */
 @Slf4j
 public final class NoOpProcessChaos implements ProcessChaos {
 

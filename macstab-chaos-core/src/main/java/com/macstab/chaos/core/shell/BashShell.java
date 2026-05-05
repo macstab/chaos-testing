@@ -12,6 +12,9 @@ import java.util.Set;
  */
 public final class BashShell extends AbstractShell {
 
+  /** Creates a bash shell instance. */
+  public BashShell() {}
+
   private static final Set<ShellCapability> CAPABILITIES =
       Set.of(
           ShellCapability.COMMAND_SUBSTITUTION,

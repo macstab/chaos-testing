@@ -62,8 +62,7 @@ public final class StressNgDiskCommandBuilder implements DiskCommandBuilder {
   public String buildStressHddWithTimeoutCommand(final int workers, final long seconds) {
     validateWorkers(workers);
     validateSeconds(seconds);
-    return String.format(
-        "stress-ng --hdd %d --timeout %ds >/dev/null 2>&1 &", workers, seconds);
+    return String.format("stress-ng --hdd %d --timeout %ds >/dev/null 2>&1 &", workers, seconds);
   }
 
   // ==================== Process Lifecycle ====================
@@ -107,8 +106,7 @@ public final class StressNgDiskCommandBuilder implements DiskCommandBuilder {
   public String buildGetDiskUsagePercentCommand(final String mountPoint) {
     Objects.requireNonNull(mountPoint, "mountPoint must not be null");
     // $5 is the "Capacity" column (e.g. "42%"); gsub strips the "%" character.
-    return String.format(
-        "df -P %s | awk 'NR==2{gsub(/%%/,\"\",$5); print $5}'", mountPoint);
+    return String.format("df -P %s | awk 'NR==2{gsub(/%%/,\"\",$5); print $5}'", mountPoint);
   }
 
   // ==================== Disk Fill Commands ====================

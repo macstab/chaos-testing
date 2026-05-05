@@ -8,6 +8,9 @@ package com.macstab.chaos.core.platform.linux;
  */
 public final class UbuntuLinuxPlatform extends AbstractLinuxPlatform {
 
+  /** Creates an Ubuntu Linux platform instance. */
+  public UbuntuLinuxPlatform() {}
+
   @Override
   public String getDistribution() {
     return "ubuntu";

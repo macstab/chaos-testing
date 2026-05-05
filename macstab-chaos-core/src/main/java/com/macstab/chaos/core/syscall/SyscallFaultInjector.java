@@ -8,8 +8,6 @@ import java.util.Objects;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.images.builder.Transferable;
 
-import com.macstab.chaos.core.model.ContainerArchitecture;
-import com.macstab.chaos.core.platform.PlatformDetector;
 import com.macstab.chaos.core.util.Shell;
 
 import lombok.extern.slf4j.Slf4j;
@@ -19,15 +17,16 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <h2>What This Does</h2>
  *
- * <p>Copies a pre-compiled {@code LD_PRELOAD} shared library into the container and manages
- * a runtime configuration file that controls which syscalls are intercepted and how they fail.
- * Multiple chaos modules (disk, network, DNS, memory, process, filesystem) share the same
- * library instance and config file — each module owns its rules via an {@code owner} prefix.
+ * <p>Copies a pre-compiled {@code LD_PRELOAD} shared library into the container and manages a
+ * runtime configuration file that controls which syscalls are intercepted and how they fail.
+ * Multiple chaos modules (disk, network, DNS, memory, process, filesystem) share the same library
+ * instance and config file — each module owns its rules via an {@code owner} prefix.
  *
  * <h2>Setup Flow</h2>
  *
  * <p>Call {@link #prepare(GenericContainer)} <strong>before</strong> {@code container.start()}.
  * This method:
+ *
  * <ol>
  *   <li>Detects the container's platform (glibc/musl) and architecture (amd64/arm64)
  *   <li>Copies the matching {@code .so} from the classpath into the container
@@ -36,9 +35,9 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <h2>Runtime Control</h2>
  *
- * <p>After the container is started, use {@link #addRule}, {@link #removeRules},
- * and {@link #clearRules} to control fault injection at runtime. Changes take effect
- * on the next intercepted syscall (the library re-reads the config file on mtime change).
+ * <p>After the container is started, use {@link #addRule}, {@link #removeRules}, and {@link
+ * #clearRules} to control fault injection at runtime. Changes take effect on the next intercepted
+ * syscall (the library re-reads the config file on mtime change).
  *
  * <h2>Usage Example</h2>
  *
@@ -80,9 +79,9 @@ public final class SyscallFaultInjector {
   /**
    * Prepares a container for syscall fault injection.
    *
-   * <p>Must be called <strong>before</strong> {@code container.start()}. Detects the
-   * target platform and architecture, copies the matching {@code .so} binary from the
-   * classpath into the container, and sets the {@code LD_PRELOAD} environment variable.
+   * <p>Must be called <strong>before</strong> {@code container.start()}. Detects the target
+   * platform and architecture, copies the matching {@code .so} binary from the classpath into the
+   * container, and sets the {@code LD_PRELOAD} environment variable.
    *
    * <p>Idempotent — safe to call multiple times on the same container (label-guarded).
    *
@@ -105,22 +104,22 @@ public final class SyscallFaultInjector {
     container.withEnv("LD_PRELOAD", LIBRARY_PATH);
     container.withLabel(LABEL_ACTIVE, variant);
 
-    log.info("Prepared syscall fault injection: variant={}, size={}B", variant, libraryBytes.length);
+    log.info(
+        "Prepared syscall fault injection: variant={}, size={}B", variant, libraryBytes.length);
   }
 
   /**
    * Adds a fault injection rule for the given owner module.
    *
-   * <p>The rule is appended to the config file. The owner prefix allows selective
-   * removal via {@link #removeRules}. Format:
-   * {@code owner:path:operation:action:parameter}
+   * <p>The rule is appended to the config file. The owner prefix allows selective removal via
+   * {@link #removeRules}. Format: {@code owner:path:operation:action:parameter}
    *
-   * <p>The library re-reads the config on the next intercepted syscall after the
-   * file's mtime changes.
+   * <p>The library re-reads the config on the next intercepted syscall after the file's mtime
+   * changes.
    *
    * @param container running container with .so deployed
-   * @param owner     module identifier (e.g. "disk", "net", "dns")
-   * @param rule      config line without owner prefix (e.g. "/data:write:ERRNO:EIO:0.3")
+   * @param owner module identifier (e.g. "disk", "net", "dns")
+   * @param rule config line without owner prefix (e.g. "/data:write:ERRNO:EIO:0.3")
    */
   public static void addRule(
       final GenericContainer<?> container, final String owner, final String rule) {
@@ -138,8 +137,8 @@ public final class SyscallFaultInjector {
    * Adds multiple rules for the given owner module in a single exec call.
    *
    * @param container running container with .so deployed
-   * @param owner     module identifier
-   * @param rules     config lines without owner prefix
+   * @param owner module identifier
+   * @param rules config lines without owner prefix
    */
   public static void addRules(
       final GenericContainer<?> container, final String owner, final List<String> rules) {
@@ -153,27 +152,27 @@ public final class SyscallFaultInjector {
     for (final String rule : rules) {
       sb.append(rule).append(" # ").append(owner).append('\n');
     }
-    execSilent(container, String.format("printf '%%s' '%s' >> %s",
-        sb.toString().replace("'", "'\\''"), CONFIG_PATH));
+    execSilent(
+        container,
+        String.format("printf '%%s' '%s' >> %s", sb.toString().replace("'", "'\\''"), CONFIG_PATH));
     log.debug("Added {} syscall rules for owner '{}'", rules.size(), owner);
   }
 
   /**
    * Removes all rules belonging to the given owner module.
    *
-   * <p>Other modules' rules remain untouched. Uses {@code sed} to filter lines
-   * by owner prefix.
+   * <p>Other modules' rules remain untouched. Uses {@code sed} to filter lines by owner prefix.
    *
    * @param container running container with .so deployed
-   * @param owner     module identifier whose rules should be removed
+   * @param owner module identifier whose rules should be removed
    */
   public static void removeRules(final GenericContainer<?> container, final String owner) {
     Objects.requireNonNull(container, "container must not be null");
     Objects.requireNonNull(owner, "owner must not be null");
     validateActive(container);
 
-    execSilent(container, String.format("sed -i '/# %s$/d' %s 2>/dev/null || true",
-        owner, CONFIG_PATH));
+    execSilent(
+        container, String.format("sed -i '/# %s$/d' %s 2>/dev/null || true", owner, CONFIG_PATH));
     log.debug("Removed syscall rules for owner '{}'", owner);
   }
 
@@ -225,8 +224,8 @@ public final class SyscallFaultInjector {
   /**
    * Detects the host architecture for .so variant selection.
    *
-   * <p>Uses {@code os.arch} system property — reliable for native Docker and
-   * for platform-specified containers (Docker translates the arch).
+   * <p>Uses {@code os.arch} system property — reliable for native Docker and for platform-specified
+   * containers (Docker translates the arch).
    *
    * @return "amd64" or "arm64"
    */
@@ -246,11 +245,12 @@ public final class SyscallFaultInjector {
    * @throws IllegalStateException if resource not found
    */
   private static byte[] loadResource(final String resourcePath) {
-    try (final InputStream is = SyscallFaultInjector.class.getClassLoader()
-        .getResourceAsStream(resourcePath)) {
+    try (final InputStream is =
+        SyscallFaultInjector.class.getClassLoader().getResourceAsStream(resourcePath)) {
       if (is == null) {
         throw new IllegalStateException(
-            "libchaos-io binary not found on classpath: " + resourcePath
+            "libchaos-io binary not found on classpath: "
+                + resourcePath
                 + " — ensure macstab-chaos-core jar includes the .so resources");
       }
       return is.readAllBytes();
@@ -279,7 +279,7 @@ public final class SyscallFaultInjector {
    * Executes a shell command silently — logs warnings but does not throw.
    *
    * @param container running container
-   * @param command   shell command
+   * @param command shell command
    */
   private static void execSilent(final GenericContainer<?> container, final String command) {
     try {

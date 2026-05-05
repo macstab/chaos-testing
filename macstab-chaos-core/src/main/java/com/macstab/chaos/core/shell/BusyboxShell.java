@@ -10,6 +10,9 @@ package com.macstab.chaos.core.shell;
 @Deprecated(forRemoval = true, since = "1.0")
 public final class BusyboxShell extends AbstractShell {
 
+  /** Creates a BusyBox shell instance. */
+  public BusyboxShell() {}
+
   @Override
   public ShellType getType() {
     return ShellType.BUSYBOX;

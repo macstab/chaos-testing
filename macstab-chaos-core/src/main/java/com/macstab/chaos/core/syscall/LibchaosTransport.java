@@ -15,11 +15,11 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * Generic LD_PRELOAD transport for any libchaos-* shared library.
  *
- * <p>Resolves, copies and controls a pre-compiled {@code .so} inside a container. Each libchaos
- * lib (io, net, memory, time, process, dns) gets its own instance with isolated paths and labels.
+ * <p>Resolves, copies and controls a pre-compiled {@code .so} inside a container. Each libchaos lib
+ * (io, net, memory, time, process, dns) gets its own instance with isolated paths and labels.
  *
- * <p>Call {@link #prepare} before {@code container.start()}, then use {@link #addRule} /
- * {@link #removeRules} / {@link #clearRules} at runtime.
+ * <p>Call {@link #prepare} before {@code container.start()}, then use {@link #addRule} / {@link
+ * #removeRules} / {@link #clearRules} at runtime.
  */
 @Slf4j
 public final class LibchaosTransport {
@@ -31,7 +31,10 @@ public final class LibchaosTransport {
   private final String resourcePrefix;
 
   /**
-   * @param libName short lib identifier: io, net, memory, time, process, or dns
+   * Creates a transport for the given libchaos library.
+   *
+   * @param libName short lib identifier: {@code io}, {@code net}, {@code memory}, {@code time},
+   *     {@code process}, or {@code dns}
    */
   public LibchaosTransport(final String libName) {
     Objects.requireNonNull(libName, "libName must not be null");
@@ -42,21 +45,36 @@ public final class LibchaosTransport {
     this.resourcePrefix = "libchaos-" + libName + "/libchaos-" + libName + "-";
   }
 
+  /**
+   * Returns the absolute path inside the container where the {@code .so} is deployed.
+   *
+   * @return e.g. {@code /usr/local/lib/libchaos-io.so}
+   */
   public String getLibraryPath() {
     return libraryPath;
   }
 
+  /**
+   * Returns the absolute path inside the container for the runtime config file.
+   *
+   * @return e.g. {@code /tmp/.chaos-io.conf}
+   */
   public String getConfigPath() {
     return configPath;
   }
 
+  /**
+   * Returns the container label key used to mark this transport as prepared.
+   *
+   * @return e.g. {@code macstab.chaos.io.active}
+   */
   public String getLabelKey() {
     return labelKey;
   }
 
   /**
-   * Copies the matching {@code .so} into the container and sets {@code LD_PRELOAD}.
-   * Idempotent — safe to call multiple times.
+   * Copies the matching {@code .so} into the container and sets {@code LD_PRELOAD}. Idempotent —
+   * safe to call multiple times.
    *
    * @param container must not yet be started
    */
@@ -78,9 +96,14 @@ public final class LibchaosTransport {
     log.info("Prepared libchaos-{}: variant={}, size={}B", libName, variant, bytes.length);
   }
 
-  /** Appends a single rule for the given owner. */
-  public void addRule(
-      final GenericContainer<?> container, final String owner, final String rule) {
+  /**
+   * Appends a single rule for the given owner.
+   *
+   * @param container running container (must have been {@link #prepare prepared})
+   * @param owner logical owner tag written as a comment in the config (e.g. {@code "disk"})
+   * @param rule libchaos rule string, e.g. {@code "/data:write:EIO:0.3"}
+   */
+  public void addRule(final GenericContainer<?> container, final String owner, final String rule) {
     Objects.requireNonNull(container, "container must not be null");
     Objects.requireNonNull(owner, "owner must not be null");
     Objects.requireNonNull(rule, "rule must not be null");
@@ -91,7 +114,13 @@ public final class LibchaosTransport {
     log.debug("libchaos-{}: added rule: {}", libName, fullRule);
   }
 
-  /** Appends multiple rules for the given owner in a single exec. */
+  /**
+   * Appends multiple rules for the given owner in a single exec call.
+   *
+   * @param container running container (must have been {@link #prepare prepared})
+   * @param owner logical owner tag (e.g. {@code "disk"})
+   * @param rules list of libchaos rule strings; empty list is a no-op
+   */
   public void addRules(
       final GenericContainer<?> container, final String owner, final List<String> rules) {
     Objects.requireNonNull(container, "container must not be null");
@@ -104,23 +133,33 @@ public final class LibchaosTransport {
     for (final String rule : rules) {
       sb.append(rule).append(" # ").append(owner).append('\n');
     }
-    execSilent(container, String.format("printf '%%s' '%s' >> %s",
-        sb.toString().replace("'", "'\\''"), configPath));
+    execSilent(
+        container,
+        String.format("printf '%%s' '%s' >> %s", sb.toString().replace("'", "'\\''"), configPath));
     log.debug("libchaos-{}: added {} rules for owner '{}'", libName, rules.size(), owner);
   }
 
-  /** Removes all rules belonging to the given owner; other owners are untouched. */
+  /**
+   * Removes all rules belonging to the given owner; other owners' rules are untouched.
+   *
+   * @param container running container (must have been {@link #prepare prepared})
+   * @param owner owner tag whose rules should be removed
+   */
   public void removeRules(final GenericContainer<?> container, final String owner) {
     Objects.requireNonNull(container, "container must not be null");
     Objects.requireNonNull(owner, "owner must not be null");
     validateActive(container);
 
-    execSilent(container, String.format("sed -i '/# %s$/d' %s 2>/dev/null || true",
-        owner, configPath));
+    execSilent(
+        container, String.format("sed -i '/# %s$/d' %s 2>/dev/null || true", owner, configPath));
     log.debug("libchaos-{}: removed rules for owner '{}'", libName, owner);
   }
 
-  /** Removes all rules from all owners. Full reset. */
+  /**
+   * Removes all rules from all owners. Full reset — deletes the config file entirely.
+   *
+   * @param container running container (must have been {@link #prepare prepared})
+   */
   public void clearRules(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
     validateActive(container);
@@ -129,6 +168,12 @@ public final class LibchaosTransport {
     log.debug("libchaos-{}: cleared all rules", libName);
   }
 
+  /**
+   * Returns {@code true} if {@link #prepare} has been called on this container.
+   *
+   * @param container target container
+   * @return {@code true} when the container carries the transport's label
+   */
   public boolean isActive(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
     return container.getLabels().containsKey(labelKey);

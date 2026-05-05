@@ -29,6 +29,13 @@ import com.macstab.chaos.core.defaults.NoOpTimeChaos;
 
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * SPI registry that resolves the highest-priority available chaos provider for each domain via
+ * {@link java.util.ServiceLoader}. Falls back to the matching no-op implementation when no provider
+ * is on the classpath.
+ *
+ * @author Christian Schnapka - Macstab GmbH
+ */
 @Slf4j
 public final class ChaosProviderRegistry {
 

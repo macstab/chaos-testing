@@ -28,7 +28,6 @@ package com.macstab.chaos.core.command.disk;
  * explicitly avoided.
  *
  * @author Christian Schnapka - Macstab GmbH
- * @see com.macstab.chaos.disk.command.StressNgDiskCommandBuilder
  */
 public interface DiskCommandBuilder {
 
@@ -63,9 +62,9 @@ public interface DiskCommandBuilder {
    * processes by checking the state field in {@code /proc/<pid>/stat}. Exits {@code 0} if at least
    * one live (non-zombie) stress-ng process exists, non-zero otherwise.
    *
-   * <p><strong>Zombie filter is critical:</strong> After {@code SIGKILL}, stress-ng worker processes
-   * may briefly remain as zombies (state Z) with their {@code comm} file still readable. Without
-   * zombie filtering, {@code isStressed()} returns {@code true} even after reset completes.
+   * <p><strong>Zombie filter is critical:</strong> After {@code SIGKILL}, stress-ng worker
+   * processes may briefly remain as zombies (state Z) with their {@code comm} file still readable.
+   * Without zombie filtering, {@code isStressed()} returns {@code true} even after reset completes.
    *
    * @return shell command string
    */
@@ -131,14 +130,14 @@ public interface DiskCommandBuilder {
    *
    * <p><strong>Example:</strong>
    *
-   * <pre>
+   * <pre>{@code
    * buildFillDiskByCountKBCommand("/tmp/chaos-disk-load", 102400)
    * → "rm -f /tmp/chaos-disk-load && fallocate -l 102400K /tmp/chaos-disk-load 2>/dev/null
    *     || dd if=/dev/zero of=/tmp/chaos-disk-load bs=1K count=102400 2>&1"
-   * </pre>
+   * }</pre>
    *
    * @param loadFile absolute path of the fill file (must be validated by caller)
-   * @param countKB  number of 1K blocks to write (must be ≥ 1)
+   * @param countKB number of 1K blocks to write (must be ≥ 1)
    * @return shell command string
    */
   String buildFillDiskByCountKBCommand(String loadFile, long countKB);
@@ -146,20 +145,20 @@ public interface DiskCommandBuilder {
   /**
    * Build command to fill disk at {@code loadFile} to an absolute {@code size}.
    *
-   * <p>Attempts {@code fallocate} first (near-instant), falls back to {@code dd} writing
-   * {@code sizeMb} megabytes.
+   * <p>Attempts {@code fallocate} first (near-instant), falls back to {@code dd} writing {@code
+   * sizeMb} megabytes.
    *
    * <p><strong>Example:</strong>
    *
-   * <pre>
+   * <pre>{@code
    * buildFillDiskBySizeCommand("/tmp/chaos-disk-load", "500M", 500)
    * → "rm -f /tmp/chaos-disk-load && fallocate -l 500M /tmp/chaos-disk-load 2>/dev/null
    *     || dd if=/dev/zero of=/tmp/chaos-disk-load bs=1M count=500 2>&1"
-   * </pre>
+   * }</pre>
    *
    * @param loadFile absolute path of the fill file (must be validated by caller)
-   * @param size     size string accepted by {@code fallocate -l} (e.g., {@code "500M"})
-   * @param sizeMb   fallback size in MB for {@code dd} (must be ≥ 1)
+   * @param size size string accepted by {@code fallocate -l} (e.g., {@code "500M"})
+   * @param sizeMb fallback size in MB for {@code dd} (must be ≥ 1)
    * @return shell command string
    */
   String buildFillDiskBySizeCommand(String loadFile, String size, int sizeMb);

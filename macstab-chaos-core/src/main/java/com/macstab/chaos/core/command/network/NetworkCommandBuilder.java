@@ -25,10 +25,10 @@ public interface NetworkCommandBuilder {
    *
    * <p><strong>Linux iptables example:</strong>
    *
-   * <pre>
+   * <pre>{@code
    * iptables -t nat -A PREROUTING -p tcp --dport 6379 -j REDIRECT --to-port 16379 &&
    * iptables -t nat -A OUTPUT -p tcp --dport 6379 -j REDIRECT --to-port 16379
-   * </pre>
+   * }</pre>
    *
    * @param fromPort source port
    * @param toPort destination port

@@ -1,6 +1,8 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.core.exception;
 
+import lombok.extern.slf4j.Slf4j;
+
 /**
  * Thrown when chaos operation not supported on current system.
  *
@@ -8,11 +10,14 @@ package com.macstab.chaos.core.exception;
  *
  * @author Christian Schnapka - Macstab GmbH
  */
-import lombok.extern.slf4j.Slf4j;
-
 @Slf4j
 public final class ChaosUnsupportedOperationException extends ChaosException {
 
+  /**
+   * Creates a new unsupported operation exception.
+   *
+   * @param message detail message describing why the operation is unsupported
+   */
   public ChaosUnsupportedOperationException(final String message) {
     super(message);
   }

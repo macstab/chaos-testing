@@ -50,7 +50,7 @@ public interface FilesystemChaos extends ChaosProvider {
   /**
    * Fill disk with garbage data to simulate disk full.
    *
-   * <h3>Example: Test Disk Full Recovery</h3>
+   * <p><strong>Example: Test Disk Full Recovery</strong>
    *
    * <pre>{@code
    * @Test
@@ -72,7 +72,7 @@ public interface FilesystemChaos extends ChaosProvider {
   /**
    * Inject permission errors (EACCES).
    *
-   * <h3>Example: Test Permission Denied Handling</h3>
+   * <p><strong>Example: Test Permission Denied Handling</strong>
    *
    * <pre>{@code
    * @Test

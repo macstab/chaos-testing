@@ -19,6 +19,12 @@ import com.macstab.chaos.core.spi.ChaosProviderRegistry;
 
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * Facade that provides access to all chaos providers for a single container. Lazily resolves
+ * providers via {@link com.macstab.chaos.core.spi.ChaosProviderRegistry}.
+ *
+ * @author Christian Schnapka - Macstab GmbH
+ */
 @Slf4j
 public final class ChaosController {
 

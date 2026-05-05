@@ -84,6 +84,9 @@ import lombok.extern.slf4j.Slf4j;
 public final class ChaosTestingExtension
     implements BeforeAllCallback, AfterAllCallback, ParameterResolver {
 
+  /** Creates a chaos testing extension instance (used by JUnit 5 SPI). */
+  public ChaosTestingExtension() {}
+
   private static final ExtensionContext.Namespace NAMESPACE =
       ExtensionContext.Namespace.create(ChaosTestingExtension.class);
 
@@ -588,7 +591,7 @@ public final class ChaosTestingExtension
    * Registers connection info from an external extension (e.g., SentinelContainerExtension).
    *
    * <p>Use this when a dedicated JUnit 5 extension manages its own container lifecycle but needs
-   * its connection info accessible via {@link ChaosContainers} / {@code INSTANCE.get()}.
+   * its connection info accessible via {@link com.macstab.chaos.core.api.ChaosContainers} / {@code INSTANCE.get()}.
    *
    * @param annotationType annotation class (e.g., {@code RedisSentinel.class})
    * @param id container id

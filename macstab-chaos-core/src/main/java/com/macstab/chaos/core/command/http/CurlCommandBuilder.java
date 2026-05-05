@@ -22,15 +22,15 @@ import java.util.Objects;
  *
  * <p><strong>Example (minimal):</strong>
  *
- * <pre>
+ * <pre>{@code
  * HttpCommandBuilder builder = new CurlCommandBuilder();
  * String cmd = builder.buildGetRequest("http://localhost:8080/api");
  * // curl -s 'http://localhost:8080/api' 2>&1
- * </pre>
+ * }</pre>
  *
  * <p><strong>Example (with configuration):</strong>
  *
- * <pre>
+ * <pre>{@code
  * HttpCommandConfig config = HttpCommandConfig.builder()
  *   .connectionTimeout(Duration.ofSeconds(5))
  *   .failOnHttpError(true)
@@ -39,7 +39,7 @@ import java.util.Objects;
  * HttpCommandBuilder builder = new CurlCommandBuilder(config);
  * String cmd = builder.buildGetRequest("http://localhost/api");
  * // curl -s -f --max-time 5 --retry 3 'http://localhost/api' 2>&1
- * </pre>
+ * }</pre>
  *
  * @author Christian Schnapka - Macstab GmbH
  */

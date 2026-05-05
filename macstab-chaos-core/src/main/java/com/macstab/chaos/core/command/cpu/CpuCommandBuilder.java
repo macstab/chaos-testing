@@ -22,7 +22,6 @@ package com.macstab.chaos.core.command.cpu;
  * {@code redis:7.4}).
  *
  * @author Christian Schnapka - Macstab GmbH
- * @see com.macstab.chaos.cpu.command.StressNgCommandBuilder
  */
 public interface CpuCommandBuilder {
 
@@ -288,10 +287,10 @@ public interface CpuCommandBuilder {
    *
    * <p><strong>Example:</strong>
    *
-   * <pre>
+   * <pre>{@code
    * buildThrottleCommand(1, 50)
    * → "cpulimit -l 50 -p 1 >/dev/null 2>&1 &"
-   * </pre>
+   * }</pre>
    *
    * @param pid target process ID (must be ≥ 1)
    * @param percentage CPU percentage cap (1–100)
@@ -308,10 +307,10 @@ public interface CpuCommandBuilder {
    *
    * <p><strong>Example:</strong>
    *
-   * <pre>
+   * <pre>{@code
    * buildThrottleWithDurationCommand(1, 50, 5)
    * → "(cpulimit -l 50 -p 1 >/dev/null 2>&1 & CPID=$!; sleep 5; kill $CPID 2>/dev/null) &"
-   * </pre>
+   * }</pre>
    *
    * @param pid target process ID (must be ≥ 1)
    * @param percentage CPU percentage cap (1–100)

@@ -20,6 +20,9 @@ import com.macstab.chaos.core.platform.Tool;
  */
 public final class AlpineLinuxPlatform extends AbstractLinuxPlatform {
 
+  /** Creates an Alpine Linux platform instance. */
+  public AlpineLinuxPlatform() {}
+
   @Override
   public String getDistribution() {
     return "alpine";

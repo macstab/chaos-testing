@@ -34,6 +34,9 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public abstract class AbstractLinuxPlatform implements Platform {
 
+  /** Creates a new Linux platform instance. */
+  protected AbstractLinuxPlatform() {}
+
   private final NetworkCommandBuilder networkCommandBuilder = new IptablesCommandBuilder();
   private final ProcessCommandBuilder processCommandBuilder = new ProcFsCommandBuilder();
   private final HttpCommandBuilder httpCommandBuilder = new CurlCommandBuilder();
@@ -59,7 +62,12 @@ public abstract class AbstractLinuxPlatform implements Platform {
     return tools;
   }
 
-  /** Package name and binary name for a tool. */
+  /**
+   * Package name and binary name for a tool.
+   *
+   * @param packageName distro package providing the tool (e.g. {@code "stress-ng"})
+   * @param binaryName executable name on the PATH (e.g. {@code "stress-ng"})
+   */
   protected record ToolMapping(String packageName, String binaryName) {}
 
   /**
@@ -227,7 +235,7 @@ public abstract class AbstractLinuxPlatform implements Platform {
           String.format("Tool %s not supported on %s", tool, getDistribution()));
     }
 
-    return mapping.binaryName();  // null = no binary to verify (e.g. CA_CERTIFICATES)
+    return mapping.binaryName(); // null = no binary to verify (e.g. CA_CERTIFICATES)
   }
 
   private ToolMapping getToolMapping(final Tool tool) {

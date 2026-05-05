@@ -127,6 +127,11 @@ subprojects {
         }
     }
 
+    // Javadoc: suppress "missing" doclint for Lombok-generated constructors (@Value/@Builder)
+    tasks.withType<Javadoc> {
+        (options as StandardJavadocDocletOptions).addStringOption("Xdoclint:all,-missing", "-quiet")
+    }
+
     // Spotless code formatting
     configure<com.diffplug.gradle.spotless.SpotlessExtension> {
         java {

@@ -139,7 +139,7 @@ import com.macstab.chaos.core.model.Signal;
  *
  * <h2>Testing Patterns</h2>
  *
- * <h3>Pattern 1: Crash + Auto-Recovery</h3>
+ * <p><strong>Pattern 1: Crash + Auto-Recovery</strong>
  *
  * <pre>{@code
  * @Test
@@ -159,7 +159,7 @@ import com.macstab.chaos.core.model.Signal;
  * }
  * }</pre>
  *
- * <h3>Pattern 2: Graceful vs Forced Shutdown</h3>
+ * <p><strong>Pattern 2: Graceful vs Forced Shutdown</strong>
  *
  * <pre>{@code
  * @Test
@@ -178,7 +178,7 @@ import com.macstab.chaos.core.model.Signal;
  * }
  * }</pre>
  *
- * <h3>Pattern 3: Process Freeze (Pause/Resume)</h3>
+ * <p><strong>Pattern 3: Process Freeze (Pause/Resume)</strong>
  *
  * <pre>{@code
  * @Test
@@ -326,7 +326,7 @@ import com.macstab.chaos.core.model.Signal;
  *
  * <ul>
  *   <li><strong>Overhead:</strong> ~1ms to send signal
- *   <li><strong>Process termination:</strong> Immediate (SIGKILL) or <1s (SIGTERM cleanup)
+ *   <li><strong>Process termination:</strong> Immediate (SIGKILL) or {@literal <}1s (SIGTERM cleanup)
  *   <li><strong>Pause/resume:</strong> Immediate (kernel-level operation)
  * </ul>
  *
@@ -363,7 +363,7 @@ public interface ProcessChaos extends ChaosProvider {
    *
    * <p>Uses {@code kill -<signal> <pid>} or {@code killall -<signal> <name>}.
    *
-   * <h3>Example: Test Database Crash Recovery</h3>
+   * <p><strong>Example: Test Database Crash Recovery</strong>
    *
    * <pre>{@code
    * @Test
@@ -379,7 +379,7 @@ public interface ProcessChaos extends ChaosProvider {
    * }
    * }</pre>
    *
-   * <h3>Signal Types</h3>
+   * <p><strong>Signal Types</strong>
    *
    * <ul>
    *   <li><strong>SIGTERM:</strong> Graceful shutdown (process can cleanup, flush logs)
@@ -387,7 +387,7 @@ public interface ProcessChaos extends ChaosProvider {
    *   <li><strong>SIGSTOP:</strong> Pause (see {@link #pause} for auto-resume)
    * </ul>
    *
-   * <h3>Process Name Matching</h3>
+   * <p><strong>Process Name Matching</strong>
    *
    * <p>Name can be exact ("redis-server") or pattern ("postgres*"). Use {@link #listProcesses} to
    * find exact names.
@@ -407,7 +407,7 @@ public interface ProcessChaos extends ChaosProvider {
    *
    * <p>Simulates CPU starvation or unresponsive processes.
    *
-   * <h3>Example: Test Timeout Detection</h3>
+   * <p><strong>Example: Test Timeout Detection</strong>
    *
    * <pre>{@code
    * @Test
@@ -421,7 +421,7 @@ public interface ProcessChaos extends ChaosProvider {
    * }
    * }</pre>
    *
-   * <h3>Use Cases</h3>
+   * <p><strong>Use Cases</strong>
    *
    * <ul>
    *   <li>Test timeout handling (client detects frozen service)
@@ -441,7 +441,7 @@ public interface ProcessChaos extends ChaosProvider {
    *
    * <p>Sets {@code pids.max} in cgroups to prevent fork bombs and runaway thread creation.
    *
-   * <h3>Example: Test Fork Bomb Protection</h3>
+   * <p><strong>Example: Test Fork Bomb Protection</strong>
    *
    * <pre>{@code
    * @Test
@@ -458,7 +458,7 @@ public interface ProcessChaos extends ChaosProvider {
    * }
    * }</pre>
    *
-   * <h3>Recommended Limits</h3>
+   * <p><strong>Recommended Limits</strong>
    *
    * <ul>
    *   <li><strong>100-200:</strong> Normal applications (web server, database)
@@ -477,7 +477,7 @@ public interface ProcessChaos extends ChaosProvider {
    *
    * <p>Uses {@code ps aux} to get process list.
    *
-   * <h3>Example: Find Process Name for Killing</h3>
+   * <p><strong>Example: Find Process Name for Killing</strong>
    *
    * <pre>{@code
    * @Test

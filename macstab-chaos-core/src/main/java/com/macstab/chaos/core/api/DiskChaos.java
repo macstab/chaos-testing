@@ -16,9 +16,9 @@ import com.macstab.chaos.core.syscall.DiskOperation;
  * <ul>
  *   <li><strong>Stress</strong> — generate heavy I/O load via {@code stress-ng}
  *   <li><strong>Fill</strong> — consume disk space to test ENOSPC handling
- *   <li><strong>Syscall fault injection</strong> — inject errors, latency, torn writes,
- *       and data corruption at the POSIX syscall level via {@code libchaos-io} LD_PRELOAD.
- *       Requires {@link #prepareForFaultInjection} before container start.
+ *   <li><strong>Syscall fault injection</strong> — inject errors, latency, torn writes, and data
+ *       corruption at the POSIX syscall level via {@code libchaos-io} LD_PRELOAD. Requires {@link
+ *       #prepareForFaultInjection} before container start.
  * </ul>
  *
  * <h2>Syscall injection lifecycle</h2>
@@ -41,7 +41,7 @@ public interface DiskChaos extends ChaosProvider {
    * Inject disk I/O stress (heavy sequential read/write via stress-ng --hdd).
    *
    * @param container target container
-   * @param workers   number of disk workers (>= 1)
+   * @param workers number of disk workers (>= 1)
    */
   void stressDisk(GenericContainer<?> container, int workers);
 
@@ -49,8 +49,8 @@ public interface DiskChaos extends ChaosProvider {
    * Inject disk I/O stress with automatic timeout.
    *
    * @param container target container
-   * @param workers   number of disk workers (>= 1)
-   * @param duration  auto-stop after this duration (> 0)
+   * @param workers number of disk workers (>= 1)
+   * @param duration auto-stop after this duration (> 0)
    */
   void stressDisk(GenericContainer<?> container, int workers, Duration duration);
 
@@ -59,7 +59,7 @@ public interface DiskChaos extends ChaosProvider {
   /**
    * Fill disk to a percentage of total capacity.
    *
-   * @param container  target container
+   * @param container target container
    * @param mountPoint disk mount point (e.g. "/data")
    * @param percentage fill target in range [1, 95]
    */
@@ -68,9 +68,9 @@ public interface DiskChaos extends ChaosProvider {
   /**
    * Fill disk by absolute size.
    *
-   * @param container  target container
+   * @param container target container
    * @param mountPoint disk mount point
-   * @param size       size string, e.g. "500M", "2G"
+   * @param size size string, e.g. "500M", "2G"
    */
   void fillDiskBySize(GenericContainer<?> container, String mountPoint, String size);
 
@@ -79,17 +79,17 @@ public interface DiskChaos extends ChaosProvider {
   /**
    * Prepares the container for syscall-level fault injection.
    *
-   * <p><strong>Must be called before {@code container.start()}.</strong>
-   * Copies the matching {@code libchaos-io} binary into the container and sets
-   * {@code LD_PRELOAD}. Idempotent — safe to call multiple times.
+   * <p><strong>Must be called before {@code container.start()}.</strong> Copies the matching {@code
+   * libchaos-io} binary into the container and sets {@code LD_PRELOAD}. Idempotent — safe to call
+   * multiple times.
    *
    * @param container container to prepare (must not yet be started)
    */
   void prepareForFaultInjection(GenericContainer<?> container);
 
   /**
-   * Removes all fault injection rules owned by the disk module.
-   * Does nothing if fault injection was never prepared.
+   * Removes all fault injection rules owned by the disk module. Does nothing if fault injection was
+   * never prepared.
    *
    * @param container running container
    */
@@ -99,6 +99,7 @@ public interface DiskChaos extends ChaosProvider {
    * Returns {@code true} if {@link #prepareForFaultInjection} was called on this container.
    *
    * @param container target container
+   * @return {@code true} if the libchaos-io transport is active on this container
    */
   boolean isFaultInjectionActive(GenericContainer<?> container);
 
@@ -109,10 +110,10 @@ public interface DiskChaos extends ChaosProvider {
    *
    * <p>Requires {@link #prepareForFaultInjection} before container start.
    *
-   * @param container   target container (must be running)
-   * @param path        path prefix to match, e.g. "/data" or "*" for all paths
-   * @param operation   syscall to intercept
-   * @param errno       error code to return
+   * @param container target container (must be running)
+   * @param path path prefix to match, e.g. "/data" or "*" for all paths
+   * @param operation syscall to intercept
+   * @param errno error code to return
    * @param probability trigger probability [0.0, 1.0]
    */
   void injectIOError(
@@ -128,24 +129,21 @@ public interface DiskChaos extends ChaosProvider {
    * <p>Requires {@link #prepareForFaultInjection} before container start.
    *
    * @param container target container (must be running)
-   * @param path      path prefix to match
+   * @param path path prefix to match
    * @param operation syscall to intercept
-   * @param latency   delay injected before the syscall executes
+   * @param latency delay injected before the syscall executes
    */
   void injectIOLatency(
-      GenericContainer<?> container,
-      String path,
-      DiskOperation operation,
-      Duration latency);
+      GenericContainer<?> container, String path, DiskOperation operation, Duration latency);
 
   /**
    * Inject torn (partial) writes — simulates power loss mid-write.
    *
-   * <p>Only valid on write-type operations ({@link DiskOperation#WRITE},
-   * {@link DiskOperation#PWRITE}). Requires {@link #prepareForFaultInjection} before start.
+   * <p>Only valid on write-type operations ({@link DiskOperation#WRITE}, {@link
+   * DiskOperation#PWRITE}). Requires {@link #prepareForFaultInjection} before start.
    *
-   * @param container   target container (must be running)
-   * @param path        path prefix to match
+   * @param container target container (must be running)
+   * @param path path prefix to match
    * @param probability trigger probability [0.0, 1.0]
    */
   void injectTornWrite(GenericContainer<?> container, String path, double probability);
@@ -153,11 +151,11 @@ public interface DiskChaos extends ChaosProvider {
   /**
    * Inject data corruption on reads — flips random bits in the returned buffer.
    *
-   * <p>Only valid on read-type operations ({@link DiskOperation#READ},
-   * {@link DiskOperation#PREAD}). Requires {@link #prepareForFaultInjection} before start.
+   * <p>Only valid on read-type operations ({@link DiskOperation#READ}, {@link
+   * DiskOperation#PREAD}). Requires {@link #prepareForFaultInjection} before start.
    *
-   * @param container   target container (must be running)
-   * @param path        path prefix to match
+   * @param container target container (must be running)
+   * @param path path prefix to match
    * @param probability trigger probability [0.0, 1.0]
    */
   void injectCorruptRead(GenericContainer<?> container, String path, double probability);
@@ -167,7 +165,7 @@ public interface DiskChaos extends ChaosProvider {
   /**
    * Returns current disk usage percentage for the given mount point.
    *
-   * @param container  target container (must be running)
+   * @param container target container (must be running)
    * @param mountPoint mount point to check
    * @return usage percentage 0–100
    */
@@ -177,6 +175,7 @@ public interface DiskChaos extends ChaosProvider {
    * Returns {@code true} if disk stress workers are currently running.
    *
    * @param container target container
+   * @return {@code true} if any stress-ng hdd workers are active
    */
   boolean isStressed(GenericContainer<?> container);
 }

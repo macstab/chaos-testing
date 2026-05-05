@@ -31,6 +31,9 @@ import java.util.Set;
  */
 public final class AshShell extends AbstractShell {
 
+  /** Creates an ash shell instance. */
+  public AshShell() {}
+
   /** Ash supports only POSIX command substitution. */
   private static final Set<ShellCapability> CAPABILITIES =
       Set.of(ShellCapability.COMMAND_SUBSTITUTION);

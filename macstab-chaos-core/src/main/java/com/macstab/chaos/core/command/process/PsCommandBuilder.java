@@ -12,6 +12,9 @@ import java.util.Objects;
  */
 public final class PsCommandBuilder implements ProcessCommandBuilder {
 
+  /** Creates a ps-based process command builder. */
+  public PsCommandBuilder() {}
+
   @Override
   public String buildFindProcessCommand(final String processName) {
     Objects.requireNonNull(processName, "processName must not be null");

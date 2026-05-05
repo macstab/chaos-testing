@@ -234,7 +234,7 @@ import org.testcontainers.containers.GenericContainer;
  *
  * <h2>Testing Patterns</h2>
  *
- * <h3>Pattern 1: Baseline → Chaos → Verify Recovery</h3>
+ * <p><strong>Pattern 1: Baseline → Chaos → Verify Recovery</strong>
  *
  * <pre>{@code
  * @Test
@@ -256,7 +256,7 @@ import org.testcontainers.containers.GenericContainer;
  * }
  * }</pre>
  *
- * <h3>Pattern 2: Probabilistic Chaos (Flaky Networks)</h3>
+ * <p><strong>Pattern 2: Probabilistic Chaos (Flaky Networks)</strong>
  *
  * <pre>{@code
  * @Test
@@ -272,7 +272,7 @@ import org.testcontainers.containers.GenericContainer;
  * }
  * }</pre>
  *
- * <h3>Pattern 3: Chaos + Observability</h3>
+ * <p><strong>Pattern 3: Chaos + Observability</strong>
  *
  * <pre>{@code
  * @Test
@@ -359,7 +359,6 @@ import org.testcontainers.containers.GenericContainer;
  * ProxyChaos chaos = new ProxyChaosProvider();
  * }</pre>
  *
- * @see com.macstab.chaos.proxy.ProxyChaosProvider
  * @author Christian Schnapka - Macstab GmbH
  */
 public interface ProxyChaos {
@@ -370,7 +369,7 @@ public interface ProxyChaos {
    * <p>Sets up iptables PREROUTING redirect + Toxiproxy proxy. All traffic to servicePort gets
    * transparently intercepted and routed through Toxiproxy on proxyPort.
    *
-   * <h3>What This Does</h3>
+   * <p><strong>What This Does</strong>
    *
    * <ol>
    *   <li>Installs Toxiproxy binary (if not already installed)
@@ -380,7 +379,7 @@ public interface ProxyChaos {
    *   <li>Returns container hostname for client connections
    * </ol>
    *
-   * <h3>Example: Redis Proxy</h3>
+   * <p><strong>Example: Redis Proxy</strong>
    *
    * <pre>{@code
    * // Setup
@@ -406,7 +405,7 @@ public interface ProxyChaos {
    * client.set("key", "value");  // Intercepted by proxy
    * }</pre>
    *
-   * <h3>Port Selection</h3>
+   * <p><strong>Port Selection</strong>
    *
    * <ul>
    *   <li><strong>servicePort:</strong> The port your service actually listens on (e.g., Redis
@@ -415,7 +414,7 @@ public interface ProxyChaos {
    *   <li><strong>Client connects to:</strong> hostname:servicePort (e.g., "abc123:6379")
    * </ul>
    *
-   * <h3>CRITICAL: Hostname vs Localhost</h3>
+   * <p><strong>CRITICAL: Hostname vs Localhost</strong>
    *
    * <p><strong>✅ CORRECT:</strong>
    *
@@ -431,12 +430,12 @@ public interface ProxyChaos {
    * Jedis client = new Jedis("localhost", 6379);  // ❌ Bypasses proxy!
    * }</pre>
    *
-   * <h3>Idempotency</h3>
+   * <p><strong>Idempotency</strong>
    *
    * <p>Calling createProxy() multiple times with the same proxyName is idempotent. Existing proxy
    * is reused.
    *
-   * <h3>Cleanup</h3>
+   * <p><strong>Cleanup</strong>
    *
    * <p>Always call {@link #reset} to stop Toxiproxy and remove iptables rules:
    *
@@ -464,7 +463,7 @@ public interface ProxyChaos {
    *
    * <p>Simulates slow networks, geo-distributed services, or network congestion.
    *
-   * <h3>Example: Test Application Handles Slow Redis</h3>
+   * <p><strong>Example: Test Application Handles Slow Redis</strong>
    *
    * <pre>{@code
    * @Test
@@ -485,7 +484,7 @@ public interface ProxyChaos {
    * }
    * }</pre>
    *
-   * <h3>Use Cases</h3>
+   * <p><strong>Use Cases</strong>
    *
    * <ul>
    *   <li>Slow database queries (500-2000ms)
@@ -494,7 +493,7 @@ public interface ProxyChaos {
    *   <li>Timeout testing (add latency &gt; timeout threshold)
    * </ul>
    *
-   * <h3>Idempotency</h3>
+   * <p><strong>Idempotency</strong>
    *
    * <p>Calling multiple times replaces the previous latency value.
    *
@@ -512,7 +511,7 @@ public interface ProxyChaos {
    * <p>Randomly closes connections to simulate flaky networks, service outages, or network
    * partitions.
    *
-   * <h3>Example: Test Circuit Breaker on 30% Timeout Rate</h3>
+   * <p><strong>Example: Test Circuit Breaker on 30% Timeout Rate</strong>
    *
    * <pre>{@code
    * @Test
@@ -538,7 +537,7 @@ public interface ProxyChaos {
    * }
    * }</pre>
    *
-   * <h3>Use Cases</h3>
+   * <p><strong>Use Cases</strong>
    *
    * <ul>
    *   <li>Flaky networks (probability = 0.1-0.3 for 10-30% failure rate)
@@ -547,7 +546,7 @@ public interface ProxyChaos {
    *   <li>Complete outage (probability = 1.0 for 100% failure)
    * </ul>
    *
-   * <h3>Timeout Values</h3>
+   * <p><strong>Timeout Values</strong>
    *
    * <ul>
    *   <li><strong>Duration.ZERO:</strong> Instant close (connection refused)
@@ -568,7 +567,7 @@ public interface ProxyChaos {
    *
    * <p>Simulates slow connections, large response handling, or bandwidth constraints.
    *
-   * <h3>Example: Test Large Response Streaming</h3>
+   * <p><strong>Example: Test Large Response Streaming</strong>
    *
    * <pre>{@code
    * @Test
@@ -590,7 +589,7 @@ public interface ProxyChaos {
    * }
    * }</pre>
    *
-   * <h3>Use Cases</h3>
+   * <p><strong>Use Cases</strong>
    *
    * <ul>
    *   <li>Slow connections: 10-50 KB/s
@@ -612,7 +611,7 @@ public interface ProxyChaos {
    * <p>Simulates slow connection cleanup, tests resource leak handling and connection pool
    * behavior.
    *
-   * <h3>Example: Test Connection Pool Doesn't Leak</h3>
+   * <p><strong>Example: Test Connection Pool Doesn't Leak</strong>
    *
    * <pre>{@code
    * @Test
@@ -640,7 +639,7 @@ public interface ProxyChaos {
    * }
    * }</pre>
    *
-   * <h3>Use Cases</h3>
+   * <p><strong>Use Cases</strong>
    *
    * <ul>
    *   <li>Connection pool leak testing
@@ -660,7 +659,7 @@ public interface ProxyChaos {
    *
    * <p><strong>CRITICAL:</strong> Always call in @AfterEach to prevent resource leaks.
    *
-   * <h3>Example: Proper Cleanup</h3>
+   * <p><strong>Example: Proper Cleanup</strong>
    *
    * <pre>{@code
    * @Testcontainers
@@ -686,7 +685,7 @@ public interface ProxyChaos {
    * }
    * }</pre>
    *
-   * <h3>What This Does</h3>
+   * <p><strong>What This Does</strong>
    *
    * <ol>
    *   <li>Removes all toxics from all proxies
@@ -695,7 +694,7 @@ public interface ProxyChaos {
    *   <li>Cleans up internal state
    * </ol>
    *
-   * <h3>Idempotency</h3>
+   * <p><strong>Idempotency</strong>
    *
    * <p>Safe to call multiple times. No-op if already reset.
    *
@@ -731,7 +730,7 @@ public interface ProxyChaos {
    * the corresponding iptables rule — all other proxies and the Toxiproxy process itself remain
    * active.
    *
-   * <h3>⚠️ deleteProxy vs reset — Critical Difference</h3>
+   * <p><strong>⚠️ deleteProxy vs reset — Critical Difference</strong>
    *
    * <table border="1">
    *   <caption>Cleanup Method Comparison</caption>
@@ -747,7 +746,7 @@ public interface ProxyChaos {
    * from one module destroys every other module's proxy. Use {@code deleteProxy} for module-level
    * cleanup.
    *
-   * <h3>Example: Safe per-test cleanup</h3>
+   * <p><strong>Example: Safe per-test cleanup</strong>
    *
    * <pre>{@code
    * @AfterEach
@@ -801,7 +800,7 @@ public interface ProxyChaos {
    *   <li>Containers without NET_ADMIN capability
    * </ul>
    *
-   * <h3>Example: Conditional Testing</h3>
+   * <p><strong>Example: Conditional Testing</strong>
    *
    * <pre>{@code
    * @Test

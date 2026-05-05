@@ -9,8 +9,17 @@ import com.macstab.chaos.core.api.ConnectionChaos;
 
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * No-op {@link ConnectionChaos} — all operations are silent no-ops (connection chaos is always
+ * optional). No exception thrown; the interface is used for low-risk decorative effects.
+ *
+ * @author Christian Schnapka - Macstab GmbH
+ */
 @Slf4j
 public final class NoOpConnectionChaos implements ConnectionChaos {
+
+  /** Creates a no-op connection chaos implementation. */
+  public NoOpConnectionChaos() {}
 
   /** No-op addLatency implementation. */
   @Override

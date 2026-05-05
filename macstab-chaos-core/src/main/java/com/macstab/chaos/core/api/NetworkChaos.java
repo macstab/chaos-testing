@@ -160,7 +160,7 @@ import org.testcontainers.containers.GenericContainer;
  *
  * <h2>Testing Patterns</h2>
  *
- * <h3>Pattern 1: Baseline → Chaos → Verify Degradation → Reset → Verify Recovery</h3>
+ * <p><strong>Pattern 1: Baseline → Chaos → Verify Degradation → Reset → Verify Recovery</strong>
  *
  * <pre>{@code
  * @Test
@@ -182,7 +182,7 @@ import org.testcontainers.containers.GenericContainer;
  * }
  * }</pre>
  *
- * <h3>Pattern 2: Probabilistic Testing (Statistical Validation)</h3>
+ * <p><strong>Pattern 2: Probabilistic Testing (Statistical Validation)</strong>
  *
  * <pre>{@code
  * @Test
@@ -199,7 +199,7 @@ import org.testcontainers.containers.GenericContainer;
  * }
  * }</pre>
  *
- * <h3>Pattern 3: Chaos Layering (Multiple Conditions)</h3>
+ * <p><strong>Pattern 3: Chaos Layering (Multiple Conditions)</strong>
  *
  * <pre>{@code
  * @Test
@@ -360,7 +360,7 @@ public interface NetworkChaos extends ChaosProvider {
    *
    * <p>Uses {@code tc qdisc add dev eth0 root netem delay <delay>ms}.
    *
-   * <h3>Example: Test Timeout Handling on Slow Network</h3>
+   * <p><strong>Example: Test Timeout Handling on Slow Network</strong>
    *
    * <pre>{@code
    * @Test
@@ -395,7 +395,7 @@ public interface NetworkChaos extends ChaosProvider {
    *
    * <p>Actual latency will be: delay ± jitter (uniformly distributed).
    *
-   * <h3>Example: Simulate WiFi with Variable Latency</h3>
+   * <p><strong>Example: Simulate WiFi with Variable Latency</strong>
    *
    * <pre>{@code
    * @Test
@@ -431,7 +431,7 @@ public interface NetworkChaos extends ChaosProvider {
    *
    * <p>Each packet has independent probability of being dropped.
    *
-   * <h3>Example: Test Retry Logic on Unreliable Network</h3>
+   * <p><strong>Example: Test Retry Logic on Unreliable Network</strong>
    *
    * <pre>{@code
    * @Test
@@ -450,7 +450,7 @@ public interface NetworkChaos extends ChaosProvider {
    * }
    * }</pre>
    *
-   * <h3>Recommended Values</h3>
+   * <p><strong>Recommended Values</strong>
    *
    * <ul>
    *   <li>0.01 (1%): Good network with occasional drops
@@ -472,7 +472,7 @@ public interface NetworkChaos extends ChaosProvider {
    *
    * <p>Models real-world packet loss where errors occur in bursts (not uniformly random).
    *
-   * <h3>Gilbert-Elliott Model Explained</h3>
+   * <p><strong>Gilbert-Elliott Model Explained</strong>
    *
    * <p><strong>Correlation coefficient:</strong> Probability of staying in same state
    *
@@ -482,7 +482,7 @@ public interface NetworkChaos extends ChaosProvider {
    *   <li><strong>0.9:</strong> High correlation (long bursts of loss/recovery)
    * </ul>
    *
-   * <h3>Example: Burst Errors Like Real Networks</h3>
+   * <p><strong>Example: Burst Errors Like Real Networks</strong>
    *
    * <pre>{@code
    * @Test
@@ -523,7 +523,7 @@ public interface NetworkChaos extends ChaosProvider {
    *
    * <p>Uses {@code tc qdisc add dev eth0 root tbf rate <rate> burst 32kbit latency 400ms}.
    *
-   * <h3>Example: Test Large File Transfer on Slow Connection</h3>
+   * <p><strong>Example: Test Large File Transfer on Slow Connection</strong>
    *
    * <pre>{@code
    * @Test
@@ -542,7 +542,7 @@ public interface NetworkChaos extends ChaosProvider {
    * }
    * }</pre>
    *
-   * <h3>Common Bandwidth Limits</h3>
+   * <p><strong>Common Bandwidth Limits</strong>
    *
    * <table border="1">
    *   <caption>Network Speeds</caption>
@@ -587,7 +587,7 @@ public interface NetworkChaos extends ChaosProvider {
    *
    * <p>Uses {@code iptables -A OUTPUT -d <target-ip> -j DROP}.
    *
-   * <h3>Example: Test Split-Brain Detection</h3>
+   * <p><strong>Example: Test Split-Brain Detection</strong>
    *
    * <pre>{@code
    * @Test
@@ -610,7 +610,7 @@ public interface NetworkChaos extends ChaosProvider {
    * }
    * }</pre>
    *
-   * <h3>One-Way vs Two-Way Partition</h3>
+   * <p><strong>One-Way vs Two-Way Partition</strong>
    *
    * <pre>{@code
    * // One-way: A cannot reach B, but B CAN reach A
@@ -631,7 +631,7 @@ public interface NetworkChaos extends ChaosProvider {
    *
    * <p><strong>CRITICAL:</strong> Always call in @AfterEach to prevent rule leaks.
    *
-   * <h3>Example: Proper Cleanup</h3>
+   * <p><strong>Example: Proper Cleanup</strong>
    *
    * <pre>{@code
    * @Testcontainers
@@ -655,7 +655,7 @@ public interface NetworkChaos extends ChaosProvider {
    * }
    * }</pre>
    *
-   * <h3>What This Does</h3>
+   * <p><strong>What This Does</strong>
    *
    * <ol>
    *   <li>Removes all tc qdiscs: {@code tc qdisc del dev eth0 root}

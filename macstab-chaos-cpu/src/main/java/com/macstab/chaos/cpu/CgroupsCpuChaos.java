@@ -30,8 +30,8 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <p>Operations that target the main application process (throttle, affinity pinning, priority
  * degradation) must know its PID. In containers without an init system, PID 1 <em>is</em> the
- * application. But when {@code --init} is used (recommended for zombie reaping), PID 1 is the
- * init system (tini, dumb-init, etc.) and the application runs as a child.
+ * application. But when {@code --init} is used (recommended for zombie reaping), PID 1 is the init
+ * system (tini, dumb-init, etc.) and the application runs as a child.
  *
  * <p>This class transparently handles both cases via {@link ContainerPidResolver}:
  *
@@ -44,11 +44,11 @@ import lombok.extern.slf4j.Slf4j;
  * </pre>
  *
  * <p>Detection reads {@code /proc/1/comm} to identify known init systems, then finds the first
- * child via {@code /proc/1/task/1/children}. The result is cached on the container Java object
- * via label {@code macstab.chaos.pid.main} -- zero overhead after first resolution.
+ * child via {@code /proc/1/task/1/children}. The result is cached on the container Java object via
+ * label {@code macstab.chaos.pid.main} -- zero overhead after first resolution.
  *
- * <p><strong>User override:</strong> Set the label before the first chaos operation to force
- * a specific PID:
+ * <p><strong>User override:</strong> Set the label before the first chaos operation to force a
+ * specific PID:
  *
  * <pre>{@code
  * container.withLabel("macstab.chaos.pid.main", "42");
@@ -57,10 +57,10 @@ import lombok.extern.slf4j.Slf4j;
  * <h2>Zombie-Aware Process Detection</h2>
  *
  * <p>Process detection via /proc/[0-9]&#42;/comm skips zombie processes (state Z in
- * /proc/[pid]/stat field 3). SIGKILL'd processes become zombies until reaped by their
- * parent. Without filtering, isStressed() would return true for dead processes whose
- * /proc entry is still readable. Using --init (tini) ensures zombies are reaped within
- * milliseconds. The detection filter is defense-in-depth.
+ * /proc/[pid]/stat field 3). SIGKILL'd processes become zombies until reaped by their parent.
+ * Without filtering, isStressed() would return true for dead processes whose /proc entry is still
+ * readable. Using --init (tini) ensures zombies are reaped within milliseconds. The detection
+ * filter is defense-in-depth.
  *
  * <p>Registered as the {@code CpuChaos} SPI provider via {@code
  * META-INF/services/com.macstab.chaos.core.api.CpuChaos}.
@@ -73,17 +73,17 @@ public final class CgroupsCpuChaos implements CpuChaos {
   /**
    * Delay after starting stress-ng before querying its PID for stressWithThrottle.
    *
-   * <p>50ms: stress-ng forks worker processes immediately; the parent PID is visible
-   * in /proc within 1-2ms on modern kernels. 50ms provides comfortable headroom
-   * across DinD, Docker Desktop, and native Linux environments.
+   * <p>50ms: stress-ng forks worker processes immediately; the parent PID is visible in /proc
+   * within 1-2ms on modern kernels. 50ms provides comfortable headroom across DinD, Docker Desktop,
+   * and native Linux environments.
    */
   private static final long STRESS_NG_STARTUP_MS = 50;
 
   /**
    * Maximum time to wait for stress-ng to disappear after SIGKILL.
    *
-   * <p>With tini/docker-init as PID 1, orphaned processes are reaped within milliseconds.
-   * 1000ms is a generous upper bound for slow DinD environments.
+   * <p>With tini/docker-init as PID 1, orphaned processes are reaped within milliseconds. 1000ms is
+   * a generous upper bound for slow DinD environments.
    */
   private static final long STRESS_NG_SHUTDOWN_TIMEOUT_MS = 1_000;
 
@@ -97,8 +97,8 @@ public final class CgroupsCpuChaos implements CpuChaos {
   /**
    * Maximum time to wait for a backgrounded process to appear in /proc after exec.
    *
-   * <p>Background processes ({@code cmd &}) may not be visible in /proc when the
-   * shell exec returns. 2000ms covers the slowest DinD environments observed.
+   * <p>Background processes ({@code cmd &}) may not be visible in /proc when the shell exec
+   * returns. 2000ms covers the slowest DinD environments observed.
    */
   private static final long PROCESS_STARTUP_TIMEOUT_MS = 2_000;
 
@@ -114,7 +114,7 @@ public final class CgroupsCpuChaos implements CpuChaos {
   /**
    * Package-private testability constructor — accepts collaborators for unit testing.
    *
-   * @param cmd     command builder (mock or real)
+   * @param cmd command builder (mock or real)
    * @param observe observability delegate (mock or real)
    */
   CgroupsCpuChaos(final StressNgCommandBuilder cmd, final CpuObservability observe) {
@@ -131,7 +131,10 @@ public final class CgroupsCpuChaos implements CpuChaos {
     installTools(container);
     killCpuLimit(container);
     // percentage range validated by builder (throws ChaosConfigurationException)
-    exec(container, cmd.buildThrottleCommand(ContainerPidResolver.resolve(container), percentage), "throttle CPU");
+    exec(
+        container,
+        cmd.buildThrottleCommand(ContainerPidResolver.resolve(container), percentage),
+        "throttle CPU");
     ProcessPoller.waitUntilStarted(container, "cpulimit", PROCESS_STARTUP_TIMEOUT_MS);
     log.info("Throttled CPU to {}% (PID 1)", percentage);
   }
@@ -159,15 +162,19 @@ public final class CgroupsCpuChaos implements CpuChaos {
 
   @Override
   public void stress(final GenericContainer<?> container, final int workers) {
-    executeStressor(container, workers, () -> cmd.buildStressCpuCommand(workers), "CPU", Optional.empty());
+    executeStressor(
+        container, workers, () -> cmd.buildStressCpuCommand(workers), "CPU", Optional.empty());
   }
 
   @Override
   public void stress(
       final GenericContainer<?> container, final int workers, final Duration duration) {
-    executeStressor(container, workers,
+    executeStressor(
+        container,
+        workers,
         () -> cmd.buildStressCpuWithTimeoutCommand(workers, duration.toSeconds()),
-        "CPU", Optional.of(duration));
+        "CPU",
+        Optional.of(duration));
   }
 
   @Override
@@ -178,7 +185,9 @@ public final class CgroupsCpuChaos implements CpuChaos {
     // ChaosConfigurationException
     final String startStressCmd = cmd.buildStressCpuCommand(workers);
     final String startThrottleTemplate =
-        cmd.buildThrottleCommand(ContainerPidResolver.resolve(container), percentage); // validates percentage; pid replaced later
+        cmd.buildThrottleCommand(
+            ContainerPidResolver.resolve(container),
+            percentage); // validates percentage; pid replaced later
     validateContainerRunning(container);
     installTools(container);
     killStressNg(container);
@@ -206,61 +215,90 @@ public final class CgroupsCpuChaos implements CpuChaos {
 
   @Override
   public void stressCache(final GenericContainer<?> container, final int workers) {
-    executeStressor(container, workers, () -> cmd.buildStressCacheCommand(workers), "cache", Optional.empty());
+    executeStressor(
+        container, workers, () -> cmd.buildStressCacheCommand(workers), "cache", Optional.empty());
   }
 
   @Override
   public void stressCache(
       final GenericContainer<?> container, final int workers, final Duration duration) {
-    executeStressor(container, workers,
+    executeStressor(
+        container,
+        workers,
         () -> cmd.buildStressCacheWithTimeoutCommand(workers, duration.toSeconds()),
-        "cache", Optional.of(duration));
+        "cache",
+        Optional.of(duration));
   }
 
   @Override
   public void stressCacheLine(final GenericContainer<?> container, final int workers) {
-    executeStressor(container, workers, () -> cmd.buildStressCacheLineCommand(workers), "cache-line", Optional.empty());
+    executeStressor(
+        container,
+        workers,
+        () -> cmd.buildStressCacheLineCommand(workers),
+        "cache-line",
+        Optional.empty());
   }
 
   @Override
   public void stressContextSwitch(final GenericContainer<?> container, final int workers) {
-    executeStressor(container, workers,
+    executeStressor(
+        container,
+        workers,
         () -> cmd.buildStressContextSwitchCommand(workers),
-        "context-switch", Optional.empty());
+        "context-switch",
+        Optional.empty());
   }
 
   @Override
   public void stressThreadSwitch(final GenericContainer<?> container, final int workers) {
-    executeStressor(container, workers,
+    executeStressor(
+        container,
+        workers,
         () -> cmd.buildStressThreadSwitchCommand(workers),
-        "thread-switch", Optional.empty());
+        "thread-switch",
+        Optional.empty());
   }
 
   @Override
   public void stressBranchPredictor(final GenericContainer<?> container, final int workers) {
-    executeStressor(container, workers,
+    executeStressor(
+        container,
+        workers,
         () -> cmd.buildStressBranchPredictorCommand(workers),
-        "branch-predictor", Optional.empty());
+        "branch-predictor",
+        Optional.empty());
   }
 
   @Override
   public void stressTimerInterrupts(final GenericContainer<?> container, final int workers) {
-    executeStressor(container, workers,
+    executeStressor(
+        container,
+        workers,
         () -> cmd.buildStressTimerInterruptsCommand(workers),
-        "timer-interrupt", Optional.empty());
+        "timer-interrupt",
+        Optional.empty());
   }
 
   @Override
   public void stressMatrix(final GenericContainer<?> container, final int workers) {
-    executeStressor(container, workers, () -> cmd.buildStressMatrixCommand(workers), "matrix", Optional.empty());
+    executeStressor(
+        container,
+        workers,
+        () -> cmd.buildStressMatrixCommand(workers),
+        "matrix",
+        Optional.empty());
   }
 
   @Override
   public void stressMatrix(
       final GenericContainer<?> container, final int workers, final Duration duration) {
-    executeStressor(container, workers,
+    executeStressor(
+        container,
+        workers,
         () -> cmd.buildStressMatrixWithTimeoutCommand(workers, duration.toSeconds()),
-        "matrix", Optional.of(duration));
+        "matrix",
+        Optional.of(duration));
   }
 
   // ==================== CPU Affinity ====================
@@ -290,7 +328,10 @@ public final class CgroupsCpuChaos implements CpuChaos {
           "niceValue must be in [0, 19] for unprivileged containers, got: " + niceValue);
     }
     validateContainerRunning(container);
-    exec(container, cmd.buildSetNiceValueCommand(ContainerPidResolver.resolve(container), niceValue), "degrade CPU priority");
+    exec(
+        container,
+        cmd.buildSetNiceValueCommand(ContainerPidResolver.resolve(container), niceValue),
+        "degrade CPU priority");
     log.info("Degraded PID 1 priority to nice={}", niceValue);
   }
 
@@ -347,7 +388,8 @@ public final class CgroupsCpuChaos implements CpuChaos {
   @Override
   public boolean isAffinityPinned(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
-    return container.isRunning() && observe.isAffinityPinned(container, ContainerPidResolver.resolve(container));
+    return container.isRunning()
+        && observe.isAffinityPinned(container, ContainerPidResolver.resolve(container));
   }
 
   @Override
@@ -399,7 +441,10 @@ public final class CgroupsCpuChaos implements CpuChaos {
     ProcessPoller.waitUntilGone(container, "cpulimit", CPULIMIT_SHUTDOWN_TIMEOUT_MS);
 
     final int cores = observe.getAvailableCoresSilent(container);
-    trySilent(container, cmd.buildPinToMaskCommand(ContainerPidResolver.resolve(container), CpuObservability.computeFullMask(cores)));
+    trySilent(
+        container,
+        cmd.buildPinToMaskCommand(
+            ContainerPidResolver.resolve(container), CpuObservability.computeFullMask(cores)));
     trySilent(container, cmd.buildSetNiceValueCommand(ContainerPidResolver.resolve(container), 0));
 
     log.info("Reset CPU chaos");
@@ -415,18 +460,18 @@ public final class CgroupsCpuChaos implements CpuChaos {
   /**
    * Unified template for all stressor executions — indefinite and time-bounded.
    *
-   * <p>The {@code commandSupplier} is invoked <em>before</em> any container side-effects
-   * so that builder-level validation ({@link ChaosConfigurationException} for invalid workers
-   * or duration) fires immediately without touching the container.
+   * <p>The {@code commandSupplier} is invoked <em>before</em> any container side-effects so that
+   * builder-level validation ({@link ChaosConfigurationException} for invalid workers or duration)
+   * fires immediately without touching the container.
    *
-   * <p>The optional {@code duration} is used only for log output. The command string
-   * returned by {@code commandSupplier} already encodes the timeout via {@code --timeout Xs}.
+   * <p>The optional {@code duration} is used only for log output. The command string returned by
+   * {@code commandSupplier} already encodes the timeout via {@code --timeout Xs}.
    *
-   * @param container       target container (must be running)
-   * @param workers         number of stressor workers (for log output)
+   * @param container target container (must be running)
+   * @param workers number of stressor workers (for log output)
    * @param commandSupplier builds the shell command; validated eagerly before container ops
-   * @param label           human-readable stressor name (e.g. {@code "CPU"}, {@code "cache"})
-   * @param duration        present for time-bounded runs; empty for indefinite runs
+   * @param label human-readable stressor name (e.g. {@code "CPU"}, {@code "cache"})
+   * @param duration present for time-bounded runs; empty for indefinite runs
    */
   private void executeStressor(
       final GenericContainer<?> container,

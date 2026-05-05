@@ -8,6 +8,14 @@ import org.testcontainers.containers.GenericContainer;
 
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * Shell execution utilities for container interaction.
+ *
+ * <p>Provides constants for {@code /bin/sh} execution and helper methods for running shell commands
+ * inside Testcontainers {@link org.testcontainers.containers.GenericContainer} instances.
+ *
+ * @author Christian Schnapka - Macstab GmbH
+ */
 @Slf4j
 public final class Shell {
 

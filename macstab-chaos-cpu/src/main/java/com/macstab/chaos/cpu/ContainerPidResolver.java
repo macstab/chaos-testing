@@ -16,8 +16,8 @@ import lombok.extern.slf4j.Slf4j;
  * <h2>Problem</h2>
  *
  * <p>CPU chaos operations (throttle, affinity pinning, priority) must target the main application
- * process. Without an init system, the application is PID 1. With {@code --init}, PID 1 is the
- * init system (tini, docker-init, dumb-init) and the application runs as its first child.
+ * process. Without an init system, the application is PID 1. With {@code --init}, PID 1 is the init
+ * system (tini, docker-init, dumb-init) and the application runs as its first child.
  *
  * <h2>Detection Algorithm</h2>
  *
@@ -30,9 +30,9 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <h2>Caching</h2>
  *
- * <p>The resolved PID is stored via {@link GenericContainer#withLabel} under key
- * {@code macstab.chaos.pid.main}. This is a pure in-JVM operation — no Docker API call.
- * Subsequent calls on the same container return the cached value from a HashMap lookup.
+ * <p>The resolved PID is stored via {@link GenericContainer#withLabel} under key {@code
+ * macstab.chaos.pid.main}. This is a pure in-JVM operation — no Docker API call. Subsequent calls
+ * on the same container return the cached value from a HashMap lookup.
  *
  * <h2>User Override</h2>
  *
@@ -52,11 +52,12 @@ final class ContainerPidResolver {
    * Known init process comm names that are not the main application.
    *
    * <p>These are the actual comm names read from {@code /proc/1/comm}:
+   *
    * <ul>
    *   <li>{@code docker-init} -- Docker's built-in {@code --init} flag (wraps tini internally)
-   *   <li>{@code tini}        -- standalone tini binary used in custom Dockerfiles
-   *   <li>{@code dumb-init}   -- Yelp dumb-init
-   *   <li>{@code s6-svscan}   -- s6 supervision tree root
+   *   <li>{@code tini} -- standalone tini binary used in custom Dockerfiles
+   *   <li>{@code dumb-init} -- Yelp dumb-init
+   *   <li>{@code s6-svscan} -- s6 supervision tree root
    *   <li>{@code s6-supervise} -- s6 service supervisor
    * </ul>
    */
@@ -66,8 +67,8 @@ final class ContainerPidResolver {
   /**
    * Shell command to find the first direct child of PID 1.
    *
-   * <p>Scans {@code /proc/[0-9]&#42;/status} for {@code PPid: 1}.
-   * Uses {@code while IFS= read -r} for POSIX-safe line processing (no word splitting).
+   * <p>Scans {@code /proc/[0-9]&#42;/status} for {@code PPid: 1}. Uses {@code while IFS= read -r}
+   * for POSIX-safe line processing (no word splitting).
    */
   private static final String FIND_FIRST_CHILD_OF_INIT =
       "grep -rl '^PPid:[[:space:]]*1$' /proc/[0-9]*/status 2>/dev/null"
@@ -83,8 +84,8 @@ final class ContainerPidResolver {
   /**
    * Resolves the main application PID for the given container.
    *
-   * <p>Returns the cached value from the container label if already resolved.
-   * Otherwise performs init detection and caches the result.
+   * <p>Returns the cached value from the container label if already resolved. Otherwise performs
+   * init detection and caches the result.
    *
    * @param container running container
    * @return main application PID (1 if detection fails)
@@ -112,8 +113,7 @@ final class ContainerPidResolver {
    */
   private static int detect(final GenericContainer<?> container) {
     try {
-      final var commResult =
-          container.execInContainer(Shell.SH, Shell.FLAG_C, "cat /proc/1/comm");
+      final var commResult = container.execInContainer(Shell.SH, Shell.FLAG_C, "cat /proc/1/comm");
       if (commResult.getExitCode() != 0) {
         return 1;
       }

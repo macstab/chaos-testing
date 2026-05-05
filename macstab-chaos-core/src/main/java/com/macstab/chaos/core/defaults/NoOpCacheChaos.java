@@ -17,6 +17,9 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public final class NoOpCacheChaos implements CacheChaos {
 
+  /** Creates a no-op cache chaos implementation. */
+  public NoOpCacheChaos() {}
+
   @Override
   public void slowResponse(final GenericContainer<?> container, final Duration delay) {
     // No-op

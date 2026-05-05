@@ -19,6 +19,9 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public abstract class AbstractShell implements Shell {
 
+  /** Creates a new shell instance. */
+  protected AbstractShell() {}
+
   private static final String FLAG_C = "-c";
 
   @Override

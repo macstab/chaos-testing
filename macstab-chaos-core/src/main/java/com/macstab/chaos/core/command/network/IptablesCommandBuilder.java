@@ -17,6 +17,9 @@ package com.macstab.chaos.core.command.network;
  */
 public final class IptablesCommandBuilder implements NetworkCommandBuilder {
 
+  /** Creates an iptables command builder instance. */
+  public IptablesCommandBuilder() {}
+
   @Override
   public String buildAddRedirectCommand(final int fromPort, final int toPort) {
     validatePort(fromPort, "fromPort");

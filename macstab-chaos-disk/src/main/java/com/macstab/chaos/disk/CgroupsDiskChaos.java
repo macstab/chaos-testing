@@ -28,19 +28,19 @@ import lombok.extern.slf4j.Slf4j;
  * <h2>Two injection layers</h2>
  *
  * <ul>
- *   <li><strong>Process-level</strong> — {@code stress-ng --hdd} for I/O load generation,
- *       {@code fallocate}/{@code dd} for disk fill. Works in any container.
- *   <li><strong>Syscall-level</strong> — {@code libchaos-io} LD_PRELOAD for per-file
- *       error injection (EIO, ENOSPC), latency, torn writes, and data corruption.
- *       Requires {@link SyscallFaultInjector#prepare} before container start.
+ *   <li><strong>Process-level</strong> — {@code stress-ng --hdd} for I/O load generation, {@code
+ *       fallocate}/{@code dd} for disk fill. Works in any container.
+ *   <li><strong>Syscall-level</strong> — {@code libchaos-io} LD_PRELOAD for per-file error
+ *       injection (EIO, ENOSPC), latency, torn writes, and data corruption. Requires {@link
+ *       SyscallFaultInjector#prepare} before container start.
  * </ul>
  *
  * <h2>Cross-distro compatibility</h2>
  *
- * <p>All shell commands are built via {@link DiskCommandBuilder} — an interface whose
- * {@link StressNgDiskCommandBuilder} implementation uses only POSIX-compatible tools
- * ({@code /proc/comm}, {@code df -P}, {@code awk}) that work on both GNU coreutils
- * (Debian/Ubuntu/RHEL) and BusyBox (Alpine).
+ * <p>All shell commands are built via {@link DiskCommandBuilder} — an interface whose {@link
+ * StressNgDiskCommandBuilder} implementation uses only POSIX-compatible tools ({@code /proc/comm},
+ * {@code df -P}, {@code awk}) that work on both GNU coreutils (Debian/Ubuntu/RHEL) and BusyBox
+ * (Alpine).
  *
  * <h2>Usage</h2>
  *
@@ -125,7 +125,8 @@ public final class CgroupsDiskChaos implements DiskChaos {
     installTools(container);
     killStressNg(container);
 
-    exec(container,
+    exec(
+        container,
         commands.buildStressHddWithTimeoutCommand(workers, duration.toSeconds()),
         "disk stress with duration");
     log.info("Started disk stress: {} workers for {}s", workers, duration.toSeconds());
@@ -146,8 +147,9 @@ public final class CgroupsDiskChaos implements DiskChaos {
     validateRunning(container);
 
     try {
-      final var dfResult = container.execInContainer(
-          Shell.SH, Shell.FLAG_C, commands.buildGetDiskTotalKBCommand(mountPoint));
+      final var dfResult =
+          container.execInContainer(
+              Shell.SH, Shell.FLAG_C, commands.buildGetDiskTotalKBCommand(mountPoint));
       if (dfResult.getExitCode() != 0) {
         throw new ChaosOperationFailedException("Failed to get disk size: " + dfResult.getStderr());
       }
@@ -176,7 +178,8 @@ public final class CgroupsDiskChaos implements DiskChaos {
     validateRunning(container);
 
     final String loadFile = mountPoint + "/chaos-disk-load";
-    exec(container,
+    exec(
+        container,
         commands.buildFillDiskBySizeCommand(loadFile, size, parseSizeMB(size)),
         "fill disk by size");
     log.info("Filled {} with {}", mountPoint, size);
@@ -220,11 +223,13 @@ public final class CgroupsDiskChaos implements DiskChaos {
     Objects.requireNonNull(errno, "errno must not be null");
     validateRunning(container);
 
-    SyscallFaultInjector.addRule(container, OWNER,
+    SyscallFaultInjector.addRule(
+        container,
+        OWNER,
         SyscallRule.errno(path, operation.toLibchaosToken(), errno.toLibchaosToken(), probability)
             .build());
-    log.info("Injected IO error: {}:{} -> {} @ {}%",
-        path, operation, errno, (int) (probability * 100));
+    log.info(
+        "Injected IO error: {}:{} -> {} @ {}%", path, operation, errno, (int) (probability * 100));
   }
 
   @Override
@@ -242,7 +247,9 @@ public final class CgroupsDiskChaos implements DiskChaos {
     }
     validateRunning(container);
 
-    SyscallFaultInjector.addRule(container, OWNER,
+    SyscallFaultInjector.addRule(
+        container,
+        OWNER,
         SyscallRule.latency(path, operation.toLibchaosToken(), latency.toMillis()).build());
     log.info("Injected IO latency: {}:{} -> {}ms", path, operation, latency.toMillis());
   }
@@ -254,7 +261,9 @@ public final class CgroupsDiskChaos implements DiskChaos {
     Objects.requireNonNull(path, "path must not be null");
     validateRunning(container);
 
-    SyscallFaultInjector.addRule(container, OWNER,
+    SyscallFaultInjector.addRule(
+        container,
+        OWNER,
         SyscallRule.torn(path, DiskOperation.WRITE.toLibchaosToken(), probability).build());
     log.info("Injected torn writes: {} @ {}%", path, (int) (probability * 100));
   }
@@ -266,7 +275,9 @@ public final class CgroupsDiskChaos implements DiskChaos {
     Objects.requireNonNull(path, "path must not be null");
     validateRunning(container);
 
-    SyscallFaultInjector.addRule(container, OWNER,
+    SyscallFaultInjector.addRule(
+        container,
+        OWNER,
         SyscallRule.corrupt(path, DiskOperation.READ.toLibchaosToken(), probability).build());
     log.info("Injected corrupt reads: {} @ {}%", path, (int) (probability * 100));
   }
@@ -280,8 +291,9 @@ public final class CgroupsDiskChaos implements DiskChaos {
     validateRunning(container);
 
     try {
-      final var result = container.execInContainer(
-          Shell.SH, Shell.FLAG_C, commands.buildGetDiskUsagePercentCommand(mountPoint));
+      final var result =
+          container.execInContainer(
+              Shell.SH, Shell.FLAG_C, commands.buildGetDiskUsagePercentCommand(mountPoint));
       if (result.getExitCode() != 0) {
         throw new ChaosOperationFailedException("df failed: " + result.getStderr());
       }
@@ -299,8 +311,8 @@ public final class CgroupsDiskChaos implements DiskChaos {
     if (!container.isRunning()) return false;
 
     try {
-      final var result = container.execInContainer(
-          Shell.SH, Shell.FLAG_C, commands.buildIsStressedCommand());
+      final var result =
+          container.execInContainer(Shell.SH, Shell.FLAG_C, commands.buildIsStressedCommand());
       return result.getExitCode() == 0;
     } catch (final Exception e) {
       return false;
@@ -340,13 +352,11 @@ public final class CgroupsDiskChaos implements DiskChaos {
 
   // ==================== Private ====================
 
-  private void exec(
-      final GenericContainer<?> container, final String command, final String label) {
+  private void exec(final GenericContainer<?> container, final String command, final String label) {
     try {
       final var result = container.execInContainer(Shell.SH, Shell.FLAG_C, command);
       if (result.getExitCode() != 0) {
-        throw new ChaosOperationFailedException(
-            "Failed to " + label + ": " + result.getStderr());
+        throw new ChaosOperationFailedException("Failed to " + label + ": " + result.getStderr());
       }
     } catch (final ChaosOperationFailedException e) {
       throw e;

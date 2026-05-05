@@ -4,8 +4,8 @@ package com.macstab.chaos.core.syscall;
 /**
  * Errno codes injectable by {@code libchaos-io}.
  *
- * <p>Each constant maps directly to the POSIX errno name that libchaos-io writes
- * into the rule config file.
+ * <p>Each constant maps directly to the POSIX errno name that libchaos-io writes into the rule
+ * config file.
  */
 public enum DiskErrno {
 
@@ -33,7 +33,11 @@ public enum DiskErrno {
   /** Resource temporarily unavailable (non-blocking I/O). */
   EAGAIN;
 
-  /** Returns the config-file token expected by libchaos-io. */
+  /**
+   * Returns the config-file token expected by libchaos-io.
+   *
+   * @return POSIX errno name, e.g. {@code "EIO"} or {@code "ENOSPC"}
+   */
   public String toLibchaosToken() {
     return name();
   }

@@ -21,6 +21,9 @@ import com.macstab.chaos.core.platform.Tool;
  */
 public final class RhelLinuxPlatform extends AbstractLinuxPlatform {
 
+  /** Creates a RHEL Linux platform instance. */
+  public RhelLinuxPlatform() {}
+
   @Override
   public String getDistribution() {
     return "rhel";

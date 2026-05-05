@@ -6,8 +6,8 @@ import java.util.Objects;
 /**
  * Typed builder for {@code libchaos-io} config rules.
  *
- * <p>Produces config lines in the format expected by the {@code .so}:
- * {@code path:operation:action:parameters}
+ * <p>Produces config lines in the format expected by the {@code .so}: {@code
+ * path:operation:action:parameters}
  *
  * <h2>Usage Examples</h2>
  *
@@ -42,9 +42,9 @@ public final class SyscallRule {
   /**
    * Inject an errno failure with configurable probability.
    *
-   * @param path        path prefix to match (e.g. "/data", "*" for all)
-   * @param operation   syscall name (read, write, open, close, fsync, fdatasync, pread, pwrite)
-   * @param errno       error code (EIO, ENOSPC, EDQUOT, EROFS, EACCES, EMFILE, ENOMEM, etc.)
+   * @param path path prefix to match (e.g. "/data", "*" for all)
+   * @param operation syscall name (read, write, open, close, fsync, fdatasync, pread, pwrite)
+   * @param errno error code (EIO, ENOSPC, EDQUOT, EROFS, EACCES, EMFILE, ENOMEM, etc.)
    * @param probability trigger probability 0.0-1.0
    * @return rule builder
    */
@@ -60,9 +60,9 @@ public final class SyscallRule {
   /**
    * Inject latency (delay) before the syscall executes.
    *
-   * @param path      path prefix to match
+   * @param path path prefix to match
    * @param operation syscall name
-   * @param millis    delay in milliseconds
+   * @param millis delay in milliseconds
    * @return rule builder
    */
   public static SyscallRule latency(final String path, final String operation, final long millis) {
@@ -75,8 +75,8 @@ public final class SyscallRule {
   /**
    * Inject torn (partial) writes — simulates power loss mid-write.
    *
-   * @param path        path prefix to match
-   * @param operation   must be "write" or "pwrite"
+   * @param path path prefix to match
+   * @param operation must be "write" or "pwrite"
    * @param probability trigger probability 0.0-1.0
    * @return rule builder
    */
@@ -91,8 +91,8 @@ public final class SyscallRule {
   /**
    * Inject data corruption on reads — flips random bits in the returned buffer.
    *
-   * @param path        path prefix to match
-   * @param operation   must be "read" or "pread"
+   * @param path path prefix to match
+   * @param operation must be "read" or "pread"
    * @param probability trigger probability 0.0-1.0
    * @return rule builder
    */

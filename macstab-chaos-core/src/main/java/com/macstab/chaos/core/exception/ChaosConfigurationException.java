@@ -1,6 +1,8 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.core.exception;
 
+import lombok.extern.slf4j.Slf4j;
+
 /**
  * Thrown when chaos configuration is invalid.
  *
@@ -8,11 +10,14 @@ package com.macstab.chaos.core.exception;
  *
  * @author Christian Schnapka - Macstab GmbH
  */
-import lombok.extern.slf4j.Slf4j;
-
 @Slf4j
 public final class ChaosConfigurationException extends ChaosException {
 
+  /**
+   * Creates a new configuration exception.
+   *
+   * @param message detail message describing the invalid configuration
+   */
   public ChaosConfigurationException(final String message) {
     super(message);
   }

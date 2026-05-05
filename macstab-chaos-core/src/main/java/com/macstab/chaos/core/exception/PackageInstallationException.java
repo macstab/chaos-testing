@@ -8,6 +8,13 @@ import com.macstab.chaos.core.util.ContainerIdFormatter;
 
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * Thrown when OS package installation fails inside a container.
+ *
+ * <p>Captures full context: container ID, failed packages, exit code, stdout, and stderr.
+ *
+ * @author Christian Schnapka - Macstab GmbH
+ */
 @Slf4j
 public final class PackageInstallationException extends RuntimeException {
 

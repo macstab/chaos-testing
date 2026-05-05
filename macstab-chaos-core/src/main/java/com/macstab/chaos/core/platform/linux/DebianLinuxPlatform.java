@@ -8,6 +8,9 @@ package com.macstab.chaos.core.platform.linux;
  */
 public final class DebianLinuxPlatform extends AbstractLinuxPlatform {
 
+  /** Creates a Debian Linux platform instance. */
+  public DebianLinuxPlatform() {}
+
   @Override
   public String getDistribution() {
     return "debian";

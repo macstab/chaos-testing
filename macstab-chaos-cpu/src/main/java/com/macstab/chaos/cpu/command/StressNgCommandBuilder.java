@@ -79,8 +79,7 @@ public final class StressNgCommandBuilder implements CpuCommandBuilder {
     // without workers, reaped instantly by tini. Zombie filtering is only needed
     // for prefix-match (stress-ng + workers) in buildIsRunningByCommPrefixCommand.
     return String.format(
-        "grep -rl '^%s$' /proc/[0-9]*/comm 2>/dev/null | grep -q .",
-        exactCommName);
+        "grep -rl '^%s$' /proc/[0-9]*/comm 2>/dev/null | grep -q .", exactCommName);
   }
 
   @Override
