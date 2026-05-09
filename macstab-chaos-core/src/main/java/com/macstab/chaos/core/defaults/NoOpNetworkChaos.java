@@ -13,7 +13,8 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * No-op {@link NetworkChaos} returned when {@code macstab-chaos-network} is absent from the
- * classpath. All active operations throw {@link com.macstab.chaos.core.exception.ChaosProviderNotFoundException}.
+ * classpath. All active operations throw {@link
+ * com.macstab.chaos.core.exception.ChaosProviderNotFoundException}.
  *
  * @author Christian Schnapka - Macstab GmbH
  */

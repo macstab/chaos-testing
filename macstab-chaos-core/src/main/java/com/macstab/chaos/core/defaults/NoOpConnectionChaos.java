@@ -62,6 +62,19 @@ public final class NoOpConnectionChaos implements ConnectionChaos {
     // No-op
   }
 
+  /** No-op removeToxic implementation. */
+  @Override
+  public void removeToxic(
+      final GenericContainer<?> container, final String target, final String toxicName) {
+    // No-op
+  }
+
+  /** No-op removeAllToxics implementation. */
+  @Override
+  public void removeAllToxics(final GenericContainer<?> container, final String target) {
+    // No-op
+  }
+
   /** No-op reset implementation. */
   @Override
   public void reset(final GenericContainer<?> container) {

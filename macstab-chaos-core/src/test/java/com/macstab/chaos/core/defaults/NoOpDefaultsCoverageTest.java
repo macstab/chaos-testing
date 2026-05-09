@@ -113,15 +113,17 @@ class NoOpDefaultsCoverageTest {
 
     @Test
     void injectIOError_throws() {
-      assertThatThrownBy(() -> sut.injectIOError(
-              container, "/data", DiskOperation.WRITE, DiskErrno.EIO, 0.5))
+      assertThatThrownBy(
+              () -> sut.injectIOError(container, "/data", DiskOperation.WRITE, DiskErrno.EIO, 0.5))
           .isInstanceOf(ChaosProviderNotFoundException.class);
     }
 
     @Test
     void injectIOLatency_throws() {
-      assertThatThrownBy(() -> sut.injectIOLatency(
-              container, "/data", DiskOperation.FSYNC, Duration.ofMillis(100)))
+      assertThatThrownBy(
+              () ->
+                  sut.injectIOLatency(
+                      container, "/data", DiskOperation.FSYNC, Duration.ofMillis(100)))
           .isInstanceOf(ChaosProviderNotFoundException.class);
     }
 

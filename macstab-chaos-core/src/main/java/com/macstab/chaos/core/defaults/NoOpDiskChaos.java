@@ -16,9 +16,9 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * No-op {@link DiskChaos} returned when {@code macstab-chaos-disk} is absent from the classpath.
  *
- * <p>All active operations throw {@link com.macstab.chaos.core.exception.ChaosProviderNotFoundException}
- * with a human-readable message. Lifecycle methods ({@code installTools}, {@code reset}) are silent
- * no-ops.
+ * <p>All active operations throw {@link
+ * com.macstab.chaos.core.exception.ChaosProviderNotFoundException} with a human-readable message.
+ * Lifecycle methods ({@code installTools}, {@code reset}) are silent no-ops.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
