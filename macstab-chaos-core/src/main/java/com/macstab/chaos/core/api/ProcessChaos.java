@@ -326,7 +326,8 @@ import com.macstab.chaos.core.model.Signal;
  *
  * <ul>
  *   <li><strong>Overhead:</strong> ~1ms to send signal
- *   <li><strong>Process termination:</strong> Immediate (SIGKILL) or {@literal <}1s (SIGTERM cleanup)
+ *   <li><strong>Process termination:</strong> Immediate (SIGKILL) or {@literal <}1s (SIGTERM
+ *       cleanup)
  *   <li><strong>Pause/resume:</strong> Immediate (kernel-level operation)
  * </ul>
  *

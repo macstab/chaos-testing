@@ -3,7 +3,6 @@ package com.macstab.chaos.core.extension;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
@@ -25,11 +24,9 @@ import org.testcontainers.containers.GenericContainer;
 import com.macstab.chaos.core.annotation.InstallPackages;
 import com.macstab.chaos.core.annotation.InstallTools;
 import com.macstab.chaos.core.platform.Platform;
-import com.macstab.chaos.core.platform.PlatformDetector;
 import com.macstab.chaos.core.platform.Tool;
 import com.macstab.chaos.core.util.PackageInstaller;
 import com.macstab.chaos.core.util.ToolDefinition;
-import com.macstab.chaos.core.util.ToolPackage;
 
 /**
  * Unit tests for {@link PackageInstallationHandler}.
@@ -73,8 +70,10 @@ class PackageInstallationHandlerTest {
         PackageInstallationHandler.process(containerField, testInstance, List.of(annotation));
 
         // THEN — ensureInstalled called with ToolPackage (not raw install)
-        installerMock.verify(() -> PackageInstaller.ensureInstalled(
-            eq(container), org.mockito.ArgumentMatchers.any(ToolDefinition[].class)));
+        installerMock.verify(
+            () ->
+                PackageInstaller.ensureInstalled(
+                    eq(container), org.mockito.ArgumentMatchers.any(ToolDefinition[].class)));
       }
     }
 
@@ -92,8 +91,10 @@ class PackageInstallationHandlerTest {
             containerField, testInstance, List.of(annotation1, annotation2));
 
         // THEN — ensureInstalled called once (merged into single call)
-        installerMock.verify(() -> PackageInstaller.ensureInstalled(
-            eq(container), org.mockito.ArgumentMatchers.any(ToolDefinition[].class)));
+        installerMock.verify(
+            () ->
+                PackageInstaller.ensureInstalled(
+                    eq(container), org.mockito.ArgumentMatchers.any(ToolDefinition[].class)));
       }
     }
 
@@ -130,8 +131,9 @@ class PackageInstallationHandlerTest {
         PackageInstallationHandler.process(containerField, testInstance, List.of(annotation));
 
         // THEN — ensureInstalled(Tool...) called with the declared tools
-        installerMock.verify(() -> PackageInstaller.ensureInstalled(
-            eq(container), eq(Tool.CURL), eq(Tool.IPTABLES)));
+        installerMock.verify(
+            () ->
+                PackageInstaller.ensureInstalled(eq(container), eq(Tool.CURL), eq(Tool.IPTABLES)));
       }
     }
 
@@ -147,8 +149,8 @@ class PackageInstallationHandlerTest {
         PackageInstallationHandler.process(containerField, testInstance, List.of(annotation));
 
         // THEN — ensureInstalled(Tool...) called with PROCPS
-        installerMock.verify(() -> PackageInstaller.ensureInstalled(
-            eq(container), eq(Tool.PROCPS)));
+        installerMock.verify(
+            () -> PackageInstaller.ensureInstalled(eq(container), eq(Tool.PROCPS)));
       }
     }
   }
@@ -171,11 +173,12 @@ class PackageInstallationHandlerTest {
             containerField, testInstance, List.of(packagesAnnotation, toolsAnnotation));
 
         // THEN — Tool path calls ensureInstalled(Tool...)
-        installerMock.verify(() -> PackageInstaller.ensureInstalled(
-            eq(container), eq(Tool.CURL)));
+        installerMock.verify(() -> PackageInstaller.ensureInstalled(eq(container), eq(Tool.CURL)));
         // Package path calls ensureInstalled(ToolDefinition...)
-        installerMock.verify(() -> PackageInstaller.ensureInstalled(
-            eq(container), org.mockito.ArgumentMatchers.any(ToolDefinition[].class)));
+        installerMock.verify(
+            () ->
+                PackageInstaller.ensureInstalled(
+                    eq(container), org.mockito.ArgumentMatchers.any(ToolDefinition[].class)));
       }
     }
   }
@@ -196,8 +199,10 @@ class PackageInstallationHandlerTest {
         PackageInstallationHandler.process(containerField, testInstance, List.of(annotation));
 
         // THEN — ensureInstalled called, not install
-        installerMock.verify(() -> PackageInstaller.ensureInstalled(
-            eq(container), org.mockito.ArgumentMatchers.any(ToolDefinition[].class)));
+        installerMock.verify(
+            () ->
+                PackageInstaller.ensureInstalled(
+                    eq(container), org.mockito.ArgumentMatchers.any(ToolDefinition[].class)));
       }
     }
 
@@ -213,8 +218,10 @@ class PackageInstallationHandlerTest {
         PackageInstallationHandler.process(containerField, testInstance, List.of(annotation));
 
         // THEN
-        installerMock.verify(() -> PackageInstaller.ensureInstalled(
-            eq(container), org.mockito.ArgumentMatchers.any(ToolDefinition[].class)));
+        installerMock.verify(
+            () ->
+                PackageInstaller.ensureInstalled(
+                    eq(container), org.mockito.ArgumentMatchers.any(ToolDefinition[].class)));
       }
     }
   }
@@ -231,10 +238,16 @@ class PackageInstallationHandlerTest {
         PackageInstallationHandler.process(containerField, testInstance, List.of());
 
         // THEN — no ensureInstalled call
-        installerMock.verify(() -> PackageInstaller.ensureInstalled(
-            any(), org.mockito.ArgumentMatchers.any(ToolDefinition[].class)), never());
-        installerMock.verify(() -> PackageInstaller.ensureInstalled(
-            any(), org.mockito.ArgumentMatchers.any(Tool[].class)), never());
+        installerMock.verify(
+            () ->
+                PackageInstaller.ensureInstalled(
+                    any(), org.mockito.ArgumentMatchers.any(ToolDefinition[].class)),
+            never());
+        installerMock.verify(
+            () ->
+                PackageInstaller.ensureInstalled(
+                    any(), org.mockito.ArgumentMatchers.any(Tool[].class)),
+            never());
       }
     }
 
@@ -249,8 +262,11 @@ class PackageInstallationHandlerTest {
         PackageInstallationHandler.process(containerField, testInstance, List.of(otherAnnotation));
 
         // THEN
-        installerMock.verify(() -> PackageInstaller.ensureInstalled(
-            any(), org.mockito.ArgumentMatchers.any(ToolDefinition[].class)), never());
+        installerMock.verify(
+            () ->
+                PackageInstaller.ensureInstalled(
+                    any(), org.mockito.ArgumentMatchers.any(ToolDefinition[].class)),
+            never());
       }
     }
 
@@ -267,8 +283,11 @@ class PackageInstallationHandlerTest {
         PackageInstallationHandler.process(containerField, testInstance, List.of(annotation));
 
         // THEN
-        installerMock.verify(() -> PackageInstaller.ensureInstalled(
-            any(), org.mockito.ArgumentMatchers.any(ToolDefinition[].class)), never());
+        installerMock.verify(
+            () ->
+                PackageInstaller.ensureInstalled(
+                    any(), org.mockito.ArgumentMatchers.any(ToolDefinition[].class)),
+            never());
       }
     }
 
@@ -312,8 +331,10 @@ class PackageInstallationHandlerTest {
 
         // GIVEN
         installerMock
-            .when(() -> PackageInstaller.ensureInstalled(
-                any(), org.mockito.ArgumentMatchers.any(ToolDefinition[].class)))
+            .when(
+                () ->
+                    PackageInstaller.ensureInstalled(
+                        any(), org.mockito.ArgumentMatchers.any(ToolDefinition[].class)))
             .thenThrow(new RuntimeException("Installation failed"));
 
         final InstallPackages annotation = createPackagesAnnotation("curl");

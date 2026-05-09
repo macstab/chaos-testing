@@ -440,8 +440,7 @@ class AbstractLinuxPlatformComprehensiveTest {
     }
 
     @Test
-    @DisplayName(
-        "getBinaryName() returns null for CA_CERTIFICATES (no binary to verify)")
+    @DisplayName("getBinaryName() returns null for CA_CERTIFICATES (no binary to verify)")
     void getBinaryName_shouldFallbackToPackageName_whenBinaryNameNull() {
       // CA_CERTIFICATES has ToolMapping("ca-certificates", null) — no binary to verify
       Platform platform = new TestLinuxPlatform();
