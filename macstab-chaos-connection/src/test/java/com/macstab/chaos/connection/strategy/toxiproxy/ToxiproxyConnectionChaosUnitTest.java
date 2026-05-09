@@ -269,13 +269,14 @@ class ToxiproxyConnectionChaosUnitTest {
     }
 
     @Test
-    @DisplayName("lifecycle.ensureRunning called on each operation")
-    void ensureRunningCalledEachTime() throws Exception {
+    @DisplayName(
+        "lifecycle.ensureRunning called only once across multiple operations (install state machine fast-path)")
+    void ensureRunningCalledOnceWithFastPath() throws Exception {
       chaos.addLatency(container, "host:80", Duration.ofMillis(50));
       chaos.dropPackets(container, "host:80", 0.1);
 
-      // ensureRunning called once per public method (idempotent by its own impl)
-      verify(lifecycle, org.mockito.Mockito.times(2)).ensureRunning(any());
+      // First verb triggers install; second verb hits the OK fast-path and skips ensureRunning.
+      verify(lifecycle, org.mockito.Mockito.times(1)).ensureRunning(any());
     }
   }
 
@@ -420,6 +421,89 @@ class ToxiproxyConnectionChaosUnitTest {
     @DisplayName("returns true")
     void returnsTrue() {
       assertThat(chaos.isSupported()).isTrue();
+    }
+  }
+
+  // ==================== install state machine ====================
+
+  @Nested
+  @DisplayName("install state machine (lazy + sticky-fail)")
+  class InstallStateMachine {
+
+    @Test
+    @DisplayName("installTools attempts ensureRunning on first call")
+    void firstInstallCallsEnsureRunning() throws Exception {
+      chaos.installTools(container);
+      verify(lifecycle).ensureRunning(any(ContainerContext.class));
+    }
+
+    @Test
+    @DisplayName(
+        "second installTools call after success does NOT re-attempt ensureRunning (OK fast-path)")
+    void successfulInstallShortCircuits() throws Exception {
+      chaos.installTools(container);
+      chaos.installTools(container);
+      verify(lifecycle, org.mockito.Mockito.times(1))
+          .ensureRunning(any(ContainerContext.class));
+    }
+
+    @Test
+    @DisplayName("install failure raises ChaosOperationFailedException")
+    void installFailureSurfaces() throws Exception {
+      doThrow(new IOException("github 503")).when(lifecycle).ensureRunning(any());
+      assertThatThrownBy(() -> chaos.installTools(container))
+          .isInstanceOf(ChaosOperationFailedException.class)
+          .hasMessageContaining("Failed to start Toxiproxy");
+    }
+
+    @Test
+    @DisplayName(
+        "after install failure subsequent calls fail fast and do not re-attempt ensureRunning (sticky)")
+    void stickyFail() throws Exception {
+      doThrow(new IOException("github 503")).when(lifecycle).ensureRunning(any());
+      assertThatThrownBy(() -> chaos.installTools(container))
+          .isInstanceOf(ChaosOperationFailedException.class);
+      assertThatThrownBy(() -> chaos.installTools(container))
+          .isInstanceOf(ChaosOperationFailedException.class)
+          .hasMessageContaining("previously failed")
+          .hasMessageContaining("will not retry");
+      // ensureRunning was called exactly once — the second call short-circuited.
+      verify(lifecycle, org.mockito.Mockito.times(1)).ensureRunning(any());
+    }
+
+    @Test
+    @DisplayName("addLatency triggers lazy install on first verb call")
+    void verbsTriggerLazyInstall() throws Exception {
+      chaos.addLatency(container, "db:5432", Duration.ofMillis(100));
+      verify(lifecycle, org.mockito.Mockito.atLeastOnce())
+          .ensureRunning(any(ContainerContext.class));
+    }
+
+    @Test
+    @DisplayName("install state is per-container — failure on one container does not poison others")
+    void perContainerState() throws Exception {
+      final GenericContainer<?> other = mock(GenericContainer.class);
+      when(other.isRunning()).thenReturn(true);
+      when(other.getLabels()).thenReturn(new HashMap<>());
+      when(other.getContainerId()).thenReturn("def456");
+      final ExecResult osRelease = mock(ExecResult.class);
+      when(osRelease.getExitCode()).thenReturn(0);
+      when(osRelease.getStdout()).thenReturn("ID=debian\nVERSION_ID=\"12\"\n");
+      when(other.execInContainer("cat", "/etc/os-release")).thenReturn(osRelease);
+
+      doThrow(new IOException("first failure"))
+          .when(lifecycle)
+          .ensureRunning(org.mockito.ArgumentMatchers.argThat(
+              ctx -> ctx != null && "abc123".equals(ctx.container().getContainerId())));
+
+      assertThatThrownBy(() -> chaos.installTools(container))
+          .isInstanceOf(ChaosOperationFailedException.class);
+
+      // Other container should still be installable (its state map entry is absent).
+      chaos.installTools(other);
+      verify(lifecycle, org.mockito.Mockito.atLeastOnce())
+          .ensureRunning(org.mockito.ArgumentMatchers.argThat(
+              ctx -> ctx != null && "def456".equals(ctx.container().getContainerId())));
     }
   }
 

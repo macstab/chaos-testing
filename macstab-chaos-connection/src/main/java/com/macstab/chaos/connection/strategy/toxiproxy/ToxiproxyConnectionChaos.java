@@ -57,6 +57,26 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaosStrategy {
   /** Tracks proxies this module created — only these are removed on reset. */
   private final Map<String, ProxyConfiguration> ownedProxies = new ConcurrentHashMap<>();
 
+  /**
+   * Per-container install state for the lazy-install + sticky-fail contract.
+   *
+   * <p>Three implicit states:
+   *
+   * <ul>
+   *   <li><strong>absent (PENDING)</strong> — never tried; first call attempts install.
+   *   <li><strong>{@link InstallState#OK}</strong> — install succeeded; fast-path, no further
+   *       lifecycle calls needed.
+   *   <li><strong>{@link InstallState#FAILED}</strong> — install failed once; sticky, every
+   *       subsequent call fails fast with a clear message. Recovery requires a fresh container.
+   * </ul>
+   *
+   * <p>Rationale: in tests, install failure almost always means corp-proxy / offline-CI / GitHub
+   * outage — none of which heal mid-test. Retrying just slows the failure feedback and risks
+   * cross-test flakiness where one verb sees install succeed on retry-N while another fails on
+   * retry-1. Determinism beats one-shot resilience for tests.
+   */
+  private final Map<GenericContainer<?>, InstallState> stateByContainer = new ConcurrentHashMap<>();
+
   /** Creates connection chaos with default configuration. */
   public ToxiproxyConnectionChaos() {
     this(ToxiproxyConfig.defaults());
@@ -411,24 +431,53 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaosStrategy {
   @Override
   public void installTools(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
-    final ContainerContext ctx = ContainerContext.of(container);
-    try {
-      lifecycle.ensureRunning(ctx);
-    } catch (final java.io.IOException e) {
-      throw new ChaosOperationFailedException("Failed to start Toxiproxy", e);
-    }
+    ensureToxiproxyAvailable(container, ContainerContext.of(container));
   }
 
   // ==================== Internal ====================
 
+  /** Sticky install-state classifications. See {@link #stateByContainer} Javadoc. */
+  private enum InstallState {
+    OK,
+    FAILED
+  }
+
+  /**
+   * Lazy install gate with sticky-fail. First call attempts the install via the lifecycle
+   * manager; on success the container is flagged {@link InstallState#OK} and subsequent calls
+   * skip {@code ensureRunning} entirely. On failure the container is flagged {@link
+   * InstallState#FAILED} permanently and all future calls fail fast.
+   *
+   * @param container target container
+   * @param ctx pre-built context for the container
+   * @throws ChaosOperationFailedException if install previously failed for this container, or
+   *     the install attempt itself fails
+   */
+  private void ensureToxiproxyAvailable(
+      final GenericContainer<?> container, final ContainerContext ctx) {
+    final InstallState current = stateByContainer.get(container);
+    if (current == InstallState.OK) {
+      return;
+    }
+    if (current == InstallState.FAILED) {
+      throw new ChaosOperationFailedException(
+          "Toxiproxy install previously failed for this container; will not retry. "
+              + "Investigate network/proxy/offline-CI conditions and use a fresh container "
+              + "if the failure was transient.");
+    }
+    try {
+      lifecycle.ensureRunning(ctx);
+      stateByContainer.put(container, InstallState.OK);
+    } catch (final java.io.IOException e) {
+      stateByContainer.put(container, InstallState.FAILED);
+      throw new ChaosOperationFailedException("Failed to start Toxiproxy", e);
+    }
+  }
+
   private ContainerContext ensureProxyFor(
       final GenericContainer<?> container, final TargetAddress addr) {
     final ContainerContext ctx = ContainerContext.of(container);
-    try {
-      lifecycle.ensureRunning(ctx);
-    } catch (final java.io.IOException e) {
-      throw new ChaosOperationFailedException("Failed to start Toxiproxy", e);
-    }
+    ensureToxiproxyAvailable(container, ctx);
 
     final String name = proxyName(addr);
     if (ownedProxies.containsKey(name)) {
