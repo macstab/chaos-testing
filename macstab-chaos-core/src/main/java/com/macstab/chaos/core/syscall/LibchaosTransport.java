@@ -8,221 +8,264 @@ import java.util.Objects;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.images.builder.Transferable;
 
+import com.macstab.chaos.core.exception.ChaosOperationFailedException;
 import com.macstab.chaos.core.util.Shell;
 
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Generic LD_PRELOAD transport for any libchaos-* shared library.
+ * Generic {@code LD_PRELOAD} transport for any {@link LibchaosLib} shared library.
  *
- * <p>Resolves, copies and controls a pre-compiled {@code .so} inside a container. Each libchaos lib
- * (io, net, memory, time, process, dns) gets its own instance with isolated paths and labels.
+ * <p>Resolves, copies and controls a pre-compiled {@code .so} inside a container. Each {@link
+ * LibchaosLib} has its own instance with isolated paths and labels — multiple chaos modules can
+ * share a transport instance for the same library.
  *
- * <p>Call {@link #prepare} before {@code container.start()}, then use {@link #addRule} / {@link
- * #removeRules} / {@link #clearRules} at runtime.
+ * <p>The {@code .so} resources live in their owning module's JAR (e.g. {@code libchaos-io} ships
+ * inside {@code macstab-chaos-disk}). Resolution uses the runtime classpath — the owning module
+ * must be on the classpath for {@link #prepare} to find the binary.
+ *
+ * <h2>Setup flow</h2>
+ *
+ * <ol>
+ *   <li>Construct: {@code new LibchaosTransport(LibchaosLib.IO)}
+ *   <li>Pre-start: {@link #prepare(GenericContainer)} — copies {@code .so}, sets {@code LD_PRELOAD}
+ *   <li>Post-start: {@link #addRule}, {@link #addRules}, {@link #removeRules}, {@link #clearRules}
+ * </ol>
+ *
+ * @author Christian Schnapka - Macstab GmbH
+ * @see LibchaosLib
+ * @see LibchaosVariant
+ * @see LibchaosCommandBuilder
  */
 @Slf4j
 public final class LibchaosTransport {
 
-  private final String libName;
-  private final String libraryPath;
-  private final String configPath;
-  private final String labelKey;
-  private final String resourcePrefix;
+  @Getter private final LibchaosLib lib;
+
+  private final LibchaosCommandBuilder commands;
 
   /**
-   * Creates a transport for the given libchaos library.
+   * Creates a transport using the default POSIX {@code sh} command builder.
    *
-   * @param libName short lib identifier: {@code io}, {@code net}, {@code memory}, {@code time},
-   *     {@code process}, or {@code dns}
+   * @param lib library to transport
+   * @throws NullPointerException if {@code lib} is null
    */
-  public LibchaosTransport(final String libName) {
-    Objects.requireNonNull(libName, "libName must not be null");
-    this.libName = libName;
-    this.libraryPath = "/usr/local/lib/libchaos-" + libName + ".so";
-    this.configPath = "/tmp/.chaos-" + libName + ".conf";
-    this.labelKey = "macstab.chaos." + libName + ".active";
-    this.resourcePrefix = "libchaos-" + libName + "/libchaos-" + libName + "-";
+  public LibchaosTransport(final LibchaosLib lib) {
+    this(lib, new ShLibchaosCommandBuilder());
   }
 
   /**
-   * Returns the absolute path inside the container where the {@code .so} is deployed.
+   * Creates a transport with a custom command builder (for testability or alternate shells).
    *
-   * @return e.g. {@code /usr/local/lib/libchaos-io.so}
+   * @param lib library to transport
+   * @param commands command builder
+   * @throws NullPointerException if any argument is null
    */
-  public String getLibraryPath() {
-    return libraryPath;
+  public LibchaosTransport(final LibchaosLib lib, final LibchaosCommandBuilder commands) {
+    this.lib = Objects.requireNonNull(lib, "lib must not be null");
+    this.commands = Objects.requireNonNull(commands, "commands must not be null");
   }
 
-  /**
-   * Returns the absolute path inside the container for the runtime config file.
-   *
-   * @return e.g. {@code /tmp/.chaos-io.conf}
-   */
-  public String getConfigPath() {
-    return configPath;
-  }
+  // ==================== Public API: lifecycle ====================
 
   /**
-   * Returns the container label key used to mark this transport as prepared.
+   * Copies the matching {@code .so} into the container and appends it to {@code LD_PRELOAD}.
    *
-   * @return e.g. {@code macstab.chaos.io.active}
-   */
-  public String getLabelKey() {
-    return labelKey;
-  }
-
-  /**
-   * Copies the matching {@code .so} into the container and sets {@code LD_PRELOAD}. Idempotent —
-   * safe to call multiple times.
+   * <p>Idempotent — safe to call multiple times (label-guarded). Must be called
+   * <strong>before</strong> {@code container.start()}.
    *
-   * @param container must not yet be started
+   * <p>Multiple libchaos transports may prepare the same container: each call appends its library
+   * path to any existing {@code LD_PRELOAD} value (colon-separated, the loader's canonical form).
+   * Pre-existing entries placed by user code are preserved. Duplicate paths are skipped.
+   *
+   * @param container container to prepare (must not yet be started)
+   * @throws NullPointerException if {@code container} is null
+   * @throws ChaosOperationFailedException if the {@code .so} cannot be loaded from the classpath
    */
   public void prepare(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
-    if (container.getLabels().containsKey(labelKey)) {
-      log.debug("libchaos-{} already prepared for this container", libName);
+    if (container.getLabels().containsKey(lib.getLabelKey())) {
+      log.debug("libchaos-{} already prepared for this container", lib.getShortName());
       return;
     }
 
-    final String variant = resolveVariant(container);
-    final String resourcePath = resourcePrefix + variant + ".so";
+    final LibchaosVariant variant = LibchaosVariant.resolve(container);
+    final String resourcePath = lib.getResourcePrefix() + variant.suffix() + ".so";
     final byte[] bytes = loadResource(resourcePath);
 
-    container.withCopyToContainer(Transferable.of(bytes, 0755), libraryPath);
-    container.withEnv("LD_PRELOAD", libraryPath);
-    container.withLabel(labelKey, variant);
+    container.withCopyToContainer(Transferable.of(bytes, 0755), lib.getLibraryPath());
+    final String existingPreload = container.getEnvMap().getOrDefault("LD_PRELOAD", "");
+    container.withEnv("LD_PRELOAD", composeLdPreload(existingPreload, lib.getLibraryPath()));
+    container.withLabel(lib.getLabelKey(), variant.suffix());
 
-    log.info("Prepared libchaos-{}: variant={}, size={}B", libName, variant, bytes.length);
+    log.info(
+        "Prepared libchaos-{}: variant={}, size={}B",
+        lib.getShortName(),
+        variant.suffix(),
+        bytes.length);
   }
 
   /**
-   * Appends a single rule for the given owner.
+   * Builds an {@code LD_PRELOAD} value that appends {@code newPath} to {@code existing}, deduping
+   * exact-match entries. Package-private for testability.
    *
-   * @param container running container (must have been {@link #prepare prepared})
-   * @param owner logical owner tag written as a comment in the config (e.g. {@code "disk"})
-   * @param rule libchaos rule string, e.g. {@code "/data:write:EIO:0.3"}
+   * @param existing current {@code LD_PRELOAD} value (may be {@code null} or empty)
+   * @param newPath path to append
+   * @return combined value, colon-separated; never contains {@code newPath} twice
    */
-  public void addRule(final GenericContainer<?> container, final String owner, final String rule) {
-    Objects.requireNonNull(container, "container must not be null");
-    Objects.requireNonNull(owner, "owner must not be null");
-    Objects.requireNonNull(rule, "rule must not be null");
-    validateActive(container);
-
-    final String fullRule = rule + " # " + owner;
-    execSilent(container, String.format("echo '%s' >> %s", fullRule, configPath));
-    log.debug("libchaos-{}: added rule: {}", libName, fullRule);
-  }
-
-  /**
-   * Appends multiple rules for the given owner in a single exec call.
-   *
-   * @param container running container (must have been {@link #prepare prepared})
-   * @param owner logical owner tag (e.g. {@code "disk"})
-   * @param rules list of libchaos rule strings; empty list is a no-op
-   */
-  public void addRules(
-      final GenericContainer<?> container, final String owner, final List<String> rules) {
-    Objects.requireNonNull(container, "container must not be null");
-    Objects.requireNonNull(owner, "owner must not be null");
-    Objects.requireNonNull(rules, "rules must not be null");
-    if (rules.isEmpty()) return;
-    validateActive(container);
-
-    final var sb = new StringBuilder();
-    for (final String rule : rules) {
-      sb.append(rule).append(" # ").append(owner).append('\n');
+  static String composeLdPreload(final String existing, final String newPath) {
+    if (existing == null || existing.isEmpty()) {
+      return newPath;
     }
-    execSilent(
-        container,
-        String.format("printf '%%s' '%s' >> %s", sb.toString().replace("'", "'\\''"), configPath));
-    log.debug("libchaos-{}: added {} rules for owner '{}'", libName, rules.size(), owner);
-  }
-
-  /**
-   * Removes all rules belonging to the given owner; other owners' rules are untouched.
-   *
-   * @param container running container (must have been {@link #prepare prepared})
-   * @param owner owner tag whose rules should be removed
-   */
-  public void removeRules(final GenericContainer<?> container, final String owner) {
-    Objects.requireNonNull(container, "container must not be null");
-    Objects.requireNonNull(owner, "owner must not be null");
-    validateActive(container);
-
-    execSilent(
-        container, String.format("sed -i '/# %s$/d' %s 2>/dev/null || true", owner, configPath));
-    log.debug("libchaos-{}: removed rules for owner '{}'", libName, owner);
-  }
-
-  /**
-   * Removes all rules from all owners. Full reset — deletes the config file entirely.
-   *
-   * @param container running container (must have been {@link #prepare prepared})
-   */
-  public void clearRules(final GenericContainer<?> container) {
-    Objects.requireNonNull(container, "container must not be null");
-    validateActive(container);
-
-    execSilent(container, String.format("rm -f %s", configPath));
-    log.debug("libchaos-{}: cleared all rules", libName);
+    for (final String entry : existing.split(":")) {
+      if (entry.equals(newPath)) {
+        return existing;
+      }
+    }
+    return existing + ":" + newPath;
   }
 
   /**
    * Returns {@code true} if {@link #prepare} has been called on this container.
    *
    * @param container target container
-   * @return {@code true} when the container carries the transport's label
+   * @return {@code true} when the container carries this transport's label
+   * @throws NullPointerException if {@code container} is null
    */
   public boolean isActive(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
-    return container.getLabels().containsKey(labelKey);
+    return container.getLabels().containsKey(lib.getLabelKey());
   }
 
-  // ── private ──────────────────────────────────────────────────────────────
+  // ==================== Public API: rule management ====================
 
-  private String resolveVariant(final GenericContainer<?> container) {
-    final String imageName = container.getDockerImageName().toLowerCase();
-    final String libc = imageName.contains("alpine") ? "musl" : "glibc";
-    return libc + "-" + detectArchitecture();
+  /**
+   * Appends a single rule for the given owner.
+   *
+   * @param container running container (must be prepared)
+   * @param owner owner tag matching {@code [a-z0-9_]+}
+   * @param rule libchaos rule body, e.g. {@code "/data:write:EIO:0.3"}
+   * @throws NullPointerException if any argument is null
+   * @throws IllegalStateException if {@link #prepare} was not called
+   * @throws IllegalArgumentException if {@code owner} contains unsafe characters
+   * @throws ChaosOperationFailedException if the shell command fails
+   */
+  public void addRule(final GenericContainer<?> container, final String owner, final String rule) {
+    Objects.requireNonNull(container, "container must not be null");
+    validateActive(container);
+    final String cmd = commands.buildAppendRule(rule, owner, lib.getConfigPath());
+    exec(container, cmd, "addRule");
+    log.debug("libchaos-{}: added rule for owner '{}'", lib.getShortName(), owner);
   }
 
-  private static String detectArchitecture() {
-    final String osArch = System.getProperty("os.arch", "amd64").toLowerCase();
-    return (osArch.contains("aarch64") || osArch.contains("arm64")) ? "arm64" : "amd64";
+  /**
+   * Appends multiple rules for the given owner in a single exec call.
+   *
+   * @param container running container (must be prepared)
+   * @param owner owner tag matching {@code [a-z0-9_]+}
+   * @param rules rules to append; empty list is a no-op
+   * @throws NullPointerException if any argument is null
+   * @throws IllegalStateException if {@link #prepare} was not called
+   * @throws IllegalArgumentException if {@code owner} contains unsafe characters
+   * @throws ChaosOperationFailedException if the shell command fails
+   */
+  public void addRules(
+      final GenericContainer<?> container, final String owner, final List<String> rules) {
+    Objects.requireNonNull(container, "container must not be null");
+    Objects.requireNonNull(rules, "rules must not be null");
+    if (rules.isEmpty()) {
+      return;
+    }
+    validateActive(container);
+    final String cmd = commands.buildAppendRules(rules, owner, lib.getConfigPath());
+    exec(container, cmd, "addRules");
+    log.debug(
+        "libchaos-{}: added {} rules for owner '{}'", lib.getShortName(), rules.size(), owner);
   }
+
+  /**
+   * Removes all rules belonging to the given owner; other owners' rules are untouched.
+   *
+   * @param container running container (must be prepared)
+   * @param owner owner tag whose rules should be removed
+   * @throws NullPointerException if any argument is null
+   * @throws IllegalStateException if {@link #prepare} was not called
+   * @throws IllegalArgumentException if {@code owner} contains unsafe characters
+   * @throws ChaosOperationFailedException if the shell command fails
+   */
+  public void removeRules(final GenericContainer<?> container, final String owner) {
+    Objects.requireNonNull(container, "container must not be null");
+    validateActive(container);
+    final String cmd = commands.buildRemoveRulesByOwner(owner, lib.getConfigPath());
+    exec(container, cmd, "removeRules");
+    log.debug("libchaos-{}: removed rules for owner '{}'", lib.getShortName(), owner);
+  }
+
+  /**
+   * Removes all rules from all owners — full reset (deletes the config file).
+   *
+   * @param container running container (must be prepared)
+   * @throws NullPointerException if {@code container} is null
+   * @throws IllegalStateException if {@link #prepare} was not called
+   * @throws ChaosOperationFailedException if the shell command fails
+   */
+  public void clearRules(final GenericContainer<?> container) {
+    Objects.requireNonNull(container, "container must not be null");
+    validateActive(container);
+    final String cmd = commands.buildClearAll(lib.getConfigPath());
+    exec(container, cmd, "clearRules");
+    log.debug("libchaos-{}: cleared all rules", lib.getShortName());
+  }
+
+  // ==================== Private helpers ====================
 
   private byte[] loadResource(final String resourcePath) {
     try (final InputStream is =
         LibchaosTransport.class.getClassLoader().getResourceAsStream(resourcePath)) {
       if (is == null) {
-        throw new IllegalStateException(
-            "libchaos-" + libName + " binary not found on classpath: " + resourcePath);
+        throw new ChaosOperationFailedException(
+            "libchaos-"
+                + lib.getShortName()
+                + " binary not found on classpath: "
+                + resourcePath
+                + " — ensure the owning module JAR is on the classpath");
       }
       return is.readAllBytes();
-    } catch (final IllegalStateException e) {
+    } catch (final ChaosOperationFailedException e) {
       throw e;
     } catch (final Exception e) {
-      throw new IllegalStateException(
-          "Failed to load libchaos-" + libName + " binary: " + resourcePath, e);
+      throw new ChaosOperationFailedException(
+          "Failed to load libchaos-" + lib.getShortName() + " binary: " + resourcePath, e);
     }
   }
 
   private void validateActive(final GenericContainer<?> container) {
-    if (!container.getLabels().containsKey(labelKey)) {
+    if (!container.getLabels().containsKey(lib.getLabelKey())) {
       throw new IllegalStateException(
-          "prepare() must be called before adding rules for libchaos-" + libName + ".");
+          "prepare() must be called before rule operations for libchaos-" + lib.getShortName());
     }
   }
 
-  private static void execSilent(final GenericContainer<?> container, final String command) {
+  private void exec(final GenericContainer<?> container, final String command, final String op) {
     try {
-      final var result = container.execInContainer(Shell.SH, Shell.FLAG_C, command);
+      final var result = Shell.exec(container, command);
       if (result.getExitCode() != 0) {
-        log.warn("exec failed (exit {}): {}", result.getExitCode(), command);
+        throw new ChaosOperationFailedException(
+            "libchaos-"
+                + lib.getShortName()
+                + " "
+                + op
+                + " failed (exit "
+                + result.getExitCode()
+                + "): "
+                + result.getStderr());
       }
+    } catch (final ChaosOperationFailedException e) {
+      throw e;
     } catch (final Exception e) {
-      log.warn("exec error: {}", e.getMessage());
+      throw new ChaosOperationFailedException(
+          "libchaos-" + lib.getShortName() + " " + op + " execution error", e);
     }
   }
 }

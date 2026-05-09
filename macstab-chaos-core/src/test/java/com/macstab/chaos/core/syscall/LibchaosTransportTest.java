@@ -24,12 +24,13 @@ import org.testcontainers.containers.GenericContainer;
 @DisplayName("LibchaosTransport (unit)")
 class LibchaosTransportTest {
 
-  private static final String LIB = "net";
+  private static final LibchaosLib LIB = LibchaosLib.NET;
   private static final String LABEL = "macstab.chaos.net.active";
   private static final String CONFIG = "/tmp/.chaos-net.conf";
 
   @SuppressWarnings("rawtypes")
   private GenericContainer container;
+
   private LibchaosTransport transport;
   private ExecResult success;
 
@@ -54,19 +55,23 @@ class LibchaosTransportTest {
   class Constructor {
 
     @Test
-    @DisplayName("null libName throws NPE")
-    void nullLibName() {
+    @DisplayName("null lib throws NPE")
+    void nullLib() {
       assertThatThrownBy(() -> new LibchaosTransport(null))
           .isInstanceOf(NullPointerException.class);
     }
 
     @Test
-    @DisplayName("paths are derived from libName")
-    void pathsFromLibName() {
-      final var t = new LibchaosTransport("time");
-      assertThat(t.getLibraryPath()).isEqualTo("/usr/local/lib/libchaos-time.so");
-      assertThat(t.getConfigPath()).isEqualTo("/tmp/.chaos-time.conf");
-      assertThat(t.getLabelKey()).isEqualTo("macstab.chaos.time.active");
+    @DisplayName("null command builder throws NPE")
+    void nullCommandBuilder() {
+      assertThatThrownBy(() -> new LibchaosTransport(LibchaosLib.IO, null))
+          .isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    @DisplayName("getLib exposes the configured library")
+    void getLibExposesLib() {
+      assertThat(new LibchaosTransport(LibchaosLib.TIME).getLib()).isEqualTo(LibchaosLib.TIME);
     }
   }
 
@@ -91,8 +96,7 @@ class LibchaosTransportTest {
     @Test
     @DisplayName("null container throws NPE")
     void nullContainer() {
-      assertThatThrownBy(() -> transport.isActive(null))
-          .isInstanceOf(NullPointerException.class);
+      assertThatThrownBy(() -> transport.isActive(null)).isInstanceOf(NullPointerException.class);
     }
   }
 
@@ -122,6 +126,14 @@ class LibchaosTransportTest {
     }
 
     @Test
+    @DisplayName("unsafe owner throws IllegalArgumentException")
+    void unsafeOwner() {
+      assertThatThrownBy(() -> transport.addRule(container, "bad owner!", "rule"))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("[a-z0-9_]+");
+    }
+
+    @Test
     @DisplayName("throws when not prepared")
     @SuppressWarnings("unchecked")
     void throwsWhenNotActive() {
@@ -136,9 +148,9 @@ class LibchaosTransportTest {
     @SuppressWarnings("unchecked")
     void appendsRuleWithOwner() throws Exception {
       transport.addRule(container, "net", "*:connect:ERRNO:ECONNREFUSED:0.5");
-      verify(container).execInContainer(
-          anyString(), anyString(),
-          org.mockito.ArgumentMatchers.contains("# net"));
+      verify(container)
+          .execInContainer(
+              anyString(), anyString(), org.mockito.ArgumentMatchers.contains("# net"));
     }
   }
 
@@ -154,7 +166,7 @@ class LibchaosTransportTest {
     }
 
     @Test
-    @DisplayName("null owner throws NPE")
+    @DisplayName("null owner throws NPE — but only when rules non-empty")
     void nullOwner() {
       assertThatThrownBy(() -> transport.addRules(container, null, List.of("r")))
           .isInstanceOf(NullPointerException.class);
@@ -216,9 +228,8 @@ class LibchaosTransportTest {
     @SuppressWarnings("unchecked")
     void sedRemovesOwnerLines() throws Exception {
       transport.removeRules(container, "net");
-      verify(container).execInContainer(
-          anyString(), anyString(),
-          org.mockito.ArgumentMatchers.contains("sed"));
+      verify(container)
+          .execInContainer(anyString(), anyString(), org.mockito.ArgumentMatchers.contains("sed"));
     }
   }
 
@@ -229,8 +240,7 @@ class LibchaosTransportTest {
     @Test
     @DisplayName("null container throws NPE")
     void nullContainer() {
-      assertThatThrownBy(() -> transport.clearRules(null))
-          .isInstanceOf(NullPointerException.class);
+      assertThatThrownBy(() -> transport.clearRules(null)).isInstanceOf(NullPointerException.class);
     }
 
     @Test
@@ -247,13 +257,67 @@ class LibchaosTransportTest {
     @SuppressWarnings("unchecked")
     void removesConfigFile() throws Exception {
       transport.clearRules(container);
-      verify(container).execInContainer(
-          anyString(), anyString(),
-          org.mockito.ArgumentMatchers.contains(CONFIG));
+      verify(container)
+          .execInContainer(anyString(), anyString(), org.mockito.ArgumentMatchers.contains(CONFIG));
     }
   }
 
-  // ── helpers ──────────────────────────────────────────────────────────────
+  @Nested
+  @DisplayName("composeLdPreload")
+  class ComposeLdPreload {
+
+    private static final String NET = "/usr/local/lib/libchaos-net.so";
+    private static final String IO = "/usr/local/lib/libchaos-io.so";
+
+    @Test
+    @DisplayName("empty existing returns the new path verbatim")
+    void emptyExisting() {
+      assertThat(LibchaosTransport.composeLdPreload("", NET)).isEqualTo(NET);
+    }
+
+    @Test
+    @DisplayName("null existing returns the new path verbatim")
+    void nullExisting() {
+      assertThat(LibchaosTransport.composeLdPreload(null, NET)).isEqualTo(NET);
+    }
+
+    @Test
+    @DisplayName("non-empty existing → appends with colon separator")
+    void appendsWithColon() {
+      assertThat(LibchaosTransport.composeLdPreload(IO, NET)).isEqualTo(IO + ":" + NET);
+    }
+
+    @Test
+    @DisplayName("path already present → returns existing unchanged")
+    void deduplicatesTailMatch() {
+      final String existing = IO + ":" + NET;
+      assertThat(LibchaosTransport.composeLdPreload(existing, NET)).isEqualTo(existing);
+    }
+
+    @Test
+    @DisplayName("path already at head → returns existing unchanged")
+    void deduplicatesHeadMatch() {
+      final String existing = NET + ":" + IO;
+      assertThat(LibchaosTransport.composeLdPreload(existing, NET)).isEqualTo(existing);
+    }
+
+    @Test
+    @DisplayName("substring of an existing entry is not treated as a duplicate")
+    void noFalsePositiveOnSubstring() {
+      final String existing = NET + ".1";
+      assertThat(LibchaosTransport.composeLdPreload(existing, NET))
+          .isEqualTo(existing + ":" + NET);
+    }
+
+    @Test
+    @DisplayName("user-provided pre-existing entry is preserved")
+    void preservesUserProvidedEntry() {
+      final String userLib = "/opt/custom/preload.so";
+      assertThat(LibchaosTransport.composeLdPreload(userLib, NET)).isEqualTo(userLib + ":" + NET);
+    }
+  }
+
+  // ==================== Helpers ====================
 
   @SuppressWarnings("unused")
   private static ExecResult execResult(final int exit, final String stdout) throws IOException {
