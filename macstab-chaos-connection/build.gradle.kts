@@ -17,9 +17,13 @@ dependencies {
     // Core API (interfaces)
     api(project(":macstab-chaos-core"))
 
-    // Shared Toxiproxy infrastructure
+    // Syscall-level fault injection: vendors the libchaos-net .so resources
+    // onto the classpath so LibchaosTransport can resolve them at prepare() time.
+    api(project(":macstab-chaos-network"))
+
+    // Shared Toxiproxy infrastructure (proxy-level fault injection)
     api(project(":macstab-chaos-toxi-core"))
-    
+
     // Test dependencies
     testImplementation("org.testcontainers:junit-jupiter:1.20.4")
     testImplementation("org.assertj:assertj-core:3.24.2")
