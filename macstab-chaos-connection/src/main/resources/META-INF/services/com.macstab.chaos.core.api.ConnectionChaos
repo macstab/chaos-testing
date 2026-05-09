@@ -1,1 +1,1 @@
-com.macstab.chaos.connection.ToxiproxyConnectionChaos
+com.macstab.chaos.connection.strategy.toxiproxy.ToxiproxyConnectionChaos

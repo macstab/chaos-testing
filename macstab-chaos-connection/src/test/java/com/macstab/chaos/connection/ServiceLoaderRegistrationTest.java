@@ -8,6 +8,7 @@ import java.util.ServiceLoader;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import com.macstab.chaos.connection.strategy.toxiproxy.ToxiproxyConnectionChaos;
 import com.macstab.chaos.core.api.ConnectionChaos;
 
 /**

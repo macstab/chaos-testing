@@ -16,6 +16,7 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
 
 import com.github.dockerjava.api.model.Capability;
+import com.macstab.chaos.connection.strategy.toxiproxy.ToxiproxyConnectionChaos;
 
 /**
  * Comprehensive integration tests for {@link ToxiproxyConnectionChaos}.

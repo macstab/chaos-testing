@@ -1,5 +1,5 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
-package com.macstab.chaos.connection;
+package com.macstab.chaos.connection.strategy.toxiproxy;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -81,8 +81,9 @@ class ToxiproxyConnectionChaosUnitTest {
     when(shHelp.getStderr()).thenReturn("");
     when(container.execInContainer("/bin/sh", "--help")).thenReturn(shHelp);
 
-    chaos = new ToxiproxyConnectionChaos(
-        ToxiproxyConfig.defaults(), lifecycle, apiClient, networkRedirect);
+    chaos =
+        new ToxiproxyConnectionChaos(
+            ToxiproxyConfig.defaults(), lifecycle, apiClient, networkRedirect);
   }
 
   // ==================== Validation ====================
@@ -122,8 +123,7 @@ class ToxiproxyConnectionChaosUnitTest {
     @Test
     @DisplayName("reset — null container throws NPE")
     void resetNullContainer() {
-      assertThatThrownBy(() -> chaos.reset(null))
-          .isInstanceOf(NullPointerException.class);
+      assertThatThrownBy(() -> chaos.reset(null)).isInstanceOf(NullPointerException.class);
     }
   }
 
@@ -168,8 +168,10 @@ class ToxiproxyConnectionChaosUnitTest {
     @Test
     @DisplayName("negative jitter throws IllegalArgumentException")
     void negativeJitter() {
-      assertThatThrownBy(() -> chaos.addLatencyWithJitter(
-              container, "host:80", Duration.ofMillis(100), Duration.ofMillis(-1)))
+      assertThatThrownBy(
+              () ->
+                  chaos.addLatencyWithJitter(
+                      container, "host:80", Duration.ofMillis(100), Duration.ofMillis(-1)))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("jitter");
     }
@@ -287,7 +289,8 @@ class ToxiproxyConnectionChaosUnitTest {
     @DisplayName("API exception wrapped as ChaosOperationFailedException")
     void apiExceptionWrapped() throws Exception {
       doThrow(new IOException("toxiproxy error"))
-          .when(apiClient).addToxic(any(), anyString(), anyString(), anyString(), anyString(), anyDouble());
+          .when(apiClient)
+          .addToxic(any(), anyString(), anyString(), anyString(), anyString(), anyDouble());
 
       assertThatThrownBy(() -> chaos.addLatency(container, "host:443", Duration.ofMillis(100)))
           .isInstanceOf(ChaosOperationFailedException.class)
@@ -384,8 +387,7 @@ class ToxiproxyConnectionChaosUnitTest {
     @Test
     @DisplayName("removeAllToxics — listToxics exception is swallowed")
     void removeAllToxicsProxyNotExists() throws Exception {
-      doThrow(new IOException("proxy not found"))
-          .when(apiClient).listToxics(any(), anyString());
+      doThrow(new IOException("proxy not found")).when(apiClient).listToxics(any(), anyString());
 
       chaos.removeAllToxics(container, "host:80"); // must not throw
     }
@@ -401,7 +403,8 @@ class ToxiproxyConnectionChaosUnitTest {
     @DisplayName("removeToxic — API exception is swallowed (no-op)")
     void removeToxicNotFound() throws Exception {
       doThrow(new IOException("not found"))
-          .when(apiClient).deleteToxic(any(), anyString(), anyString());
+          .when(apiClient)
+          .deleteToxic(any(), anyString(), anyString());
 
       chaos.removeToxic(container, "host:80", "latency"); // must not throw
     }

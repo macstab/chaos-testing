@@ -1,5 +1,5 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
-package com.macstab.chaos.connection;
+package com.macstab.chaos.connection.strategy.toxiproxy;
 
 import java.time.Duration;
 import java.util.Map;
@@ -9,8 +9,8 @@ import java.util.regex.Pattern;
 
 import org.testcontainers.containers.GenericContainer;
 
-import com.macstab.chaos.core.api.ConnectionChaos;
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
+import com.macstab.chaos.core.spi.ConnectionChaosStrategy;
 import com.macstab.chaos.toxiproxy.api.ToxiproxyApiClient;
 import com.macstab.chaos.toxiproxy.api.ToxiproxyApiClientImpl;
 import com.macstab.chaos.toxiproxy.config.ProxyConfiguration;
@@ -43,7 +43,7 @@ import lombok.extern.slf4j.Slf4j;
  * @since 1.0
  */
 @Slf4j
-public final class ToxiproxyConnectionChaos implements ConnectionChaos {
+public final class ToxiproxyConnectionChaos implements ConnectionChaosStrategy {
 
   private static final int PROXY_PORT_OFFSET = 10000;
   private static final int MAX_PORT = 65535;
@@ -73,9 +73,9 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
   /**
    * Package-private constructor for unit testing — accepts collaborator mocks/stubs.
    *
-   * @param config          Toxiproxy configuration
-   * @param lifecycle       lifecycle manager (mock in tests)
-   * @param apiClient       Toxiproxy API client (mock in tests)
+   * @param config Toxiproxy configuration
+   * @param lifecycle lifecycle manager (mock in tests)
+   * @param apiClient Toxiproxy API client (mock in tests)
    * @param networkRedirect network redirect manager (mock in tests)
    */
   ToxiproxyConnectionChaos(
@@ -276,6 +276,7 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
    * @param target target host:port
    * @param toxicName name of the toxic to remove (e.g., "latency", "down")
    */
+  @Override
   public void removeToxic(
       final GenericContainer<?> container, final String target, final String toxicName) {
     Objects.requireNonNull(container, "container must not be null");
@@ -307,6 +308,7 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
    * @param container target container (must be running)
    * @param target target host:port
    */
+  @Override
   public void removeAllToxics(final GenericContainer<?> container, final String target) {
     Objects.requireNonNull(container, "container must not be null");
     Objects.requireNonNull(target, "target must not be null");
@@ -390,6 +392,20 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaos {
   @Override
   public boolean isSupported() {
     return true;
+  }
+
+  /**
+   * Always {@code true} for a running container — this strategy can install Toxiproxy on demand
+   * regardless of the container's prior state.
+   *
+   * @param container target container
+   * @return {@code true} when {@code container.isRunning()}
+   * @throws NullPointerException if {@code container} is null
+   */
+  @Override
+  public boolean supports(final GenericContainer<?> container) {
+    Objects.requireNonNull(container, "container must not be null");
+    return container.isRunning();
   }
 
   @Override
