@@ -38,8 +38,10 @@ class CpuObservabilityTest {
 
     when(cmd.buildIsRunningByCommExactCommand(anyString())).thenReturn("check-exact");
     when(cmd.buildIsRunningByCommPrefixCommand(anyString())).thenReturn("check-prefix");
-    when(cmd.buildGetAffinityMaskCommand(org.mockito.ArgumentMatchers.anyInt())).thenReturn("taskset");
-    when(cmd.buildGetNiceValueCommand(org.mockito.ArgumentMatchers.anyInt())).thenReturn("awk nice");
+    when(cmd.buildGetAffinityMaskCommand(org.mockito.ArgumentMatchers.anyInt()))
+        .thenReturn("taskset");
+    when(cmd.buildGetNiceValueCommand(org.mockito.ArgumentMatchers.anyInt()))
+        .thenReturn("awk nice");
     when(cmd.buildGetCoreCountCommand()).thenReturn("nproc");
     when(cmd.buildGetCoreCountFallbackCommand()).thenReturn("grep -c processor");
     when(cmd.buildReadCpuStatCommand()).thenReturn("cat /proc/stat");
@@ -278,8 +280,8 @@ class CpuObservabilityTest {
   // ==================== Helper ====================
 
   /**
-   * Creates a pre-built ExecResult mock. Must NOT be called inside a when() chain
-   * because Mockito treats mock creation as unfinished stubbing.
+   * Creates a pre-built ExecResult mock. Must NOT be called inside a when() chain because Mockito
+   * treats mock creation as unfinished stubbing.
    */
   private static ExecResult result(final int exitCode, final String stdout) {
     final ExecResult r = mock(ExecResult.class);

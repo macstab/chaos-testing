@@ -8,16 +8,11 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.macstab.chaos.core.exception.ChaosConfigurationException;
-import com.macstab.chaos.core.exception.ChaosOperationFailedException;
-import com.macstab.chaos.core.platform.Tool;
-import com.macstab.chaos.core.syscall.DiskErrno;
-import com.macstab.chaos.core.syscall.DiskOperation;
-import com.macstab.chaos.core.util.PackageInstaller;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -26,6 +21,13 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.testcontainers.containers.Container.ExecResult;
 import org.testcontainers.containers.GenericContainer;
+
+import com.macstab.chaos.core.exception.ChaosConfigurationException;
+import com.macstab.chaos.core.exception.ChaosOperationFailedException;
+import com.macstab.chaos.core.platform.Tool;
+import com.macstab.chaos.core.syscall.DiskErrno;
+import com.macstab.chaos.core.syscall.DiskOperation;
+import com.macstab.chaos.core.util.PackageInstaller;
 
 /**
  * Unit tests for {@link CgroupsDiskChaos} — no Docker required.
@@ -183,14 +185,16 @@ class CgroupsDiskChaosUnitTest {
     @Test
     @DisplayName("injectIOError — null container")
     void injectIOErrorNullContainer() {
-      assertThatThrownBy(() -> chaos.injectIOError(null, "/data", DiskOperation.WRITE, DiskErrno.EIO, 0.3))
+      assertThatThrownBy(
+              () -> chaos.injectIOError(null, "/data", DiskOperation.WRITE, DiskErrno.EIO, 0.3))
           .isInstanceOf(NullPointerException.class);
     }
 
     @Test
     @DisplayName("injectIOError — null path")
     void injectIOErrorNullPath() {
-      assertThatThrownBy(() -> chaos.injectIOError(container, null, DiskOperation.WRITE, DiskErrno.EIO, 0.3))
+      assertThatThrownBy(
+              () -> chaos.injectIOError(container, null, DiskOperation.WRITE, DiskErrno.EIO, 0.3))
           .isInstanceOf(NullPointerException.class);
     }
 
@@ -204,7 +208,8 @@ class CgroupsDiskChaosUnitTest {
     @Test
     @DisplayName("injectIOError — null errno")
     void injectIOErrorNullErrno() {
-      assertThatThrownBy(() -> chaos.injectIOError(container, "/data", DiskOperation.WRITE, null, 0.3))
+      assertThatThrownBy(
+              () -> chaos.injectIOError(container, "/data", DiskOperation.WRITE, null, 0.3))
           .isInstanceOf(NullPointerException.class);
     }
 
@@ -212,7 +217,8 @@ class CgroupsDiskChaosUnitTest {
     @DisplayName("injectIOLatency — null container")
     void injectIOLatencyNullContainer() {
       assertThatThrownBy(
-              () -> chaos.injectIOLatency(null, "/data", DiskOperation.WRITE, Duration.ofMillis(100)))
+              () ->
+                  chaos.injectIOLatency(null, "/data", DiskOperation.WRITE, Duration.ofMillis(100)))
           .isInstanceOf(NullPointerException.class);
     }
 
@@ -220,7 +226,9 @@ class CgroupsDiskChaosUnitTest {
     @DisplayName("injectIOLatency — null path")
     void injectIOLatencyNullPath() {
       assertThatThrownBy(
-              () -> chaos.injectIOLatency(container, null, DiskOperation.WRITE, Duration.ofMillis(100)))
+              () ->
+                  chaos.injectIOLatency(
+                      container, null, DiskOperation.WRITE, Duration.ofMillis(100)))
           .isInstanceOf(NullPointerException.class);
     }
 
@@ -506,7 +514,9 @@ class CgroupsDiskChaosUnitTest {
     @DisplayName("injectIOError — stopped container throws IllegalStateException")
     void injectIOErrorStoppedContainer() {
       when(container.isRunning()).thenReturn(false);
-      assertThatThrownBy(() -> chaos.injectIOError(container, "/data", DiskOperation.WRITE, DiskErrno.EIO, 0.3))
+      assertThatThrownBy(
+              () ->
+                  chaos.injectIOError(container, "/data", DiskOperation.WRITE, DiskErrno.EIO, 0.3))
           .isInstanceOf(IllegalStateException.class)
           .hasMessageContaining("not running");
     }
@@ -516,7 +526,9 @@ class CgroupsDiskChaosUnitTest {
     void injectIOLatencyStoppedContainer() {
       when(container.isRunning()).thenReturn(false);
       assertThatThrownBy(
-              () -> chaos.injectIOLatency(container, "/data", DiskOperation.WRITE, Duration.ofMillis(100)))
+              () ->
+                  chaos.injectIOLatency(
+                      container, "/data", DiskOperation.WRITE, Duration.ofMillis(100)))
           .isInstanceOf(IllegalStateException.class)
           .hasMessageContaining("not running");
     }
@@ -591,8 +603,7 @@ class CgroupsDiskChaosUnitTest {
     @DisplayName("getDiskUsagePercent — df non-zero exit wraps as ChaosOperationFailedException")
     void getDiskUsagePercentDfFailure() throws Exception {
       final ExecResult dfFail = execResult(1, "");
-      when(container.execInContainer(anyString(), anyString(), anyString()))
-          .thenReturn(dfFail);
+      when(container.execInContainer(anyString(), anyString(), anyString())).thenReturn(dfFail);
 
       assertThatThrownBy(() -> chaos.getDiskUsagePercent(container, "/tmp"))
           .isInstanceOf(ChaosOperationFailedException.class);
@@ -764,7 +775,9 @@ class CgroupsDiskChaosUnitTest {
     @Test
     @DisplayName("injectIOError — happy path does not throw when container prepared")
     void injectIOErrorHappyPath() {
-      assertThatCode(() -> chaos.injectIOError(container, "/data", DiskOperation.WRITE, DiskErrno.EIO, 0.3))
+      assertThatCode(
+              () ->
+                  chaos.injectIOError(container, "/data", DiskOperation.WRITE, DiskErrno.EIO, 0.3))
           .doesNotThrowAnyException();
     }
 
@@ -772,7 +785,9 @@ class CgroupsDiskChaosUnitTest {
     @DisplayName("injectIOLatency — happy path does not throw when container prepared")
     void injectIOLatencyHappyPath() {
       assertThatCode(
-              () -> chaos.injectIOLatency(container, "/data", DiskOperation.FSYNC, Duration.ofMillis(200)))
+              () ->
+                  chaos.injectIOLatency(
+                      container, "/data", DiskOperation.FSYNC, Duration.ofMillis(200)))
           .doesNotThrowAnyException();
     }
 
@@ -799,7 +814,9 @@ class CgroupsDiskChaosUnitTest {
       }
       when(container.getLabels()).thenReturn(labelsWithoutActive);
 
-      assertThatThrownBy(() -> chaos.injectIOError(container, "/data", DiskOperation.WRITE, DiskErrno.EIO, 0.3))
+      assertThatThrownBy(
+              () ->
+                  chaos.injectIOError(container, "/data", DiskOperation.WRITE, DiskErrno.EIO, 0.3))
           .isInstanceOf(IllegalStateException.class)
           .hasMessageContaining("prepare()");
     }

@@ -16,11 +16,14 @@ import com.macstab.chaos.core.exception.ChaosOperationFailedException;
 import com.macstab.chaos.core.model.ProcessInfo;
 import com.macstab.chaos.core.model.Signal;
 
+import lombok.extern.slf4j.Slf4j;
+
 /**
  * Process chaos using inside-container commands.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
+@Slf4j
 public final class CgroupsProcessChaos implements ProcessChaos {
   private static final Pattern SAFE_PROCESS_NAME = Pattern.compile("^[a-zA-Z0-9_.-]+$");
 

@@ -8,6 +8,9 @@ import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.api.FilesystemChaos;
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
+import com.macstab.chaos.core.util.Shell;
+
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Filesystem chaos using simple shell commands.
@@ -21,6 +24,7 @@ import com.macstab.chaos.core.exception.ChaosOperationFailedException;
  *
  * @author Christian Schnapka - Macstab GmbH
  */
+@Slf4j
 public final class FuseFilesystemChaos implements FilesystemChaos {
 
   // Configuration

@@ -232,11 +232,12 @@ public final class StressNgCommandBuilder implements CpuCommandBuilder {
     validatePid(pid);
     validatePercentage(percentage);
     validateSeconds(seconds);
-    // Background subshell: start cpulimit, capture its PID, sleep, then kill it.
-    // Container-internal timer - no Java thread or scheduler involved.
+    // Use coreutils `timeout` as the container-internal timer. timeout becomes cpulimit's
+    // parent, sends SIGTERM after `seconds`, and exits. cpulimit (the child) is what
+    // /proc/[0-9]*/comm reports as "cpulimit" — the comm name search in isThrottled and
+    // waitUntilStarted matches the cpulimit child, not the timeout parent.
     return String.format(
-        "(cpulimit -l %d -p %d >/dev/null 2>&1 & CPID=$!; sleep %d; kill $CPID 2>/dev/null) &",
-        percentage, pid, seconds);
+        "timeout %d cpulimit -l %d -p %d >/dev/null 2>&1 &", seconds, percentage, pid);
   }
 
   // ==================== taskset Commands ====================

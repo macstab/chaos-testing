@@ -264,7 +264,7 @@ public final class CgroupsDiskChaos implements DiskChaos {
     SyscallFaultInjector.addRule(
         container,
         OWNER,
-        SyscallRule.torn(path, DiskOperation.WRITE.toLibchaosToken(), probability).build());
+        SyscallRule.torn(path, DiskOperation.PWRITE.toLibchaosToken(), probability).build());
     log.info("Injected torn writes: {} @ {}%", path, (int) (probability * 100));
   }
 

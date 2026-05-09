@@ -3,12 +3,9 @@ package com.macstab.chaos.disk;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.github.dockerjava.api.model.Capability;
-import com.macstab.chaos.core.syscall.DiskErrno;
-import com.macstab.chaos.core.syscall.DiskOperation;
-import com.macstab.chaos.core.syscall.SyscallFaultInjector;
 import java.time.Duration;
 import java.util.Map;
+
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -18,6 +15,11 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
+
+import com.github.dockerjava.api.model.Capability;
+import com.macstab.chaos.core.syscall.DiskErrno;
+import com.macstab.chaos.core.syscall.DiskOperation;
+import com.macstab.chaos.core.syscall.SyscallFaultInjector;
 
 /**
  * End-to-end tests that validate <strong>actual fault delivery</strong> inside a live container.
@@ -32,8 +34,8 @@ import org.testcontainers.utility.DockerImageName;
  *       duration)}: workers start, {@code isStressed} returns true, timed variant auto-stops.
  *   <li><strong>ENOSPC (filesystem level)</strong> — {@code fillDisk} and {@code fillDiskBySize}
  *       consume a bounded tmpfs, subsequent writes return "No space left on device".
- *   <li><strong>Error injection — all errno codes</strong> — EIO, ENOSPC, EACCES, EROFS, EDQUOT
- *       on the {@code write} operation via {@code injectIOError}.
+ *   <li><strong>Error injection — all errno codes</strong> — EIO, ENOSPC, EACCES, EROFS, EDQUOT on
+ *       the {@code write} operation via {@code injectIOError}.
  *   <li><strong>Error injection — all documented operations</strong> — write, pwrite, read, pread,
  *       open, fsync, fdatasync, close: each injected at 100% and confirmed by workload exit code.
  *   <li><strong>Latency injection — write and read</strong> — measurable wall-clock delay via
@@ -41,10 +43,10 @@ import org.testcontainers.utility.DockerImageName;
  *   <li><strong>Probabilistic injection</strong> — 50% error rate; confirmed via repeated samples.
  *   <li><strong>Torn write</strong> — file is shorter than expected at 100% probability.
  *   <li><strong>Corrupt read</strong> — MD5 changes at 100% probability; restored after reset.
- *   <li><strong>Alpine / musl variant</strong> — all libchaos-io tests repeated on
- *       {@code redis:7.4-alpine} to validate the musl-linked {@code .so} binary.
- *   <li><strong>Redis workload</strong> — Redis receives EIO on {@code /data} writes; Redis
- *       BGSAVE fails when the data directory is full.
+ *   <li><strong>Alpine / musl variant</strong> — all libchaos-io tests repeated on {@code
+ *       redis:7.4-alpine} to validate the musl-linked {@code .so} binary.
+ *   <li><strong>Redis workload</strong> — Redis receives EIO on {@code /data} writes; Redis BGSAVE
+ *       fails when the data directory is full.
  *   <li><strong>Reset semantics</strong> — space reclaimed, rules removed, writes succeed.
  * </ul>
  *
@@ -63,11 +65,10 @@ class CgroupsDiskChaosEndToEndTest {
    * Prefixes a shell command with {@code LD_PRELOAD} so that libchaos-io is active.
    *
    * <p>Docker exec processes do not inherit runtime {@code --env} variables set on the container
-   * (only Dockerfile {@code ENV} entries are inherited). Test commands that need syscall interception
-   * must explicitly request it here.
+   * (only Dockerfile {@code ENV} entries are inherited). Test commands that need syscall
+   * interception must explicitly request it here.
    */
-  private static final String WITH_LIB =
-      "LD_PRELOAD=" + SyscallFaultInjector.LIBRARY_PATH + " ";
+  private static final String WITH_LIB = "LD_PRELOAD=" + SyscallFaultInjector.LIBRARY_PATH + " ";
 
   private GenericContainer<?> container;
   private CgroupsDiskChaos chaos;
@@ -173,9 +174,11 @@ class CgroupsDiskChaosEndToEndTest {
 
       chaos.fillDisk(container, "/chaos-data", 90);
 
-      final var result = container.execInContainer(
-          "/bin/sh", "-c",
-          "dd if=/dev/zero of=/chaos-data/overflow bs=1M count=5 2>&1; echo __exit:$?");
+      final var result =
+          container.execInContainer(
+              "/bin/sh",
+              "-c",
+              "dd if=/dev/zero of=/chaos-data/overflow bs=1M count=5 2>&1; echo __exit:$?");
 
       assertThat(result.getStdout() + result.getStderr())
           .as("write to full tmpfs must report ENOSPC")
@@ -190,9 +193,11 @@ class CgroupsDiskChaosEndToEndTest {
 
       chaos.fillDiskBySize(container, "/chaos-data", "18M");
 
-      final var result = container.execInContainer(
-          "/bin/sh", "-c",
-          "dd if=/dev/zero of=/chaos-data/overflow bs=1M count=5 2>&1; echo __exit:$?");
+      final var result =
+          container.execInContainer(
+              "/bin/sh",
+              "-c",
+              "dd if=/dev/zero of=/chaos-data/overflow bs=1M count=5 2>&1; echo __exit:$?");
 
       assertThat(result.getStdout() + result.getStderr())
           .as("write beyond capacity must report ENOSPC")
@@ -232,16 +237,18 @@ class CgroupsDiskChaosEndToEndTest {
 
       chaos.fillDisk(container, "/chaos-data", 90);
       // Confirm ENOSPC before reset
-      final var before = container.execInContainer(
-          "/bin/sh", "-c",
-          "dd if=/dev/zero of=/chaos-data/overflow bs=1M count=5 2>&1");
+      final var before =
+          container.execInContainer(
+              "/bin/sh", "-c", "dd if=/dev/zero of=/chaos-data/overflow bs=1M count=5 2>&1");
       assertThat(before.getStdout() + before.getStderr()).contains("No space left on device");
 
       chaos.reset(container);
 
-      final var after = container.execInContainer(
-          "/bin/sh", "-c",
-          "dd if=/dev/zero of=/chaos-data/test2 bs=1M count=2 2>&1; echo __exit:$?");
+      final var after =
+          container.execInContainer(
+              "/bin/sh",
+              "-c",
+              "dd if=/dev/zero of=/chaos-data/test2 bs=1M count=2 2>&1; echo __exit:$?");
       assertThat(after.getStdout() + after.getStderr())
           .as("write must succeed after reset frees space")
           .contains("__exit:0")
@@ -263,9 +270,11 @@ class CgroupsDiskChaosEndToEndTest {
 
       chaos.injectIOError(container, "/chaos-io-data", DiskOperation.WRITE, DiskErrno.EIO, 1.0);
 
-      final var result = container.execInContainer(
-          "/bin/sh", "-c",
-          WITH_LIB + "cp /etc/hostname /chaos-io-data/test.dat 2>&1; echo __exit:$?");
+      final var result =
+          container.execInContainer(
+              "/bin/sh",
+              "-c",
+              WITH_LIB + "cp /etc/hostname /chaos-io-data/test.dat 2>&1; echo __exit:$?");
 
       assertThat(result.getStdout() + result.getStderr())
           .contains("__exit:1")
@@ -282,9 +291,11 @@ class CgroupsDiskChaosEndToEndTest {
 
       chaos.injectIOError(container, "/chaos-io-data", DiskOperation.WRITE, DiskErrno.ENOSPC, 1.0);
 
-      final var result = container.execInContainer(
-          "/bin/sh", "-c",
-          WITH_LIB + "cp /etc/hostname /chaos-io-data/test.dat 2>&1; echo __exit:$?");
+      final var result =
+          container.execInContainer(
+              "/bin/sh",
+              "-c",
+              WITH_LIB + "cp /etc/hostname /chaos-io-data/test.dat 2>&1; echo __exit:$?");
 
       assertThat(result.getStdout() + result.getStderr())
           .contains("__exit:1")
@@ -301,9 +312,11 @@ class CgroupsDiskChaosEndToEndTest {
 
       chaos.injectIOError(container, "/chaos-io-data", DiskOperation.WRITE, DiskErrno.EACCES, 1.0);
 
-      final var result = container.execInContainer(
-          "/bin/sh", "-c",
-          WITH_LIB + "cp /etc/hostname /chaos-io-data/test.dat 2>&1; echo __exit:$?");
+      final var result =
+          container.execInContainer(
+              "/bin/sh",
+              "-c",
+              WITH_LIB + "cp /etc/hostname /chaos-io-data/test.dat 2>&1; echo __exit:$?");
 
       assertThat(result.getStdout() + result.getStderr())
           .contains("__exit:1")
@@ -320,9 +333,11 @@ class CgroupsDiskChaosEndToEndTest {
 
       chaos.injectIOError(container, "/chaos-io-data", DiskOperation.WRITE, DiskErrno.EROFS, 1.0);
 
-      final var result = container.execInContainer(
-          "/bin/sh", "-c",
-          WITH_LIB + "cp /etc/hostname /chaos-io-data/test.dat 2>&1; echo __exit:$?");
+      final var result =
+          container.execInContainer(
+              "/bin/sh",
+              "-c",
+              WITH_LIB + "cp /etc/hostname /chaos-io-data/test.dat 2>&1; echo __exit:$?");
 
       assertThat(result.getStdout() + result.getStderr())
           .contains("__exit:1")
@@ -339,9 +354,11 @@ class CgroupsDiskChaosEndToEndTest {
 
       chaos.injectIOError(container, "/chaos-io-data", DiskOperation.WRITE, DiskErrno.EDQUOT, 1.0);
 
-      final var result = container.execInContainer(
-          "/bin/sh", "-c",
-          WITH_LIB + "cp /etc/hostname /chaos-io-data/test.dat 2>&1; echo __exit:$?");
+      final var result =
+          container.execInContainer(
+              "/bin/sh",
+              "-c",
+              WITH_LIB + "cp /etc/hostname /chaos-io-data/test.dat 2>&1; echo __exit:$?");
 
       assertThat(result.getStdout() + result.getStderr())
           .contains("__exit:1")
@@ -365,38 +382,52 @@ class CgroupsDiskChaosEndToEndTest {
 
       chaos.injectIOError(container, "/chaos-io-data", DiskOperation.WRITE, DiskErrno.EIO, 1.0);
 
-      final var r = container.execInContainer(
-          "/bin/sh", "-c",
-          WITH_LIB + "cp /etc/hostname /chaos-io-data/w.dat 2>&1; echo __exit:$?");
+      final var r =
+          container.execInContainer(
+              "/bin/sh",
+              "-c",
+              WITH_LIB + "cp /etc/hostname /chaos-io-data/w.dat 2>&1; echo __exit:$?");
       assertThat(r.getStdout() + r.getStderr()).contains("__exit:1");
     }
 
     @Test
     @DisplayName("pwrite — sqlite3 DB write fails with EIO")
     void pwriteOperationFails() throws Exception {
-      // python3 os.open() uses openat() at the C level, bypassing the library's open() hook
-      // so fd→path is never mapped and pwrite injection doesn't fire.
-      // SQLite (built into Python 3.11) opens files via C open() → hook fires → fd tracked
-      // → sqlite3's pwrite64() calls are intercepted.
-      container = new GenericContainer<>(DockerImageName.parse("python:3.11-slim"))
-          .withTmpFs(Map.of("/chaos-io-data", "rw,size=50m"))
-          .withCommand("sleep", "infinity");
+      // ctypes.CDLL(None) uses the program's default symbol scope so libc.pwrite resolves
+      // through the LD_PRELOAD'd libchaos-io.so. ctypes.CDLL("libc.so.6") would dlopen libc
+      // directly, returning the unhooked symbol and bypassing the interposer.
+      container =
+          new GenericContainer<>(DockerImageName.parse("python:3.11-slim"))
+              .withTmpFs(Map.of("/chaos-io-data", "rw,size=50m"))
+              .withCommand("sleep", "infinity");
       SyscallFaultInjector.prepare(container);
       container.start();
       chaos = new CgroupsDiskChaos();
 
       chaos.injectIOError(container, "/chaos-io-data", DiskOperation.PWRITE, DiskErrno.EIO, 1.0);
 
-      final var r = container.execInContainer(
-          "/bin/sh", "-c",
-          WITH_LIB + "python3 -c \""
-              + "import sqlite3, sys; "
-              + "conn = sqlite3.connect('/chaos-io-data/test.db'); "
-              + "conn.execute('CREATE TABLE t (x TEXT)'); "
-              + "conn.execute(\\\"INSERT INTO t VALUES ('hello')\\\"); "
-              + "conn.commit(); "
-              + "conn.close()"
-              + "\" 2>&1; echo __exit:$?");
+      final String pythonScript =
+          "import ctypes, os; "
+              + "libc = ctypes.CDLL(None, use_errno=True); "
+              + "libc.open.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int]; "
+              + "libc.open.restype = ctypes.c_int; "
+              + "libc.pwrite.argtypes = "
+              + "[ctypes.c_int, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_long]; "
+              + "libc.pwrite.restype = ctypes.c_long; "
+              + "libc.close.argtypes = [ctypes.c_int]; "
+              + "libc.close.restype = ctypes.c_int; "
+              + "fd = libc.open(b'/chaos-io-data/test.dat', "
+              + "os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644); "
+              + "assert fd >= 0, 'open failed errno=' + str(ctypes.get_errno()); "
+              + "rc = libc.pwrite(fd, b'x' * 4096, 4096, 0); "
+              + "libc.close(fd); "
+              + "raise SystemExit(1 if rc < 0 else 0)";
+
+      final var r =
+          container.execInContainer(
+              "/bin/sh",
+              "-c",
+              WITH_LIB + "python3 -c \"" + pythonScript + "\" 2>&1; echo __exit:$?");
       assertThat(r.getStdout() + r.getStderr()).contains("__exit:1");
     }
 
@@ -407,33 +438,65 @@ class CgroupsDiskChaosEndToEndTest {
       chaos = new CgroupsDiskChaos();
 
       // Write a file WITHOUT injection
-      container.execInContainer("/bin/sh", "-c",
+      container.execInContainer(
+          "/bin/sh",
+          "-c",
           "dd if=/dev/zero of=/chaos-io-data/existing.dat bs=1K count=10 2>/dev/null");
 
       // Now inject read error
       chaos.injectIOError(container, "/chaos-io-data", DiskOperation.READ, DiskErrno.EIO, 1.0);
 
       // Reading the file must fail
-      final var r = container.execInContainer(
-          "/bin/sh", "-c",
-          WITH_LIB + "cat /chaos-io-data/existing.dat > /dev/null 2>&1; echo __exit:$?");
+      final var r =
+          container.execInContainer(
+              "/bin/sh",
+              "-c",
+              WITH_LIB + "cat /chaos-io-data/existing.dat > /dev/null 2>&1; echo __exit:$?");
       assertThat(r.getStdout() + r.getStderr()).contains("__exit:1");
     }
 
     @Test
-    @DisplayName("pread — cat triggers pread; file read fails with EIO")
+    @DisplayName("pread — libc pread fails with EIO")
     void preadOperationFails() throws Exception {
-      container = debianWithLibchaosIo("/chaos-io-data", "50m");
+      // ctypes.CDLL(None) routes through LD_PRELOAD's symbol scope so libc.pread is the
+      // libchaos-io interposed wrapper. cat uses read(2), not pread(2), so wouldn't trigger.
+      container =
+          new GenericContainer<>(DockerImageName.parse("python:3.11-slim"))
+              .withTmpFs(Map.of("/chaos-io-data", "rw,size=50m"))
+              .withCommand("sleep", "infinity");
+      SyscallFaultInjector.prepare(container);
+      container.start();
       chaos = new CgroupsDiskChaos();
 
-      container.execInContainer("/bin/sh", "-c",
+      container.execInContainer(
+          "/bin/sh",
+          "-c",
           "dd if=/dev/zero of=/chaos-io-data/existing.dat bs=4K count=4 2>/dev/null");
 
       chaos.injectIOError(container, "/chaos-io-data", DiskOperation.PREAD, DiskErrno.EIO, 1.0);
 
-      final var r = container.execInContainer(
-          "/bin/sh", "-c",
-          WITH_LIB + "cat /chaos-io-data/existing.dat > /dev/null 2>&1; echo __exit:$?");
+      final String pythonScript =
+          "import ctypes, os; "
+              + "libc = ctypes.CDLL(None, use_errno=True); "
+              + "libc.open.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int]; "
+              + "libc.open.restype = ctypes.c_int; "
+              + "libc.pread.argtypes = "
+              + "[ctypes.c_int, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_long]; "
+              + "libc.pread.restype = ctypes.c_long; "
+              + "libc.close.argtypes = [ctypes.c_int]; "
+              + "libc.close.restype = ctypes.c_int; "
+              + "fd = libc.open(b'/chaos-io-data/existing.dat', os.O_RDONLY, 0); "
+              + "assert fd >= 0, 'open failed errno=' + str(ctypes.get_errno()); "
+              + "buf = (ctypes.c_char * 4096)(); "
+              + "rc = libc.pread(fd, buf, 4096, 0); "
+              + "libc.close(fd); "
+              + "raise SystemExit(1 if rc < 0 else 0)";
+
+      final var r =
+          container.execInContainer(
+              "/bin/sh",
+              "-c",
+              WITH_LIB + "python3 -c \"" + pythonScript + "\" 2>&1; echo __exit:$?");
       assertThat(r.getStdout() + r.getStderr()).contains("__exit:1");
     }
 
@@ -444,44 +507,89 @@ class CgroupsDiskChaosEndToEndTest {
       chaos = new CgroupsDiskChaos();
 
       // Create the file first (before injecting open error)
-      container.execInContainer("/bin/sh", "-c",
-          "echo hello > /chaos-io-data/target.txt");
+      container.execInContainer("/bin/sh", "-c", "echo hello > /chaos-io-data/target.txt");
 
       chaos.injectIOError(container, "/chaos-io-data", DiskOperation.OPEN, DiskErrno.EIO, 1.0);
 
       // Any tool that opens a file in /chaos-io-data should fail
-      final var r = container.execInContainer(
-          "/bin/sh", "-c",
-          WITH_LIB + "cat /chaos-io-data/target.txt 2>&1; echo __exit:$?");
+      final var r =
+          container.execInContainer(
+              "/bin/sh", "-c", WITH_LIB + "cat /chaos-io-data/target.txt 2>&1; echo __exit:$?");
       assertThat(r.getStdout() + r.getStderr()).contains("__exit:1");
     }
 
     @Test
-    @DisplayName("fsync — dd with conv=fsync fails with EIO on fsync call")
+    @DisplayName("fsync — libc fsync fails with EIO")
     void fsyncOperationFails() throws Exception {
-      container = debianWithLibchaosIo("/chaos-io-data", "50m");
+      // ctypes.CDLL(None) routes through LD_PRELOAD; libc.fsync is the interposed wrapper.
+      container =
+          new GenericContainer<>(DockerImageName.parse("python:3.11-slim"))
+              .withTmpFs(Map.of("/chaos-io-data", "rw,size=50m"))
+              .withCommand("sleep", "infinity");
+      SyscallFaultInjector.prepare(container);
+      container.start();
       chaos = new CgroupsDiskChaos();
 
       chaos.injectIOError(container, "/chaos-io-data", DiskOperation.FSYNC, DiskErrno.EIO, 1.0);
 
-      // conv=fsync forces an explicit fsync after write
-      final var r = container.execInContainer(
-          "/bin/sh", "-c",
-          WITH_LIB + "dd if=/dev/zero of=/chaos-io-data/sync.dat bs=4K count=1 conv=fsync 2>&1; echo __exit:$?");
+      final String pythonScript =
+          "import ctypes, os; "
+              + "libc = ctypes.CDLL(None, use_errno=True); "
+              + "libc.open.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int]; "
+              + "libc.open.restype = ctypes.c_int; "
+              + "libc.fsync.argtypes = [ctypes.c_int]; "
+              + "libc.fsync.restype = ctypes.c_int; "
+              + "libc.close.argtypes = [ctypes.c_int]; "
+              + "libc.close.restype = ctypes.c_int; "
+              + "fd = libc.open(b'/chaos-io-data/sync.dat', "
+              + "os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644); "
+              + "assert fd >= 0, 'open failed errno=' + str(ctypes.get_errno()); "
+              + "rc = libc.fsync(fd); "
+              + "libc.close(fd); "
+              + "raise SystemExit(1 if rc < 0 else 0)";
+
+      final var r =
+          container.execInContainer(
+              "/bin/sh",
+              "-c",
+              WITH_LIB + "python3 -c \"" + pythonScript + "\" 2>&1; echo __exit:$?");
       assertThat(r.getStdout() + r.getStderr()).contains("__exit:1");
     }
 
     @Test
-    @DisplayName("fdatasync — dd with conv=fdatasync fails with EIO on fdatasync call")
+    @DisplayName("fdatasync — libc fdatasync fails with EIO")
     void fdatasyncOperationFails() throws Exception {
-      container = debianWithLibchaosIo("/chaos-io-data", "50m");
+      container =
+          new GenericContainer<>(DockerImageName.parse("python:3.11-slim"))
+              .withTmpFs(Map.of("/chaos-io-data", "rw,size=50m"))
+              .withCommand("sleep", "infinity");
+      SyscallFaultInjector.prepare(container);
+      container.start();
       chaos = new CgroupsDiskChaos();
 
       chaos.injectIOError(container, "/chaos-io-data", DiskOperation.FDATASYNC, DiskErrno.EIO, 1.0);
 
-      final var r = container.execInContainer(
-          "/bin/sh", "-c",
-          WITH_LIB + "dd if=/dev/zero of=/chaos-io-data/sync.dat bs=4K count=1 conv=fdatasync 2>&1; echo __exit:$?");
+      final String pythonScript =
+          "import ctypes, os; "
+              + "libc = ctypes.CDLL(None, use_errno=True); "
+              + "libc.open.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int]; "
+              + "libc.open.restype = ctypes.c_int; "
+              + "libc.fdatasync.argtypes = [ctypes.c_int]; "
+              + "libc.fdatasync.restype = ctypes.c_int; "
+              + "libc.close.argtypes = [ctypes.c_int]; "
+              + "libc.close.restype = ctypes.c_int; "
+              + "fd = libc.open(b'/chaos-io-data/sync.dat', "
+              + "os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644); "
+              + "assert fd >= 0, 'open failed errno=' + str(ctypes.get_errno()); "
+              + "rc = libc.fdatasync(fd); "
+              + "libc.close(fd); "
+              + "raise SystemExit(1 if rc < 0 else 0)";
+
+      final var r =
+          container.execInContainer(
+              "/bin/sh",
+              "-c",
+              WITH_LIB + "python3 -c \"" + pythonScript + "\" 2>&1; echo __exit:$?");
       assertThat(r.getStdout() + r.getStderr()).contains("__exit:1");
     }
 
@@ -495,17 +603,21 @@ class CgroupsDiskChaosEndToEndTest {
       chaos.injectIOError(container, "/chaos-io-data", DiskOperation.FSYNC, DiskErrno.EIO, 1.0);
 
       // Both injected — writes fail
-      final var before = container.execInContainer(
-          "/bin/sh", "-c",
-          WITH_LIB + "cp /etc/hostname /chaos-io-data/t.dat 2>&1; echo __exit:$?");
+      final var before =
+          container.execInContainer(
+              "/bin/sh",
+              "-c",
+              WITH_LIB + "cp /etc/hostname /chaos-io-data/t.dat 2>&1; echo __exit:$?");
       assertThat(before.getStdout() + before.getStderr()).contains("__exit:1");
 
       chaos.reset(container);
 
       // After reset — write succeeds (library loaded but rules cleared)
-      final var after = container.execInContainer(
-          "/bin/sh", "-c",
-          WITH_LIB + "cp /etc/hostname /chaos-io-data/t2.dat 2>&1; echo __exit:$?");
+      final var after =
+          container.execInContainer(
+              "/bin/sh",
+              "-c",
+              WITH_LIB + "cp /etc/hostname /chaos-io-data/t2.dat 2>&1; echo __exit:$?");
       assertThat(after.getStdout() + after.getStderr()).contains("__exit:0");
     }
   }
@@ -519,15 +631,34 @@ class CgroupsDiskChaosEndToEndTest {
     @Test
     @DisplayName("fsync latency 500ms — round-trip exceeds 400ms")
     void fsyncLatencyIsObservable() throws Exception {
-      container = debianWithLibchaosIo("/chaos-io-data", "50m");
+      container =
+          new GenericContainer<>(DockerImageName.parse("python:3.11-slim"))
+              .withTmpFs(Map.of("/chaos-io-data", "rw,size=50m"))
+              .withCommand("sleep", "infinity");
+      SyscallFaultInjector.prepare(container);
+      container.start();
       chaos = new CgroupsDiskChaos();
 
-      chaos.injectIOLatency(container, "/chaos-io-data", DiskOperation.FSYNC, Duration.ofMillis(500));
+      chaos.injectIOLatency(
+          container, "/chaos-io-data", DiskOperation.FSYNC, Duration.ofMillis(500));
+
+      final String pythonScript =
+          "import ctypes, os; "
+              + "libc = ctypes.CDLL(None, use_errno=True); "
+              + "libc.open.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int]; "
+              + "libc.open.restype = ctypes.c_int; "
+              + "libc.fsync.argtypes = [ctypes.c_int]; "
+              + "libc.fsync.restype = ctypes.c_int; "
+              + "libc.close.argtypes = [ctypes.c_int]; "
+              + "libc.close.restype = ctypes.c_int; "
+              + "fd = libc.open(b'/chaos-io-data/sync.dat', "
+              + "os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644); "
+              + "assert fd >= 0, 'open failed errno=' + str(ctypes.get_errno()); "
+              + "libc.fsync(fd); "
+              + "libc.close(fd)";
 
       final long start = System.currentTimeMillis();
-      container.execInContainer(
-          "/bin/sh", "-c",
-          WITH_LIB + "dd if=/dev/zero of=/chaos-io-data/sync.dat bs=4K count=1 conv=fsync 2>&1");
+      container.execInContainer("/bin/sh", "-c", WITH_LIB + "python3 -c \"" + pythonScript + "\"");
       final long elapsed = System.currentTimeMillis() - start;
 
       assertThat(elapsed).as("fsync with 500ms injection must take >= 400ms").isGreaterThan(400L);
@@ -539,12 +670,12 @@ class CgroupsDiskChaosEndToEndTest {
       container = debianWithLibchaosIo("/chaos-io-data", "50m");
       chaos = new CgroupsDiskChaos();
 
-      chaos.injectIOLatency(container, "/chaos-io-data", DiskOperation.WRITE, Duration.ofMillis(300));
+      chaos.injectIOLatency(
+          container, "/chaos-io-data", DiskOperation.WRITE, Duration.ofMillis(300));
 
       final long start = System.currentTimeMillis();
       container.execInContainer(
-          "/bin/sh", "-c",
-          WITH_LIB + "cp /etc/hostname /chaos-io-data/w.dat 2>&1");
+          "/bin/sh", "-c", WITH_LIB + "cp /etc/hostname /chaos-io-data/w.dat 2>&1");
       final long elapsed = System.currentTimeMillis() - start;
 
       assertThat(elapsed).as("write with 300ms injection must take >= 250ms").isGreaterThan(250L);
@@ -557,14 +688,15 @@ class CgroupsDiskChaosEndToEndTest {
       chaos = new CgroupsDiskChaos();
 
       // Write file before injecting latency
-      container.execInContainer("/bin/sh", "-c",
-          "dd if=/dev/zero of=/chaos-io-data/r.dat bs=4K count=1 2>/dev/null");
+      container.execInContainer(
+          "/bin/sh", "-c", "dd if=/dev/zero of=/chaos-io-data/r.dat bs=4K count=1 2>/dev/null");
 
-      chaos.injectIOLatency(container, "/chaos-io-data", DiskOperation.READ, Duration.ofMillis(300));
+      chaos.injectIOLatency(
+          container, "/chaos-io-data", DiskOperation.READ, Duration.ofMillis(300));
 
       final long start = System.currentTimeMillis();
-      container.execInContainer("/bin/sh", "-c",
-          WITH_LIB + "cat /chaos-io-data/r.dat > /dev/null 2>&1");
+      container.execInContainer(
+          "/bin/sh", "-c", WITH_LIB + "cat /chaos-io-data/r.dat > /dev/null 2>&1");
       final long elapsed = System.currentTimeMillis() - start;
 
       assertThat(elapsed).as("read with 300ms injection must take >= 250ms").isGreaterThan(250L);
@@ -573,17 +705,38 @@ class CgroupsDiskChaosEndToEndTest {
     @Test
     @DisplayName("fdatasync latency 300ms — round-trip exceeds 250ms")
     void fdatasyncLatencyIsObservable() throws Exception {
-      container = debianWithLibchaosIo("/chaos-io-data", "50m");
+      container =
+          new GenericContainer<>(DockerImageName.parse("python:3.11-slim"))
+              .withTmpFs(Map.of("/chaos-io-data", "rw,size=50m"))
+              .withCommand("sleep", "infinity");
+      SyscallFaultInjector.prepare(container);
+      container.start();
       chaos = new CgroupsDiskChaos();
 
-      chaos.injectIOLatency(container, "/chaos-io-data", DiskOperation.FDATASYNC, Duration.ofMillis(300));
+      chaos.injectIOLatency(
+          container, "/chaos-io-data", DiskOperation.FDATASYNC, Duration.ofMillis(300));
+
+      final String pythonScript =
+          "import ctypes, os; "
+              + "libc = ctypes.CDLL(None, use_errno=True); "
+              + "libc.open.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int]; "
+              + "libc.open.restype = ctypes.c_int; "
+              + "libc.fdatasync.argtypes = [ctypes.c_int]; "
+              + "libc.fdatasync.restype = ctypes.c_int; "
+              + "libc.close.argtypes = [ctypes.c_int]; "
+              + "libc.close.restype = ctypes.c_int; "
+              + "fd = libc.open(b'/chaos-io-data/fds.dat', "
+              + "os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644); "
+              + "assert fd >= 0, 'open failed errno=' + str(ctypes.get_errno()); "
+              + "libc.fdatasync(fd); "
+              + "libc.close(fd)";
 
       final long start = System.currentTimeMillis();
-      container.execInContainer("/bin/sh", "-c",
-          WITH_LIB + "dd if=/dev/zero of=/chaos-io-data/fds.dat bs=4K count=1 conv=fdatasync 2>&1");
+      container.execInContainer("/bin/sh", "-c", WITH_LIB + "python3 -c \"" + pythonScript + "\"");
       final long elapsed = System.currentTimeMillis() - start;
 
-      assertThat(elapsed).as("fdatasync with 300ms injection must take >= 250ms")
+      assertThat(elapsed)
+          .as("fdatasync with 300ms injection must take >= 250ms")
           .isGreaterThan(250L);
     }
 
@@ -593,16 +746,18 @@ class CgroupsDiskChaosEndToEndTest {
       container = debianWithLibchaosIo("/chaos-io-data", "50m");
       chaos = new CgroupsDiskChaos();
 
-      chaos.injectIOLatency(container, "/chaos-io-data", DiskOperation.WRITE, Duration.ofMillis(500));
+      chaos.injectIOLatency(
+          container, "/chaos-io-data", DiskOperation.WRITE, Duration.ofMillis(500));
       chaos.reset(container);
 
       // After reset, write should complete well under 500ms (library loaded, rules cleared)
       final long start = System.currentTimeMillis();
-      container.execInContainer("/bin/sh", "-c",
-          WITH_LIB + "cp /etc/hostname /chaos-io-data/fast.dat 2>&1");
+      container.execInContainer(
+          "/bin/sh", "-c", WITH_LIB + "cp /etc/hostname /chaos-io-data/fast.dat 2>&1");
       final long elapsed = System.currentTimeMillis() - start;
 
-      assertThat(elapsed).as("after reset, write should complete normally in < 400ms")
+      assertThat(elapsed)
+          .as("after reset, write should complete normally in < 400ms")
           .isLessThan(400L);
     }
   }
@@ -625,9 +780,11 @@ class CgroupsDiskChaosEndToEndTest {
       int failures = 0;
       int successes = 0;
       for (int i = 0; i < 20; i++) {
-        final var r = container.execInContainer(
-            "/bin/sh", "-c",
-            WITH_LIB + "cp /etc/hostname /chaos-io-data/p" + i + ".dat 2>/dev/null; echo $?");
+        final var r =
+            container.execInContainer(
+                "/bin/sh",
+                "-c",
+                WITH_LIB + "cp /etc/hostname /chaos-io-data/p" + i + ".dat 2>/dev/null; echo $?");
         if (r.getStdout().trim().equals("0")) {
           successes++;
         } else {
@@ -649,9 +806,11 @@ class CgroupsDiskChaosEndToEndTest {
 
       int successes = 0;
       for (int i = 0; i < 30; i++) {
-        final var r = container.execInContainer(
-            "/bin/sh", "-c",
-            WITH_LIB + "cp /etc/hostname /chaos-io-data/q" + i + ".dat 2>/dev/null; echo $?");
+        final var r =
+            container.execInContainer(
+                "/bin/sh",
+                "-c",
+                WITH_LIB + "cp /etc/hostname /chaos-io-data/q" + i + ".dat 2>/dev/null; echo $?");
         if (r.getStdout().trim().equals("0")) {
           successes++;
         }
@@ -671,24 +830,62 @@ class CgroupsDiskChaosEndToEndTest {
     @Test
     @DisplayName("100% torn write — written file is shorter than expected")
     void tornWriteProducesShortFile() throws Exception {
-      container = debianWithLibchaosIo("/chaos-io-data", "50m");
+      container =
+          new GenericContainer<>(DockerImageName.parse("python:3.11-slim"))
+              .withTmpFs(Map.of("/chaos-io-data", "rw,size=50m"))
+              .withCommand("sleep", "infinity");
+      SyscallFaultInjector.prepare(container);
+      container.start();
       chaos = new CgroupsDiskChaos();
 
-      // Reference file WITHOUT torn write
-      container.execInContainer("/bin/sh", "-c",
-          "cp /etc/os-release /chaos-io-data/ref.dat 2>/dev/null");
-      final long refBytes = Long.parseLong(
-          container.execInContainer("/bin/sh", "-c",
-              "wc -c < /chaos-io-data/ref.dat").getStdout().trim());
+      // Direct libc open() + pwrite() via ctypes — file grows only via pwrite, so a torn
+      // pwrite would leave a shorter file. (cp/dd don't emit pwrite; sqlite pre-allocates
+      // pages with ftruncate so size is unaffected by torn pwrites.)
+      // CDLL(None) uses the main program's symbol resolution → respects LD_PRELOAD,
+      // so libc.pwrite resolves to the libchaos-io interposed wrapper. Loading
+      // libc.so.6 directly with CDLL("libc.so.6") would bypass LD_PRELOAD and skip TORN.
+      final String pythonScript =
+          "import ctypes, os, sys; "
+              + "libc = ctypes.CDLL(None, use_errno=True); "
+              + "libc.open.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int]; "
+              + "libc.open.restype = ctypes.c_int; "
+              + "libc.pwrite.argtypes = "
+              + "[ctypes.c_int, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_long]; "
+              + "libc.pwrite.restype = ctypes.c_long; "
+              + "libc.close.argtypes = [ctypes.c_int]; "
+              + "libc.close.restype = ctypes.c_int; "
+              + "path = sys.argv[1].encode(); "
+              + "data = b'x' * 4096; "
+              + "fd = libc.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644); "
+              + "assert fd >= 0, 'open failed errno=' + str(ctypes.get_errno()); "
+              + "libc.pwrite(fd, data, len(data), 0); "
+              + "libc.close(fd)";
 
-      // Inject 100% torn writes
+      container.execInContainer(
+          "/bin/sh", "-c", WITH_LIB + "python3 -c \"" + pythonScript + "\" /chaos-io-data/ref.dat");
+      final long refBytes =
+          Long.parseLong(
+              container
+                  .execInContainer("/bin/sh", "-c", "wc -c < /chaos-io-data/ref.dat")
+                  .getStdout()
+                  .trim());
+
       chaos.injectTornWrite(container, "/chaos-io-data", 1.0);
 
-      container.execInContainer("/bin/sh", "-c",
-          WITH_LIB + "cp /etc/os-release /chaos-io-data/torn.dat 2>/dev/null");
-      final long tornBytes = Long.parseLong(
-          container.execInContainer("/bin/sh", "-c",
-              "wc -c < /chaos-io-data/torn.dat").getStdout().trim());
+      container.execInContainer(
+          "/bin/sh",
+          "-c",
+          WITH_LIB
+              + "python3 -c \""
+              + pythonScript
+              + "\" /chaos-io-data/torn.dat 2>/dev/null || true");
+      final long tornBytes =
+          Long.parseLong(
+              container
+                  .execInContainer(
+                      "/bin/sh", "-c", "wc -c < /chaos-io-data/torn.dat 2>/dev/null || echo 0")
+                  .getStdout()
+                  .trim());
 
       assertThat(tornBytes)
           .as("torn write at 100%% must produce a file shorter than %d bytes", refBytes)
@@ -703,8 +900,11 @@ class CgroupsDiskChaosEndToEndTest {
 
       chaos.injectTornWrite(container, "/chaos-io-data", 1.0);
 
-      final var r = container.execInContainer("/bin/sh", "-c",
-          WITH_LIB + "cp /etc/os-release /chaos-io-data/t.dat 2>&1; echo __done");
+      final var r =
+          container.execInContainer(
+              "/bin/sh",
+              "-c",
+              WITH_LIB + "cp /etc/os-release /chaos-io-data/t.dat 2>&1; echo __done");
 
       assertThat(r.getStdout() + r.getStderr())
           .as("torn write workload must complete without hanging")
@@ -721,23 +921,48 @@ class CgroupsDiskChaosEndToEndTest {
     @Test
     @DisplayName("100% corrupt read — MD5 of re-read file differs from original")
     void corruptReadChangesMd5() throws Exception {
-      container = debianWithLibchaosIo("/chaos-io-data", "50m");
+      container =
+          new GenericContainer<>(DockerImageName.parse("python:3.11-slim"))
+              .withTmpFs(Map.of("/chaos-io-data", "rw,size=50m"))
+              .withCommand("sleep", "infinity");
+      SyscallFaultInjector.prepare(container);
+      container.start();
       chaos = new CgroupsDiskChaos();
 
-      // Write known-content file
-      container.execInContainer("/bin/sh", "-c",
-          "dd if=/dev/zero of=/chaos-io-data/clean.dat bs=4K count=4 2>/dev/null");
-      final String cleanMd5 = container.execInContainer("/bin/sh", "-c",
-          "md5sum /chaos-io-data/clean.dat").getStdout().split("\\s+")[0];
+      // Write a 16KB file of zeros
+      container.execInContainer(
+          "/bin/sh", "-c", "dd if=/dev/zero of=/chaos-io-data/clean.dat bs=4K count=4 2>/dev/null");
 
-      // Inject corruption, re-read
       chaos.injectCorruptRead(container, "/chaos-io-data", 1.0);
-      final String corruptMd5 = container.execInContainer("/bin/sh", "-c",
-          WITH_LIB + "md5sum /chaos-io-data/clean.dat").getStdout().split("\\s+")[0];
 
-      assertThat(corruptMd5)
+      // Read via libc.read with LD_PRELOAD active → CORRUPT rule flips bits.
+      // The script prints "DIFFERENT" if the read content's MD5 differs from MD5 of 16KB
+      // of zeros (the known-clean baseline), or "SAME" otherwise.
+      final String pythonScript =
+          "import ctypes, os, hashlib; "
+              + "libc = ctypes.CDLL(None, use_errno=True); "
+              + "libc.open.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int]; "
+              + "libc.open.restype = ctypes.c_int; "
+              + "libc.read.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_size_t]; "
+              + "libc.read.restype = ctypes.c_long; "
+              + "libc.close.argtypes = [ctypes.c_int]; "
+              + "libc.close.restype = ctypes.c_int; "
+              + "fd = libc.open(b'/chaos-io-data/clean.dat', os.O_RDONLY, 0); "
+              + "assert fd >= 0, 'open failed errno=' + str(ctypes.get_errno()); "
+              + "buf = (ctypes.c_char * 16384)(); "
+              + "n = libc.read(fd, buf, 16384); "
+              + "libc.close(fd); "
+              + "data = bytes(buf[:n]); "
+              + "expected = hashlib.md5(b'\\\\x00' * n).hexdigest(); "
+              + "actual = hashlib.md5(data).hexdigest(); "
+              + "print('DIFFERENT' if actual != expected else 'SAME')";
+
+      final var r =
+          container.execInContainer(
+              "/bin/sh", "-c", WITH_LIB + "python3 -c \"" + pythonScript + "\"");
+      assertThat(r.getStdout())
           .as("100%% corrupt read must change observed checksum")
-          .isNotEqualTo(cleanMd5);
+          .contains("DIFFERENT");
     }
 
     @Test
@@ -747,19 +972,25 @@ class CgroupsDiskChaosEndToEndTest {
       chaos = new CgroupsDiskChaos();
 
       // Baseline checksum
-      container.execInContainer("/bin/sh", "-c",
-          "dd if=/dev/zero of=/chaos-io-data/ref.dat bs=4K count=4 2>/dev/null");
-      final String originalMd5 = container.execInContainer("/bin/sh", "-c",
-          "md5sum /chaos-io-data/ref.dat").getStdout().split("\\s+")[0];
+      container.execInContainer(
+          "/bin/sh", "-c", "dd if=/dev/zero of=/chaos-io-data/ref.dat bs=4K count=4 2>/dev/null");
+      final String originalMd5 =
+          container
+              .execInContainer("/bin/sh", "-c", "md5sum /chaos-io-data/ref.dat")
+              .getStdout()
+              .split("\\s+")[0];
 
       // Inject, reset, re-write identical content
       chaos.injectCorruptRead(container, "/chaos-io-data", 1.0);
       chaos.reset(container);
 
-      container.execInContainer("/bin/sh", "-c",
-          "dd if=/dev/zero of=/chaos-io-data/ref2.dat bs=4K count=4 2>/dev/null");
-      final String afterMd5 = container.execInContainer("/bin/sh", "-c",
-          "md5sum /chaos-io-data/ref2.dat").getStdout().split("\\s+")[0];
+      container.execInContainer(
+          "/bin/sh", "-c", "dd if=/dev/zero of=/chaos-io-data/ref2.dat bs=4K count=4 2>/dev/null");
+      final String afterMd5 =
+          container
+              .execInContainer("/bin/sh", "-c", "md5sum /chaos-io-data/ref2.dat")
+              .getStdout()
+              .split("\\s+")[0];
 
       assertThat(afterMd5)
           .as("after reset reads must be clean — MD5 must match all-zeros reference")
@@ -781,8 +1012,11 @@ class CgroupsDiskChaosEndToEndTest {
 
       chaos.injectIOError(container, "/chaos-io-data", DiskOperation.WRITE, DiskErrno.EIO, 1.0);
 
-      final var r = container.execInContainer("/bin/sh", "-c",
-          WITH_LIB + "cp /etc/hostname /chaos-io-data/test.dat 2>&1; echo __exit:$?");
+      final var r =
+          container.execInContainer(
+              "/bin/sh",
+              "-c",
+              WITH_LIB + "cp /etc/hostname /chaos-io-data/test.dat 2>&1; echo __exit:$?");
 
       assertThat(r.getStdout() + r.getStderr()).contains("__exit:1");
     }
@@ -790,14 +1024,34 @@ class CgroupsDiskChaosEndToEndTest {
     @Test
     @DisplayName("fsync latency 500ms — observable inside Alpine/musl container")
     void fsyncLatencyAlpine() throws Exception {
-      container = alpineWithLibchaosIo("/chaos-io-data", "50m");
+      container =
+          new GenericContainer<>(DockerImageName.parse("python:3.11-alpine"))
+              .withTmpFs(Map.of("/chaos-io-data", "rw,size=50m"))
+              .withCommand("sleep", "infinity");
+      SyscallFaultInjector.prepare(container);
+      container.start();
       chaos = new CgroupsDiskChaos();
 
-      chaos.injectIOLatency(container, "/chaos-io-data", DiskOperation.FSYNC, Duration.ofMillis(500));
+      chaos.injectIOLatency(
+          container, "/chaos-io-data", DiskOperation.FSYNC, Duration.ofMillis(500));
+
+      final String pythonScript =
+          "import ctypes, os; "
+              + "libc = ctypes.CDLL(None, use_errno=True); "
+              + "libc.open.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int]; "
+              + "libc.open.restype = ctypes.c_int; "
+              + "libc.fsync.argtypes = [ctypes.c_int]; "
+              + "libc.fsync.restype = ctypes.c_int; "
+              + "libc.close.argtypes = [ctypes.c_int]; "
+              + "libc.close.restype = ctypes.c_int; "
+              + "fd = libc.open(b'/chaos-io-data/sync.dat', "
+              + "os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644); "
+              + "assert fd >= 0, 'open failed errno=' + str(ctypes.get_errno()); "
+              + "libc.fsync(fd); "
+              + "libc.close(fd)";
 
       final long start = System.currentTimeMillis();
-      container.execInContainer("/bin/sh", "-c",
-          WITH_LIB + "dd if=/dev/zero of=/chaos-io-data/sync.dat bs=4K count=1 conv=fsync 2>&1");
+      container.execInContainer("/bin/sh", "-c", WITH_LIB + "python3 -c \"" + pythonScript + "\"");
       final long elapsed = System.currentTimeMillis() - start;
 
       assertThat(elapsed).as("fsync latency observable on Alpine").isGreaterThan(400L);
@@ -806,22 +1060,60 @@ class CgroupsDiskChaosEndToEndTest {
     @Test
     @DisplayName("torn write — file shorter than expected inside Alpine/musl container")
     void tornWriteAlpine() throws Exception {
-      container = alpineWithLibchaosIo("/chaos-io-data", "50m");
+      // libchaos-io's TORN handler hooks pwrite(2) only; cp/dd don't emit pwrite. Use
+      // python:3.11-alpine (musl + python3 + ctypes) and call libc pwrite directly via
+      // ctypes.CDLL(None), which uses the program's default symbol scope so the
+      // LD_PRELOAD'd musl libchaos-io.so wins. Mirrors the Debian/glibc test.
+      container =
+          new GenericContainer<>(DockerImageName.parse("python:3.11-alpine"))
+              .withTmpFs(Map.of("/chaos-io-data", "rw,size=50m"))
+              .withCommand("sleep", "infinity");
+      SyscallFaultInjector.prepare(container);
+      container.start();
       chaos = new CgroupsDiskChaos();
 
-      container.execInContainer("/bin/sh", "-c",
-          "cp /etc/os-release /chaos-io-data/ref.dat 2>/dev/null");
-      final long refBytes = Long.parseLong(
-          container.execInContainer("/bin/sh", "-c",
-              "wc -c < /chaos-io-data/ref.dat").getStdout().trim());
+      final String pythonScript =
+          "import ctypes, os, sys; "
+              + "libc = ctypes.CDLL(None, use_errno=True); "
+              + "libc.open.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int]; "
+              + "libc.open.restype = ctypes.c_int; "
+              + "libc.pwrite.argtypes = "
+              + "[ctypes.c_int, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_long]; "
+              + "libc.pwrite.restype = ctypes.c_long; "
+              + "libc.close.argtypes = [ctypes.c_int]; "
+              + "libc.close.restype = ctypes.c_int; "
+              + "path = sys.argv[1].encode(); "
+              + "data = b'x' * 4096; "
+              + "fd = libc.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644); "
+              + "assert fd >= 0, 'open failed errno=' + str(ctypes.get_errno()); "
+              + "libc.pwrite(fd, data, len(data), 0); "
+              + "libc.close(fd)";
+
+      container.execInContainer(
+          "/bin/sh", "-c", WITH_LIB + "python3 -c \"" + pythonScript + "\" /chaos-io-data/ref.dat");
+      final long refBytes =
+          Long.parseLong(
+              container
+                  .execInContainer("/bin/sh", "-c", "wc -c < /chaos-io-data/ref.dat")
+                  .getStdout()
+                  .trim());
 
       chaos.injectTornWrite(container, "/chaos-io-data", 1.0);
 
-      container.execInContainer("/bin/sh", "-c",
-          WITH_LIB + "cp /etc/os-release /chaos-io-data/torn.dat 2>/dev/null");
-      final long tornBytes = Long.parseLong(
-          container.execInContainer("/bin/sh", "-c",
-              "wc -c < /chaos-io-data/torn.dat").getStdout().trim());
+      container.execInContainer(
+          "/bin/sh",
+          "-c",
+          WITH_LIB
+              + "python3 -c \""
+              + pythonScript
+              + "\" /chaos-io-data/torn.dat 2>/dev/null || true");
+      final long tornBytes =
+          Long.parseLong(
+              container
+                  .execInContainer(
+                      "/bin/sh", "-c", "wc -c < /chaos-io-data/torn.dat 2>/dev/null || echo 0")
+                  .getStdout()
+                  .trim());
 
       assertThat(tornBytes).as("torn write on Alpine must produce short file").isLessThan(refBytes);
     }
@@ -830,15 +1122,17 @@ class CgroupsDiskChaosEndToEndTest {
     @DisplayName("ENOSPC fill + isStressed work correctly on Alpine/musl")
     void fillAndStressOnAlpine() throws Exception {
       // Container with tmpfs for fill testing (no libchaos needed for ENOSPC fill)
-      container = new GenericContainer<>(DockerImageName.parse(ALPINE_IMAGE))
-          .withTmpFs(Map.of("/chaos-data", "rw,size=10m"));
+      container =
+          new GenericContainer<>(DockerImageName.parse(ALPINE_IMAGE))
+              .withTmpFs(Map.of("/chaos-data", "rw,size=10m"));
       container.start();
       chaos = new CgroupsDiskChaos();
 
       chaos.fillDisk(container, "/chaos-data", 90);
 
-      final var r = container.execInContainer("/bin/sh", "-c",
-          "dd if=/dev/zero of=/chaos-data/overflow bs=1M count=5 2>&1");
+      final var r =
+          container.execInContainer(
+              "/bin/sh", "-c", "dd if=/dev/zero of=/chaos-data/overflow bs=1M count=5 2>&1");
       assertThat(r.getStdout() + r.getStderr()).contains("No space left on device");
 
       chaos.reset(container);
@@ -862,17 +1156,19 @@ class CgroupsDiskChaosEndToEndTest {
       // 6 MB tmpfs: after 90% fill only ~0.6 MB remains.
       // SETRANGE creates a 5 MB key (in Redis memory, not on disk); with rdbcompression=no
       // the RDB dump is ~5 MB — 8× larger than available free space → BGSAVE gets ENOSPC.
-      container = new GenericContainer<>(DockerImageName.parse(DEBIAN_IMAGE))
-          .withTmpFs(Map.of("/data", "rw,size=6m"))
-          .withCommand("redis-server", "--dir", "/data", "--save", "",
-              "--rdbcompression", "no");
+      container =
+          new GenericContainer<>(DockerImageName.parse(DEBIAN_IMAGE))
+              .withTmpFs(Map.of("/data", "rw,size=6m"))
+              .withCommand(
+                  "redis-server", "--dir", "/data", "--save", "", "--rdbcompression", "no");
       container.start();
       chaos = new CgroupsDiskChaos();
 
       Awaitility.await()
           .atMost(Duration.ofSeconds(10))
-          .until(() -> container.execInContainer("redis-cli", "PING")
-              .getStdout().trim().equals("PONG"));
+          .until(
+              () ->
+                  container.execInContainer("redis-cli", "PING").getStdout().trim().equals("PONG"));
 
       // SETRANGE zero-pads to offset 5 MB-1 → 5 MB key stored in Redis memory only.
       // With rdbcompression=no the RDB dump is ~5 MB.
@@ -887,8 +1183,12 @@ class CgroupsDiskChaosEndToEndTest {
       Awaitility.await()
           .atMost(Duration.ofSeconds(15))
           .pollInterval(Duration.ofMillis(200))
-          .until(() -> container.execInContainer("redis-cli", "INFO", "persistence")
-              .getStdout().contains("rdb_last_bgsave_status:err"));
+          .until(
+              () ->
+                  container
+                      .execInContainer("redis-cli", "INFO", "persistence")
+                      .getStdout()
+                      .contains("rdb_last_bgsave_status:err"));
 
       final var info = container.execInContainer("redis-cli", "INFO", "persistence");
       assertThat(info.getStdout())
@@ -899,10 +1199,17 @@ class CgroupsDiskChaosEndToEndTest {
     @Test
     @DisplayName("EIO injection on /data — Redis SET command returns error")
     void eioOnRedisDataDirCausesSetToFail() throws Exception {
-      container = new GenericContainer<>(DockerImageName.parse(DEBIAN_IMAGE))
-          .withTmpFs(Map.of("/data", "rw,size=50m"))
-          .withCommand("redis-server", "--dir", "/data",
-              "--appendonly", "yes", "--appendfsync", "always");
+      container =
+          new GenericContainer<>(DockerImageName.parse(DEBIAN_IMAGE))
+              .withTmpFs(Map.of("/data", "rw,size=50m"))
+              .withCommand(
+                  "redis-server",
+                  "--dir",
+                  "/data",
+                  "--appendonly",
+                  "yes",
+                  "--appendfsync",
+                  "always");
       SyscallFaultInjector.prepare(container);
       container.start();
       chaos = new CgroupsDiskChaos();
@@ -910,8 +1217,9 @@ class CgroupsDiskChaosEndToEndTest {
       // Wait for Redis to be ready
       Awaitility.await()
           .atMost(Duration.ofSeconds(10))
-          .until(() -> container.execInContainer("redis-cli", "PING")
-              .getStdout().trim().equals("PONG"));
+          .until(
+              () ->
+                  container.execInContainer("redis-cli", "PING").getStdout().trim().equals("PONG"));
 
       // Inject 100% write EIO on /data (Redis AOF writes go here)
       chaos.injectIOError(container, "/data", DiskOperation.WRITE, DiskErrno.EIO, 1.0);
@@ -930,18 +1238,26 @@ class CgroupsDiskChaosEndToEndTest {
     @Test
     @DisplayName("reset removes EIO rule — Redis SET succeeds after reset")
     void resetRestoresRedisWrites() throws Exception {
-      container = new GenericContainer<>(DockerImageName.parse(DEBIAN_IMAGE))
-          .withTmpFs(Map.of("/data", "rw,size=50m"))
-          .withCommand("redis-server", "--dir", "/data",
-              "--appendonly", "yes", "--appendfsync", "always");
+      container =
+          new GenericContainer<>(DockerImageName.parse(DEBIAN_IMAGE))
+              .withTmpFs(Map.of("/data", "rw,size=50m"))
+              .withCommand(
+                  "redis-server",
+                  "--dir",
+                  "/data",
+                  "--appendonly",
+                  "yes",
+                  "--appendfsync",
+                  "always");
       SyscallFaultInjector.prepare(container);
       container.start();
       chaos = new CgroupsDiskChaos();
 
       Awaitility.await()
           .atMost(Duration.ofSeconds(10))
-          .until(() -> container.execInContainer("redis-cli", "PING")
-              .getStdout().trim().equals("PONG"));
+          .until(
+              () ->
+                  container.execInContainer("redis-cli", "PING").getStdout().trim().equals("PONG"));
 
       chaos.injectIOError(container, "/data", DiskOperation.WRITE, DiskErrno.EIO, 1.0);
       chaos.reset(container);
@@ -963,53 +1279,67 @@ class CgroupsDiskChaosEndToEndTest {
     @Test
     @DisplayName("ENOSPC fill + EIO injection on different paths — both faults observable")
     void enospcAndEioSimultaneously() throws Exception {
-      container = new GenericContainer<>(DockerImageName.parse(DEBIAN_IMAGE))
-          .withTmpFs(Map.of(
-              "/fill-data", "rw,size=10m",
-              "/inject-data", "rw,size=50m"));
+      container =
+          new GenericContainer<>(DockerImageName.parse(DEBIAN_IMAGE))
+              .withTmpFs(
+                  Map.of(
+                      "/fill-data", "rw,size=10m",
+                      "/inject-data", "rw,size=50m"));
       SyscallFaultInjector.prepare(container);
       container.start();
       chaos = new CgroupsDiskChaos();
 
       // ENOSPC via fill
       chaos.fillDisk(container, "/fill-data", 90);
-      final var enospcResult = container.execInContainer("/bin/sh", "-c",
-          "dd if=/dev/zero of=/fill-data/overflow bs=1M count=5 2>&1");
+      final var enospcResult =
+          container.execInContainer(
+              "/bin/sh", "-c", "dd if=/dev/zero of=/fill-data/overflow bs=1M count=5 2>&1");
       assertThat(enospcResult.getStdout() + enospcResult.getStderr())
           .contains("No space left on device");
 
       // EIO via injection
       chaos.injectIOError(container, "/inject-data", DiskOperation.WRITE, DiskErrno.EIO, 1.0);
-      final var eioResult = container.execInContainer("/bin/sh", "-c",
-          WITH_LIB + "cp /etc/hostname /inject-data/test.dat 2>&1; echo __exit:$?");
+      final var eioResult =
+          container.execInContainer(
+              "/bin/sh",
+              "-c",
+              WITH_LIB + "cp /etc/hostname /inject-data/test.dat 2>&1; echo __exit:$?");
       assertThat(eioResult.getStdout() + eioResult.getStderr()).contains("__exit:1");
 
       // Reset clears both — /fill-data space freed, /inject-data write rule removed
       chaos.reset(container);
 
       // Fill path: write should succeed
-      Awaitility.await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
-        final var fillResult = container.execInContainer("/bin/sh", "-c",
-            "dd if=/dev/zero of=/fill-data/ok bs=1K count=1 2>&1; echo __exit:$?");
-        assertThat(fillResult.getStdout() + fillResult.getStderr()).contains("__exit:0");
-      });
+      Awaitility.await()
+          .atMost(Duration.ofSeconds(5))
+          .untilAsserted(
+              () -> {
+                final var fillResult =
+                    container.execInContainer(
+                        "/bin/sh",
+                        "-c",
+                        "dd if=/dev/zero of=/fill-data/ok bs=1K count=1 2>&1; echo __exit:$?");
+                assertThat(fillResult.getStdout() + fillResult.getStderr()).contains("__exit:0");
+              });
 
       // Inject path: write should also succeed (library loaded, rules cleared)
-      final var injectResult = container.execInContainer("/bin/sh", "-c",
-          WITH_LIB + "cp /etc/hostname /inject-data/ok 2>&1; echo __exit:$?");
+      final var injectResult =
+          container.execInContainer(
+              "/bin/sh", "-c", WITH_LIB + "cp /etc/hostname /inject-data/ok 2>&1; echo __exit:$?");
       assertThat(injectResult.getStdout() + injectResult.getStderr()).contains("__exit:0");
     }
 
     @Test
     @DisplayName("stress + fill + EIO simultaneously — all three active at once")
     void stressAndFillAndEioSimultaneously() throws Exception {
-      container = new GenericContainer<>(DockerImageName.parse(DEBIAN_IMAGE))
-          .withTmpFs(Map.of(
-              "/fill-data", "rw,size=10m",
-              "/inject-data", "rw,size=50m"))
-              .withCreateContainerCmdModifier(cmd ->
-                      cmd.getHostConfig().withCapAdd(Capability.SYS_PTRACE)
-              );
+      container =
+          new GenericContainer<>(DockerImageName.parse(DEBIAN_IMAGE))
+              .withTmpFs(
+                  Map.of(
+                      "/fill-data", "rw,size=10m",
+                      "/inject-data", "rw,size=50m"))
+              .withCreateContainerCmdModifier(
+                  cmd -> cmd.getHostConfig().withCapAdd(Capability.SYS_PTRACE));
       SyscallFaultInjector.prepare(container);
       container.start();
       chaos = new CgroupsDiskChaos();
@@ -1020,17 +1350,22 @@ class CgroupsDiskChaosEndToEndTest {
       chaos.injectIOError(container, "/inject-data", DiskOperation.WRITE, DiskErrno.EIO, 1.0);
 
       // Stress is running
-      Awaitility.await().atMost(Duration.ofSeconds(10))
+      Awaitility.await()
+          .atMost(Duration.ofSeconds(10))
           .untilAsserted(() -> assertThat(chaos.isStressed(container)).isTrue());
 
       // Fill causes ENOSPC
-      final var enospc = container.execInContainer("/bin/sh", "-c",
-          "dd if=/dev/zero of=/fill-data/overflow bs=1M count=5 2>&1");
+      final var enospc =
+          container.execInContainer(
+              "/bin/sh", "-c", "dd if=/dev/zero of=/fill-data/overflow bs=1M count=5 2>&1");
       assertThat(enospc.getStdout() + enospc.getStderr()).contains("No space left on device");
 
       // EIO causes write failure — use cp (confirmed write() caller) not dd (uses writev/pwrite)
-      final var eio = container.execInContainer("/bin/sh", "-c",
-          WITH_LIB + "cp /etc/hostname /inject-data/eio-verify.dat 2>&1; echo __exit:$?");
+      final var eio =
+          container.execInContainer(
+              "/bin/sh",
+              "-c",
+              WITH_LIB + "cp /etc/hostname /inject-data/eio-verify.dat 2>&1; echo __exit:$?");
       assertThat(eio.getStdout() + eio.getStderr()).contains("__exit:1");
 
       // Reset clears everything
@@ -1052,8 +1387,9 @@ class CgroupsDiskChaosEndToEndTest {
   }
 
   private static GenericContainer<?> debianWithTmpFs(final String path, final String size) {
-    final var c = new GenericContainer<>(DockerImageName.parse(DEBIAN_IMAGE))
-        .withTmpFs(Map.of(path, "rw,size=" + size));
+    final var c =
+        new GenericContainer<>(DockerImageName.parse(DEBIAN_IMAGE))
+            .withTmpFs(Map.of(path, "rw,size=" + size));
     c.start();
     return c;
   }
@@ -1063,20 +1399,22 @@ class CgroupsDiskChaosEndToEndTest {
    * The tmpfs prevents multi-GB dd writes on the overlay filesystem.
    */
   private static GenericContainer<?> debianWithLibchaosIo(final String path, final String size) {
-    final var c = new GenericContainer<>(DockerImageName.parse(DEBIAN_IMAGE))
-        .withTmpFs(Map.of(path, "rw,size=" + size));
+    final var c =
+        new GenericContainer<>(DockerImageName.parse(DEBIAN_IMAGE))
+            .withTmpFs(Map.of(path, "rw,size=" + size));
     SyscallFaultInjector.prepare(c);
     c.start();
     return c;
   }
 
   /**
-   * Starts an Alpine/musl container with a bounded tmpfs AND libchaos-io prepared.
-   * Validates the musl-linked .so binary variant.
+   * Starts an Alpine/musl container with a bounded tmpfs AND libchaos-io prepared. Validates the
+   * musl-linked .so binary variant.
    */
   private static GenericContainer<?> alpineWithLibchaosIo(final String path, final String size) {
-    final var c = new GenericContainer<>(DockerImageName.parse(ALPINE_IMAGE))
-        .withTmpFs(Map.of(path, "rw,size=" + size));
+    final var c =
+        new GenericContainer<>(DockerImageName.parse(ALPINE_IMAGE))
+            .withTmpFs(Map.of(path, "rw,size=" + size));
     SyscallFaultInjector.prepare(c);
     c.start();
     return c;

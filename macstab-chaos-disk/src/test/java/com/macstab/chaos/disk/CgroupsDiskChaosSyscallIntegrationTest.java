@@ -3,10 +3,8 @@ package com.macstab.chaos.disk;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.macstab.chaos.core.syscall.DiskErrno;
-import com.macstab.chaos.core.syscall.DiskOperation;
-import com.macstab.chaos.core.syscall.SyscallFaultInjector;
 import java.time.Duration;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -14,6 +12,10 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
+
+import com.macstab.chaos.core.syscall.DiskErrno;
+import com.macstab.chaos.core.syscall.DiskOperation;
+import com.macstab.chaos.core.syscall.SyscallFaultInjector;
 
 /**
  * Integration tests for the syscall-level fault injection methods of {@link CgroupsDiskChaos}.
@@ -106,7 +108,8 @@ class CgroupsDiskChaosSyscallIntegrationTest {
     @Test
     @DisplayName("writes a LATENCY rule with millisecond value")
     void writesLatencyRule() throws Exception {
-      chaos.injectIOLatency(container, "/data/wal.log", DiskOperation.FSYNC, Duration.ofMillis(200));
+      chaos.injectIOLatency(
+          container, "/data/wal.log", DiskOperation.FSYNC, Duration.ofMillis(200));
 
       final String config =
           container.execInContainer("/bin/sh", "-c", "cat " + CONFIG_PATH).getStdout();
@@ -142,11 +145,7 @@ class CgroupsDiskChaosSyscallIntegrationTest {
 
       final String config =
           container.execInContainer("/bin/sh", "-c", "cat " + CONFIG_PATH).getStdout();
-      assertThat(config)
-          .contains("# disk")
-          .contains("/data")
-          .contains("write")
-          .contains("TORN");
+      assertThat(config).contains("# disk").contains("/data").contains("write").contains("TORN");
     }
   }
 
@@ -163,11 +162,7 @@ class CgroupsDiskChaosSyscallIntegrationTest {
 
       final String config =
           container.execInContainer("/bin/sh", "-c", "cat " + CONFIG_PATH).getStdout();
-      assertThat(config)
-          .contains("# disk")
-          .contains("/data")
-          .contains("read")
-          .contains("CORRUPT");
+      assertThat(config).contains("# disk").contains("/data").contains("read").contains("CORRUPT");
     }
   }
 
@@ -203,11 +198,10 @@ class CgroupsDiskChaosSyscallIntegrationTest {
       chaos.reset(container);
 
       final String remaining =
-          container.execInContainer("/bin/sh", "-c", "cat " + CONFIG_PATH + " 2>/dev/null")
+          container
+              .execInContainer("/bin/sh", "-c", "cat " + CONFIG_PATH + " 2>/dev/null")
               .getStdout();
-      assertThat(remaining)
-          .doesNotContain("disk:")
-          .contains("net:");
+      assertThat(remaining).doesNotContain("disk:").contains("net:");
     }
   }
 }

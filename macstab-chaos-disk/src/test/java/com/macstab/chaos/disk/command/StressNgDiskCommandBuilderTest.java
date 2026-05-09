@@ -140,17 +140,13 @@ class StressNgDiskCommandBuilderTest {
     @Test
     @DisplayName("filters zombie state Z via /proc/stat")
     void filtersZombieState() {
-      assertThat(builder.buildIsStressedCommand())
-          .contains("awk")
-          .contains("!= \"Z\"");
+      assertThat(builder.buildIsStressedCommand()).contains("awk").contains("!= \"Z\"");
     }
 
     @Test
     @DisplayName("exits 0 on first non-zombie match, 1 if all zombies or none")
     void exitCodeSemantics() {
-      assertThat(builder.buildIsStressedCommand())
-          .contains("exit 0")
-          .contains("exit 1");
+      assertThat(builder.buildIsStressedCommand()).contains("exit 0").contains("exit 1");
     }
 
     @Test
@@ -216,8 +212,7 @@ class StressNgDiskCommandBuilderTest {
     @Test
     @DisplayName("embeds mount point correctly")
     void embedsMountPoint() {
-      assertThat(builder.buildGetDiskTotalKBCommand("/var/lib/redis"))
-          .contains("/var/lib/redis");
+      assertThat(builder.buildGetDiskTotalKBCommand("/var/lib/redis")).contains("/var/lib/redis");
     }
 
     @Test

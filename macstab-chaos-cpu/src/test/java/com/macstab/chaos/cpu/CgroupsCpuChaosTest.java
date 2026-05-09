@@ -44,10 +44,12 @@ class CgroupsCpuChaosTest {
             // SYS_NICE allows taskset -p write and renice across uid boundaries.
             // redis-server runs as uid 999; execInContainer runs as root (uid 0).
             // Without this capability, taskset/renice on PID 1 return "Operation not permitted".
-            .withCreateContainerCmdModifier(cmd -> {
-                cmd.withCapAdd(Capability.SYS_NICE);
-                cmd.getHostConfig().withInit(Boolean.TRUE);  // tini as PID 1 — reaps orphaned stress-ng zombies
-            });
+            .withCreateContainerCmdModifier(
+                cmd -> {
+                  cmd.withCapAdd(Capability.SYS_NICE);
+                  cmd.getHostConfig()
+                      .withInit(Boolean.TRUE); // tini as PID 1 — reaps orphaned stress-ng zombies
+                });
     container.start();
     chaos = new CgroupsCpuChaos();
   }

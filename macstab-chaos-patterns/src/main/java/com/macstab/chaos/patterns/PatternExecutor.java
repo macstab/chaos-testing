@@ -9,6 +9,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import lombok.extern.slf4j.Slf4j;
+
 /**
  * Background executor for chaos patterns.
  *
@@ -16,6 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * @author Christian Schnapka - Macstab GmbH
  */
+@Slf4j
 public final class PatternExecutor {
   private static final ScheduledExecutorService EXECUTOR =
       Executors.newScheduledThreadPool(

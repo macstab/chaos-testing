@@ -4,10 +4,10 @@ package com.macstab.chaos.disk;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.macstab.chaos.core.exception.ChaosConfigurationException;
 import java.time.Duration;
-import org.awaitility.Awaitility;
 import java.util.Map;
+
+import org.awaitility.Awaitility;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -16,6 +16,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
+
+import com.macstab.chaos.core.exception.ChaosConfigurationException;
 
 /**
  * Comprehensive parametrized integration tests for {@link CgroupsDiskChaos}.
@@ -162,7 +164,8 @@ class CgroupsDiskChaosComprehensiveTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"/tmp;rm -rf /", "/tmp|cat /etc/passwd", "/tmp`id`"})
-    @DisplayName("fillDisk — shell-injection paths throw ChaosConfigurationException (unsafe chars)")
+    @DisplayName(
+        "fillDisk — shell-injection paths throw ChaosConfigurationException (unsafe chars)")
     void shouldRejectShellInjectionPaths(final String path) {
       container = startDebian();
       chaos = new CgroupsDiskChaos();
@@ -214,8 +217,7 @@ class CgroupsDiskChaosComprehensiveTest {
       chaos.fillDiskBySize(container, "/tmp", "10M");
       chaos.reset(container);
 
-      assertThat(container.execInContainer("ls", "/tmp/chaos-disk-load").getExitCode())
-          .isNotZero();
+      assertThat(container.execInContainer("ls", "/tmp/chaos-disk-load").getExitCode()).isNotZero();
     }
 
     @Test
@@ -255,8 +257,9 @@ class CgroupsDiskChaosComprehensiveTest {
    * Docker Desktop is ~60 GB, making even a 10% fill write 6 GB — too slow for tests.
    */
   private static GenericContainer<?> startDebianWithTmpFs() {
-    final var c = new GenericContainer<>(DockerImageName.parse("redis:7.4"))
-        .withTmpFs(Map.of("/tmp", "rw,size=512m"));
+    final var c =
+        new GenericContainer<>(DockerImageName.parse("redis:7.4"))
+            .withTmpFs(Map.of("/tmp", "rw,size=512m"));
     c.start();
     return c;
   }
@@ -268,8 +271,9 @@ class CgroupsDiskChaosComprehensiveTest {
   }
 
   private static GenericContainer<?> startAlpineWithTmpFs() {
-    final var c = new GenericContainer<>(DockerImageName.parse("redis:7.4-alpine"))
-        .withTmpFs(Map.of("/tmp", "rw,size=512m"));
+    final var c =
+        new GenericContainer<>(DockerImageName.parse("redis:7.4-alpine"))
+            .withTmpFs(Map.of("/tmp", "rw,size=512m"));
     c.start();
     return c;
   }

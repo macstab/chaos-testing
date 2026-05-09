@@ -4,7 +4,6 @@ package com.macstab.chaos.cpu;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -31,8 +30,8 @@ import com.macstab.chaos.cpu.command.StressNgCommandBuilder;
 /**
  * Unit tests for {@link CgroupsCpuChaos} — no Docker required.
  *
- * <p>Uses the package-private testability constructor to inject mocked collaborators.
- * Covers all exception paths, lifecycle branches, and the init-aware PID resolution.
+ * <p>Uses the package-private testability constructor to inject mocked collaborators. Covers all
+ * exception paths, lifecycle branches, and the init-aware PID resolution.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -65,18 +64,22 @@ class CgroupsCpuChaosUnitTest {
 
     // Default: all command builders return simple strings
     when(cmd.buildThrottleCommand(anyInt(), anyInt())).thenReturn("cpulimit");
-    when(cmd.buildThrottleWithDurationCommand(anyInt(), anyInt(), anyLong())).thenReturn("cpulimit-d");
+    when(cmd.buildThrottleWithDurationCommand(anyInt(), anyInt(), anyLong()))
+        .thenReturn("cpulimit-d");
     when(cmd.buildStressCpuCommand(anyInt())).thenReturn("stress-ng --cpu 1");
-    when(cmd.buildStressCpuWithTimeoutCommand(anyInt(), anyLong())).thenReturn("stress-ng --cpu 1 -t 10s");
+    when(cmd.buildStressCpuWithTimeoutCommand(anyInt(), anyLong()))
+        .thenReturn("stress-ng --cpu 1 -t 10s");
     when(cmd.buildStressCacheCommand(anyInt())).thenReturn("stress-ng --cache 1");
-    when(cmd.buildStressCacheWithTimeoutCommand(anyInt(), anyLong())).thenReturn("stress-ng --cache 1 -t 10s");
+    when(cmd.buildStressCacheWithTimeoutCommand(anyInt(), anyLong()))
+        .thenReturn("stress-ng --cache 1 -t 10s");
     when(cmd.buildStressCacheLineCommand(anyInt())).thenReturn("stress-ng --cacheline 1");
     when(cmd.buildStressContextSwitchCommand(anyInt())).thenReturn("stress-ng --context 1");
     when(cmd.buildStressThreadSwitchCommand(anyInt())).thenReturn("stress-ng --switch 1");
     when(cmd.buildStressBranchPredictorCommand(anyInt())).thenReturn("stress-ng --branch 1");
     when(cmd.buildStressTimerInterruptsCommand(anyInt())).thenReturn("stress-ng --hrtimers 1");
     when(cmd.buildStressMatrixCommand(anyInt())).thenReturn("stress-ng --matrix 1");
-    when(cmd.buildStressMatrixWithTimeoutCommand(anyInt(), anyLong())).thenReturn("stress-ng --matrix 1 -t 10s");
+    when(cmd.buildStressMatrixWithTimeoutCommand(anyInt(), anyLong()))
+        .thenReturn("stress-ng --matrix 1 -t 10s");
     when(cmd.buildPinToMaskCommand(anyInt(), anyLong())).thenReturn("taskset");
     when(cmd.buildSetNiceValueCommand(anyInt(), anyInt())).thenReturn("renice");
     when(cmd.buildKillAllByCommSigKillCommand(anyString())).thenReturn("kill cpulimit");
@@ -148,8 +151,7 @@ class CgroupsCpuChaosUnitTest {
     @Test
     @DisplayName("throttle — null container throws NPE")
     void throttleNullContainer() {
-      assertThatThrownBy(() -> chaos.throttle(null, 50))
-          .isInstanceOf(NullPointerException.class);
+      assertThatThrownBy(() -> chaos.throttle(null, 50)).isInstanceOf(NullPointerException.class);
     }
 
     @Test
@@ -163,14 +165,14 @@ class CgroupsCpuChaosUnitTest {
     @Test
     @DisplayName("stress — null container throws NPE")
     void stressNullContainer() {
-      assertThatThrownBy(() -> chaos.stress(null, 1))
-          .isInstanceOf(NullPointerException.class);
+      assertThatThrownBy(() -> chaos.stress(null, 1)).isInstanceOf(NullPointerException.class);
     }
 
     @Test
     @DisplayName("stress — 0 workers throws ChaosConfigurationException")
     void stressZeroWorkers() {
-      when(cmd.buildStressCpuCommand(0)).thenThrow(new ChaosConfigurationException("workers must be >= 1"));
+      when(cmd.buildStressCpuCommand(0))
+          .thenThrow(new ChaosConfigurationException("workers must be >= 1"));
       assertThatThrownBy(() -> chaos.stress(container, 0))
           .isInstanceOf(ChaosConfigurationException.class);
     }
@@ -339,8 +341,7 @@ class CgroupsCpuChaosUnitTest {
     @Test
     @DisplayName("reset null container throws NPE")
     void resetNullContainer() {
-      assertThatThrownBy(() -> chaos.reset(null))
-          .isInstanceOf(NullPointerException.class);
+      assertThatThrownBy(() -> chaos.reset(null)).isInstanceOf(NullPointerException.class);
     }
   }
 
@@ -416,7 +417,8 @@ class CgroupsCpuChaosUnitTest {
   @SuppressWarnings("unchecked")
   private void mockExecSuccess() throws Exception {
     final ExecResult successResult = mockExecResult(0, "");
-    when(container.execInContainer(anyString(), anyString(), anyString())).thenReturn(successResult);
+    when(container.execInContainer(anyString(), anyString(), anyString()))
+        .thenReturn(successResult);
   }
 
   private static ExecResult mockExecResult(final int exitCode, final String stdout) {

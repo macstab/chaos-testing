@@ -102,9 +102,10 @@ class ContainerPidResolverTest {
       final ExecResult child = result(0, "7\n");
       when(container.execInContainer("/bin/sh", "-c", "cat /proc/1/comm")).thenReturn(comm);
       when(container.execInContainer(
-          org.mockito.ArgumentMatchers.eq("/bin/sh"),
-          org.mockito.ArgumentMatchers.eq("-c"),
-          org.mockito.ArgumentMatchers.contains("PPid"))).thenReturn(child);
+              org.mockito.ArgumentMatchers.eq("/bin/sh"),
+              org.mockito.ArgumentMatchers.eq("-c"),
+              org.mockito.ArgumentMatchers.contains("PPid")))
+          .thenReturn(child);
       assertThat(ContainerPidResolver.resolve(container)).isEqualTo(7);
     }
 
@@ -115,9 +116,10 @@ class ContainerPidResolverTest {
       final ExecResult child = result(0, "5\n");
       when(container.execInContainer("/bin/sh", "-c", "cat /proc/1/comm")).thenReturn(comm);
       when(container.execInContainer(
-          org.mockito.ArgumentMatchers.eq("/bin/sh"),
-          org.mockito.ArgumentMatchers.eq("-c"),
-          org.mockito.ArgumentMatchers.contains("PPid"))).thenReturn(child);
+              org.mockito.ArgumentMatchers.eq("/bin/sh"),
+              org.mockito.ArgumentMatchers.eq("-c"),
+              org.mockito.ArgumentMatchers.contains("PPid")))
+          .thenReturn(child);
       assertThat(ContainerPidResolver.resolve(container)).isEqualTo(5);
     }
 
@@ -128,9 +130,10 @@ class ContainerPidResolverTest {
       final ExecResult blank = result(0, "   \n");
       when(container.execInContainer("/bin/sh", "-c", "cat /proc/1/comm")).thenReturn(comm);
       when(container.execInContainer(
-          org.mockito.ArgumentMatchers.eq("/bin/sh"),
-          org.mockito.ArgumentMatchers.eq("-c"),
-          org.mockito.ArgumentMatchers.contains("PPid"))).thenReturn(blank);
+              org.mockito.ArgumentMatchers.eq("/bin/sh"),
+              org.mockito.ArgumentMatchers.eq("-c"),
+              org.mockito.ArgumentMatchers.contains("PPid")))
+          .thenReturn(blank);
       assertThat(ContainerPidResolver.resolve(container)).isEqualTo(1);
     }
 
@@ -141,9 +144,10 @@ class ContainerPidResolverTest {
       final ExecResult fail = result(1, "");
       when(container.execInContainer("/bin/sh", "-c", "cat /proc/1/comm")).thenReturn(comm);
       when(container.execInContainer(
-          org.mockito.ArgumentMatchers.eq("/bin/sh"),
-          org.mockito.ArgumentMatchers.eq("-c"),
-          org.mockito.ArgumentMatchers.contains("PPid"))).thenReturn(fail);
+              org.mockito.ArgumentMatchers.eq("/bin/sh"),
+              org.mockito.ArgumentMatchers.eq("-c"),
+              org.mockito.ArgumentMatchers.contains("PPid")))
+          .thenReturn(fail);
       assertThat(ContainerPidResolver.resolve(container)).isEqualTo(1);
     }
   }

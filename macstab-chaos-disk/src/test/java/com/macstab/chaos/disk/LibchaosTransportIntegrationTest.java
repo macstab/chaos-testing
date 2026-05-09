@@ -3,8 +3,8 @@ package com.macstab.chaos.disk;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.macstab.chaos.core.syscall.LibchaosTransport;
 import java.util.List;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -13,12 +13,15 @@ import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
 
+import com.macstab.chaos.core.syscall.LibchaosLib;
+import com.macstab.chaos.core.syscall.LibchaosTransport;
+
 /**
- * Integration tests for {@link LibchaosTransport} using the libchaos-io binary
- * (vendored in macstab-chaos-disk resources).
+ * Integration tests for {@link LibchaosTransport} using the libchaos-io binary (vendored in
+ * macstab-chaos-disk resources).
  *
- * <p>Verifies .so deployment, LD_PRELOAD wiring, and config file operations against
- * a real running container. Actual fault delivery is covered by end-to-end tests.
+ * <p>Verifies .so deployment, LD_PRELOAD wiring, and config file operations against a real running
+ * container. Actual fault delivery is covered by end-to-end tests.
  */
 @DisplayName("LibchaosTransport — integration (libchaos-io)")
 class LibchaosTransportIntegrationTest {
@@ -31,9 +34,10 @@ class LibchaosTransportIntegrationTest {
 
   @BeforeEach
   void setUp() {
-    transport = new LibchaosTransport("io");
-    container = new GenericContainer<>(DockerImageName.parse("debian:bookworm-slim"))
-        .withCommand("sleep", "infinity");
+    transport = new LibchaosTransport(LibchaosLib.IO);
+    container =
+        new GenericContainer<>(DockerImageName.parse("debian:bookworm-slim"))
+            .withCommand("sleep", "infinity");
     transport.prepare(container);
     container.start();
   }
@@ -66,9 +70,10 @@ class LibchaosTransportIntegrationTest {
     @DisplayName("idempotent — calling twice does not add duplicate labels")
     void idempotent() {
       transport.prepare(container);
-      final long count = container.getLabels().keySet().stream()
-          .filter(k -> k.equals("macstab.chaos.io.active"))
-          .count();
+      final long count =
+          container.getLabels().keySet().stream()
+              .filter(k -> k.equals("macstab.chaos.io.active"))
+              .count();
       assertThat(count).isEqualTo(1);
     }
   }
@@ -82,9 +87,7 @@ class LibchaosTransportIntegrationTest {
     void ruleWrittenToConfig() throws Exception {
       transport.addRule(container, "disk", "/data:write:ERRNO:EIO:0.3");
       final var result = container.execInContainer("/bin/sh", "-c", "cat " + CONFIG_PATH);
-      assertThat(result.getStdout())
-          .contains("/data:write:ERRNO:EIO:0.3")
-          .contains("# disk");
+      assertThat(result.getStdout()).contains("/data:write:ERRNO:EIO:0.3").contains("# disk");
     }
 
     @Test
@@ -104,10 +107,8 @@ class LibchaosTransportIntegrationTest {
     @Test
     @DisplayName("all rules written in one shot")
     void allRulesWritten() throws Exception {
-      transport.addRules(container, "disk", List.of(
-          "/data:write:ERRNO:EIO:0.5",
-          "/data:read:LATENCY:100"
-      ));
+      transport.addRules(
+          container, "disk", List.of("/data:write:ERRNO:EIO:0.5", "/data:read:LATENCY:100"));
       final var result = container.execInContainer("/bin/sh", "-c", "cat " + CONFIG_PATH);
       assertThat(result.getStdout())
           .contains("/data:write:ERRNO:EIO:0.5")
@@ -125,7 +126,8 @@ class LibchaosTransportIntegrationTest {
       transport.addRule(container, "disk", "/data:write:ERRNO:EIO:0.3");
       transport.addRule(container, "fs", "/mnt:read:LATENCY:20");
       transport.removeRules(container, "disk");
-      final var result = container.execInContainer("/bin/sh", "-c", "cat " + CONFIG_PATH + " 2>/dev/null || echo");
+      final var result =
+          container.execInContainer("/bin/sh", "-c", "cat " + CONFIG_PATH + " 2>/dev/null || echo");
       assertThat(result.getStdout()).doesNotContain("# disk");
       assertThat(result.getStdout()).contains("# fs");
     }

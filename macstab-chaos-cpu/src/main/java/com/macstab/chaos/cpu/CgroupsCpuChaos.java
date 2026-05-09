@@ -152,7 +152,8 @@ public final class CgroupsCpuChaos implements CpuChaos {
     // percentage range validated by builder (throws ChaosConfigurationException)
     exec(
         container,
-        cmd.buildThrottleWithDurationCommand(1, percentage, duration.toSeconds()),
+        cmd.buildThrottleWithDurationCommand(
+            ContainerPidResolver.resolve(container), percentage, duration.toSeconds()),
         "throttle CPU with duration");
     ProcessPoller.waitUntilStarted(container, "cpulimit", PROCESS_STARTUP_TIMEOUT_MS);
     log.info("Throttled CPU to {}% for {}s (auto-reset)", percentage, duration.toSeconds());

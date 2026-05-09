@@ -611,18 +611,13 @@ class StressNgCommandBuilderTest {
   class ThrottleWithDurationCommand {
 
     @Test
-    @DisplayName("wraps cpulimit in background subshell with sleep-kill timer")
+    @DisplayName("uses coreutils timeout as the container-internal timer")
     void wrapsInSubshell() {
       // WHEN
       final String command = builder.buildThrottleWithDurationCommand(1, 50, 5);
 
       // THEN
-      assertThat(command)
-          .startsWith("(")
-          .contains("CPID=$!")
-          .contains("sleep 5")
-          .contains("kill $CPID")
-          .endsWith(") &");
+      assertThat(command).startsWith("timeout 5 cpulimit").endsWith("&");
     }
 
     @Test
@@ -632,7 +627,7 @@ class StressNgCommandBuilderTest {
       final String command = builder.buildThrottleWithDurationCommand(42, 75, 10);
 
       // THEN
-      assertThat(command).contains("-l 75").contains("-p 42").contains("sleep 10");
+      assertThat(command).contains("-l 75").contains("-p 42").contains("timeout 10");
     }
 
     @Test
@@ -641,11 +636,8 @@ class StressNgCommandBuilderTest {
       // WHEN
       final String command = builder.buildThrottleWithDurationCommand(1, 50, 30);
 
-      // THEN — the entire lifecycle is shell-managed, no Java scheduler involved
-      assertThat(command)
-          .contains("CPID=$!") // capture cpulimit PID inside shell
-          .contains("sleep") // shell sleep, not Java Thread.sleep
-          .contains("kill $CPID"); // shell kill
+      // THEN — the entire lifecycle is shell-managed via `timeout`, no Java scheduler involved
+      assertThat(command).startsWith("timeout 30 ").contains("cpulimit");
     }
 
     @ParameterizedTest
