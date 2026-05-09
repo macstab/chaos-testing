@@ -15,6 +15,7 @@ import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.annotation.Resources;
 import com.macstab.chaos.core.extension.MockChaosPlugin.*;
+import com.macstab.chaos.core.syscall.LibchaosLib;
 
 /**
  * Deep coverage tests for remaining uncovered paths in ChaosTestingExtension.
@@ -50,7 +51,11 @@ class ChaosTestingExtensionDeepCoverageTest {
       ChaosTestingExtension ext = new ChaosTestingExtension();
       Method m =
           ChaosTestingExtension.class.getDeclaredMethod(
-              "createContainerInstance", ChaosPlugin.class, Annotation.class, Resources.class);
+              "createContainerInstance",
+              ChaosPlugin.class,
+              Annotation.class,
+              Resources.class,
+              LibchaosLib[].class);
       m.setAccessible(true);
 
       // Plugin that returns null container
@@ -79,7 +84,8 @@ class ChaosTestingExtensionDeepCoverageTest {
 
       MockContainer annotation = NoAnnotationClass.class.getAnnotation(MockContainer.class);
 
-      assertThatThrownBy(() -> m.invoke(ext, nullContainerPlugin, annotation, null))
+      assertThatThrownBy(
+              () -> m.invoke(ext, nullContainerPlugin, annotation, null, new LibchaosLib[0]))
           .cause()
           .isInstanceOf(ExtensionConfigurationException.class)
           .hasMessageContaining("null container");
@@ -91,7 +97,11 @@ class ChaosTestingExtensionDeepCoverageTest {
       ChaosTestingExtension ext = new ChaosTestingExtension();
       Method m =
           ChaosTestingExtension.class.getDeclaredMethod(
-              "createContainerInstance", ChaosPlugin.class, Annotation.class, Resources.class);
+              "createContainerInstance",
+              ChaosPlugin.class,
+              Annotation.class,
+              Resources.class,
+              LibchaosLib[].class);
       m.setAccessible(true);
 
       // Plugin that returns a valid container but null connectionInfo
@@ -99,7 +109,8 @@ class ChaosTestingExtensionDeepCoverageTest {
 
       MockContainer annotation = NoAnnotationClass.class.getAnnotation(MockContainer.class);
 
-      assertThatThrownBy(() -> m.invoke(ext, nullInfoPlugin, annotation, null))
+      assertThatThrownBy(
+              () -> m.invoke(ext, nullInfoPlugin, annotation, null, new LibchaosLib[0]))
           .cause()
           .isInstanceOf(ExtensionConfigurationException.class)
           .hasMessageContaining("null connection info");
@@ -112,7 +123,11 @@ class ChaosTestingExtensionDeepCoverageTest {
       ChaosTestingExtension ext = new ChaosTestingExtension();
       Method m =
           ChaosTestingExtension.class.getDeclaredMethod(
-              "createContainerInstance", ChaosPlugin.class, Annotation.class, Resources.class);
+              "createContainerInstance",
+              ChaosPlugin.class,
+              Annotation.class,
+              Resources.class,
+              LibchaosLib[].class);
       m.setAccessible(true);
 
       ChaosPlugin<MockContainer> throwingPlugin =
@@ -140,7 +155,8 @@ class ChaosTestingExtensionDeepCoverageTest {
 
       MockContainer annotation = NoAnnotationClass.class.getAnnotation(MockContainer.class);
 
-      assertThatThrownBy(() -> m.invoke(ext, throwingPlugin, annotation, null))
+      assertThatThrownBy(
+              () -> m.invoke(ext, throwingPlugin, annotation, null, new LibchaosLib[0]))
           .cause()
           .isInstanceOf(ExtensionConfigurationException.class)
           .hasMessageContaining("Invalid configuration");

@@ -24,7 +24,10 @@ import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.annotation.ChaosTest;
 import com.macstab.chaos.core.annotation.Resources;
+import com.macstab.chaos.core.annotation.SyscallLevelChaos;
 import com.macstab.chaos.core.exception.PluginRegistrationException;
+import com.macstab.chaos.core.syscall.LibchaosLib;
+import com.macstab.chaos.core.syscall.LibchaosTransport;
 import com.macstab.chaos.core.util.ResourceParser;
 
 import lombok.extern.slf4j.Slf4j;
@@ -160,6 +163,10 @@ public final class ChaosTestingExtension
 
     final Class<?> testClass = context.getRequiredTestClass();
     final Resources resourcesAnnotation = testClass.getAnnotation(Resources.class);
+    final SyscallLevelChaos syscallChaosAnnotation =
+        testClass.getAnnotation(SyscallLevelChaos.class);
+    final LibchaosLib[] libsToPrepare =
+        syscallChaosAnnotation == null ? new LibchaosLib[0] : syscallChaosAnnotation.value();
 
     // Extract all container annotations (including repeatable ones)
     final List<Annotation> containerAnnotations = extractContainerAnnotations(testClass);
@@ -174,7 +181,7 @@ public final class ChaosTestingExtension
             testClass.getSimpleName());
 
         final ContainerInstance instance =
-            createContainerInstance(plugin, annotation, resourcesAnnotation);
+            createContainerInstance(plugin, annotation, resourcesAnnotation, libsToPrepare);
         containers.add(instance);
 
         log.info(
@@ -354,7 +361,10 @@ public final class ChaosTestingExtension
 
   @SuppressWarnings({"rawtypes", "unchecked"})
   private ContainerInstance createContainerInstance(
-      final ChaosPlugin plugin, final Annotation annotation, final Resources resourcesAnnotation) {
+      final ChaosPlugin plugin,
+      final Annotation annotation,
+      final Resources resourcesAnnotation,
+      final LibchaosLib[] libsToPrepare) {
 
     try {
       final GenericContainer<?> container = plugin.createContainer(annotation);
@@ -367,6 +377,7 @@ public final class ChaosTestingExtension
       }
 
       applyResourceConstraints(container, annotation, resourcesAnnotation);
+      prepareSyscallLevelChaos(container, libsToPrepare);
 
       container.start();
 
@@ -396,6 +407,28 @@ public final class ChaosTestingExtension
               "Failed to create container for @%s: %s",
               annotation.annotationType().getSimpleName(), e.getMessage()),
           e);
+    }
+  }
+
+  /**
+   * Loads the libchaos-* libraries declared via {@code @SyscallLevelChaos} into the container's
+   * pre-start environment. Must run between {@link #applyResourceConstraints} and {@code
+   * container.start()} so that {@code LD_PRELOAD} is set when the container's main process boots.
+   *
+   * <p>{@link LibchaosTransport#prepare} is idempotent and label-guarded — preparing the same lib
+   * twice is a debug-level no-op.
+   *
+   * @param container container being created (not yet started)
+   * @param libsToPrepare libraries to inject; empty array is a no-op
+   */
+  private void prepareSyscallLevelChaos(
+      final GenericContainer<?> container, final LibchaosLib[] libsToPrepare) {
+    if (libsToPrepare.length == 0) {
+      return;
+    }
+    for (final LibchaosLib lib : libsToPrepare) {
+      log.info("Preparing libchaos-{} for container before start", lib.getShortName());
+      new LibchaosTransport(lib).prepare(container);
     }
   }
 
@@ -591,7 +624,8 @@ public final class ChaosTestingExtension
    * Registers connection info from an external extension (e.g., SentinelContainerExtension).
    *
    * <p>Use this when a dedicated JUnit 5 extension manages its own container lifecycle but needs
-   * its connection info accessible via {@link com.macstab.chaos.core.api.ChaosContainers} / {@code INSTANCE.get()}.
+   * its connection info accessible via {@link com.macstab.chaos.core.api.ChaosContainers} / {@code
+   * INSTANCE.get()}.
    *
    * @param annotationType annotation class (e.g., {@code RedisSentinel.class})
    * @param id container id
