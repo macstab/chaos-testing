@@ -43,9 +43,7 @@ class RuleRegistryTest {
     void registered() {
       final RuleHandle h = new RuleHandle("r1");
       registry.register(c1, new RuleRegistry.Entry(h, RULE, null));
-      assertThat(registry.snapshot(c1))
-          .extracting(RuleRegistry.Entry::handle)
-          .containsExactly(h);
+      assertThat(registry.snapshot(c1)).extracting(RuleRegistry.Entry::handle).containsExactly(h);
     }
 
     @Test
@@ -61,7 +59,8 @@ class RuleRegistryTest {
     @DisplayName("null container is rejected")
     void nullContainer() {
       assertThatThrownBy(
-              () -> registry.register(null, new RuleRegistry.Entry(new RuleHandle("r1"), RULE, null)))
+              () ->
+                  registry.register(null, new RuleRegistry.Entry(new RuleHandle("r1"), RULE, null)))
           .isInstanceOf(NullPointerException.class);
     }
   }

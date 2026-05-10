@@ -95,8 +95,7 @@ public record NetRule(Endpoint endpoint, NetOperation operation, Effect effect, 
    * @param toxicity probability in {@code (0.0, 1.0]} that the rule fires per recv call
    * @return new rule
    */
-  public static NetRule corrupt(
-      final Endpoint endpoint, final double rate, final double toxicity) {
+  public static NetRule corrupt(final Endpoint endpoint, final double rate, final double toxicity) {
     return new NetRule(endpoint, NetOperation.RECV, Effect.corrupt(rate), toxicity);
   }
 
@@ -118,8 +117,7 @@ public record NetRule(Endpoint endpoint, NetOperation operation, Effect effect, 
 
   private static void requireValidToxicity(final double toxicity) {
     if (Double.isNaN(toxicity) || toxicity <= 0.0 || toxicity > 1.0) {
-      throw new IllegalArgumentException(
-          "toxicity must be in (0.0, 1.0], got: " + toxicity);
+      throw new IllegalArgumentException("toxicity must be in (0.0, 1.0], got: " + toxicity);
     }
   }
 
@@ -136,14 +134,12 @@ public record NetRule(Endpoint endpoint, NetOperation operation, Effect effect, 
       }
       case Effect.Corrupt ignored -> {
         if (op != NetOperation.RECV) {
-          throw new IllegalArgumentException(
-              "CORRUPT is only valid on RECV, got: " + op);
+          throw new IllegalArgumentException("CORRUPT is only valid on RECV, got: " + op);
         }
       }
       case Effect.Timeout ignored -> {
         if (op != NetOperation.POLL) {
-          throw new IllegalArgumentException(
-              "TIMEOUT is only valid on POLL, got: " + op);
+          throw new IllegalArgumentException("TIMEOUT is only valid on POLL, got: " + op);
         }
       }
     }

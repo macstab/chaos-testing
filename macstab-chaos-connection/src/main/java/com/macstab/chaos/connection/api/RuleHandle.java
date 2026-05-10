@@ -8,9 +8,9 @@ import java.util.regex.Pattern;
  * Opaque, reified handle for a previously-applied libchaos-net rule.
  *
  * <p>Returned by {@link AdvancedConnectionChaos#apply} and friends; passed back to {@link
- * AdvancedConnectionChaos#remove} to surgically remove a single rule without affecting other
- * rules on the same container. The handle's identity is its {@code owner} string — the tag
- * libchaos-net writes into the config file alongside each rule.
+ * AdvancedConnectionChaos#remove} to surgically remove a single rule without affecting other rules
+ * on the same container. The handle's identity is its {@code owner} string — the tag libchaos-net
+ * writes into the config file alongside each rule.
  *
  * <p>The {@code owner} format is {@code [a-z0-9_]+}; this constraint matches the libchaos-net
  * grammar enforced by {@code LibchaosTransport}. Callers normally do not construct {@code
@@ -32,8 +32,7 @@ public record RuleHandle(String owner) {
   public RuleHandle {
     Objects.requireNonNull(owner, "owner must not be null");
     if (!OWNER_PATTERN.matcher(owner).matches()) {
-      throw new IllegalArgumentException(
-          "owner must match [a-z0-9_]+, got: '" + owner + "'");
+      throw new IllegalArgumentException("owner must match [a-z0-9_]+, got: '" + owner + "'");
     }
   }
 }

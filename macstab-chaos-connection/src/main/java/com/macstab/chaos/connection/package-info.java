@@ -4,9 +4,9 @@
  *
  * <h2>Two backends, two lifecycles</h2>
  *
- * <p>This module composes two fault-injection mechanisms behind a single
- * {@link com.macstab.chaos.core.api.ConnectionChaos} facade. They differ in capability surface,
- * setup cost, and — critically — in <em>when</em> they have to be installed:
+ * <p>This module composes two fault-injection mechanisms behind a single {@link
+ * com.macstab.chaos.core.api.ConnectionChaos} facade. They differ in capability surface, setup
+ * cost, and — critically — in <em>when</em> they have to be installed:
  *
  * <table>
  *   <caption>Backend comparison</caption>
@@ -43,13 +43,15 @@
  *   <li>per-syscall granularity ({@code socket}, {@code bind}, {@code listen}, {@code connect},
  *       {@code accept}, {@code shutdown}, {@code send}, {@code recv}, {@code poll})
  *   <li>the full POSIX errno palette ({@link com.macstab.chaos.connection.model.Errno})
- *   <li>UDP, unix-domain-socket, and DNS-level injection (the latter intercepting
- *       {@code getaddrinfo})
+ *   <li>UDP, unix-domain-socket, and DNS-level injection (the latter intercepting {@code
+ *       getaddrinfo})
  *   <li>recv-payload corruption ({@link com.macstab.chaos.connection.model.Effect.Corrupt})
- *   <li>listen/accept-side faults ({@link com.macstab.chaos.connection.api.AdvancedConnectionChaos#failListen},
- *       {@link com.macstab.chaos.connection.api.AdvancedConnectionChaos#failAccept})
- *   <li>file-descriptor exhaustion via {@link com.macstab.chaos.core.exception.LibchaosNotPreparedException
- *       Errno#EMFILE} on {@code socket()}
+ *   <li>listen/accept-side faults ({@link
+ *       com.macstab.chaos.connection.api.AdvancedConnectionChaos#failListen}, {@link
+ *       com.macstab.chaos.connection.api.AdvancedConnectionChaos#failAccept})
+ *   <li>file-descriptor exhaustion via {@link
+ *       com.macstab.chaos.core.exception.LibchaosNotPreparedException Errno#EMFILE} on {@code
+ *       socket()}
  * </ul>
  *
  * <h2>Routing inside the composite</h2>
@@ -75,13 +77,13 @@
  * <p>If your test only uses portable verbs, no setup is required — Toxiproxy installs lazily on
  * first call.
  *
- * <p>If your test wants the advanced surface, the test class must declare
- * {@link com.macstab.chaos.core.annotation.SyscallLevelChaos @SyscallLevelChaos} so that
- * {@link com.macstab.chaos.core.extension.ChaosTestingExtension ChaosTestingExtension} drives
- * {@code LibchaosTransport.prepare()} into the pre-start window. Skipping this step and then
- * calling {@code chaos.advanced().*} raises
- * {@link com.macstab.chaos.core.exception.LibchaosNotPreparedException} loudly at the call site —
- * there is no silent fallback by design.
+ * <p>If your test wants the advanced surface, the test class must declare {@link
+ * com.macstab.chaos.core.annotation.SyscallLevelChaos @SyscallLevelChaos} so that {@link
+ * com.macstab.chaos.core.extension.ChaosTestingExtension ChaosTestingExtension} drives {@code
+ * LibchaosTransport.prepare()} into the pre-start window. Skipping this step and then calling
+ * {@code chaos.advanced().*} raises {@link
+ * com.macstab.chaos.core.exception.LibchaosNotPreparedException} loudly at the call site — there is
+ * no silent fallback by design.
  *
  * <pre>{@code
  * @RedisStandalone
@@ -106,21 +108,19 @@
  * <h2>Failure modes worth knowing</h2>
  *
  * <ul>
- *   <li><strong>Container started before prepare()</strong> — libchaos-net inactive;
- *       {@code chaos.advanced().<verb>()} raises
- *       {@link com.macstab.chaos.core.exception.LibchaosNotPreparedException} with the fix in
- *       the message.
- *   <li><strong>Distroless / scratch container</strong> — variant resolution fails in
- *       {@code LibchaosTransport.prepare()}; surfaces as
- *       {@link com.macstab.chaos.core.exception.ChaosOperationFailedException} at builder time.
- *   <li><strong>Toxiproxy install fails (offline CI / corp proxy)</strong> — sticky-fail
- *       state machine in
- *       {@link com.macstab.chaos.connection.strategy.toxiproxy.ToxiproxyConnectionChaos} short
- *       circuits subsequent calls with a clear message; recovery requires a fresh container.
+ *   <li><strong>Container started before prepare()</strong> — libchaos-net inactive; {@code
+ *       chaos.advanced().<verb>()} raises {@link
+ *       com.macstab.chaos.core.exception.LibchaosNotPreparedException} with the fix in the message.
+ *   <li><strong>Distroless / scratch container</strong> — variant resolution fails in {@code
+ *       LibchaosTransport.prepare()}; surfaces as {@link
+ *       com.macstab.chaos.core.exception.ChaosOperationFailedException} at builder time.
+ *   <li><strong>Toxiproxy install fails (offline CI / corp proxy)</strong> — sticky-fail state
+ *       machine in {@link com.macstab.chaos.connection.strategy.toxiproxy.ToxiproxyConnectionChaos}
+ *       short circuits subsequent calls with a clear message; recovery requires a fresh container.
  *       Tests that only use syscall-level chaos never trigger Toxiproxy install at all.
- *   <li><strong>Container restart mid-test</strong> — {@code LD_PRELOAD} survives (env on
- *       launch), {@code .so} survives (image-layer copy), <em>rules do not</em> (config in
- *       {@code /tmp}). No persistent volume is mounted by design.
+ *   <li><strong>Container restart mid-test</strong> — {@code LD_PRELOAD} survives (env on launch),
+ *       {@code .so} survives (image-layer copy), <em>rules do not</em> (config in {@code /tmp}). No
+ *       persistent volume is mounted by design.
  * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH

@@ -18,8 +18,8 @@ import org.testcontainers.containers.GenericContainer;
  * mode than a clear error message at the call site.
  *
  * <p><strong>Recommended fix</strong> is encoded in the exception message and points at the
- * sanctioned entry point ({@code @SyscallLevelChaos} on the test class, which the
- * {@code ChaosTestingExtension} reads to drive {@code LibchaosTransport.prepare()} pre-start).
+ * sanctioned entry point ({@code @SyscallLevelChaos} on the test class, which the {@code
+ * ChaosTestingExtension} reads to drive {@code LibchaosTransport.prepare()} pre-start).
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -56,14 +56,14 @@ public class LibchaosNotPreparedException extends ChaosOperationFailedException 
   private static String buildMessage(final String libShortName, final String image) {
     final String upper = libShortName == null ? "<unknown>" : libShortName.toUpperCase();
     return ("libchaos-"
-            + libShortName
-            + " was not prepared for container '"
-            + image
-            + "'. "
-            + "Syscall-level fault injection requires LD_PRELOAD to be set BEFORE container.start(). "
-            + "Fix: declare @SyscallLevelChaos(LibchaosLib."
-            + upper
-            + ") on the test class so ChaosTestingExtension wires LibchaosTransport.prepare() "
-            + "into the pre-start hook.");
+        + libShortName
+        + " was not prepared for container '"
+        + image
+        + "'. "
+        + "Syscall-level fault injection requires LD_PRELOAD to be set BEFORE container.start(). "
+        + "Fix: declare @SyscallLevelChaos(LibchaosLib."
+        + upper
+        + ") on the test class so ChaosTestingExtension wires LibchaosTransport.prepare() "
+        + "into the pre-start hook.");
   }
 }

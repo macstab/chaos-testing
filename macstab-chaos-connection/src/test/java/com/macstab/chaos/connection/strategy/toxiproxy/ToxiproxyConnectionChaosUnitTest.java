@@ -443,8 +443,7 @@ class ToxiproxyConnectionChaosUnitTest {
     void successfulInstallShortCircuits() throws Exception {
       chaos.installTools(container);
       chaos.installTools(container);
-      verify(lifecycle, org.mockito.Mockito.times(1))
-          .ensureRunning(any(ContainerContext.class));
+      verify(lifecycle, org.mockito.Mockito.times(1)).ensureRunning(any(ContainerContext.class));
     }
 
     @Test
@@ -493,8 +492,9 @@ class ToxiproxyConnectionChaosUnitTest {
 
       doThrow(new IOException("first failure"))
           .when(lifecycle)
-          .ensureRunning(org.mockito.ArgumentMatchers.argThat(
-              ctx -> ctx != null && "abc123".equals(ctx.container().getContainerId())));
+          .ensureRunning(
+              org.mockito.ArgumentMatchers.argThat(
+                  ctx -> ctx != null && "abc123".equals(ctx.container().getContainerId())));
 
       assertThatThrownBy(() -> chaos.installTools(container))
           .isInstanceOf(ChaosOperationFailedException.class);
@@ -502,8 +502,9 @@ class ToxiproxyConnectionChaosUnitTest {
       // Other container should still be installable (its state map entry is absent).
       chaos.installTools(other);
       verify(lifecycle, org.mockito.Mockito.atLeastOnce())
-          .ensureRunning(org.mockito.ArgumentMatchers.argThat(
-              ctx -> ctx != null && "def456".equals(ctx.container().getContainerId())));
+          .ensureRunning(
+              org.mockito.ArgumentMatchers.argThat(
+                  ctx -> ctx != null && "def456".equals(ctx.container().getContainerId())));
     }
   }
 

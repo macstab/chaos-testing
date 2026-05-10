@@ -70,8 +70,7 @@ class NetRuleTest {
     @Test
     @DisplayName("rejects negative delay (delegated to Effect)")
     void negativeDelay() {
-      assertThatThrownBy(
-              () -> NetRule.latency(EP, NetOperation.SEND, Duration.ofMillis(-1), 1.0))
+      assertThatThrownBy(() -> NetRule.latency(EP, NetOperation.SEND, Duration.ofMillis(-1), 1.0))
           .isInstanceOf(IllegalArgumentException.class);
     }
   }
@@ -165,10 +164,7 @@ class NetRuleTest {
     @Test
     @DisplayName("CORRUPT on non-RECV operation is rejected even bypassing factories")
     void corruptOnSend() {
-      assertThatThrownBy(
-              () ->
-                  new NetRule(
-                      EP, NetOperation.SEND, Effect.corrupt(0.5), 1.0))
+      assertThatThrownBy(() -> new NetRule(EP, NetOperation.SEND, Effect.corrupt(0.5), 1.0))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("CORRUPT");
     }
@@ -178,8 +174,7 @@ class NetRuleTest {
     void timeoutOnConnect() {
       assertThatThrownBy(
               () ->
-                  new NetRule(
-                      EP, NetOperation.CONNECT, Effect.timeout(Duration.ofMillis(1)), 1.0))
+                  new NetRule(EP, NetOperation.CONNECT, Effect.timeout(Duration.ofMillis(1)), 1.0))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("TIMEOUT");
     }
@@ -188,9 +183,7 @@ class NetRuleTest {
     @DisplayName("ERRNO on POLL is rejected even bypassing factories")
     void errnoOnPoll() {
       assertThatThrownBy(
-              () ->
-                  new NetRule(
-                      EP, NetOperation.POLL, Effect.errno(Errno.ETIMEDOUT), 1.0))
+              () -> new NetRule(EP, NetOperation.POLL, Effect.errno(Errno.ETIMEDOUT), 1.0))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("POLL");
     }

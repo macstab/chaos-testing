@@ -8,11 +8,11 @@ import com.macstab.chaos.core.api.ConnectionChaos;
 /**
  * SPI for {@link ConnectionChaos} strategies that participate in a composite.
  *
- * <p>Each strategy represents a single connection-fault mechanism — Toxiproxy proxy plus
- * iptables redirect, libchaos-net syscall interpose, eBPF, etc. A composite fans cleanup
- * operations across every applicable strategy so callers see a single unified bucket: the
- * mechanism that <em>added</em> the fault is irrelevant to the caller, and any cleanup verb
- * removes the fault no matter which mechanism owns it.
+ * <p>Each strategy represents a single connection-fault mechanism — Toxiproxy proxy plus iptables
+ * redirect, libchaos-net syscall interpose, eBPF, etc. A composite fans cleanup operations across
+ * every applicable strategy so callers see a single unified bucket: the mechanism that
+ * <em>added</em> the fault is irrelevant to the caller, and any cleanup verb removes the fault no
+ * matter which mechanism owns it.
  *
  * <h2>Contract</h2>
  *

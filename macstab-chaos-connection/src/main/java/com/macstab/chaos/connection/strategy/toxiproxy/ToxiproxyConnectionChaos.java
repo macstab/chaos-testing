@@ -443,15 +443,15 @@ public final class ToxiproxyConnectionChaos implements ConnectionChaosStrategy {
   }
 
   /**
-   * Lazy install gate with sticky-fail. First call attempts the install via the lifecycle
-   * manager; on success the container is flagged {@link InstallState#OK} and subsequent calls
-   * skip {@code ensureRunning} entirely. On failure the container is flagged {@link
-   * InstallState#FAILED} permanently and all future calls fail fast.
+   * Lazy install gate with sticky-fail. First call attempts the install via the lifecycle manager;
+   * on success the container is flagged {@link InstallState#OK} and subsequent calls skip {@code
+   * ensureRunning} entirely. On failure the container is flagged {@link InstallState#FAILED}
+   * permanently and all future calls fail fast.
    *
    * @param container target container
    * @param ctx pre-built context for the container
-   * @throws ChaosOperationFailedException if install previously failed for this container, or
-   *     the install attempt itself fails
+   * @throws ChaosOperationFailedException if install previously failed for this container, or the
+   *     install attempt itself fails
    */
   private void ensureToxiproxyAvailable(
       final GenericContainer<?> container, final ContainerContext ctx) {

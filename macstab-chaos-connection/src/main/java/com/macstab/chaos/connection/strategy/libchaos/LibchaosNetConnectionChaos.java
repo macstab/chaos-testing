@@ -30,8 +30,8 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <p>Implements both {@link ConnectionChaosStrategy} (so it composes with Toxiproxy) and {@link
  * AdvancedConnectionChaos} (so it surfaces libchaos-net's full capability set). Pre-flight
- * preparation must happen before {@code container.start()} — see {@link
- * LibchaosTransport#prepare}; this strategy does not start anything itself.
+ * preparation must happen before {@code container.start()} — see {@link LibchaosTransport#prepare};
+ * this strategy does not start anything itself.
  *
  * <p><strong>Routing decisions</strong> live in the composite, not here. This class translates
  * portable verbs into libchaos-net rules ({@code addLatency} → bidirectional {@link
@@ -214,8 +214,7 @@ public final class LibchaosNetConnectionChaos
     }
     final String selectorPrefix = "tcp4://" + target.toLowerCase();
     for (final RuleRegistry.Entry e : registry.snapshot(container)) {
-      if (e.toxicName() != null
-          && e.rule().endpoint().toSelector().startsWith(selectorPrefix)) {
+      if (e.toxicName() != null && e.rule().endpoint().toSelector().startsWith(selectorPrefix)) {
         removeEntry(container, e);
       }
     }
@@ -232,8 +231,7 @@ public final class LibchaosNetConnectionChaos
   }
 
   @Override
-  public List<RuleHandle> applyAll(
-      final GenericContainer<?> container, final List<NetRule> rules) {
+  public List<RuleHandle> applyAll(final GenericContainer<?> container, final List<NetRule> rules) {
     Objects.requireNonNull(container, "container must not be null");
     Objects.requireNonNull(rules, "rules must not be null");
     rules.forEach(r -> Objects.requireNonNull(r, "rule must not be null"));
@@ -306,8 +304,7 @@ public final class LibchaosNetConnectionChaos
       final NetOperation operation,
       final Errno errno,
       final double toxicity) {
-    return apply(
-        container, NetRule.errno(Endpoint.udp4(host, port), operation, errno, toxicity));
+    return apply(container, NetRule.errno(Endpoint.udp4(host, port), operation, errno, toxicity));
   }
 
   @Override
@@ -341,8 +338,7 @@ public final class LibchaosNetConnectionChaos
   @Override
   public RuleHandle exhaustFds(final GenericContainer<?> container, final double toxicity) {
     return apply(
-        container,
-        NetRule.errno(Endpoint.wildcard(), NetOperation.SOCKET, Errno.EMFILE, toxicity));
+        container, NetRule.errno(Endpoint.wildcard(), NetOperation.SOCKET, Errno.EMFILE, toxicity));
   }
 
   // ==================== Internal helpers ====================

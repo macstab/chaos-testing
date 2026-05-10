@@ -21,12 +21,12 @@ import java.util.Objects;
  *   *                           ← {@link Wildcard} (matches every socket)
  * </pre>
  *
- * <p><strong>Defensive validation</strong> applies at construction. Hosts and paths are rejected
- * if they contain newline characters — those would otherwise inject extra rules into the
- * libchaos-net config file, which is line-oriented.
+ * <p><strong>Defensive validation</strong> applies at construction. Hosts and paths are rejected if
+ * they contain newline characters — those would otherwise inject extra rules into the libchaos-net
+ * config file, which is line-oriented.
  *
- * <p>Instantiate via the static factories ({@link #tcp4(String, int)}, {@link #dns(String)}, …)
- * for ergonomics, or directly via the nested records / enum.
+ * <p>Instantiate via the static factories ({@link #tcp4(String, int)}, {@link #dns(String)}, …) for
+ * ergonomics, or directly via the nested records / enum.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see <a
@@ -125,7 +125,9 @@ public sealed interface Endpoint
     }
   }
 
-  /** TCP over IPv6. {@code host} is stored unbracketed; brackets are added by {@link #toSelector()}. */
+  /**
+   * TCP over IPv6. {@code host} is stored unbracketed; brackets are added by {@link #toSelector()}.
+   */
   record Tcp6(String host, int port) implements Endpoint {
     public Tcp6 {
       validateHost(host);
@@ -151,7 +153,9 @@ public sealed interface Endpoint
     }
   }
 
-  /** UDP over IPv6. {@code host} is stored unbracketed; brackets are added by {@link #toSelector()}. */
+  /**
+   * UDP over IPv6. {@code host} is stored unbracketed; brackets are added by {@link #toSelector()}.
+   */
   record Udp6(String host, int port) implements Endpoint {
     public Udp6 {
       validateHost(host);

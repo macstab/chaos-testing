@@ -110,9 +110,9 @@ public interface ConnectionChaos extends ChaosProvider {
    * Remove a single named fault from the target across every active mechanism.
    *
    * <p>Idempotent — silently no-op if no such fault exists. Implementations <strong>must</strong>
-   * attempt cleanup on every backend they could have touched (Toxiproxy state, libchaos-net
-   * config, iptables, …) so callers see one bucket regardless of which mechanism originally
-   * applied the fault.
+   * attempt cleanup on every backend they could have touched (Toxiproxy state, libchaos-net config,
+   * iptables, …) so callers see one bucket regardless of which mechanism originally applied the
+   * fault.
    *
    * @param container target container (must be running)
    * @param target target host:port
@@ -123,8 +123,7 @@ public interface ConnectionChaos extends ChaosProvider {
   /**
    * Remove every fault associated with the target across every active mechanism.
    *
-   * <p>Underlying proxies and redirects stay intact — only fault rules are cleared.
-   * Idempotent.
+   * <p>Underlying proxies and redirects stay intact — only fault rules are cleared. Idempotent.
    *
    * @param container target container (must be running)
    * @param target target host:port

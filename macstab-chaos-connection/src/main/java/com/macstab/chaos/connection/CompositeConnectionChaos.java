@@ -22,39 +22,38 @@ import lombok.extern.slf4j.Slf4j;
  * implementations.
  *
  * <p>Provides a unified API regardless of which underlying mechanism — Toxiproxy proxy,
- * libchaos-net syscall interpose, eBPF, etc. — actually produces or carries the fault. The
- * caller sees a single bucket: a toxic added by any strategy is removed by any cleanup call.
+ * libchaos-net syscall interpose, eBPF, etc. — actually produces or carries the fault. The caller
+ * sees a single bucket: a toxic added by any strategy is removed by any cleanup call.
  *
  * <h2>Delegation policy</h2>
  *
  * <ul>
- *   <li><strong>Mutating add operations</strong> ({@link #addLatency}, {@link #dropPackets},
- *       {@link #limitBandwidth}, {@link #timeoutConnections}, {@link #slowClose}, {@link
+ *   <li><strong>Mutating add operations</strong> ({@link #addLatency}, {@link #dropPackets}, {@link
+ *       #limitBandwidth}, {@link #timeoutConnections}, {@link #slowClose}, {@link
  *       #rejectConnections}): <em>first-applicable wins, with capability fall-through</em>.
  *       Strategies are probed in declared order. The first strategy whose {@link
- *       ConnectionChaosStrategy#supports} returns {@code true} attempts the operation; if it
- *       raises {@link ChaosUnsupportedOperationException} (declaring it cannot model the verb),
- *       the next applicable strategy gets a chance. This is what lets a composite of
- *       {@code [LibchaosNetConnectionChaos, ToxiproxyConnectionChaos]} route every verb to
- *       libchaos-net <em>except</em> {@link #limitBandwidth} (which only Toxiproxy can model)
- *       transparently.
- *   <li><strong>Cleanup operations</strong> ({@link #removeToxic}, {@link #removeAllToxics},
- *       {@link #reset}): <em>fan-out, best-effort</em>. Every applicable strategy is invoked;
- *       per-strategy failures are collected. An aggregate {@link ChaosOperationFailedException}
- *       (with originals attached via {@link Throwable#addSuppressed}) is thrown only when
- *       <em>every</em> applicable strategy failed.
- *   <li>{@link #installTools} is intentionally a no-op. Both strategies install lazily on first
- *       use of a verb that needs them — eager fan-out would trigger Toxiproxy's binary fetch even
- *       in offline-CI runs that only use syscall-level chaos.
+ *       ConnectionChaosStrategy#supports} returns {@code true} attempts the operation; if it raises
+ *       {@link ChaosUnsupportedOperationException} (declaring it cannot model the verb), the next
+ *       applicable strategy gets a chance. This is what lets a composite of {@code
+ *       [LibchaosNetConnectionChaos, ToxiproxyConnectionChaos]} route every verb to libchaos-net
+ *       <em>except</em> {@link #limitBandwidth} (which only Toxiproxy can model) transparently.
+ *   <li><strong>Cleanup operations</strong> ({@link #removeToxic}, {@link #removeAllToxics}, {@link
+ *       #reset}): <em>fan-out, best-effort</em>. Every applicable strategy is invoked; per-strategy
+ *       failures are collected. An aggregate {@link ChaosOperationFailedException} (with originals
+ *       attached via {@link Throwable#addSuppressed}) is thrown only when <em>every</em> applicable
+ *       strategy failed.
+ *   <li>{@link #installTools} is intentionally a no-op. Both strategies install lazily on first use
+ *       of a verb that needs them — eager fan-out would trigger Toxiproxy's binary fetch even in
+ *       offline-CI runs that only use syscall-level chaos.
  * </ul>
  *
  * <h2>Capability tier</h2>
  *
  * <p>The composite exposes {@link #advanced()} returning the registered {@link
  * AdvancedConnectionChaos} strategy (typically {@link LibchaosNetConnectionChaos}). Calls on the
- * advanced API throw {@link com.macstab.chaos.core.exception.LibchaosNotPreparedException} when
- * the target container was not prepared with libchaos-net before {@code container.start()} —
- * loud and visible by design.
+ * advanced API throw {@link com.macstab.chaos.core.exception.LibchaosNotPreparedException} when the
+ * target container was not prepared with libchaos-net before {@code container.start()} — loud and
+ * visible by design.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -65,8 +64,8 @@ public final class CompositeConnectionChaos implements ConnectionChaosStrategy {
   private final AdvancedConnectionChaos advanced;
 
   /**
-   * Creates a composite from the given strategies. Order is significant — strategies earlier in
-   * the list are preferred for verbs both can model.
+   * Creates a composite from the given strategies. Order is significant — strategies earlier in the
+   * list are preferred for verbs both can model.
    *
    * @param strategies non-empty, non-null list of strategies (defensively copied)
    * @throws NullPointerException if {@code strategies} or any element is null
@@ -103,11 +102,10 @@ public final class CompositeConnectionChaos implements ConnectionChaosStrategy {
   /**
    * Returns the syscall-level strategy registered with this composite.
    *
-   * <p>Methods on the returned object require the container to have been prepared with
-   * libchaos-net (i.e. {@code LibchaosTransport.prepare()} called before {@code
-   * container.start()}). Invocations against an unprepared container raise {@link
-   * com.macstab.chaos.core.exception.LibchaosNotPreparedException} — there is no silent
-   * fallback.
+   * <p>Methods on the returned object require the container to have been prepared with libchaos-net
+   * (i.e. {@code LibchaosTransport.prepare()} called before {@code container.start()}). Invocations
+   * against an unprepared container raise {@link
+   * com.macstab.chaos.core.exception.LibchaosNotPreparedException} — there is no silent fallback.
    *
    * @return the advanced strategy
    * @throws ChaosOperationFailedException if no {@link AdvancedConnectionChaos} strategy was
@@ -173,8 +171,7 @@ public final class CompositeConnectionChaos implements ConnectionChaosStrategy {
 
   @Override
   public void rejectConnections(final GenericContainer<?> container, final String target) {
-    delegateAdd(
-        container, "rejectConnections", s -> s.rejectConnections(container, target));
+    delegateAdd(container, "rejectConnections", s -> s.rejectConnections(container, target));
   }
 
   // ==================== Cleanup operations (fan-out) ====================
@@ -259,9 +256,7 @@ public final class CompositeConnectionChaos implements ConnectionChaosStrategy {
   }
 
   private void fanOut(
-      final GenericContainer<?> container,
-      final String operation,
-      final StrategyAction action) {
+      final GenericContainer<?> container, final String operation, final StrategyAction action) {
     Objects.requireNonNull(container, "container must not be null");
 
     final List<Throwable> failures = new ArrayList<>();

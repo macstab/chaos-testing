@@ -167,7 +167,8 @@ class CompositeConnectionChaosUnitTest {
       composite.dropPackets(container, "redis:6379", 0.25);
 
       verify(strategyA).dropPackets(container, "redis:6379", 0.25);
-      verify(strategyB, never()).dropPackets(any(), anyString(), org.mockito.ArgumentMatchers.anyDouble());
+      verify(strategyB, never())
+          .dropPackets(any(), anyString(), org.mockito.ArgumentMatchers.anyDouble());
     }
 
     @Test
@@ -255,10 +256,7 @@ class CompositeConnectionChaosUnitTest {
           .isInstanceOf(ChaosOperationFailedException.class)
           .hasMessageContaining("removeToxic failed on every applicable strategy")
           .satisfies(
-              t ->
-                  assertThat(t.getSuppressed())
-                      .hasSize(2)
-                      .containsExactlyInAnyOrder(errA, errB));
+              t -> assertThat(t.getSuppressed()).hasSize(2).containsExactlyInAnyOrder(errA, errB));
     }
 
     @Test
@@ -347,8 +345,7 @@ class CompositeConnectionChaosUnitTest {
     @DisplayName("supports() rejects null container")
     void rejectsNullContainer() {
       final CompositeConnectionChaos composite = new CompositeConnectionChaos(List.of(strategyA));
-      assertThatThrownBy(() -> composite.supports(null))
-          .isInstanceOf(NullPointerException.class);
+      assertThatThrownBy(() -> composite.supports(null)).isInstanceOf(NullPointerException.class);
     }
   }
 

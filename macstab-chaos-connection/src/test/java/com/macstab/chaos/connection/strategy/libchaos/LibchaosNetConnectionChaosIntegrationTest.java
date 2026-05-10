@@ -28,9 +28,9 @@ import com.macstab.chaos.core.syscall.LibchaosTransport;
  * Integration tests for {@link LibchaosNetConnectionChaos} against real containers.
  *
  * <p>Exercises the full lifecycle on both glibc (debian:bookworm-slim) and musl (alpine) base
- * images: pre-start preparation, post-start rule application, config-file persistence, and
- * cleanup. Actual fault delivery (rules causing the right syscall errors) is delegated to the
- * libchaos-net library's own end-to-end suite — this test verifies the Java-side wiring.
+ * images: pre-start preparation, post-start rule application, config-file persistence, and cleanup.
+ * Actual fault delivery (rules causing the right syscall errors) is delegated to the libchaos-net
+ * library's own end-to-end suite — this test verifies the Java-side wiring.
  *
  * <p>Each test method runs against both distributions via {@link ParameterizedTest} so glibc/musl
  * binary resolution is covered without a separate test class.
@@ -91,8 +91,7 @@ class LibchaosNetConnectionChaosIntegrationTest {
     @DisplayName("LD_PRELOAD env var contains the libchaos-net path")
     void ldPreloadSet(final String image) throws Exception {
       container = prepared(image);
-      final var result =
-          container.execInContainer("/bin/sh", "-c", "echo \"$LD_PRELOAD\"");
+      final var result = container.execInContainer("/bin/sh", "-c", "echo \"$LD_PRELOAD\"");
       assertThat(result.getStdout()).contains(LIBRARY_PATH);
     }
   }
@@ -148,8 +147,7 @@ class LibchaosNetConnectionChaosIntegrationTest {
       final RuleHandle handle =
           chaos.apply(
               container,
-              NetRule.errno(
-                  Endpoint.tcp4("a", 1), NetOperation.CONNECT, Errno.ECONNREFUSED, 1.0));
+              NetRule.errno(Endpoint.tcp4("a", 1), NetOperation.CONNECT, Errno.ECONNREFUSED, 1.0));
 
       chaos.remove(container, handle);
 
@@ -167,11 +165,9 @@ class LibchaosNetConnectionChaosIntegrationTest {
       chaos = new LibchaosNetConnectionChaos();
 
       chaos.apply(
-          container,
-          NetRule.errno(Endpoint.tcp4("a", 1), NetOperation.CONNECT, Errno.EPIPE, 1.0));
+          container, NetRule.errno(Endpoint.tcp4("a", 1), NetOperation.CONNECT, Errno.EPIPE, 1.0));
       chaos.apply(
-          container,
-          NetRule.errno(Endpoint.tcp4("b", 2), NetOperation.CONNECT, Errno.EPIPE, 1.0));
+          container, NetRule.errno(Endpoint.tcp4("b", 2), NetOperation.CONNECT, Errno.EPIPE, 1.0));
 
       chaos.removeAll(container);
 

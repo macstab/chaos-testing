@@ -23,8 +23,8 @@ import com.macstab.chaos.connection.model.NetRule;
  *       strategy and recover the underlying rule for diagnostics.
  *   <li>Portable {@link com.macstab.chaos.core.api.ConnectionChaos#removeToxic} can match by
  *       toxic-name tag (the tag is non-null only for portable-verb-applied rules).
- *   <li>{@code reset()} / {@code removeAll()} can wipe everything for a container without
- *       leaking ownership of unrelated rules.
+ *   <li>{@code reset()} / {@code removeAll()} can wipe everything for a container without leaking
+ *       ownership of unrelated rules.
  * </ul>
  *
  * <p>Thread-safe — backed by {@link ConcurrentHashMap}.
@@ -76,8 +76,7 @@ final class RuleRegistry {
    * Removes and returns every entry tagged with {@code toxicName} for the given container. Untagged
    * entries (advanced-API applications) are not affected.
    */
-  List<Entry> removeByToxicName(
-      final GenericContainer<?> container, final String toxicName) {
+  List<Entry> removeByToxicName(final GenericContainer<?> container, final String toxicName) {
     Objects.requireNonNull(container, "container must not be null");
     Objects.requireNonNull(toxicName, "toxicName must not be null");
     final Map<RuleHandle, Entry> inner = byContainer.get(container);
@@ -85,18 +84,22 @@ final class RuleRegistry {
       return List.of();
     }
     final List<Entry> removed = new ArrayList<>();
-    inner.values().removeIf(
-        entry -> {
-          if (toxicName.equals(entry.toxicName())) {
-            removed.add(entry);
-            return true;
-          }
-          return false;
-        });
+    inner
+        .values()
+        .removeIf(
+            entry -> {
+              if (toxicName.equals(entry.toxicName())) {
+                removed.add(entry);
+                return true;
+              }
+              return false;
+            });
     return removed;
   }
 
-  /** @return immutable snapshot of the entries for a container (never null) */
+  /**
+   * @return immutable snapshot of the entries for a container (never null)
+   */
   List<Entry> snapshot(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
     final Map<RuleHandle, Entry> inner = byContainer.get(container);

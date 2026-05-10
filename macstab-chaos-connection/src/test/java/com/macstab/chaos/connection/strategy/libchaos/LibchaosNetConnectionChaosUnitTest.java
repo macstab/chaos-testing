@@ -114,7 +114,10 @@ class LibchaosNetConnectionChaosUnitTest {
       final RuleHandle handle = chaos.apply(container, r);
       assertThat(handle.owner()).matches("r[0-9]+");
       verify(transport)
-          .addRule(eq(container), eq(handle.owner()), contains("tcp4://db:5432:connect:ERRNO:EPIPE:0.5"));
+          .addRule(
+              eq(container),
+              eq(handle.owner()),
+              contains("tcp4://db:5432:connect:ERRNO:EPIPE:0.5"));
     }
 
     @Test
@@ -122,8 +125,7 @@ class LibchaosNetConnectionChaosUnitTest {
     void uniqueOwners() {
       final NetRule r =
           NetRule.errno(Endpoint.tcp4("db", 5432), NetOperation.CONNECT, Errno.EPIPE, 1.0);
-      assertThat(chaos.apply(container, r).owner())
-          .isNotEqualTo(chaos.apply(container, r).owner());
+      assertThat(chaos.apply(container, r).owner()).isNotEqualTo(chaos.apply(container, r).owner());
     }
   }
 
@@ -224,8 +226,7 @@ class LibchaosNetConnectionChaosUnitTest {
     @DisplayName("dropPackets emits ERRNO ECONNRESET on RECV with toxicity=rate")
     void dropPackets() {
       chaos.dropPackets(container, "db:5432", 0.25);
-      verify(transport)
-          .addRule(eq(container), anyString(), contains("recv:ERRNO:ECONNRESET:0.25"));
+      verify(transport).addRule(eq(container), anyString(), contains("recv:ERRNO:ECONNRESET:0.25"));
     }
 
     @Test
@@ -310,7 +311,8 @@ class LibchaosNetConnectionChaosUnitTest {
     void failDns() {
       chaos.failDnsResolve(container, "db.internal", Errno.EHOSTUNREACH, 1.0);
       verify(transport, atLeastOnce())
-          .addRule(eq(container), anyString(), contains("dns://db.internal:connect:ERRNO:EHOSTUNREACH"));
+          .addRule(
+              eq(container), anyString(), contains("dns://db.internal:connect:ERRNO:EHOSTUNREACH"));
     }
 
     @Test
@@ -335,7 +337,9 @@ class LibchaosNetConnectionChaosUnitTest {
       chaos.refuseUnix(container, "/var/run/redis.sock", Errno.ECONNREFUSED, 1.0);
       verify(transport, atLeastOnce())
           .addRule(
-              eq(container), anyString(), contains("unix:///var/run/redis.sock:connect:ERRNO:ECONNREFUSED"));
+              eq(container),
+              anyString(),
+              contains("unix:///var/run/redis.sock:connect:ERRNO:ECONNREFUSED"));
     }
 
     @Test

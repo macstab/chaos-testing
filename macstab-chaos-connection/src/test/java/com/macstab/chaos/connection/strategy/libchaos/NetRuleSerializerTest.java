@@ -22,10 +22,7 @@ class NetRuleSerializerTest {
   void errnoTcp4() {
     final NetRule r =
         NetRule.errno(
-            Endpoint.tcp4("db.example.com", 5432),
-            NetOperation.CONNECT,
-            Errno.ECONNREFUSED,
-            0.5);
+            Endpoint.tcp4("db.example.com", 5432), NetOperation.CONNECT, Errno.ECONNREFUSED, 0.5);
     assertThat(NetRuleSerializer.serialize(r))
         .isEqualTo("tcp4://db.example.com:5432:connect:ERRNO:ECONNREFUSED:0.5");
   }
@@ -75,10 +72,7 @@ class NetRuleSerializerTest {
   void unixSocket() {
     final NetRule r =
         NetRule.errno(
-            Endpoint.unix("/var/run/redis.sock"),
-            NetOperation.CONNECT,
-            Errno.ECONNREFUSED,
-            1.0);
+            Endpoint.unix("/var/run/redis.sock"), NetOperation.CONNECT, Errno.ECONNREFUSED, 1.0);
     assertThat(NetRuleSerializer.serialize(r))
         .isEqualTo("unix:///var/run/redis.sock:connect:ERRNO:ECONNREFUSED:1.0");
   }
@@ -86,8 +80,7 @@ class NetRuleSerializerTest {
   @Test
   @DisplayName("Wildcard endpoint renders as bare asterisk")
   void wildcard() {
-    final NetRule r =
-        NetRule.errno(Endpoint.wildcard(), NetOperation.SOCKET, Errno.EMFILE, 1.0);
+    final NetRule r = NetRule.errno(Endpoint.wildcard(), NetOperation.SOCKET, Errno.EMFILE, 1.0);
     assertThat(NetRuleSerializer.serialize(r)).isEqualTo("*:socket:ERRNO:EMFILE:1.0");
   }
 

@@ -305,8 +305,7 @@ class LibchaosTransportTest {
     @DisplayName("substring of an existing entry is not treated as a duplicate")
     void noFalsePositiveOnSubstring() {
       final String existing = NET + ".1";
-      assertThat(LibchaosTransport.composeLdPreload(existing, NET))
-          .isEqualTo(existing + ":" + NET);
+      assertThat(LibchaosTransport.composeLdPreload(existing, NET)).isEqualTo(existing + ":" + NET);
     }
 
     @Test

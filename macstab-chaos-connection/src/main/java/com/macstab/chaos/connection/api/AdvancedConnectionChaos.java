@@ -24,12 +24,12 @@ import com.macstab.chaos.core.exception.LibchaosNotPreparedException;
  * to satisfy preparation is the {@code @SyscallLevelChaos} annotation on the test class, which
  * {@code ChaosTestingExtension} reads to drive {@code LibchaosTransport.prepare()}.
  *
- * <p><strong>Capability uplift over {@link ConnectionChaos}.</strong> The portable parent
- * interface ({@code addLatency}, {@code rejectConnections}, {@code limitBandwidth}, …) covers the
- * common Toxiproxy-shaped vocabulary. This interface adds operations Toxiproxy literally cannot
- * model: per-syscall granularity, the full POSIX errno palette, UDP / unix-socket / DNS-level
- * injection, recv-corruption, listen/accept faults, file-descriptor exhaustion, and direct
- * {@link NetRule} application.
+ * <p><strong>Capability uplift over {@link ConnectionChaos}.</strong> The portable parent interface
+ * ({@code addLatency}, {@code rejectConnections}, {@code limitBandwidth}, …) covers the common
+ * Toxiproxy-shaped vocabulary. This interface adds operations Toxiproxy literally cannot model:
+ * per-syscall granularity, the full POSIX errno palette, UDP / unix-socket / DNS-level injection,
+ * recv-corruption, listen/accept faults, file-descriptor exhaustion, and direct {@link NetRule}
+ * application.
  *
  * <p><strong>Lifecycle.</strong> Returned {@link RuleHandle}s identify the applied rule for later
  * surgical removal via {@link #remove}. {@link #removeAll} clears every rule this strategy has
@@ -177,8 +177,7 @@ public interface AdvancedConnectionChaos extends ConnectionChaos {
    * @param toxicity probability in {@code (0.0, 1.0]}
    * @return handle for later removal
    */
-  RuleHandle refuseUnix(
-      GenericContainer<?> container, String path, Errno errno, double toxicity);
+  RuleHandle refuseUnix(GenericContainer<?> container, String path, Errno errno, double toxicity);
 
   /**
    * Server-side: fail {@code listen()} at {@code endpoint} with a specific errno.
@@ -206,8 +205,8 @@ public interface AdvancedConnectionChaos extends ConnectionChaos {
       GenericContainer<?> container, Endpoint endpoint, Errno errno, double toxicity);
 
   /**
-   * Simulate file-descriptor exhaustion: {@code socket()} returns {@link Errno#EMFILE}
-   * (per-process FD limit) at the given toxicity.
+   * Simulate file-descriptor exhaustion: {@code socket()} returns {@link Errno#EMFILE} (per-process
+   * FD limit) at the given toxicity.
    *
    * @param container target container
    * @param toxicity probability in {@code (0.0, 1.0]}

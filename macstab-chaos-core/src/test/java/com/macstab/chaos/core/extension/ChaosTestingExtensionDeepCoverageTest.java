@@ -109,8 +109,7 @@ class ChaosTestingExtensionDeepCoverageTest {
 
       MockContainer annotation = NoAnnotationClass.class.getAnnotation(MockContainer.class);
 
-      assertThatThrownBy(
-              () -> m.invoke(ext, nullInfoPlugin, annotation, null, new LibchaosLib[0]))
+      assertThatThrownBy(() -> m.invoke(ext, nullInfoPlugin, annotation, null, new LibchaosLib[0]))
           .cause()
           .isInstanceOf(ExtensionConfigurationException.class)
           .hasMessageContaining("null connection info");
@@ -155,8 +154,7 @@ class ChaosTestingExtensionDeepCoverageTest {
 
       MockContainer annotation = NoAnnotationClass.class.getAnnotation(MockContainer.class);
 
-      assertThatThrownBy(
-              () -> m.invoke(ext, throwingPlugin, annotation, null, new LibchaosLib[0]))
+      assertThatThrownBy(() -> m.invoke(ext, throwingPlugin, annotation, null, new LibchaosLib[0]))
           .cause()
           .isInstanceOf(ExtensionConfigurationException.class)
           .hasMessageContaining("Invalid configuration");
