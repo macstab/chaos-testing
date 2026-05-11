@@ -1,1 +1,1 @@
-com.macstab.chaos.dns.IptablesDnsChaos
+com.macstab.chaos.dns.strategy.iptables.IptablesDnsChaos

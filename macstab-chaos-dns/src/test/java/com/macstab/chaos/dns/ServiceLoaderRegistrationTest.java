@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import com.macstab.chaos.core.api.DnsChaos;
 import com.macstab.chaos.core.spi.ChaosProviderRegistry;
+import com.macstab.chaos.dns.strategy.iptables.IptablesDnsChaos;
 
 class ServiceLoaderRegistrationTest {
   @Test
