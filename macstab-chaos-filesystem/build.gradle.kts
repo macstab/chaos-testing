@@ -16,11 +16,13 @@ java {
 dependencies {
     // Core API (interfaces)
     api(project(":macstab-chaos-core"))
-    
-    // Test dependencies
+
+    // Syscall-level fault injection: vendors the libchaos-io .so resources
+    // onto the classpath so LibchaosTransport can resolve them at prepare() time.
+    api(project(":macstab-chaos-disk"))
+
+    // Test dependencies (junit/assertj/awaitility/mockito are injected globally by root build)
     testImplementation("org.testcontainers:junit-jupiter:1.20.4")
-    testImplementation("org.assertj:assertj-core:3.24.2")
-    testImplementation("org.awaitility:awaitility:4.2.2")
     testRuntimeOnly("ch.qos.logback:logback-classic:1.4.14")
 }
 
@@ -46,4 +48,4 @@ tasks.withType<Test> {
     )
 }
 
-description = "Filesystem chaos using FUSE overlay filesystem"
+description = "Filesystem chaos — shell-level (disk fill, chmod) plus syscall-level (libchaos-io)"

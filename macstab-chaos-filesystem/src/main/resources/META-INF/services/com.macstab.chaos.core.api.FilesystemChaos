@@ -1,1 +1,1 @@
-com.macstab.chaos.filesystem.FuseFilesystemChaos
+com.macstab.chaos.filesystem.strategy.shell.ShellFilesystemChaos

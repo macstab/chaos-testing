@@ -1,36 +1,59 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
-package com.macstab.chaos.filesystem;
+package com.macstab.chaos.filesystem.strategy.shell;
 
 import java.util.Objects;
 import java.util.regex.Pattern;
 
 import org.testcontainers.containers.GenericContainer;
 
-import com.macstab.chaos.core.api.FilesystemChaos;
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
+import com.macstab.chaos.core.spi.FilesystemChaosStrategy;
 import com.macstab.chaos.core.util.Shell;
 
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Filesystem chaos using simple shell commands.
+ * Coarse, container-wide filesystem chaos via standard shell commands ({@code dd}, {@code chmod},
+ * {@code rm}).
  *
- * <p><strong>Available methods (v1.0):</strong>
+ * <p>This strategy is the portable, no-prepare-required half of the filesystem-module split. It
+ * does not use FUSE despite the legacy class name {@code FuseFilesystemChaos} (now retired) — every
+ * verb is implemented with a single in-container {@code exec}. Path-prefix targeting, per-syscall
+ * fault injection, and probability-driven effects are out of scope here; those belong to {@code
+ * LibchaosIoFilesystemChaos}.
+ *
+ * <h2>Capability scope</h2>
  *
  * <ul>
- *   <li>{@link #fillDisk(GenericContainer, String)} - Fill disk with garbage data
- *   <li>{@link #injectPermissionErrors(GenericContainer, String, double)} - Remove permissions
+ *   <li>{@code fillDisk} — best-effort exhaustion of available space using {@code dd}
+ *   <li>{@code injectPermissionErrors} — threshold-based {@code chmod 000} on a path
+ *   <li>{@code reset} — cleans up the disk-fill file
  * </ul>
+ *
+ * <p>The advanced libchaos-io surface (per-path {@code EIO}/{@code ENOSPC} injection, torn writes,
+ * read corruption, latency on durability barriers, …) is intentionally <em>not</em> implemented
+ * here. The composite routes those verbs to the libchaos-io strategy via {@link
+ * com.macstab.chaos.core.exception.ChaosUnsupportedOperationException} fall-through.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
 @Slf4j
-public final class FuseFilesystemChaos implements FilesystemChaos {
+public final class ShellFilesystemChaos implements FilesystemChaosStrategy {
 
   // Configuration
   private static final String DISK_FILL_PATH = "/tmp/chaos-disk-fill";
   private static final Pattern VALID_SIZE = Pattern.compile("^\\d+[KMG]$");
   private static final Pattern SAFE_PATH = Pattern.compile("^[a-zA-Z0-9/_.-]+$");
+
+  // ==================== FilesystemChaosStrategy ====================
+
+  @Override
+  public boolean supports(final GenericContainer<?> container) {
+    Objects.requireNonNull(container, "container must not be null");
+    return container.isRunning();
+  }
+
+  // ==================== FilesystemChaos ====================
 
   @Override
   public void fillDisk(final GenericContainer<?> container, final String size) {
@@ -41,7 +64,6 @@ public final class FuseFilesystemChaos implements FilesystemChaos {
     validateSizeFormat(size);
 
     try {
-      // Use dd to create large file
       final var result =
           container.execInContainer(
               Shell.SH,
@@ -54,6 +76,8 @@ public final class FuseFilesystemChaos implements FilesystemChaos {
       }
 
       log.info("Filled disk with {} garbage data at {}", size, DISK_FILL_PATH);
+    } catch (final ChaosOperationFailedException e) {
+      throw e;
     } catch (final Exception e) {
       throw new ChaosOperationFailedException("Failed to fill disk", e);
     }
@@ -74,7 +98,6 @@ public final class FuseFilesystemChaos implements FilesystemChaos {
     validatePath(path);
 
     try {
-      // Remove permissions if rate > 50%
       if (rate > 0.5) {
         final var result = container.execInContainer("chmod", "000", path);
 
@@ -83,10 +106,12 @@ public final class FuseFilesystemChaos implements FilesystemChaos {
               "Failed to change permissions on " + path + ": " + result.getStderr());
         }
 
-        log.info("Removed permissions on {} (rate: {:.0%})", path, rate);
+        log.info("Removed permissions on {} (rate: {})", path, rate);
       } else {
-        log.info("Permission error rate {:.0%} below threshold, no action taken", rate);
+        log.info("Permission error rate {} below threshold, no action taken", rate);
       }
+    } catch (final ChaosOperationFailedException e) {
+      throw e;
     } catch (final Exception e) {
       throw new ChaosOperationFailedException("Failed to inject permission errors", e);
     }
@@ -101,7 +126,6 @@ public final class FuseFilesystemChaos implements FilesystemChaos {
     }
 
     try {
-      // Remove disk fill file
       final var result = container.execInContainer("rm", "-f", DISK_FILL_PATH);
 
       if (result.getExitCode() != 0) {
@@ -121,15 +145,12 @@ public final class FuseFilesystemChaos implements FilesystemChaos {
 
   @Override
   public void installTools(final GenericContainer<?> container) {
+    Objects.requireNonNull(container, "container must not be null");
     // No special tools needed (dd, chmod, rm are standard)
   }
 
-  /**
-   * Parse and validate size string.
-   *
-   * @param size size string (e.g., "500M", "1G")
-   * @return megabyte count
-   */
+  // ==================== Helpers ====================
+
   private int parseSize(final String size) {
     final String upper = size.toUpperCase();
 
@@ -153,7 +174,6 @@ public final class FuseFilesystemChaos implements FilesystemChaos {
     }
   }
 
-  /** Validate size format. */
   private void validateSizeFormat(final String size) {
     final String upper = size.toUpperCase();
     if (!VALID_SIZE.matcher(upper).matches()) {
@@ -161,7 +181,6 @@ public final class FuseFilesystemChaos implements FilesystemChaos {
     }
   }
 
-  /** Validate path is safe (prevent injection). */
   private void validatePath(final String path) {
     if (!SAFE_PATH.matcher(path).matches()) {
       throw new IllegalArgumentException("Invalid path (unsafe characters detected): " + path);
@@ -172,7 +191,6 @@ public final class FuseFilesystemChaos implements FilesystemChaos {
     }
   }
 
-  /** Validate container is running. */
   private void validateContainerRunning(final GenericContainer<?> container) {
     if (!container.isRunning()) {
       throw new IllegalStateException("Container must be running");

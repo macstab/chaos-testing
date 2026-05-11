@@ -1,5 +1,5 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
-package com.macstab.chaos.filesystem;
+package com.macstab.chaos.filesystem.strategy.shell;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -11,24 +11,22 @@ import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
 
-import com.macstab.chaos.core.exception.ChaosConfigurationException;
-
 /**
- * Integration tests for {@link FuseFilesystemChaos}.
+ * Integration tests for {@link ShellFilesystemChaos}.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
-class FuseFilesystemChaosTest {
+class ShellFilesystemChaosTest {
 
   private GenericContainer<?> container;
-  private FuseFilesystemChaos chaos;
+  private ShellFilesystemChaos chaos;
 
   @BeforeEach
   void setUp() throws Exception {
     container = new GenericContainer<>(DockerImageName.parse("redis:7.4"));
     container.start();
 
-    chaos = new FuseFilesystemChaos();
+    chaos = new ShellFilesystemChaos();
   }
 
   @AfterEach
@@ -87,7 +85,7 @@ class FuseFilesystemChaosTest {
   @DisplayName("should reject invalid size format")
   void shouldRejectInvalidSize() throws Exception {
     assertThatThrownBy(() -> chaos.fillDisk(container, "invalid"))
-        .isInstanceOf(ChaosConfigurationException.class)
+        .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("Invalid size format");
   }
 

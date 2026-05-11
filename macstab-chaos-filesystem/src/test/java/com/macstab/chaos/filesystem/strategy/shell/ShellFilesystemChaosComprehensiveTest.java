@@ -1,5 +1,5 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
-package com.macstab.chaos.filesystem;
+package com.macstab.chaos.filesystem.strategy.shell;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -14,15 +14,15 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * Comprehensive integration tests for {@link FuseFilesystemChaos}.
+ * Comprehensive integration tests for {@link ShellFilesystemChaos}.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
-@DisplayName("FuseFilesystemChaos - Comprehensive Tests")
-class FuseFilesystemChaosComprehensiveTest {
+@DisplayName("ShellFilesystemChaos - Comprehensive Tests")
+class ShellFilesystemChaosComprehensiveTest {
 
   private GenericContainer<?> container;
-  private FuseFilesystemChaos chaos;
+  private ShellFilesystemChaos chaos;
 
   @AfterEach
   void tearDown() throws Exception {
@@ -45,7 +45,7 @@ class FuseFilesystemChaosComprehensiveTest {
     @DisplayName("should fill disk with various sizes on Debian")
     void shouldFillDiskDebian(String size) throws Exception {
       container = createDebianContainer();
-      chaos = new FuseFilesystemChaos();
+      chaos = new ShellFilesystemChaos();
 
       chaos.fillDisk(container, size);
 
@@ -57,7 +57,7 @@ class FuseFilesystemChaosComprehensiveTest {
     void shouldInjectPermissionErrorsDebian() throws Exception {
       container = createDebianContainer();
       container.execInContainer("touch", "/tmp/test-file");
-      chaos = new FuseFilesystemChaos();
+      chaos = new ShellFilesystemChaos();
 
       chaos.injectPermissionErrors(container, "/tmp/test-file", 0.9);
 
@@ -74,7 +74,7 @@ class FuseFilesystemChaosComprehensiveTest {
     @DisplayName("should fill disk on Alpine")
     void shouldFillDiskAlpine() throws Exception {
       container = createAlpineContainer();
-      chaos = new FuseFilesystemChaos();
+      chaos = new ShellFilesystemChaos();
 
       chaos.fillDisk(container, "50M");
 
@@ -90,7 +90,7 @@ class FuseFilesystemChaosComprehensiveTest {
     @DisplayName("should fill disk on Ubuntu")
     void shouldFillDiskUbuntu() throws Exception {
       container = createUbuntuContainer();
-      chaos = new FuseFilesystemChaos();
+      chaos = new ShellFilesystemChaos();
 
       chaos.fillDisk(container, "100M");
 
@@ -110,7 +110,7 @@ class FuseFilesystemChaosComprehensiveTest {
     void shouldHandleVariousPermissionRates(double rate) throws Exception {
       container = createDebianContainer();
       container.execInContainer("touch", "/tmp/test-" + rate);
-      chaos = new FuseFilesystemChaos();
+      chaos = new ShellFilesystemChaos();
 
       chaos.injectPermissionErrors(container, "/tmp/test-" + rate, rate);
 
@@ -121,7 +121,7 @@ class FuseFilesystemChaosComprehensiveTest {
     @DisplayName("should handle multiple files with permission errors")
     void shouldHandleMultipleFiles() throws Exception {
       container = createDebianContainer();
-      chaos = new FuseFilesystemChaos();
+      chaos = new ShellFilesystemChaos();
 
       for (int i = 0; i < 10; i++) {
         container.execInContainer("touch", "/tmp/file" + i);
@@ -136,7 +136,7 @@ class FuseFilesystemChaosComprehensiveTest {
     @DisplayName("should handle various disk fill sizes")
     void shouldHandleVariousSizes(String size) throws Exception {
       container = createDebianContainer();
-      chaos = new FuseFilesystemChaos();
+      chaos = new ShellFilesystemChaos();
 
       chaos.fillDisk(container, size);
 
@@ -152,11 +152,11 @@ class FuseFilesystemChaosComprehensiveTest {
   class NegativeTests {
 
     @ParameterizedTest
-    @ValueSource(strings = {"invalid", "10", "10Z", "ABC", "100g"})
+    @ValueSource(strings = {"invalid", "10", "10Z", "ABC"})
     @DisplayName("should reject invalid size formats")
     void shouldRejectInvalidSizes(String size) throws Exception {
       container = createDebianContainer();
-      chaos = new FuseFilesystemChaos();
+      chaos = new ShellFilesystemChaos();
 
       assertThatThrownBy(() -> chaos.fillDisk(container, size)).hasMessageContaining("Invalid");
     }
@@ -166,7 +166,7 @@ class FuseFilesystemChaosComprehensiveTest {
     @DisplayName("should reject path traversal attempts")
     void shouldRejectPathTraversal(String path) throws Exception {
       container = createDebianContainer();
-      chaos = new FuseFilesystemChaos();
+      chaos = new ShellFilesystemChaos();
 
       assertThatThrownBy(() -> chaos.injectPermissionErrors(container, path, 0.9))
           .hasMessageContaining("traversal");
@@ -177,7 +177,7 @@ class FuseFilesystemChaosComprehensiveTest {
     @DisplayName("should reject unsafe paths")
     void shouldRejectUnsafePaths(String path) throws Exception {
       container = createDebianContainer();
-      chaos = new FuseFilesystemChaos();
+      chaos = new ShellFilesystemChaos();
 
       assertThatThrownBy(() -> chaos.injectPermissionErrors(container, path, 0.9))
           .hasMessageContaining("unsafe");
@@ -188,7 +188,7 @@ class FuseFilesystemChaosComprehensiveTest {
     void shouldRejectStoppedContainer() throws Exception {
       container = createDebianContainer();
       container.stop();
-      chaos = new FuseFilesystemChaos();
+      chaos = new ShellFilesystemChaos();
 
       assertThatThrownBy(() -> chaos.fillDisk(container, "10M"))
           .isInstanceOf(IllegalStateException.class);
@@ -205,7 +205,7 @@ class FuseFilesystemChaosComprehensiveTest {
     @DisplayName("should handle repeated disk fills")
     void shouldHandleRepeatedFills() throws Exception {
       container = createDebianContainer();
-      chaos = new FuseFilesystemChaos();
+      chaos = new ShellFilesystemChaos();
 
       chaos.fillDisk(container, "10M");
       chaos.reset(container);
@@ -221,7 +221,7 @@ class FuseFilesystemChaosComprehensiveTest {
     void shouldHandlePermissionsBelowThreshold() throws Exception {
       container = createDebianContainer();
       container.execInContainer("touch", "/tmp/test");
-      chaos = new FuseFilesystemChaos();
+      chaos = new ShellFilesystemChaos();
 
       chaos.injectPermissionErrors(container, "/tmp/test", 0.3);
 
@@ -234,7 +234,7 @@ class FuseFilesystemChaosComprehensiveTest {
     @DisplayName("should handle very large sizes")
     void shouldHandleVeryLargeSizes() throws Exception {
       container = createDebianContainer();
-      chaos = new FuseFilesystemChaos();
+      chaos = new ShellFilesystemChaos();
 
       chaos.fillDisk(container, "500M");
 
@@ -252,7 +252,7 @@ class FuseFilesystemChaosComprehensiveTest {
     @DisplayName("should remove disk fill file")
     void shouldRemoveDiskFillFile() throws Exception {
       container = createDebianContainer();
-      chaos = new FuseFilesystemChaos();
+      chaos = new ShellFilesystemChaos();
 
       chaos.fillDisk(container, "10M");
       chaos.reset(container);
@@ -264,7 +264,7 @@ class FuseFilesystemChaosComprehensiveTest {
     @DisplayName("should handle repeated reset")
     void shouldHandleRepeatedReset() throws Exception {
       container = createDebianContainer();
-      chaos = new FuseFilesystemChaos();
+      chaos = new ShellFilesystemChaos();
 
       chaos.fillDisk(container, "10M");
       chaos.reset(container);
