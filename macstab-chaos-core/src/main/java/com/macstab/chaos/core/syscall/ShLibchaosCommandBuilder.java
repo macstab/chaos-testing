@@ -52,7 +52,13 @@ public final class ShLibchaosCommandBuilder implements LibchaosCommandBuilder {
     validateOwner(owner);
     Objects.requireNonNull(configPath, "configPath must not be null");
     // owner is regex-safe due to validateOwner — no escaping required for sed pattern.
-    return String.format("sed -i '/# %s$/d' %s 2>/dev/null || true", owner, configPath);
+    //
+    // Defensive form: explicit file-existence guard + unconditional final `true`.
+    // The earlier `sed ... 2>/dev/null || true` form was observed to occasionally exit non-zero
+    // on busybox sh (Alpine), despite the trailing `|| true`. Splitting the `&&`/`;` chain so
+    // the final statement is always `true` guarantees exit 0 regardless of sed's behaviour.
+    return String.format(
+        "[ -f %s ] && sed -i '/# %s$/d' %s 2>/dev/null; true", configPath, owner, configPath);
   }
 
   @Override

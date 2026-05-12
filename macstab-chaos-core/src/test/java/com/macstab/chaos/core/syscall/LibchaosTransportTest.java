@@ -47,7 +47,9 @@ class LibchaosTransportTest {
 
     success = mock(ExecResult.class);
     when(success.getExitCode()).thenReturn(0);
-    when(container.execInContainer(anyString(), anyString(), anyString())).thenReturn(success);
+    when(container.execInContainer(
+            anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+        .thenReturn(success);
   }
 
   @Nested
@@ -150,7 +152,12 @@ class LibchaosTransportTest {
       transport.addRule(container, "net", "*:connect:ERRNO:ECONNREFUSED:0.5");
       verify(container)
           .execInContainer(
-              anyString(), anyString(), org.mockito.ArgumentMatchers.contains("# net"));
+              anyString(),
+              anyString(),
+              anyString(),
+              anyString(),
+              anyString(),
+              org.mockito.ArgumentMatchers.contains("# net"));
     }
   }
 
@@ -184,7 +191,9 @@ class LibchaosTransportTest {
     @SuppressWarnings("unchecked")
     void emptyListNoOp() throws Exception {
       transport.addRules(container, "net", List.of());
-      verify(container, never()).execInContainer(anyString(), anyString(), anyString());
+      verify(container, never())
+          .execInContainer(
+              anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
     }
 
     @Test
@@ -192,7 +201,9 @@ class LibchaosTransportTest {
     @SuppressWarnings("unchecked")
     void nonEmptyExecOnce() throws Exception {
       transport.addRules(container, "net", List.of("r1", "r2"));
-      verify(container).execInContainer(anyString(), anyString(), anyString());
+      verify(container)
+          .execInContainer(
+              anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
     }
   }
 
@@ -229,7 +240,13 @@ class LibchaosTransportTest {
     void sedRemovesOwnerLines() throws Exception {
       transport.removeRules(container, "net");
       verify(container)
-          .execInContainer(anyString(), anyString(), org.mockito.ArgumentMatchers.contains("sed"));
+          .execInContainer(
+              anyString(),
+              anyString(),
+              anyString(),
+              anyString(),
+              anyString(),
+              org.mockito.ArgumentMatchers.contains("sed"));
     }
   }
 
@@ -258,7 +275,13 @@ class LibchaosTransportTest {
     void removesConfigFile() throws Exception {
       transport.clearRules(container);
       verify(container)
-          .execInContainer(anyString(), anyString(), org.mockito.ArgumentMatchers.contains(CONFIG));
+          .execInContainer(
+              anyString(),
+              anyString(),
+              anyString(),
+              anyString(),
+              anyString(),
+              org.mockito.ArgumentMatchers.contains(CONFIG));
     }
   }
 

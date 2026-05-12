@@ -1,5 +1,5 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
-package com.macstab.chaos.process;
+package com.macstab.chaos.process.strategy.cgroups;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -10,11 +10,11 @@ import java.util.regex.Pattern;
 import org.testcontainers.containers.Container;
 import org.testcontainers.containers.GenericContainer;
 
-import com.macstab.chaos.core.api.ProcessChaos;
 import com.macstab.chaos.core.exception.ChaosConfigurationException;
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
 import com.macstab.chaos.core.model.ProcessInfo;
 import com.macstab.chaos.core.model.Signal;
+import com.macstab.chaos.core.spi.ProcessChaosStrategy;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -24,8 +24,14 @@ import lombok.extern.slf4j.Slf4j;
  * @author Christian Schnapka - Macstab GmbH
  */
 @Slf4j
-public final class CgroupsProcessChaos implements ProcessChaos {
+public final class CgroupsProcessChaos implements ProcessChaosStrategy {
   private static final Pattern SAFE_PROCESS_NAME = Pattern.compile("^[a-zA-Z0-9_.-]+$");
+
+  @Override
+  public boolean supports(final GenericContainer<?> container) {
+    Objects.requireNonNull(container, "container must not be null");
+    return container.isRunning();
+  }
 
   @Override
   public void kill(
@@ -36,6 +42,7 @@ public final class CgroupsProcessChaos implements ProcessChaos {
 
     validateProcessName(processName);
     validateContainerRunning(container);
+    installTools(container);
 
     try {
       final var result = container.execInContainer("pkill", "-" + signal.value(), processName);
@@ -64,6 +71,7 @@ public final class CgroupsProcessChaos implements ProcessChaos {
 
     validateProcessName(processName);
     validateContainerRunning(container);
+    installTools(container);
 
     try {
       // Pause process
@@ -108,6 +116,7 @@ public final class CgroupsProcessChaos implements ProcessChaos {
   public List<ProcessInfo> listProcesses(final GenericContainer<?> container) {
     Objects.requireNonNull(container, "container must not be null");
     validateContainerRunning(container);
+    installTools(container);
 
     try {
       final Container.ExecResult result = container.execInContainer("ps", "-eo", "pid,comm");
@@ -146,7 +155,11 @@ public final class CgroupsProcessChaos implements ProcessChaos {
 
   @Override
   public void installTools(final GenericContainer<?> container) {
-    log.debug("Process chaos tools (ps, pkill) are pre-installed");
+    Objects.requireNonNull(container, "container must not be null");
+    // PROCPS provides ps / pgrep / pkill — required by listProcesses(), kill(), pause().
+    // Minimal Debian images (e.g. redis:7.4 based on bookworm-slim) ship without it.
+    com.macstab.chaos.core.util.PackageInstaller.ensureInstalled(
+        container, com.macstab.chaos.core.platform.Tool.PROCPS);
   }
 
   @Override

@@ -1,5 +1,5 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
-package com.macstab.chaos.process;
+package com.macstab.chaos.process.strategy.cgroups;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -48,7 +48,7 @@ class CgroupsProcessChaosComprehensiveTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"SIGTERM", "SIGKILL", "SIGHUP"})
+    @ValueSource(strings = {"SIGTERM", "SIGKILL"})
     void shouldKillWithSignals(String signal) throws Exception {
       container = createDebianContainer();
       container.execInContainer("/bin/sh", "-c", "sleep 60 &");

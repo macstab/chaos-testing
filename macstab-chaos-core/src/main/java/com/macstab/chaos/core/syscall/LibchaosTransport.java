@@ -9,7 +9,6 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.images.builder.Transferable;
 
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
-import com.macstab.chaos.core.util.Shell;
 
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -249,7 +248,12 @@ public final class LibchaosTransport {
 
   private void exec(final GenericContainer<?> container, final String command, final String op) {
     try {
-      final var result = Shell.exec(container, command);
+      // env -u LD_PRELOAD strips the libchaos preload from the rule-management
+      // shell process. Without this, an active rule on a syscall used by sh itself
+      // (fork, execve, waitpid, pthread_create) would self-fault rule mutation —
+      // e.g. fork:ERRNO:EAGAIN breaks sh's fork() to spawn sed during removeRules.
+      final var result =
+          container.execInContainer("env", "-u", "LD_PRELOAD", "/bin/sh", "-c", command);
       if (result.getExitCode() != 0) {
         throw new ChaosOperationFailedException(
             "libchaos-"

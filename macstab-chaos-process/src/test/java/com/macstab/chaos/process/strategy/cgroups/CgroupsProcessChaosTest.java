@@ -1,5 +1,5 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
-package com.macstab.chaos.process;
+package com.macstab.chaos.process.strategy.cgroups;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -66,15 +66,22 @@ class CgroupsProcessChaosTest {
   @Test
   @DisplayName("should kill process with signal")
   void shouldKillProcess() throws Exception {
-    // Start a sleep process
-    container.execInContainer("/bin/sh", "-c", "sleep 60 &");
+    // setsid detaches sleep from the exec session so the exec-session SIGKILL
+    // on shell exit does not kill it before we get to signal it ourselves.
+    chaos.installTools(container);
+    container.execInContainer("/bin/sh", "-c", "setsid sleep 60 </dev/null >/dev/null 2>&1 &");
+    Thread.sleep(100);
 
     chaos.kill(container, "sleep", Signal.SIGTERM);
 
-    // Process should be killed
-    Thread.sleep(100);
-    final var result = container.execInContainer("pgrep", "sleep");
-    assertThat(result.getExitCode()).isNotZero();
+    Thread.sleep(200);
+    // redis is PID 1 and does not reap children, so a killed sleep lingers as a
+    // zombie ("Z" state) that pgrep still finds. Assert no *non-zombie* sleep
+    // remains — that's what "the process was killed" actually means here.
+    final var result =
+        container.execInContainer(
+            "/bin/sh", "-c", "ps -eo stat,comm | awk '$2==\"sleep\" && $1 !~ /^Z/'");
+    assertThat(result.getStdout()).isEmpty();
   }
 
   @Test
