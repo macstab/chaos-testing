@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import com.macstab.chaos.core.api.MemoryChaos;
 import com.macstab.chaos.core.spi.ChaosProviderRegistry;
+import com.macstab.chaos.memory.strategy.cgroups.CgroupsMemoryChaos;
 
 class ServiceLoaderRegistrationTest {
   @Test

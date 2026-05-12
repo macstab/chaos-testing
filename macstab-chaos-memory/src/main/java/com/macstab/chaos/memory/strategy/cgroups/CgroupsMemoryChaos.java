@@ -1,16 +1,16 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
-package com.macstab.chaos.memory;
+package com.macstab.chaos.memory.strategy.cgroups;
 
 import java.util.Objects;
 import java.util.regex.Pattern;
 
 import org.testcontainers.containers.GenericContainer;
 
-import com.macstab.chaos.core.api.MemoryChaos;
 import com.macstab.chaos.core.exception.ChaosConfigurationException;
 import com.macstab.chaos.core.exception.ChaosOperationFailedException;
 import com.macstab.chaos.core.model.MemoryPressureInfo;
 import com.macstab.chaos.core.platform.Tool;
+import com.macstab.chaos.core.spi.MemoryChaosStrategy;
 import com.macstab.chaos.core.util.PackageInstaller;
 import com.macstab.chaos.core.util.ResourceParser;
 import com.macstab.chaos.core.util.Shell;
@@ -23,7 +23,14 @@ import lombok.extern.slf4j.Slf4j;
  * @author Christian Schnapka - Macstab GmbH
  */
 @Slf4j
-public final class CgroupsMemoryChaos implements MemoryChaos {
+public final class CgroupsMemoryChaos implements MemoryChaosStrategy {
+
+  @Override
+  public boolean supports(final GenericContainer<?> container) {
+    Objects.requireNonNull(container, "container must not be null");
+    return container.isRunning();
+  }
+
   private static final Pattern VALID_SIZE = Pattern.compile("^\\d+[KMG]$");
   private static final long MAX_MEMORY_BYTES = 128L * 1024 * 1024 * 1024; // 128GB
 
@@ -71,11 +78,26 @@ public final class CgroupsMemoryChaos implements MemoryChaos {
     killStressNg(container);
 
     try {
+      // Launch stress-ng under a tiny shell-reaper wrapper.
+      //
+      // The wrapper exists to solve the zombie-on-kill problem: many test images (redis:7.4 et al.)
+      // have a PID 1 that does not reap orphans, so a SIGKILL'd stress-ng would linger as a zombie
+      // and {@code pgrep stress-ng} would still find it after reset(). Running stress-ng as a child
+      // of an intermediate {@code sh -c} keeps the shell as its parent; when stress-ng dies the
+      // shell's implicit wait() returns and the kernel reaps stress-ng. The shell itself becomes
+      // a zombie under PID 1 but its comm is {@code sh}, so {@code pgrep stress-ng} no longer
+      // matches.
+      //
+      // {@code setsid} detaches the whole tree from the docker-exec session so it survives the
+      // exec call returning; the subshell {@code (...)} makes the launch fire-and-forget.
       final var result =
           container.execInContainer(
               Shell.SH,
               Shell.FLAG_C,
-              String.format("stress-ng --vm 1 --vm-bytes %d --timeout 0 >/dev/null 2>&1 &", bytes));
+              String.format(
+                  "(setsid sh -c 'stress-ng --vm 1 --vm-bytes %d --timeout 0' "
+                      + ">/dev/null 2>&1 </dev/null &)",
+                  bytes));
 
       if (result.getExitCode() != 0) {
         throw new ChaosOperationFailedException("Failed to start stress-ng: " + result.getStderr());
@@ -117,7 +139,10 @@ public final class CgroupsMemoryChaos implements MemoryChaos {
 
   @Override
   public void installTools(final GenericContainer<?> container) {
-    PackageInstaller.ensureInstalled(container, Tool.STRESS_NG);
+    // PROCPS provides pgrep/pkill, which the strategy's own reset() uses and which downstream
+    // tooling and tests rely on for process introspection. Minimal Debian images (bookworm-slim
+    // base of redis:7.4) ship without it.
+    PackageInstaller.ensureInstalled(container, Tool.STRESS_NG, Tool.PROCPS);
   }
 
   @Override
@@ -153,10 +178,42 @@ public final class CgroupsMemoryChaos implements MemoryChaos {
 
   private void killStressNg(final GenericContainer<?> container) {
     try {
-      final var result = container.execInContainer("pkill", "-9", "stress-ng");
-      if (result.getExitCode() == 0) {
-        log.debug("Killed stress-ng processes");
+      // Send SIGTERM first so stress-ng's parent process gets a chance to clean up its own
+      // worker tree (stress-ng → stress-ng-vm [wait] → stress-ng-vm [run]). Under SIGKILL the
+      // parent dies instantly and its children are reparented to PID 1 (redis-server in the test
+      // image), which does not reap orphans — leaving zombies that {@code pgrep stress-ng} still
+      // finds and which break {@code shouldReset} / {@code shouldKillStressProcesses} assertions.
+      final var term = container.execInContainer("pkill", "stress-ng");
+      if (term.getExitCode() == 0) {
+        log.debug("Sent SIGTERM to stress-ng processes; waiting for graceful shutdown");
       }
+
+      // Poll until the entire process tree is gone; if it persists, escalate to SIGKILL.
+      final long deadline = System.currentTimeMillis() + 3_000L;
+      boolean gone = false;
+      while (System.currentTimeMillis() < deadline) {
+        final var probe = container.execInContainer("pgrep", "stress-ng");
+        if (probe.getExitCode() != 0) {
+          gone = true;
+          break;
+        }
+        Thread.sleep(50L);
+      }
+      if (!gone) {
+        // Escalate — SIGKILL the remaining processes. Any resulting zombies are a known
+        // limitation when stress-ng's parent has already died.
+        log.debug("stress-ng survived SIGTERM; escalating to SIGKILL");
+        container.execInContainer("pkill", "-9", "stress-ng");
+        final long escDeadline = System.currentTimeMillis() + 1_500L;
+        while (System.currentTimeMillis() < escDeadline) {
+          final var probe = container.execInContainer("pgrep", "stress-ng");
+          if (probe.getExitCode() != 0) {
+            break;
+          }
+          Thread.sleep(50L);
+        }
+      }
+      log.debug("Killed stress-ng processes");
     } catch (final Exception ignored) {
       // No stress-ng running
     }

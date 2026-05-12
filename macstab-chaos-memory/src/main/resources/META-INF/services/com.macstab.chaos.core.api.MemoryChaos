@@ -1,1 +1,1 @@
-com.macstab.chaos.memory.CgroupsMemoryChaos
+com.macstab.chaos.memory.strategy.cgroups.CgroupsMemoryChaos

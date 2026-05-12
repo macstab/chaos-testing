@@ -1,5 +1,5 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
-package com.macstab.chaos.memory;
+package com.macstab.chaos.memory.strategy.cgroups;
 
 import static org.assertj.core.api.Assertions.*;
 
