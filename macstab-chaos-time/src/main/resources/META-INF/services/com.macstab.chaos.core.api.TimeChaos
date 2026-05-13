@@ -1,1 +1,1 @@
-com.macstab.chaos.time.LibfaketimeTimeChaos
+com.macstab.chaos.time.CompositeTimeChaos

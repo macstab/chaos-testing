@@ -10,8 +10,8 @@ import com.macstab.chaos.core.spi.ChaosProviderRegistry;
 
 class ServiceLoaderRegistrationTest {
   @Test
-  void shouldLoadLibfaketimeTimeChaosViaServiceLoader() {
+  void shouldLoadCompositeTimeChaosViaServiceLoader() {
     final TimeChaos time = ChaosProviderRegistry.getTimeChaos();
-    assertThat(time).isInstanceOf(LibfaketimeTimeChaos.class);
+    assertThat(time).isInstanceOf(CompositeTimeChaos.class);
   }
 }
