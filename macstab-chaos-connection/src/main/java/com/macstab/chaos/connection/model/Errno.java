@@ -41,8 +41,32 @@ public enum Errno {
   /** Cannot assign requested address. */
   EADDRNOTAVAIL,
 
+  /** Address family not supported by protocol ({@code socket} / {@code bind}). */
+  EAFNOSUPPORT,
+
+  /** Protocol not supported ({@code socket}). */
+  EPROTONOSUPPORT,
+
   /** Broken pipe (write to a closed peer). */
   EPIPE,
+
+  /** Socket is not connected ({@code send} / {@code recv} on un-connected socket). */
+  ENOTCONN,
+
+  /** Operation not supported on this socket type. */
+  EOPNOTSUPP,
+
+  /** Invalid argument — bad sockaddr length, bad flags, etc. */
+  EINVAL,
+
+  /** Interrupted by a signal (SA_RESTART bypassed). */
+  EINTR,
+
+  /** Out of memory — kernel allocation failure in the socket path. */
+  ENOMEM,
+
+  /** No buffer space available — transient send/recv backpressure. */
+  ENOBUFS,
 
   /** Per-process file descriptor limit reached. */
   EMFILE,

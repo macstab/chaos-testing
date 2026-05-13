@@ -74,9 +74,9 @@ class ErrnoTest {
   class Surface {
 
     @Test
-    @DisplayName("declares exactly eleven errnos matching the libchaos-net palette")
+    @DisplayName("declares exactly nineteen errnos matching the libchaos-net palette")
     void valueCount() {
-      assertThat(Errno.values()).hasSize(11);
+      assertThat(Errno.values()).hasSize(19);
     }
   }
 }
