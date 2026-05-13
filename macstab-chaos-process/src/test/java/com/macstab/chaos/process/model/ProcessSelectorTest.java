@@ -23,10 +23,11 @@ class ProcessSelectorTest {
   }
 
   @Test
-  @DisplayName("pthread_create accepts EAGAIN, EINVAL, EPERM")
+  @DisplayName("pthread_create accepts EAGAIN, EBUSY, EINVAL, EPERM")
   void pthreadErrnos() {
     assertThat(ProcessSelector.PTHREAD_CREATE.validErrnos())
-        .containsExactlyInAnyOrder(ProcessErrno.EAGAIN, ProcessErrno.EINVAL, ProcessErrno.EPERM);
+        .containsExactlyInAnyOrder(
+            ProcessErrno.EAGAIN, ProcessErrno.EBUSY, ProcessErrno.EINVAL, ProcessErrno.EPERM);
   }
 
   @Test
@@ -37,41 +38,46 @@ class ProcessSelectorTest {
   }
 
   @Test
-  @DisplayName("posix_spawn and posix_spawnp share the same 4-errno set")
+  @DisplayName("posix_spawn and posix_spawnp share the same 6-errno set")
   void spawnErrnos() {
     assertThat(ProcessSelector.POSIX_SPAWN.validErrnos())
         .containsExactlyInAnyOrder(
-            ProcessErrno.EAGAIN, ProcessErrno.EINVAL, ProcessErrno.ENOENT, ProcessErrno.ENOMEM);
+            ProcessErrno.EAGAIN,
+            ProcessErrno.EINVAL,
+            ProcessErrno.EMFILE,
+            ProcessErrno.ENFILE,
+            ProcessErrno.ENOENT,
+            ProcessErrno.ENOMEM);
     assertThat(ProcessSelector.POSIX_SPAWNP.validErrnos())
         .isEqualTo(ProcessSelector.POSIX_SPAWN.validErrnos());
   }
 
   @Test
-  @DisplayName("execve and execveat share the same 8-errno set")
+  @DisplayName("execve and execveat share the same 7-errno set")
   void execErrnos() {
     assertThat(ProcessSelector.EXECVE.validErrnos())
         .containsExactlyInAnyOrder(
             ProcessErrno.EACCES,
             ProcessErrno.E2BIG,
-            ProcessErrno.ELOOP,
-            ProcessErrno.ENOEXEC,
+            ProcessErrno.EMFILE,
+            ProcessErrno.ENFILE,
             ProcessErrno.ENOENT,
             ProcessErrno.ENOMEM,
-            ProcessErrno.EPERM,
-            ProcessErrno.ETXTBSY);
+            ProcessErrno.EPERM);
     assertThat(ProcessSelector.EXECVEAT.validErrnos())
         .isEqualTo(ProcessSelector.EXECVE.validErrnos());
   }
 
   @Test
-  @DisplayName("waitpid accepts ECHILD, EINTR, EINVAL")
+  @DisplayName("waitpid accepts ECHILD, EINTR, EINVAL, ESRCH")
   void waitpidErrnos() {
     assertThat(ProcessSelector.WAITPID.validErrnos())
-        .containsExactlyInAnyOrder(ProcessErrno.ECHILD, ProcessErrno.EINTR, ProcessErrno.EINVAL);
+        .containsExactlyInAnyOrder(
+            ProcessErrno.ECHILD, ProcessErrno.EINTR, ProcessErrno.EINVAL, ProcessErrno.ESRCH);
   }
 
   @Test
-  @DisplayName("wildcard accepts the full 12-errno union")
+  @DisplayName("wildcard accepts the full libchaos-process errno union")
   void wildcardErrnos() {
     assertThat(ProcessSelector.WILDCARD.validErrnos())
         .containsExactlyInAnyOrder(ProcessErrno.values());

@@ -36,9 +36,9 @@
  *   <tr>
  *     <td><strong>Errno palette</strong></td>
  *     <td>Whatever the kernel returns under genuine OOM</td>
- *     <td>10 errnos: {@code EACCES}, {@code EAGAIN}, {@code EBADF}, {@code EINVAL}, {@code ENFILE},
- *         {@code ENODEV}, {@code ENOMEM}, {@code EOVERFLOW}, {@code EPERM}, {@code ETXTBSY},
- *         {@code EIO}</td>
+ *     <td>11 errnos: {@code EACCES}, {@code EAGAIN}, {@code EBADF}, {@code EFAULT}, {@code EINVAL},
+ *         {@code EMFILE}, {@code ENFILE}, {@code ENODEV}, {@code ENOMEM}, {@code ENOSYS},
+ *         {@code EPERM}</td>
  *   </tr>
  *   <tr>
  *     <td><strong>Test capability</strong></td>

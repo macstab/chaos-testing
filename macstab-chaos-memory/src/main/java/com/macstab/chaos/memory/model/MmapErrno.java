@@ -33,10 +33,16 @@ public enum MmapErrno {
   /** Bad file descriptor. Valid on mmap/madvise (for fd-backed paths). */
   EBADF,
 
+  /** Bad address — userspace pointer outside the addressable range. Valid on every interposed call. */
+  EFAULT,
+
   /** Invalid argument — bad length/alignment/flags. Valid on every interposed call. */
   EINVAL,
 
-  /** System-wide file-descriptor limit reached. Valid on mmap. */
+  /** Per-process file-descriptor limit reached. Valid on mmap (file-backed). */
+  EMFILE,
+
+  /** System-wide file-descriptor limit reached. Valid on mmap (file-backed). */
   ENFILE,
 
   /** No such device. Valid on mmap. */
@@ -45,17 +51,11 @@ public enum MmapErrno {
   /** Out of memory. Valid on mmap/mprotect/madvise — the canonical allocation-failure code. */
   ENOMEM,
 
-  /** Value too large to fit in the addressable range. Valid on mmap. */
-  EOVERFLOW,
+  /** Function not implemented — kernel lacks the operation (e.g. unsupported madvise advice). */
+  ENOSYS,
 
   /** Operation not permitted. Valid on mmap/madvise. */
-  EPERM,
-
-  /** Text file busy — denying write mapping of a running executable. Valid on mmap. */
-  ETXTBSY,
-
-  /** I/O error. Valid on madvise (when reading the backing fd). */
-  EIO;
+  EPERM;
 
   /**
    * @return the enum constant name verbatim — uppercase POSIX-style token written to the

@@ -57,17 +57,23 @@ public enum ProcessErrno {
   /** Permission denied — noexec mount, mode bits. Valid on execve(at). */
   EACCES,
 
-  /** Bad ELF magic / not an executable format. Valid on execve(at). */
-  ENOEXEC,
-
   /** argv+envp too large. Valid on execve(at). */
   E2BIG,
 
-  /** Text file busy — binary is open for write. Valid on execve(at). */
-  ETXTBSY,
+  /** No such process — invalid pid passed to waitpid. */
+  ESRCH,
 
-  /** Symlink loop in interpreter resolution. Valid on execve(at). */
-  ELOOP,
+  /** Device or resource busy — NPTL stack-allocation race. Valid on pthread_create. */
+  EBUSY,
+
+  /** Function not implemented — kernel lacks the syscall. Valid on every interposed call. */
+  ENOSYS,
+
+  /** Per-process file-descriptor limit reached. Valid on execve(at) / posix_spawn(p). */
+  EMFILE,
+
+  /** System-wide file-descriptor limit reached. Valid on execve(at) / posix_spawn(p). */
+  ENFILE,
 
   /** No children to wait for. Valid on waitpid. */
   ECHILD,

@@ -318,8 +318,8 @@ class LibchaosProcessChaosUnitTest {
 
     @Test
     void failExecCustom() {
-      chaos.failExec(container, ProcessErrno.ETXTBSY, 0.5);
-      verify(transport).addRule(eq(container), anyString(), contains("execve:ERRNO:ETXTBSY@0.5"));
+      chaos.failExec(container, ProcessErrno.ENFILE, 0.5);
+      verify(transport).addRule(eq(container), anyString(), contains("execve:ERRNO:ENFILE@0.5"));
     }
 
     @Test
@@ -341,9 +341,9 @@ class LibchaosProcessChaosUnitTest {
     }
 
     @Test
-    void failExecBadFormat() {
-      chaos.failExecBadFormat(container, 0.5);
-      verify(transport).addRule(eq(container), anyString(), contains("execve:ERRNO:ENOEXEC@0.5"));
+    void failExecFdLimit() {
+      chaos.failExecFdLimit(container, 0.5);
+      verify(transport).addRule(eq(container), anyString(), contains("execve:ERRNO:EMFILE@0.5"));
     }
 
     @Test

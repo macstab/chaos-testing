@@ -50,10 +50,19 @@ public sealed interface Effect
 
   /**
    * @param delay non-negative delay; rendered as milliseconds
-   * @return latency effect
+   * @return latency effect with probability {@code 1.0}
    */
   static Effect latency(final Duration delay) {
-    return new Latency(delay);
+    return new Latency(delay, 1.0);
+  }
+
+  /**
+   * @param delay non-negative delay; rendered as milliseconds
+   * @param probability probability in {@code (0.0, 1.0]} that the delay fires
+   * @return latency effect
+   */
+  static Effect latency(final Duration delay, final double probability) {
+    return new Latency(delay, probability);
   }
 
   /**
@@ -86,18 +95,27 @@ public sealed interface Effect
     }
   }
 
-  /** Delay the matched syscall by {@code delay}. Rendered in milliseconds. */
-  record Latency(Duration delay) implements Effect {
+  /**
+   * Delay the matched syscall by {@code delay}, gated by {@code probability}. Rendered as {@code
+   * LATENCY:<ms>[@<probability>]} — the {@code @<probability>} suffix is omitted when {@code
+   * probability == 1.0}.
+   */
+  record Latency(Duration delay, double probability) implements Effect {
     public Latency {
       Objects.requireNonNull(delay, "delay must not be null");
       if (delay.isNegative()) {
         throw new IllegalArgumentException("delay must not be negative: " + delay);
       }
+      if (Double.isNaN(probability) || probability <= 0.0 || probability > 1.0) {
+        throw new IllegalArgumentException(
+            "probability must be in (0.0, 1.0], got: " + probability);
+      }
     }
 
     @Override
     public String wireForm() {
-      return "LATENCY:" + delay.toMillis();
+      final String body = "LATENCY:" + delay.toMillis();
+      return probability == 1.0 ? body : body + "@" + probability;
     }
   }
 

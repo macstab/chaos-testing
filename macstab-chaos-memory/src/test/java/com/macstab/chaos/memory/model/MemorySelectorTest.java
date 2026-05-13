@@ -22,56 +22,58 @@ class MemorySelectorTest {
   }
 
   @Test
-  @DisplayName("mmap-family errnos: 10 values (EACCES..ETXTBSY excluding EIO)")
+  @DisplayName("mmap-family errnos: 10 values within the libchaos-memory palette")
   void mmapErrnos() {
     assertThat(MemorySelector.MMAP.validErrnos())
         .containsExactlyInAnyOrder(
             MmapErrno.EACCES,
             MmapErrno.EAGAIN,
             MmapErrno.EBADF,
+            MmapErrno.EFAULT,
             MmapErrno.EINVAL,
+            MmapErrno.EMFILE,
             MmapErrno.ENFILE,
             MmapErrno.ENODEV,
             MmapErrno.ENOMEM,
-            MmapErrno.EOVERFLOW,
-            MmapErrno.EPERM,
-            MmapErrno.ETXTBSY);
+            MmapErrno.EPERM);
     assertThat(MemorySelector.MMAP_ANON.validErrnos()).isEqualTo(MemorySelector.MMAP.validErrnos());
     assertThat(MemorySelector.MMAP_FILE.validErrnos()).isEqualTo(MemorySelector.MMAP.validErrnos());
   }
 
   @Test
-  @DisplayName("munmap accepts only EINVAL")
+  @DisplayName("munmap accepts EFAULT, EINVAL")
   void munmapErrnos() {
-    assertThat(MemorySelector.MUNMAP.validErrnos()).containsExactly(MmapErrno.EINVAL);
+    assertThat(MemorySelector.MUNMAP.validErrnos())
+        .containsExactlyInAnyOrder(MmapErrno.EFAULT, MmapErrno.EINVAL);
   }
 
   @Test
-  @DisplayName("mprotect accepts EACCES, EINVAL, ENOMEM")
+  @DisplayName("mprotect accepts EACCES, EFAULT, EINVAL, ENOMEM")
   void mprotectErrnos() {
     assertThat(MemorySelector.MPROTECT.validErrnos())
-        .containsExactlyInAnyOrder(MmapErrno.EACCES, MmapErrno.EINVAL, MmapErrno.ENOMEM);
+        .containsExactlyInAnyOrder(
+            MmapErrno.EACCES, MmapErrno.EFAULT, MmapErrno.EINVAL, MmapErrno.ENOMEM);
   }
 
   @Test
-  @DisplayName("madvise accepts the 7-errno subset")
+  @DisplayName("madvise accepts the 8-errno subset")
   void madviseErrnos() {
     assertThat(MemorySelector.MADVISE.validErrnos())
         .containsExactlyInAnyOrder(
             MmapErrno.EACCES,
             MmapErrno.EAGAIN,
             MmapErrno.EBADF,
+            MmapErrno.EFAULT,
             MmapErrno.EINVAL,
-            MmapErrno.EIO,
             MmapErrno.ENOMEM,
+            MmapErrno.ENOSYS,
             MmapErrno.EPERM);
   }
 
   @Test
-  @DisplayName("wildcard is the strict intersection — EINVAL + ENOMEM only")
+  @DisplayName("wildcard is the strict intersection — EINVAL only")
   void wildcardErrnos() {
-    assertThat(MemorySelector.WILDCARD.validErrnos())
-        .containsExactlyInAnyOrder(MmapErrno.EINVAL, MmapErrno.ENOMEM);
+    assertThat(MemorySelector.WILDCARD.validErrnos()).containsExactly(MmapErrno.EINVAL);
   }
 
   @Test
@@ -81,6 +83,6 @@ class MemorySelectorTest {
     assertThat(MemorySelector.MUNMAP.accepts(MmapErrno.ENOMEM)).isFalse();
     assertThat(MemorySelector.MPROTECT.accepts(MmapErrno.EACCES)).isTrue();
     assertThat(MemorySelector.WILDCARD.accepts(MmapErrno.EAGAIN)).isFalse();
-    assertThat(MemorySelector.WILDCARD.accepts(MmapErrno.ENOMEM)).isTrue();
+    assertThat(MemorySelector.WILDCARD.accepts(MmapErrno.EINVAL)).isTrue();
   }
 }

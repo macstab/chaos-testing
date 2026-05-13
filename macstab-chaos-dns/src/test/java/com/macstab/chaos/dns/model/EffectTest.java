@@ -125,10 +125,12 @@ class EffectTest {
   @DisplayName("FilterFamily / Limit / Shuffle")
   class TransformCases {
     @Test
-    @DisplayName("FilterFamily wireForm has Linux AF_* value")
+    @DisplayName("FilterFamily wireForm uses libchaos-dns family-filter tokens")
     void filterFamily() {
-      assertThat(Effect.filterFamily(AddressFamily.INET).wireForm()).isEqualTo("FILTER_FAMILY:2");
-      assertThat(Effect.filterFamily(AddressFamily.INET6).wireForm()).isEqualTo("FILTER_FAMILY:10");
+      assertThat(Effect.filterFamily(AddressFamily.INET).wireForm())
+          .isEqualTo("FILTER_FAMILY:inet4");
+      assertThat(Effect.filterFamily(AddressFamily.INET6).wireForm())
+          .isEqualTo("FILTER_FAMILY:inet6");
     }
 
     @Test

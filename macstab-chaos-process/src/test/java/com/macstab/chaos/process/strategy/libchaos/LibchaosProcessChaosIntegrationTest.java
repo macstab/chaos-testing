@@ -159,15 +159,15 @@ class LibchaosProcessChaosIntegrationTest {
 
     @ParameterizedTest
     @ValueSource(strings = {DEBIAN, ALPINE})
-    @DisplayName("failExecBadFormat emits execve:ERRNO:ENOEXEC")
-    void failExecBadFormat(final String image) throws Exception {
+    @DisplayName("failExecFdLimit emits execve:ERRNO:EMFILE")
+    void failExecFdLimit(final String image) throws Exception {
       container = prepared(image);
       chaos = new LibchaosProcessChaos();
 
-      chaos.failExecBadFormat(container, 0.5);
+      chaos.failExecFdLimit(container, 0.5);
 
       assertThat(container.execInContainer("/bin/sh", "-c", "cat " + CONFIG_PATH).getStdout())
-          .contains("execve:ERRNO:ENOEXEC@0.5");
+          .contains("execve:ERRNO:EMFILE@0.5");
     }
 
     @ParameterizedTest

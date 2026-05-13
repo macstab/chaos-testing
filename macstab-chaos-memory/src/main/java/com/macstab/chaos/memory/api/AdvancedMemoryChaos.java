@@ -185,7 +185,7 @@ public interface AdvancedMemoryChaos extends MemoryChaos {
 
   /**
    * Inject an arbitrary errno on file-backed mmap calls — gives access to the full mmap errno
-   * palette (EACCES, EBADF, ENFILE, ETXTBSY, …) for testing specific failure modes.
+   * palette (EACCES, EBADF, ENFILE, EMFILE, …) for testing specific failure modes.
    *
    * @throws IllegalArgumentException if {@code errno} is not valid for mmap
    */

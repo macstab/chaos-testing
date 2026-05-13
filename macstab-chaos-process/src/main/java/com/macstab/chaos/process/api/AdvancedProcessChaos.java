@@ -38,9 +38,9 @@ import com.macstab.chaos.process.model.ProcessSelector;
  *   <li><strong>Fork failure</strong> — server-side process spawn fails with {@code EAGAIN} /
  *       {@code ENOMEM}.
  *   <li><strong>Exec failure</strong> — {@code execve()} fails with {@code ENOENT} (missing
- *       binary), {@code EACCES} (noexec mount), {@code ENOEXEC} (bad ELF), {@code E2BIG} (argv
- *       overflow), {@code ETXTBSY}, {@code ELOOP}, {@code EPERM}, {@code ENOMEM} — the full 8-errno
- *       palette.
+ *       binary), {@code EACCES} (noexec mount), {@code E2BIG} (argv overflow), {@code EMFILE} /
+ *       {@code ENFILE} (FD-limit exhausted), {@code EPERM}, {@code ENOMEM} — the libchaos-process
+ *       exec errno palette.
  *   <li><strong>Wait failure</strong> — {@code waitpid()} returns {@code EINTR} regardless of
  *       SA_RESTART (reveals latent EINTR-handling bugs), or {@code ECHILD} (phantom-wait test).
  * </ul>
@@ -201,8 +201,8 @@ public interface AdvancedProcessChaos extends ProcessChaos {
   /** Inject {@code E2BIG} on {@code execve()} — argv+envp overflow. */
   RuleHandle failExecTooLarge(GenericContainer<?> container, double probability);
 
-  /** Inject {@code ENOEXEC} on {@code execve()} — bad ELF magic / unknown binary format. */
-  RuleHandle failExecBadFormat(GenericContainer<?> container, double probability);
+  /** Inject {@code EMFILE} on {@code execve()} — per-process FD limit reached opening the binary. */
+  RuleHandle failExecFdLimit(GenericContainer<?> container, double probability);
 
   /** Inject {@code ENOENT} on {@code execveat()} — fd-relative exec failure. */
   RuleHandle failExecRelative(GenericContainer<?> container, double probability);

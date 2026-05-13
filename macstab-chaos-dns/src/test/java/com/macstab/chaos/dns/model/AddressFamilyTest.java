@@ -10,9 +10,9 @@ import org.junit.jupiter.api.Test;
 class AddressFamilyTest {
 
   @Test
-  @DisplayName("wireValue matches Linux AF_* constants")
+  @DisplayName("wireForm matches libchaos-dns family-filter tokens")
   void wireValues() {
-    assertThat(AddressFamily.INET.wireValue()).isEqualTo(2);
-    assertThat(AddressFamily.INET6.wireValue()).isEqualTo(10);
+    assertThat(AddressFamily.INET.wireForm()).isEqualTo("inet4");
+    assertThat(AddressFamily.INET6.wireForm()).isEqualTo("inet6");
   }
 }

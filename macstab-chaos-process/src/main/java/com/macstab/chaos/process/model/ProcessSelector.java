@@ -30,18 +30,18 @@ import java.util.Set;
  *     <th>Selector</th>
  *     <th>Valid errnos</th>
  *   </tr>
- *   <tr><td>{@link #PTHREAD_CREATE}</td><td>EAGAIN, EINVAL, EPERM</td></tr>
+ *   <tr><td>{@link #PTHREAD_CREATE}</td><td>EAGAIN, EBUSY, EINVAL, EPERM</td></tr>
  *   <tr><td>{@link #FORK}</td><td>EAGAIN, ENOMEM</td></tr>
  *   <tr>
  *     <td>{@link #POSIX_SPAWN}, {@link #POSIX_SPAWNP}</td>
- *     <td>EAGAIN, EINVAL, ENOENT, ENOMEM</td>
+ *     <td>EAGAIN, EINVAL, EMFILE, ENFILE, ENOENT, ENOMEM</td>
  *   </tr>
  *   <tr>
  *     <td>{@link #EXECVE}, {@link #EXECVEAT}</td>
- *     <td>EACCES, E2BIG, ELOOP, ENOEXEC, ENOENT, ENOMEM, EPERM, ETXTBSY</td>
+ *     <td>EACCES, E2BIG, EMFILE, ENFILE, ENOENT, ENOMEM, EPERM</td>
  *   </tr>
- *   <tr><td>{@link #WAITPID}</td><td>ECHILD, EINTR, EINVAL</td></tr>
- *   <tr><td>{@link #WILDCARD}</td><td>union of all above (12 distinct errnos)</td></tr>
+ *   <tr><td>{@link #WAITPID}</td><td>ECHILD, EINTR, EINVAL, ESRCH</td></tr>
+ *   <tr><td>{@link #WILDCARD}</td><td>union of all above (13 distinct errnos)</td></tr>
  * </table>
  *
  * <p><strong>Wildcard policy.</strong> Unlike libchaos-memory's strict-intersection wildcard, the
@@ -94,30 +94,36 @@ public enum ProcessSelector {
   // ==================== Errno compatibility ====================
 
   private static final Set<ProcessErrno> PTHREAD_CREATE_ERRNOS =
-      EnumSet.of(ProcessErrno.EAGAIN, ProcessErrno.EINVAL, ProcessErrno.EPERM);
+      EnumSet.of(
+          ProcessErrno.EAGAIN, ProcessErrno.EBUSY, ProcessErrno.EINVAL, ProcessErrno.EPERM);
 
   private static final Set<ProcessErrno> FORK_ERRNOS =
       EnumSet.of(ProcessErrno.EAGAIN, ProcessErrno.ENOMEM);
 
   private static final Set<ProcessErrno> POSIX_SPAWN_ERRNOS =
       EnumSet.of(
-          ProcessErrno.EAGAIN, ProcessErrno.EINVAL, ProcessErrno.ENOENT, ProcessErrno.ENOMEM);
+          ProcessErrno.EAGAIN,
+          ProcessErrno.EINVAL,
+          ProcessErrno.EMFILE,
+          ProcessErrno.ENFILE,
+          ProcessErrno.ENOENT,
+          ProcessErrno.ENOMEM);
 
   private static final Set<ProcessErrno> EXECVE_ERRNOS =
       EnumSet.of(
           ProcessErrno.EACCES,
           ProcessErrno.E2BIG,
-          ProcessErrno.ELOOP,
-          ProcessErrno.ENOEXEC,
+          ProcessErrno.EMFILE,
+          ProcessErrno.ENFILE,
           ProcessErrno.ENOENT,
           ProcessErrno.ENOMEM,
-          ProcessErrno.EPERM,
-          ProcessErrno.ETXTBSY);
+          ProcessErrno.EPERM);
 
   private static final Set<ProcessErrno> WAITPID_ERRNOS =
-      EnumSet.of(ProcessErrno.ECHILD, ProcessErrno.EINTR, ProcessErrno.EINVAL);
+      EnumSet.of(
+          ProcessErrno.ECHILD, ProcessErrno.EINTR, ProcessErrno.EINVAL, ProcessErrno.ESRCH);
 
-  /** Union of every per-symbol set above — all 12 errnos. */
+  /** Union of every per-symbol set above — every libchaos-process-accepted errno. */
   private static final Set<ProcessErrno> WILDCARD_ERRNOS = EnumSet.allOf(ProcessErrno.class);
 
   /**

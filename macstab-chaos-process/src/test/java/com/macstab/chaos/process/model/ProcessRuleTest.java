@@ -80,11 +80,11 @@ class ProcessRuleTest {
     }
 
     @Test
-    @DisplayName("wildcard accepts EAGAIN — union-wide policy (departure from memory module)")
+    @DisplayName("wildcard accepts the full union — policy departure from memory module")
     void wildcardAcceptsUnion() {
       new ProcessRule(ProcessSelector.WILDCARD, ProcessEffect.errno(ProcessErrno.EAGAIN));
       new ProcessRule(ProcessSelector.WILDCARD, ProcessEffect.errno(ProcessErrno.EINTR));
-      new ProcessRule(ProcessSelector.WILDCARD, ProcessEffect.errno(ProcessErrno.ETXTBSY));
+      new ProcessRule(ProcessSelector.WILDCARD, ProcessEffect.errno(ProcessErrno.ESRCH));
     }
 
     @Test

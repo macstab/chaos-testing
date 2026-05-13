@@ -25,14 +25,14 @@ import java.util.Set;
  *   </tr>
  *   <tr>
  *     <td>{@link #MMAP}, {@link #MMAP_ANON}, {@link #MMAP_FILE}</td>
- *     <td>EACCES, EAGAIN, EBADF, EINVAL, ENFILE, ENODEV, ENOMEM, EOVERFLOW, EPERM, ETXTBSY</td>
+ *     <td>EACCES, EAGAIN, EBADF, EFAULT, EINVAL, EMFILE, ENFILE, ENODEV, ENOMEM, EPERM</td>
  *   </tr>
- *   <tr><td>{@link #MUNMAP}</td><td>EINVAL only</td></tr>
- *   <tr><td>{@link #MPROTECT}</td><td>EACCES, EINVAL, ENOMEM</td></tr>
- *   <tr><td>{@link #MADVISE}</td><td>EACCES, EAGAIN, EBADF, EINVAL, EIO, ENOMEM, EPERM</td></tr>
+ *   <tr><td>{@link #MUNMAP}</td><td>EFAULT, EINVAL</td></tr>
+ *   <tr><td>{@link #MPROTECT}</td><td>EACCES, EFAULT, EINVAL, ENOMEM</td></tr>
+ *   <tr><td>{@link #MADVISE}</td><td>EACCES, EAGAIN, EBADF, EFAULT, EINVAL, ENOMEM, ENOSYS, EPERM</td></tr>
  *   <tr>
  *     <td>{@link #WILDCARD}</td>
- *     <td>intersection of all: EINVAL, ENOMEM (errnos valid on every interposed call)</td>
+ *     <td>intersection of all: EINVAL (the one errno valid on every interposed call)</td>
  *   </tr>
  * </table>
  *
@@ -107,34 +107,35 @@ public enum MemorySelector {
           MmapErrno.EACCES,
           MmapErrno.EAGAIN,
           MmapErrno.EBADF,
+          MmapErrno.EFAULT,
           MmapErrno.EINVAL,
+          MmapErrno.EMFILE,
           MmapErrno.ENFILE,
           MmapErrno.ENODEV,
           MmapErrno.ENOMEM,
-          MmapErrno.EOVERFLOW,
-          MmapErrno.EPERM,
-          MmapErrno.ETXTBSY);
+          MmapErrno.EPERM);
 
-  private static final Set<MmapErrno> MUNMAP_ERRNOS = EnumSet.of(MmapErrno.EINVAL);
+  private static final Set<MmapErrno> MUNMAP_ERRNOS =
+      EnumSet.of(MmapErrno.EFAULT, MmapErrno.EINVAL);
 
   private static final Set<MmapErrno> MPROTECT_ERRNOS =
-      EnumSet.of(MmapErrno.EACCES, MmapErrno.EINVAL, MmapErrno.ENOMEM);
+      EnumSet.of(MmapErrno.EACCES, MmapErrno.EFAULT, MmapErrno.EINVAL, MmapErrno.ENOMEM);
 
   private static final Set<MmapErrno> MADVISE_ERRNOS =
       EnumSet.of(
           MmapErrno.EACCES,
           MmapErrno.EAGAIN,
           MmapErrno.EBADF,
+          MmapErrno.EFAULT,
           MmapErrno.EINVAL,
-          MmapErrno.EIO,
           MmapErrno.ENOMEM,
+          MmapErrno.ENOSYS,
           MmapErrno.EPERM);
 
   /**
-   * Intersection of every per-symbol set above — errnos guaranteed valid for every interposed call.
+   * Intersection of every per-symbol set above — the one errno valid on every interposed call.
    */
-  private static final Set<MmapErrno> WILDCARD_ERRNOS =
-      EnumSet.of(MmapErrno.EINVAL, MmapErrno.ENOMEM);
+  private static final Set<MmapErrno> WILDCARD_ERRNOS = EnumSet.of(MmapErrno.EINVAL);
 
   /**
    * @return the immutable set of {@link MmapErrno}s that libchaos-memory accepts for this selector

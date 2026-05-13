@@ -55,7 +55,7 @@
  *   <li><strong>posix_spawn</strong> — {@code failSpawn}, {@code failSpawnByPath}, {@code
  *       slowSpawn}
  *   <li><strong>exec</strong> — {@code failExec}, {@code failExecPermission}, {@code
- *       failExecMissingBinary}, {@code failExecTooLarge}, {@code failExecBadFormat}, {@code
+ *       failExecMissingBinary}, {@code failExecTooLarge}, {@code failExecFdLimit}, {@code
  *       failExecRelative}, {@code slowExec}
  *   <li><strong>wait</strong> — {@code failWait}, {@code signalInterruptWait} (EINTR bypassing
  *       SA_RESTART), {@code phantomWait}, {@code slowWait}
