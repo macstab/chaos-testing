@@ -174,6 +174,161 @@ public final class FluentPatternBuilder<T> {
     }
   }
 
+  // ========== BURST PATTERN ==========
+
+  /**
+   * Start burst pattern — baseline value with periodic spikes to a peak value.
+   *
+   * @param baselineValue value held between bursts
+   * @return burst step (next: {@code spikingTo(...)})
+   */
+  public BurstSpikeStep burstFrom(final double baselineValue) {
+    return new BurstSpikeStep(baselineValue);
+  }
+
+  public final class BurstSpikeStep {
+    private final double baselineValue;
+
+    BurstSpikeStep(final double baselineValue) {
+      this.baselineValue = baselineValue;
+    }
+
+    public BurstSpikeDurationStep spikingTo(final double spikeValue) {
+      return new BurstSpikeDurationStep(baselineValue, spikeValue);
+    }
+  }
+
+  public final class BurstSpikeDurationStep {
+    private final double baselineValue;
+    private final double spikeValue;
+
+    BurstSpikeDurationStep(final double baselineValue, final double spikeValue) {
+      this.baselineValue = baselineValue;
+      this.spikeValue = spikeValue;
+    }
+
+    public BurstRecoveryStep holding(final Duration spikeDuration) {
+      return new BurstRecoveryStep(baselineValue, spikeValue, spikeDuration);
+    }
+  }
+
+  public final class BurstRecoveryStep {
+    private final double baselineValue;
+    private final double spikeValue;
+    private final Duration spikeDuration;
+
+    BurstRecoveryStep(
+        final double baselineValue, final double spikeValue, final Duration spikeDuration) {
+      this.baselineValue = baselineValue;
+      this.spikeValue = spikeValue;
+      this.spikeDuration = spikeDuration;
+    }
+
+    public BurstExecutableStep recoveringOver(final Duration recoveryDuration) {
+      return new BurstExecutableStep(baselineValue, spikeValue, spikeDuration, recoveryDuration);
+    }
+  }
+
+  public final class BurstExecutableStep {
+    private final double baselineValue;
+    private final double spikeValue;
+    private final Duration spikeDuration;
+    private final Duration recoveryDuration;
+    private Duration totalDuration;
+
+    BurstExecutableStep(
+        final double baselineValue,
+        final double spikeValue,
+        final Duration spikeDuration,
+        final Duration recoveryDuration) {
+      this.baselineValue = baselineValue;
+      this.spikeValue = spikeValue;
+      this.spikeDuration = spikeDuration;
+      this.recoveryDuration = recoveryDuration;
+    }
+
+    public BurstExecutableStep forDuration(final Duration totalDuration) {
+      this.totalDuration = totalDuration;
+      return this;
+    }
+
+    public PatternExecution execute() {
+      Durations.requirePositive(totalDuration, "forDuration");
+      final ChaosPattern<Double> pattern =
+          BurstPattern.create(baselineValue, spikeValue, spikeDuration, recoveryDuration);
+      return adaptPattern(pattern).applyTo(operation, totalDuration, sampleInterval);
+    }
+  }
+
+  // ========== WAVE PATTERN ==========
+
+  /** Wave shape — matches the underlying {@link WavePattern} types. */
+  public enum WaveShape {
+    SINE,
+    SQUARE,
+    SAWTOOTH
+  }
+
+  /**
+   * Start wave pattern — oscillate between two values with a fixed period.
+   *
+   * @param minValue minimum value
+   * @param maxValue maximum value
+   * @return wave step (next: {@code withPeriod(...)})
+   */
+  public WavePeriodStep oscillateBetween(final double minValue, final double maxValue) {
+    return new WavePeriodStep(minValue, maxValue);
+  }
+
+  public final class WavePeriodStep {
+    private final double minValue;
+    private final double maxValue;
+
+    WavePeriodStep(final double minValue, final double maxValue) {
+      this.minValue = minValue;
+      this.maxValue = maxValue;
+    }
+
+    public WaveExecutableStep withPeriod(final Duration period) {
+      return new WaveExecutableStep(minValue, maxValue, period);
+    }
+  }
+
+  public final class WaveExecutableStep {
+    private final double minValue;
+    private final double maxValue;
+    private final Duration period;
+    private WaveShape shape = WaveShape.SINE;
+    private Duration totalDuration;
+
+    WaveExecutableStep(final double minValue, final double maxValue, final Duration period) {
+      this.minValue = minValue;
+      this.maxValue = maxValue;
+      this.period = period;
+    }
+
+    public WaveExecutableStep withShape(final WaveShape shape) {
+      this.shape = shape;
+      return this;
+    }
+
+    public WaveExecutableStep forDuration(final Duration totalDuration) {
+      this.totalDuration = totalDuration;
+      return this;
+    }
+
+    public PatternExecution execute() {
+      Durations.requirePositive(totalDuration, "forDuration");
+      final ChaosPattern<Double> pattern =
+          switch (shape) {
+            case SINE -> WavePattern.sine(minValue, maxValue, period);
+            case SQUARE -> WavePattern.square(minValue, maxValue, period);
+            case SAWTOOTH -> WavePattern.sawtooth(minValue, maxValue, period);
+          };
+      return adaptPattern(pattern).applyTo(operation, totalDuration, sampleInterval);
+    }
+  }
+
   // ========== HELPER ==========
 
   @SuppressWarnings("unchecked")
