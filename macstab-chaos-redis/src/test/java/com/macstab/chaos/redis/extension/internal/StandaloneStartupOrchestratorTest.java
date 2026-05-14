@@ -534,6 +534,11 @@ class StandaloneStartupOrchestratorTest {
       }
 
       @Override
+      public boolean enableConnectionChaos() {
+        return false;
+      }
+
+      @Override
       public String[] packages() {
         return new String[0];
       }

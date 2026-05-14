@@ -20,6 +20,9 @@ dependencies {
     // Network chaos module (OPTIONAL - only needed if using chaos features)
     compileOnly(project(":macstab-chaos-network"))
 
+    // Connection chaos module (OPTIONAL - only needed if enableConnectionChaos=true)
+    compileOnly(project(":macstab-chaos-connection"))
+
     // JUnit Jupiter API (execution conditions, extensions)
     api("org.junit.jupiter:junit-jupiter-api:${findProperty("junitVersion")}")
 
@@ -32,6 +35,7 @@ dependencies {
 
     // Test dependencies (needed for integration tests)
     testImplementation(project(":macstab-chaos-network"))
+    testImplementation(project(":macstab-chaos-connection"))
     testImplementation("io.lettuce:lettuce-core:6.5.4.RELEASE")
     testImplementation("org.assertj:assertj-core:3.24.2")
     testImplementation("org.awaitility:awaitility:4.2.2")

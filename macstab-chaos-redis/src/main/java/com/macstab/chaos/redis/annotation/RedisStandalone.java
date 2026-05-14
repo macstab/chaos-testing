@@ -220,6 +220,65 @@ public @interface RedisStandalone {
   boolean enableNetworkChaos() default false;
 
   /**
+   * Enable socket-syscall-level connection chaos via {@code libchaos-net} ({@code LD_PRELOAD}) plus
+   * automatic Toxiproxy proxy-level fallback.
+   *
+   * <p>Default: {@code false} (secure by default)
+   *
+   * <p><strong>Orthogonal to {@link #enableNetworkChaos}:</strong> both flags may be {@code true}
+   * simultaneously — they cover different fault layers. {@link #enableNetworkChaos} operates on
+   * the kernel packet path ({@code tc/netem} + {@code iptables}); this flag operates on libc
+   * socket calls intercepted by {@code libchaos-net}. Use both to test packet-level and
+   * syscall-level failure modes independently.
+   *
+   * <p><strong>What This Enables:</strong>
+   *
+   * <ul>
+   *   <li>Per-syscall errno injection on {@code connect}, {@code bind}, {@code accept}, {@code
+   *       send}, {@code recv}, {@code poll}
+   *   <li>UDP / unix-socket / DNS-level fault injection (Toxiproxy cannot reach these layers)
+   *   <li>{@code recv}-corruption, file-descriptor exhaustion, listen/accept faults
+   *   <li>Bandwidth shaping via the Toxiproxy fallback inside {@code CompositeConnectionChaos}
+   * </ul>
+   *
+   * <p><strong>Lifecycle:</strong> When {@code true}, {@code LibchaosTransport(LibchaosLib.NET)
+   * .prepare(container)} is invoked <em>before</em> {@code container.start()} so the dynamic
+   * loader honours the {@code LD_PRELOAD} hook at process launch. The Toxiproxy sidecar fallback
+   * inside {@code CompositeConnectionChaos} lazy-spawns on the first verb that cannot be
+   * satisfied by {@code libchaos-net}, so no extra annotation flag is required for that.
+   *
+   * <p><strong>Example:</strong>
+   *
+   * <pre>{@code
+   * @RedisStandalone(enableConnectionChaos = true)
+   * class ConnectionChaosTest {
+   *
+   *   @Test
+   *   void simulatesConnectRefused(RedisConnectionInfo info, ControlFacade control) {
+   *     // Per-syscall errno on connect()
+   *     control.connection().rejectConnections(
+   *         info.getContainer(), info.getHost() + ":" + info.getPort());
+   *
+   *     // Bandwidth shaping transparently falls through to Toxiproxy
+   *     control.connection().limitBandwidth(
+   *         info.getContainer(), info.getHost() + ":" + info.getPort(), 1024);
+   *   }
+   * }
+   * }</pre>
+   *
+   * <p><strong>Requirements:</strong>
+   *
+   * <ul>
+   *   <li>Linux container (the bundled {@code .so} variants cover glibc + musl on x86_64/arm64)
+   *   <li>{@code macstab-chaos-connection} on the classpath (added via build dependency)
+   * </ul>
+   *
+   * @return {@code true} to enable syscall-level connection chaos, {@code false} otherwise
+   * @since 1.0
+   */
+  boolean enableConnectionChaos() default false;
+
+  /**
    * Packages to install in the Redis container using the universal package manager.
    *
    * <p>Default: {@code []} (no additional packages)

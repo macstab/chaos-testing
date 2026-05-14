@@ -33,8 +33,10 @@ class LibfaketimeTimeChaosComprehensiveTest {
       container = createDebianContainer();
       chaos = new LibfaketimeTimeChaos();
       chaos.shift(container, Duration.ofHours(hours));
+      // libfaketime's serializer rolls 24h-aligned durations up to days: 24h → "+1d",
+      // 72h → "+3d". Accept either time unit.
       assertThat(container.execInContainer("cat", "/tmp/faketime").getStdout().trim())
-          .contains("h");
+          .matches("^[+-]?\\d+[hd]$");
     }
 
     @ParameterizedTest

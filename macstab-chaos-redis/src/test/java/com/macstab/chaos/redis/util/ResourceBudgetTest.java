@@ -344,6 +344,11 @@ class ResourceBudgetTest {
       }
 
       @Override
+      public boolean enableConnectionChaos() {
+        return false;
+      }
+
+      @Override
       public String[] packages() {
         return new String[0];
       }
@@ -379,6 +384,11 @@ class ResourceBudgetTest {
 
       @Override
       public boolean enableNetworkChaos() {
+        return false;
+      }
+
+      @Override
+      public boolean enableConnectionChaos() {
         return false;
       }
 

@@ -5,9 +5,11 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.ServiceLoader;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.api.ConnectionChaos;
 import com.macstab.chaos.network.control.NetworkChaosController;
 import com.macstab.chaos.redis.control.failover.FailoverHelper;
 import com.macstab.chaos.redis.control.inspection.ConnectionInfo;
@@ -62,6 +64,14 @@ public final class ControlFacade {
   private final RoleResolver roleResolver;
   private final NetworkChaosController networkChaos;
   private final List<GenericContainer<?>> allContainers;
+
+  /**
+   * Lazily-resolved syscall+proxy connection-chaos provider. Loaded the first time {@link
+   * #connection()} is called via {@link ServiceLoader} from {@code
+   * macstab-chaos-connection}. Stored {@code volatile} so the resolution is published safely across
+   * threads after the first read.
+   */
+  private volatile ConnectionChaos connectionChaos;
 
   /**
    * Creates a ControlFacade (use {@link #create} factory method instead).
@@ -360,6 +370,110 @@ public final class ControlFacade {
    */
   public NetworkChaosController network() {
     return networkChaos;
+  }
+
+  // ==================== Connection Chaos Engineering ====================
+
+  /**
+   * Returns the connection chaos provider for socket-syscall and proxy-level fault injection.
+   *
+   * <p><strong>Capabilities (composite — libchaos-net first, Toxiproxy fallback):</strong>
+   *
+   * <ul>
+   *   <li>Per-syscall errno injection on {@code connect}, {@code bind}, {@code accept}, {@code
+   *       send}, {@code recv}, {@code poll} (via {@code libchaos-net} {@code LD_PRELOAD})
+   *   <li>UDP / unix-socket / DNS-level fault injection ({@code libchaos-net} only)
+   *   <li>{@code addLatency}, {@code dropPackets}, {@code timeoutConnections}, {@code slowClose},
+   *       {@code rejectConnections} — routed to {@code libchaos-net} by default
+   *   <li>{@code limitBandwidth} — falls through to Toxiproxy (only mechanism that can model it)
+   * </ul>
+   *
+   * <p><strong>Pre-flight contract.</strong> For the libchaos-net path to work, the target
+   * container must have been prepared <em>before</em> {@code container.start()}. Use {@code
+   * enableConnectionChaos=true} on {@link com.macstab.chaos.redis.annotation.RedisStandalone} or
+   * {@link com.macstab.chaos.redis.annotation.RedisSentinel} to drive that preparation; the
+   * factories invoke {@code LibchaosTransport(LibchaosLib.NET).prepare()} on every container they
+   * create. Skipping preparation surfaces a clear {@code LibchaosNotPreparedException} at the
+   * call site — there is no silent fallback for syscall-level verbs.
+   *
+   * <p><strong>Discovery:</strong> the provider is loaded lazily on first access. Resolution
+   * prefers {@code CompositeConnectionChaos.standard()} from {@code macstab-chaos-connection}
+   * (giving every verb both syscall-level and proxy-level layers with fall-through); when that
+   * class is not on the classpath, {@link ServiceLoader} is used as a fallback.
+   *
+   * <p><strong>Example:</strong>
+   *
+   * <pre>{@code
+   * // Refuse new connections at the syscall level
+   * control.connection().rejectConnections(container, "redis-master:6379");
+   *
+   * // Bandwidth shaping — transparently routed to Toxiproxy
+   * control.connection().limitBandwidth(container, "redis-master:6379", 4096);
+   *
+   * // Cleanup
+   * control.connection().removeAllToxics(container, "redis-master:6379");
+   * }</pre>
+   *
+   * @return composite connection chaos provider (never null)
+   * @throws IllegalStateException if {@code macstab-chaos-connection} is not on the classpath
+   *     (typically means the user forgot {@code enableConnectionChaos=true} on the annotation, or
+   *     the build dependency on {@code macstab-chaos-connection} is missing)
+   */
+  public ConnectionChaos connection() {
+    ConnectionChaos local = connectionChaos;
+    if (local == null) {
+      synchronized (this) {
+        local = connectionChaos;
+        if (local == null) {
+          local = resolveConnectionChaos();
+          connectionChaos = local;
+        }
+      }
+    }
+    return local;
+  }
+
+  /**
+   * Resolves a {@link ConnectionChaos} provider.
+   *
+   * <p>The resolution preference is, in order:
+   *
+   * <ol>
+   *   <li><strong>Composite</strong> from {@code macstab-chaos-connection} — loaded reflectively
+   *       via {@code CompositeConnectionChaos.standard()}. This gives every verb both layers
+   *       (libchaos-net syscall-level + Toxiproxy proxy-level) with automatic fall-through,
+   *       which is what {@code enableConnectionChaos=true} promises.
+   *   <li><strong>ServiceLoader fallback</strong> — first registered {@link ConnectionChaos}
+   *       provider on the classpath. Used when {@code chaos-connection} is absent but some other
+   *       module supplies a provider.
+   * </ol>
+   *
+   * @return resolved provider (never null)
+   * @throws IllegalStateException if no provider can be resolved
+   */
+  private static ConnectionChaos resolveConnectionChaos() {
+    try {
+      final Class<?> compositeClass =
+          Class.forName("com.macstab.chaos.connection.CompositeConnectionChaos");
+      final Object composite = compositeClass.getMethod("standard").invoke(null);
+      return (ConnectionChaos) composite;
+    } catch (final ClassNotFoundException missing) {
+      log.debug(
+          "CompositeConnectionChaos not on classpath; falling back to ServiceLoader for ConnectionChaos");
+    } catch (final ReflectiveOperationException reflective) {
+      log.warn(
+          "CompositeConnectionChaos.standard() invocation failed; falling back to ServiceLoader",
+          reflective);
+    }
+    return ServiceLoader.load(ConnectionChaos.class)
+        .findFirst()
+        .orElseThrow(
+            () ->
+                new IllegalStateException(
+                    "No ConnectionChaos provider found on the classpath. Either set"
+                        + " enableConnectionChaos=true on the Redis annotation, or add"
+                        + " a build dependency on macstab-chaos-connection so that"
+                        + " CompositeConnectionChaos is reachable from this module."));
   }
 
   /**

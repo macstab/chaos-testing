@@ -51,7 +51,10 @@ public final class DefaultSentinelClusterFactory implements SentinelClusterFacto
   public SentinelCluster create(final RedisSentinel annotation) throws Exception {
     final com.macstab.chaos.redis.factory.RawSentinelCluster factoryCluster =
         SentinelContainerFactory.createSentinelCluster(
-            annotation.replicas(), annotation.sentinels(), annotation.enableNetworkChaos());
+            annotation.replicas(),
+            annotation.sentinels(),
+            annotation.enableNetworkChaos(),
+            annotation.enableConnectionChaos());
 
     final SentinelCluster cluster =
         new SentinelCluster(

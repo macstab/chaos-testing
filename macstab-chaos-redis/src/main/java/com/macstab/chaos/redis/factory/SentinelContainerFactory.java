@@ -67,7 +67,7 @@ public final class SentinelContainerFactory {
    * @throws ClusterCreationException if any container fails to start
    */
   public static RawSentinelCluster createSentinelCluster() {
-    return createSentinelCluster(2, 3, false);
+    return createSentinelCluster(2, 3, false, false);
   }
 
   /**
@@ -81,7 +81,7 @@ public final class SentinelContainerFactory {
    */
   public static RawSentinelCluster createSentinelCluster(
       final int replicaCount, final int sentinelCount) {
-    return createSentinelCluster(replicaCount, sentinelCount, false);
+    return createSentinelCluster(replicaCount, sentinelCount, false, false);
   }
 
   /**
@@ -100,27 +100,63 @@ public final class SentinelContainerFactory {
    */
   public static RawSentinelCluster createSentinelCluster(
       final int replicaCount, final int sentinelCount, final boolean enableNetworkChaos) {
+    return createSentinelCluster(replicaCount, sentinelCount, enableNetworkChaos, false);
+  }
+
+  /**
+   * Creates a Redis Sentinel cluster with configurable replica, sentinel counts, and both chaos
+   * lifecycle hooks.
+   *
+   * <p>The two chaos flags are orthogonal:
+   *
+   * <ul>
+   *   <li>{@code enableNetworkChaos} adds {@code NET_ADMIN} to every cluster container for kernel
+   *       packet-path manipulation ({@code tc/netem} + {@code iptables}).
+   *   <li>{@code enableConnectionChaos} pre-starts {@code libchaos-net} {@code LD_PRELOAD}
+   *       preparation on every cluster container (master + each replica + each sentinel) so that
+   *       socket syscalls are intercepted at process launch. The Toxiproxy fallback inside
+   *       {@code CompositeConnectionChaos} lazy-spawns on first use.
+   * </ul>
+   *
+   * @param replicaCount number of replicas (must be &ge; 1)
+   * @param sentinelCount number of sentinels (must be &ge; 1)
+   * @param enableNetworkChaos if true, adds NET_ADMIN capability for kernel packet-path chaos
+   * @param enableConnectionChaos if true, pre-starts libchaos-net on every cluster container
+   * @return Sentinel cluster with all containers started
+   * @throws ClusterCreationException if any container fails to start
+   * @throws IllegalArgumentException if replica or sentinel count &lt; 1
+   * @since 1.0
+   */
+  public static RawSentinelCluster createSentinelCluster(
+      final int replicaCount,
+      final int sentinelCount,
+      final boolean enableNetworkChaos,
+      final boolean enableConnectionChaos) {
     validateCounts(replicaCount, sentinelCount);
 
     final int quorum = calculateQuorum(sentinelCount);
     log.info(
-        "🚀 Creating Sentinel cluster: {} replicas, {} sentinels, quorum={}, networkChaos={}",
+        "🚀 Creating Sentinel cluster: {} replicas, {} sentinels, quorum={}, networkChaos={},"
+            + " connectionChaos={}",
         replicaCount,
         sentinelCount,
         quorum,
-        enableNetworkChaos);
+        enableNetworkChaos,
+        enableConnectionChaos);
 
     final long startTime = System.currentTimeMillis();
     final Network network = Network.newNetwork();
     log.debug("✓ Network created: {}", network.getId());
 
-    final GenericContainer<?> master = startMaster(network, enableNetworkChaos, startTime);
+    final GenericContainer<?> master =
+        startMaster(network, enableNetworkChaos, enableConnectionChaos, startTime);
     final List<GenericContainer<?>> replicas =
-        startReplicas(network, replicaCount, enableNetworkChaos);
+        startReplicas(network, replicaCount, enableNetworkChaos, enableConnectionChaos);
     final String masterIp = getMasterIpAddress(master);
     log.debug("Master IP: {}", masterIp);
     final List<GenericContainer<?>> sentinels =
-        startSentinels(network, sentinelCount, masterIp, quorum, enableNetworkChaos);
+        startSentinels(
+            network, sentinelCount, masterIp, quorum, enableNetworkChaos, enableConnectionChaos);
 
     waitForSentinelStabilization();
     log.debug("✓ Sentinel cluster stabilized");
@@ -148,10 +184,13 @@ public final class SentinelContainerFactory {
   }
 
   private static GenericContainer<?> startMaster(
-      final Network network, final boolean enableNetworkChaos, final long startTime) {
+      final Network network,
+      final boolean enableNetworkChaos,
+      final boolean enableConnectionChaos,
+      final long startTime) {
     log.debug("Starting master node...");
     final GenericContainer<?> master =
-        SentinelNodeFactory.createMaster(network, enableNetworkChaos);
+        SentinelNodeFactory.createMaster(network, enableNetworkChaos, enableConnectionChaos);
     try {
       master.start();
       log.info(
@@ -166,13 +205,17 @@ public final class SentinelContainerFactory {
   }
 
   private static List<GenericContainer<?>> startReplicas(
-      final Network network, final int replicaCount, final boolean enableNetworkChaos) {
+      final Network network,
+      final int replicaCount,
+      final boolean enableNetworkChaos,
+      final boolean enableConnectionChaos) {
     log.debug("Starting {} replica(s)...", replicaCount);
     final List<GenericContainer<?>> replicas = new ArrayList<>();
     for (int i = 1; i <= replicaCount; i++) {
       final long replicaStart = System.currentTimeMillis();
       final GenericContainer<?> replica =
-          SentinelNodeFactory.createReplica(network, "redis-replica" + i, enableNetworkChaos);
+          SentinelNodeFactory.createReplica(
+              network, "redis-replica" + i, enableNetworkChaos, enableConnectionChaos);
       try {
         replica.start();
         log.info(
@@ -195,14 +238,20 @@ public final class SentinelContainerFactory {
       final int sentinelCount,
       final String masterIp,
       final int quorum,
-      final boolean enableNetworkChaos) {
+      final boolean enableNetworkChaos,
+      final boolean enableConnectionChaos) {
     log.debug("Starting {} sentinel(s) with quorum={}...", sentinelCount, quorum);
     final List<GenericContainer<?>> sentinels = new ArrayList<>();
     for (int i = 1; i <= sentinelCount; i++) {
       final long sentinelStart = System.currentTimeMillis();
       final GenericContainer<?> sentinel =
           SentinelNodeFactory.createSentinel(
-              network, "sentinel" + i, masterIp, quorum, enableNetworkChaos);
+              network,
+              "sentinel" + i,
+              masterIp,
+              quorum,
+              enableNetworkChaos,
+              enableConnectionChaos);
       try {
         sentinel.start();
         log.info(

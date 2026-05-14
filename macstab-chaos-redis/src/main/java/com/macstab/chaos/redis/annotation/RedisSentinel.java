@@ -239,6 +239,63 @@ public @interface RedisSentinel {
   boolean enableNetworkChaos() default false;
 
   /**
+   * Enable socket-syscall-level connection chaos via {@code libchaos-net} ({@code LD_PRELOAD}) on
+   * every cluster container (master, replicas, sentinels), plus automatic Toxiproxy proxy-level
+   * fallback for verbs it cannot model (e.g. {@code limitBandwidth}).
+   *
+   * <p>Default: {@code false} (secure by default)
+   *
+   * <p><strong>Orthogonal to {@link #enableNetworkChaos}:</strong> both flags may be {@code true}
+   * simultaneously — they cover different fault layers. {@link #enableNetworkChaos} operates on
+   * the kernel packet path ({@code tc/netem} + {@code iptables}); this flag operates on libc
+   * socket calls intercepted by {@code libchaos-net}. Use both to test packet-level and
+   * syscall-level failure modes independently.
+   *
+   * <p><strong>What This Enables:</strong>
+   *
+   * <ul>
+   *   <li>Per-syscall errno injection on {@code connect}, {@code bind}, {@code accept}, {@code
+   *       send}, {@code recv}, {@code poll}, scoped to any cluster node
+   *   <li>UDP / unix-socket / DNS-level fault injection (the Sentinel pub-sub channel uses TCP
+   *       only — DNS faults exercise master discovery)
+   *   <li>{@code recv}-corruption, file-descriptor exhaustion, listen/accept faults
+   *   <li>Bandwidth shaping via the Toxiproxy fallback inside {@code CompositeConnectionChaos}
+   * </ul>
+   *
+   * <p><strong>Lifecycle:</strong> When {@code true}, every container (master + each replica +
+   * each sentinel) has {@code LibchaosTransport(LibchaosLib.NET).prepare(container)} invoked
+   * <em>before</em> {@code container.start()} so the dynamic loader honours the {@code
+   * LD_PRELOAD} hook at process launch. The Toxiproxy sidecar fallback inside {@code
+   * CompositeConnectionChaos} lazy-spawns on first use.
+   *
+   * <p><strong>Example (Per-Replica Connect Refusal):</strong>
+   *
+   * <pre>{@code
+   * @RedisSentinel(replicas = 2, enableConnectionChaos = true)
+   * class FailoverConnectivityTest {
+   *
+   *   @Test
+   *   void failsOverWhenReplicaConnectRefuses(SentinelCluster cluster, ControlFacade control) {
+   *     GenericContainer<?> replica0 = cluster.getReplicas().get(0);
+   *     control.connection().rejectConnections(replica0, "redis-master:6379");
+   *     // Sentinel must promote remaining healthy replica
+   *   }
+   * }
+   * }</pre>
+   *
+   * <p><strong>Requirements:</strong>
+   *
+   * <ul>
+   *   <li>Linux container (the bundled {@code .so} variants cover glibc + musl on x86_64/arm64)
+   *   <li>{@code macstab-chaos-connection} on the classpath (added via build dependency)
+   * </ul>
+   *
+   * @return {@code true} to enable syscall-level connection chaos, {@code false} otherwise
+   * @since 1.0
+   */
+  boolean enableConnectionChaos() default false;
+
+  /**
    * Packages to install in ALL Redis containers (master, replicas, sentinels) using the universal
    * package manager.
    *

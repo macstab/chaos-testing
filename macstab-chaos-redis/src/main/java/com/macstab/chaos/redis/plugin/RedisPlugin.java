@@ -10,6 +10,8 @@ import org.testcontainers.utility.DockerImageName;
 
 import com.github.dockerjava.api.model.Capability;
 import com.macstab.chaos.core.extension.ChaosPlugin;
+import com.macstab.chaos.core.syscall.LibchaosLib;
+import com.macstab.chaos.core.syscall.LibchaosTransport;
 import com.macstab.chaos.redis.annotation.RedisStandalone;
 import com.macstab.chaos.redis.api.StandaloneRedis;
 import com.macstab.chaos.redis.command.RedisCommandBuilder;
@@ -72,6 +74,12 @@ public final class RedisPlugin implements ChaosPlugin<RedisStandalone> {
       container.withCreateContainerCmdModifier(
           cmd -> cmd.getHostConfig().withCapAdd(Capability.NET_ADMIN));
       log.debug("Enabled network chaos (NET_ADMIN) for Redis container");
+    }
+
+    if (annotation.enableConnectionChaos()) {
+      // libchaos-net LD_PRELOAD preparation — must run before container.start().
+      new LibchaosTransport(LibchaosLib.NET).prepare(container);
+      log.debug("Enabled connection chaos (libchaos-net LD_PRELOAD) for Redis container");
     }
 
     return container;

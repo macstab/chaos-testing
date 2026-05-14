@@ -104,15 +104,18 @@ class TimeRuleTest {
     @Test
     @DisplayName("OFFSET on NANOSLEEP / USLEEP / WILDCARD is rejected with informative message")
     void offsetRejected() {
-      for (final TimeSelector s : nonClockGettime()) {
-        assertThatThrownBy(
-                () ->
-                    new TimeRule(
-                        s, Optional.empty(), TimeEffect.offset(Duration.ofMillis(100))))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("OFFSET")
-            .hasMessageContaining(s.wireForm());
-      }
+      nonClockGettime()
+          .forEach(
+              s ->
+                  assertThatThrownBy(
+                          () ->
+                              new TimeRule(
+                                  s,
+                                  Optional.empty(),
+                                  TimeEffect.offset(Duration.ofMillis(100))))
+                      .isInstanceOf(IllegalArgumentException.class)
+                      .hasMessageContaining("OFFSET")
+                      .hasMessageContaining(s.wireForm()));
     }
 
     static Stream<TimeSelector> nonClockGettime() {

@@ -11,6 +11,8 @@ import org.testcontainers.utility.DockerImageName;
 
 import com.github.dockerjava.api.model.Capability;
 import com.macstab.chaos.core.platform.Tool;
+import com.macstab.chaos.core.syscall.LibchaosLib;
+import com.macstab.chaos.core.syscall.LibchaosTransport;
 import com.macstab.chaos.core.util.ToolPackage;
 import com.macstab.chaos.redis.annotation.RedisStandalone;
 import com.macstab.chaos.redis.command.RedisCommandBuilder;
@@ -110,6 +112,13 @@ public final class DefaultStandaloneContainerInstanceFactory
     if (annotation.enableNetworkChaos()) {
       container.withCreateContainerCmdModifier(
           cmd -> cmd.getHostConfig().withCapAdd(Capability.NET_ADMIN));
+    }
+
+    if (annotation.enableConnectionChaos()) {
+      // Pre-start libchaos-net preparation: copies the .so into the image overlay and sets
+      // LD_PRELOAD on the container env. Both operations require the container to not yet be
+      // started — the dynamic loader only honours LD_PRELOAD at process launch.
+      new LibchaosTransport(LibchaosLib.NET).prepare(container);
     }
 
     return container;

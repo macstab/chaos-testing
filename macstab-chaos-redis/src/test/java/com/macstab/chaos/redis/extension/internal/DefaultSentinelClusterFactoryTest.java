@@ -304,6 +304,11 @@ class DefaultSentinelClusterFactoryTest {
       }
 
       @Override
+      public boolean enableConnectionChaos() {
+        return false;
+      }
+
+      @Override
       public String[] packages() {
         return packages;
       }
