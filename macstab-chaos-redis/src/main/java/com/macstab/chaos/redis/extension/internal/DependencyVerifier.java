@@ -24,6 +24,9 @@ public final class DependencyVerifier {
   private static final String REDIS_CACHE_CHAOS_CLASS =
       "com.macstab.chaos.cache.redis.RedisCacheChaosProvider";
 
+  private static final String COMPOSITE_CONNECTION_CHAOS_CLASS =
+      "com.macstab.chaos.connection.CompositeConnectionChaos";
+
   private DependencyVerifier() {
     throw new UnsupportedOperationException("Utility class - not instantiable");
   }
@@ -43,6 +46,28 @@ public final class DependencyVerifier {
               + "This proxies Redis traffic: client → Toxiproxy → Redis\n\n"
               + "Add to your build.gradle.kts:\n"
               + "    testImplementation(\"com.macstab:macstab-chaos-cache:${version}\")");
+    }
+  }
+
+  /**
+   * Verifies that the macstab-chaos-connection module is present on the classpath.
+   *
+   * <p>Required when {@code enableConnectionChaos=true} is set on a Redis annotation. The
+   * connection module provides {@code CompositeConnectionChaos}, which composites libchaos-net's
+   * per-syscall errno injection with Toxiproxy's proxy-level fault chaos. Without this dependency,
+   * {@code ControlFacade#connection()} would fail at first access with a {@link
+   * ClassNotFoundException} — this check converts that into a clear startup-time error pointing at
+   * the missing build dependency.
+   *
+   * @throws IllegalStateException if the connection module is not on the classpath
+   */
+  public static void requireConnectionModule() {
+    if (!isPresent(COMPOSITE_CONNECTION_CHAOS_CLASS)) {
+      throw new IllegalStateException(
+          "enableConnectionChaos=true requires macstab-chaos-connection (CompositeConnectionChaos) on classpath.\n"
+              + "This wires libchaos-net (LD_PRELOAD syscall errno injection) + Toxiproxy fallback.\n\n"
+              + "Add to your build.gradle.kts:\n"
+              + "    testImplementation(\"com.macstab:macstab-chaos-connection:${version}\")");
     }
   }
 

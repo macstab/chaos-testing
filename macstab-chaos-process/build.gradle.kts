@@ -15,6 +15,7 @@ java {
 
 dependencies {
     api(project(":macstab-chaos-core"))
+    testImplementation(project(":macstab-chaos-patterns"))
     testImplementation("org.testcontainers:junit-jupiter:1.20.4")
     testImplementation("org.assertj:assertj-core:3.24.2")
     testImplementation("org.awaitility:awaitility:4.2.2")

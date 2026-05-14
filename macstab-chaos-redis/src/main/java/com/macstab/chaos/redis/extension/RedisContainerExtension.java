@@ -89,6 +89,9 @@ public final class RedisContainerExtension
     if (mustVerifyChaosDependencies(annotations)) {
       DependencyVerifier.requireCacheModule();
     }
+    if (mustVerifyConnectionDependencies(annotations)) {
+      DependencyVerifier.requireConnectionModule();
+    }
 
     final StandaloneStartupOrchestrator.StartupOutcome outcome =
         new StandaloneStartupOrchestrator().start(annotations);
@@ -252,6 +255,15 @@ public final class RedisContainerExtension
   private boolean mustVerifyChaosDependencies(final RedisStandalone[] annotations) {
     for (final RedisStandalone a : annotations) {
       if (a.enableNetworkChaos()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private boolean mustVerifyConnectionDependencies(final RedisStandalone[] annotations) {
+    for (final RedisStandalone a : annotations) {
+      if (a.enableConnectionChaos()) {
         return true;
       }
     }
