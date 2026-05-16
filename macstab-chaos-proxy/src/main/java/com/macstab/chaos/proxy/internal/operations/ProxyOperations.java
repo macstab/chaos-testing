@@ -68,9 +68,9 @@ public interface ProxyOperations {
    *
    * <p>Removes the proxy via {@code DELETE /proxies/{proxyName}}. Any active toxics on this proxy
    * are also removed (Toxiproxy deletes them automatically). The iptables redirect is <em>not</em>
-   * removed by this method — use {@link #deleteAllProxies(ContainerContext)} or {@link
-   * "com.macstab.chaos.proxy.network.NetworkRedirect#clearAllRedirects(ContainerContext)}" to clean
-   * up port redirects.
+   * removed by this method — use {@link #deleteAllProxies(ContainerContext)} or
+   * {@code com.macstab.chaos.proxy.network.NetworkRedirect#clearAllRedirects(ContainerContext)}
+   * (defined in a sibling module not on this module's classpath) to clean up port redirects.
    *
    * @param ctx resolved container context
    * @param proxyName name of the proxy to delete
