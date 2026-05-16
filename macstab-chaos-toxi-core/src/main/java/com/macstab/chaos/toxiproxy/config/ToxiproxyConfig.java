@@ -110,7 +110,9 @@ import lombok.NonNull;
  * the {@code curl} command as {@code --connect-timeout} flags. This is a known limitation.
  * Contributors adding direct curl timeout flags should map these values accordingly.
  *
- * @see com.macstab.chaos.proxy.ProxyChaosProvider
+ * <p>See {@code com.macstab.chaos.proxy.ProxyChaosProvider} (sibling module) for the public-facing
+ * orchestrator that consumes this configuration.
+ *
  * @author Christian Schnapka - Macstab GmbH
  */
 public final class ToxiproxyConfig {

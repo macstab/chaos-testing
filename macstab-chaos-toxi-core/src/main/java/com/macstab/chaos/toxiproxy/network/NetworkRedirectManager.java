@@ -29,10 +29,10 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <p>Because this class does not track installed rules, it cannot know whether a given port pair
  * has an existing redirect, whether duplicates were added, or whether a previous cleanup failed
- * partially. Higher-level orchestration ({@link
- * com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator}) is responsible for ensuring setup and
- * teardown are symmetric. Rule tracking at this level would require shared mutable state across
- * instances, introducing concurrency risk for marginal benefit.
+ * partially. Higher-level orchestration ({@code
+ * com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator} in a sibling module) is responsible for
+ * ensuring setup and teardown are symmetric. Rule tracking at this level would require shared
+ * mutable state across instances, introducing concurrency risk for marginal benefit.
  *
  * <h2>Failure Handling Pattern</h2>
  *

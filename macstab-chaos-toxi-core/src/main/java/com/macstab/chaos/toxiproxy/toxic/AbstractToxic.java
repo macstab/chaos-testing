@@ -208,7 +208,7 @@ public abstract sealed class AbstractToxic implements ToxicConfig
    * 1.0}) and fluent setter methods that return the concrete builder type ({@code B}) via the
    * self-referential generic bound.
    *
-   * <h3>Self-Referential Generic ({@code B extends AbstractBuilder<B>})</h3>
+   * <h2>Self-Referential Generic ({@code B extends AbstractBuilder<B>})</h2>
    *
    * <p>Without the self-referential generic, {@code name()} and {@code toxicity()} would return
    * {@code AbstractBuilder}, forcing concrete builder callers to chain through intermediate casts:

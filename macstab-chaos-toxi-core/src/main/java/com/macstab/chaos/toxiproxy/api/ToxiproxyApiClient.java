@@ -29,10 +29,10 @@ import lombok.NonNull;
  * <p>This interface forms the lowest-level API boundary in the toxi-core module. It maps one-to-one
  * to the Toxiproxy REST API surface ({@code /proxies}, {@code /proxies/{name}/toxics}) and is the
  * only component in the module that constructs raw HTTP command strings. All higher-level
- * components — {@link com.macstab.chaos.toxiproxy.lifecycle.ToxiproxyLifecycle}, {@link
- * com.macstab.chaos.proxy.internal.operations.ProxyOperations}, {@link
- * com.macstab.chaos.proxy.internal.operations.ToxicOperations} — depend on this interface, never on
- * Toxiproxy's REST wire format directly.
+ * components — {@link com.macstab.chaos.toxiproxy.lifecycle.ToxiproxyLifecycle}, {@code
+ * com.macstab.chaos.proxy.internal.operations.ProxyOperations}, {@code
+ * com.macstab.chaos.proxy.internal.operations.ToxicOperations} (the latter two in sibling modules)
+ * — depend on this interface, never on Toxiproxy's REST wire format directly.
  *
  * <h2>Command Execution Model</h2>
  *
@@ -74,10 +74,10 @@ import lombok.NonNull;
  *
  * <h2>Stable Contract</h2>
  *
- * <p>This interface is a stable internal API. {@link com.macstab.chaos.proxy.ProxyChaosProvider},
- * {@link com.macstab.chaos.connection.ToxiproxyConnectionChaos}, and test implementations depend on
- * it. Method signatures may not change in a backwards-incompatible way without a major version
- * bump.
+ * <p>This interface is a stable internal API. {@code com.macstab.chaos.proxy.ProxyChaosProvider},
+ * {@code com.macstab.chaos.connection.ToxiproxyConnectionChaos} (both in sibling modules), and
+ * test implementations depend on it. Method signatures may not change in a backwards-incompatible
+ * way without a major version bump.
  *
  * <h2>Non-Goals</h2>
  *
@@ -218,9 +218,9 @@ public interface ToxiproxyApiClient {
    * proxy port remain active and will cause connection resets for affected traffic. Callers must
    * also invoke {@link
    * com.macstab.chaos.toxiproxy.network.NetworkRedirect#removeRedirect(ContainerContext, int, int)}
-   * to restore normal traffic flow. Higher-level orchestration (e.g., {@link
-   * com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator#deleteProxy}) handles both steps
-   * together.
+   * to restore normal traffic flow. Higher-level orchestration (e.g., {@code
+   * com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator#deleteProxy} in a sibling module)
+   * handles both steps together.
    *
    * @param ctx resolved container context; must reference a running container with Toxiproxy active
    * @param proxyName the name of the proxy to delete; must match an existing proxy name

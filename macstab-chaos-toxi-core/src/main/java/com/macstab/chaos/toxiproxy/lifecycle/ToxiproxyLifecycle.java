@@ -29,11 +29,11 @@ import lombok.NonNull;
  *       implementation must be <strong>idempotent</strong> — if Toxiproxy is already running, the
  *       call must return immediately without side effects. This is enforced by checking {@link
  *       #isHealthy(ContainerContext)} first.
- *   <li>{@link #stop(ContainerContext)} terminates the Toxiproxy process and destroys <em>all</em>
- *       proxies registered by <em>all</em> modules. Calling stop from one module implicitly breaks
- *       all other modules' proxies on the same container. Callers must only invoke {@code stop()}
- *       during full container teardown ({@code @AfterAll}), never during per-test cleanup
- *       ({@code @AfterEach}).
+ *   <li>{@link #shutdown(ContainerContext)} terminates the Toxiproxy process and destroys
+ *       <em>all</em> proxies registered by <em>all</em> modules. Calling shutdown from one module
+ *       implicitly breaks all other modules' proxies on the same container. Callers must only
+ *       invoke {@code shutdown()} during full container teardown ({@code @AfterAll}), never during
+ *       per-test cleanup ({@code @AfterEach}).
  * </ul>
  *
  * <h2>Startup Sequence</h2>
@@ -70,8 +70,8 @@ import lombok.NonNull;
  * <h2>Default Implementation</h2>
  *
  * <p>{@link ToxiproxyLifecycleManager} is the production implementation. Inject a mock or stub for
- * testing via the 4-argument constructor of {@link
- * com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator}.
+ * testing via the 4-argument constructor of {@code
+ * com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator} (sibling module).
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ToxiproxyLifecycleManager for production implementation

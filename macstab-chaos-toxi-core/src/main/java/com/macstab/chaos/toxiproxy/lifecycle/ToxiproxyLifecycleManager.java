@@ -33,9 +33,9 @@ import lombok.extern.slf4j.Slf4j;
  * <ul>
  *   <li><strong>Single-arg constructor</strong> (production): wires default collaborators — {@link
  *       ToxiproxyInstaller} and {@link ToxiproxyApiClientImpl} constructed with the API URL from
- *       config. This is the constructor used by {@link
- *       com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator} and {@link
- *       com.macstab.chaos.connection.ToxiproxyConnectionChaos}.
+ *       config. This is the constructor used by {@code
+ *       com.macstab.chaos.proxy.internal.ToxiproxyOrchestrator} and {@code
+ *       com.macstab.chaos.connection.ToxiproxyConnectionChaos} (both in sibling modules).
  *   <li><strong>Three-arg constructor</strong> (testability): accepts pre-built collaborators for
  *       unit testing. Allows injecting mock {@link ToxiproxyInstaller} and {@link
  *       com.macstab.chaos.toxiproxy.api.ToxiproxyApiClient} without Docker.
