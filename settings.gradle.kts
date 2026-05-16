@@ -19,7 +19,12 @@ include(
     "macstab-chaos-filesystem",
     "macstab-chaos-proxy",
     "macstab-chaos-toxi-core",
-    "macstab-chaos-java"
+    "macstab-chaos-java",
+    "macstab-chaos-java-junit5",
+    "macstab-chaos-java-spring-boot3",
+    "macstab-chaos-java-spring-boot4",
+    "macstab-chaos-java-micronaut",
+    "macstab-chaos-java-quarkus"
 )
 
 // Note: macstab-chaos-core now renamed to avoid conflict
