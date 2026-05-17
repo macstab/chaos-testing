@@ -33,7 +33,9 @@ public enum MmapErrno {
   /** Bad file descriptor. Valid on mmap/madvise (for fd-backed paths). */
   EBADF,
 
-  /** Bad address — userspace pointer outside the addressable range. Valid on every interposed call. */
+  /**
+   * Bad address — userspace pointer outside the addressable range. Valid on every interposed call.
+   */
   EFAULT,
 
   /** Invalid argument — bad length/alignment/flags. Valid on every interposed call. */

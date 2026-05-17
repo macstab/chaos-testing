@@ -67,9 +67,9 @@ public final class ControlFacade {
 
   /**
    * Lazily-resolved syscall+proxy connection-chaos provider. Loaded the first time {@link
-   * #connection()} is called via {@link ServiceLoader} from {@code
-   * macstab-chaos-connection}. Stored {@code volatile} so the resolution is published safely across
-   * threads after the first read.
+   * #connection()} is called via {@link ServiceLoader} from {@code macstab-chaos-connection}.
+   * Stored {@code volatile} so the resolution is published safely across threads after the first
+   * read.
    */
   private volatile ConnectionChaos connectionChaos;
 
@@ -393,8 +393,8 @@ public final class ControlFacade {
    * enableConnectionChaos=true} on {@link com.macstab.chaos.redis.annotation.RedisStandalone} or
    * {@link com.macstab.chaos.redis.annotation.RedisSentinel} to drive that preparation; the
    * factories invoke {@code LibchaosTransport(LibchaosLib.NET).prepare()} on every container they
-   * create. Skipping preparation surfaces a clear {@code LibchaosNotPreparedException} at the
-   * call site — there is no silent fallback for syscall-level verbs.
+   * create. Skipping preparation surfaces a clear {@code LibchaosNotPreparedException} at the call
+   * site — there is no silent fallback for syscall-level verbs.
    *
    * <p><strong>Discovery:</strong> the provider is loaded lazily on first access. Resolution
    * prefers {@code CompositeConnectionChaos.standard()} from {@code macstab-chaos-connection}
@@ -441,8 +441,8 @@ public final class ControlFacade {
    * <ol>
    *   <li><strong>Composite</strong> from {@code macstab-chaos-connection} — loaded reflectively
    *       via {@code CompositeConnectionChaos.standard()}. This gives every verb both layers
-   *       (libchaos-net syscall-level + Toxiproxy proxy-level) with automatic fall-through,
-   *       which is what {@code enableConnectionChaos=true} promises.
+   *       (libchaos-net syscall-level + Toxiproxy proxy-level) with automatic fall-through, which
+   *       is what {@code enableConnectionChaos=true} promises.
    *   <li><strong>ServiceLoader fallback</strong> — first registered {@link ConnectionChaos}
    *       provider on the classpath. Used when {@code chaos-connection} is absent but some other
    *       module supplies a provider.

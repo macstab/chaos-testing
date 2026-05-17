@@ -114,8 +114,8 @@ public final class SentinelContainerFactory {
    *       packet-path manipulation ({@code tc/netem} + {@code iptables}).
    *   <li>{@code enableConnectionChaos} pre-starts {@code libchaos-net} {@code LD_PRELOAD}
    *       preparation on every cluster container (master + each replica + each sentinel) so that
-   *       socket syscalls are intercepted at process launch. The Toxiproxy fallback inside
-   *       {@code CompositeConnectionChaos} lazy-spawns on first use.
+   *       socket syscalls are intercepted at process launch. The Toxiproxy fallback inside {@code
+   *       CompositeConnectionChaos} lazy-spawns on first use.
    * </ul>
    *
    * @param replicaCount number of replicas (must be &ge; 1)
@@ -246,12 +246,7 @@ public final class SentinelContainerFactory {
       final long sentinelStart = System.currentTimeMillis();
       final GenericContainer<?> sentinel =
           SentinelNodeFactory.createSentinel(
-              network,
-              "sentinel" + i,
-              masterIp,
-              quorum,
-              enableNetworkChaos,
-              enableConnectionChaos);
+              network, "sentinel" + i, masterIp, quorum, enableNetworkChaos, enableConnectionChaos);
       try {
         sentinel.start();
         log.info(

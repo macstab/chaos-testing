@@ -105,8 +105,8 @@ public final class JavaAgentTransport {
 
   /**
    * Copies the agent jar into the container, writes an empty plan, and appends {@code -javaagent}
-   * to {@code JAVA_TOOL_OPTIONS}. Idempotent (label-guarded). Must be called <strong>before</strong>
-   * {@code container.start()}.
+   * to {@code JAVA_TOOL_OPTIONS}. Idempotent (label-guarded). Must be called
+   * <strong>before</strong> {@code container.start()}.
    *
    * <p>Pre-existing {@code JAVA_TOOL_OPTIONS} entries placed by user code are preserved — the
    * {@code -javaagent} flag is appended.
@@ -126,8 +126,7 @@ public final class JavaAgentTransport {
     try {
       agentBytes = Files.readAllBytes(agentJar);
     } catch (final Exception e) {
-      throw new ChaosOperationFailedException(
-          "Failed to read agent jar at " + agentJar, e);
+      throw new ChaosOperationFailedException("Failed to read agent jar at " + agentJar, e);
     }
 
     container.withCopyToContainer(Transferable.of(agentBytes, 0644), CONTAINER_AGENT_PATH);
@@ -216,8 +215,8 @@ public final class JavaAgentTransport {
   }
 
   /**
-   * Locates the agent jar by scanning {@link System#getProperty(String) java.class.path} for a
-   * file matching {@link #AGENT_JAR_PREFIX}.
+   * Locates the agent jar by scanning {@link System#getProperty(String) java.class.path} for a file
+   * matching {@link #AGENT_JAR_PREFIX}.
    *
    * @return absolute path to the agent jar
    * @throws ChaosOperationFailedException if no matching entry is found

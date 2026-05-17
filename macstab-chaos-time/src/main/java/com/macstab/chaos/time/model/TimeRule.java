@@ -86,8 +86,7 @@ public record TimeRule(TimeSelector selector, Optional<TimeClock> clock, TimeEff
   /** Latency rule narrowed to a specific {@link TimeClock} under {@code clock_gettime}. */
   public static TimeRule latency(final TimeClock clock, final Duration delay) {
     Objects.requireNonNull(clock, "clock must not be null");
-    return new TimeRule(
-        TimeSelector.CLOCK_GETTIME, Optional.of(clock), TimeEffect.latency(delay));
+    return new TimeRule(TimeSelector.CLOCK_GETTIME, Optional.of(clock), TimeEffect.latency(delay));
   }
 
   /**
@@ -109,8 +108,7 @@ public record TimeRule(TimeSelector selector, Optional<TimeClock> clock, TimeEff
   /** Offset rule narrowed to a specific {@link TimeClock} under {@code clock_gettime}. */
   public static TimeRule offset(final TimeClock clock, final Duration delta) {
     Objects.requireNonNull(clock, "clock must not be null");
-    return new TimeRule(
-        TimeSelector.CLOCK_GETTIME, Optional.of(clock), TimeEffect.offset(delta));
+    return new TimeRule(TimeSelector.CLOCK_GETTIME, Optional.of(clock), TimeEffect.offset(delta));
   }
 
   /**

@@ -12,8 +12,8 @@ import com.macstab.chaos.time.model.TimeRule;
  * <p>Format: {@code <selector>[/<clock-id>]:<effect-with-value>[@<probability>]}. The optional
  * {@code /<clock-id>} suffix is rendered only when the rule carries a {@link
  * com.macstab.chaos.time.model.TimeClock} qualifier (which is only possible on {@code
- * clock_gettime}). The {@code @<probability>} suffix is omitted when probability equals {@code
- * 1.0} (libchaos-time defaults a missing suffix to {@code 1.0} per {@code TIME.md} §rule grammar).
+ * clock_gettime}). The {@code @<probability>} suffix is omitted when probability equals {@code 1.0}
+ * (libchaos-time defaults a missing suffix to {@code 1.0} per {@code TIME.md} §rule grammar).
  *
  * @author Christian Schnapka - Macstab GmbH
  */

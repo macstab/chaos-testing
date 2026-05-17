@@ -23,11 +23,10 @@ import java.util.Locale;
  *
  * <ul>
  *   <li>{@code ERRNO} and {@code LATENCY} are accepted by every selector.
- *   <li>{@code OFFSET} is accepted <strong>only</strong> on {@link #CLOCK_GETTIME} (with or
- *       without a {@link TimeClock} qualifier). OFFSET modifies the returned {@code struct
- *       timespec} and is meaningless on {@code nanosleep} / {@code usleep} / the wildcard
- *       selector. The libchaos-time C parser rejects such combinations and so does {@link
- *       TimeRule}.
+ *   <li>{@code OFFSET} is accepted <strong>only</strong> on {@link #CLOCK_GETTIME} (with or without
+ *       a {@link TimeClock} qualifier). OFFSET modifies the returned {@code struct timespec} and is
+ *       meaningless on {@code nanosleep} / {@code usleep} / the wildcard selector. The
+ *       libchaos-time C parser rejects such combinations and so does {@link TimeRule}.
  * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
@@ -39,7 +38,9 @@ import java.util.Locale;
  */
 public enum TimeSelector {
 
-  /** {@code clock_gettime()} — clock read across all clocks (narrow further via {@link TimeClock}). */
+  /**
+   * {@code clock_gettime()} — clock read across all clocks (narrow further via {@link TimeClock}).
+   */
   CLOCK_GETTIME,
 
   /** {@code nanosleep()} — high-resolution sleep. */

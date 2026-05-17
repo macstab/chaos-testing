@@ -5,8 +5,8 @@ package com.macstab.chaos.time.model;
  * POSIX errno values that libchaos-time can inject as the failure outcome of an intercepted
  * time-syscall.
  *
- * <p>This is a closed palette of the six errno names the libchaos-time C parser accepts (see
- * {@code chaos_time_config.c} §parse_errno). Surfacing arbitrary {@code int} codes would let users
+ * <p>This is a closed palette of the six errno names the libchaos-time C parser accepts (see {@code
+ * chaos_time_config.c} §parse_errno). Surfacing arbitrary {@code int} codes would let users
  * construct rules the runtime silently rejects; modelling the palette as an enum makes invalid
  * choices unrepresentable at the call site.
  *

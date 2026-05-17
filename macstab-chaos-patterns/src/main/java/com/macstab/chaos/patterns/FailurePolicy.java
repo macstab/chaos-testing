@@ -4,9 +4,9 @@ package com.macstab.chaos.patterns;
 /**
  * Policy controlling how {@link PatternExecutor} reacts when a {@link ValueConsumer} throws.
  *
- * <p>The policy is checked against the running count of <strong>consecutive</strong> failures:
- * once a sample succeeds the counter resets. A pattern aborts when the consecutive failure count
- * exceeds {@link #maxConsecutiveFailures()}.
+ * <p>The policy is checked against the running count of <strong>consecutive</strong> failures: once
+ * a sample succeeds the counter resets. A pattern aborts when the consecutive failure count exceeds
+ * {@link #maxConsecutiveFailures()}.
  *
  * <p>Use the factory constants / methods rather than the canonical constructor:
  *

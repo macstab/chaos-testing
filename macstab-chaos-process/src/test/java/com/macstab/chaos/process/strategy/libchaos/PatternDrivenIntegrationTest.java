@@ -78,7 +78,8 @@ class PatternDrivenIntegrationTest {
     // Cleanup verifies the registry tracked the final handle correctly.
     chaos.removeAll(container);
     final String configAfter =
-        container.execInContainer("/bin/sh", "-c", "cat " + CONFIG_PATH + " 2>/dev/null || true")
+        container
+            .execInContainer("/bin/sh", "-c", "cat " + CONFIG_PATH + " 2>/dev/null || true")
             .getStdout();
     assertThat(configAfter.lines().filter(l -> l.startsWith("fork:")).count()).isZero();
   }

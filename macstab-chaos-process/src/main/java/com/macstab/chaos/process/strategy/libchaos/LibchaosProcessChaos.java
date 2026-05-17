@@ -318,8 +318,7 @@ public final class LibchaosProcessChaos implements AdvancedProcessChaos, Process
   }
 
   @Override
-  public RuleHandle failExecFdLimit(
-      final GenericContainer<?> container, final double probability) {
+  public RuleHandle failExecFdLimit(final GenericContainer<?> container, final double probability) {
     return apply(
         container, ProcessRule.errno(ProcessSelector.EXECVE, ProcessErrno.EMFILE, probability));
   }

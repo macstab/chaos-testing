@@ -94,8 +94,7 @@ public enum ProcessSelector {
   // ==================== Errno compatibility ====================
 
   private static final Set<ProcessErrno> PTHREAD_CREATE_ERRNOS =
-      EnumSet.of(
-          ProcessErrno.EAGAIN, ProcessErrno.EBUSY, ProcessErrno.EINVAL, ProcessErrno.EPERM);
+      EnumSet.of(ProcessErrno.EAGAIN, ProcessErrno.EBUSY, ProcessErrno.EINVAL, ProcessErrno.EPERM);
 
   private static final Set<ProcessErrno> FORK_ERRNOS =
       EnumSet.of(ProcessErrno.EAGAIN, ProcessErrno.ENOMEM);
@@ -120,8 +119,7 @@ public enum ProcessSelector {
           ProcessErrno.EPERM);
 
   private static final Set<ProcessErrno> WAITPID_ERRNOS =
-      EnumSet.of(
-          ProcessErrno.ECHILD, ProcessErrno.EINTR, ProcessErrno.EINVAL, ProcessErrno.ESRCH);
+      EnumSet.of(ProcessErrno.ECHILD, ProcessErrno.EINTR, ProcessErrno.EINVAL, ProcessErrno.ESRCH);
 
   /** Union of every per-symbol set above — every libchaos-process-accepted errno. */
   private static final Set<ProcessErrno> WILDCARD_ERRNOS = EnumSet.allOf(ProcessErrno.class);

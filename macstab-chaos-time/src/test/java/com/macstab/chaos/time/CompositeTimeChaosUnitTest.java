@@ -76,9 +76,7 @@ class CompositeTimeChaosUnitTest {
 
     @Test
     void fallsThroughOnUnsupported() {
-      doThrow(new ChaosUnsupportedOperationException("nope"))
-          .when(strategyA)
-          .shift(any(), any());
+      doThrow(new ChaosUnsupportedOperationException("nope")).when(strategyA).shift(any(), any());
       final CompositeTimeChaos composite = new CompositeTimeChaos(List.of(strategyA, strategyB));
       composite.shift(container, Duration.ofSeconds(60));
       verify(strategyB).shift(container, Duration.ofSeconds(60));
@@ -161,8 +159,7 @@ class CompositeTimeChaosUnitTest {
               org.mockito.Mockito.withSettings().extraInterfaces(TimeChaosStrategy.class));
       when(((TimeChaosStrategy) adv).supports(any())).thenReturn(true);
       final RuleHandle expected = new RuleHandle("r1");
-      final TimeRule rule =
-          TimeRule.errno(TimeSelector.CLOCK_GETTIME, TimeErrno.EINVAL, 0.5);
+      final TimeRule rule = TimeRule.errno(TimeSelector.CLOCK_GETTIME, TimeErrno.EINVAL, 0.5);
       when(adv.apply(container, rule)).thenReturn(expected);
       final CompositeTimeChaos composite =
           new CompositeTimeChaos(List.of((TimeChaosStrategy) adv, strategyB));

@@ -201,7 +201,9 @@ public interface AdvancedProcessChaos extends ProcessChaos {
   /** Inject {@code E2BIG} on {@code execve()} — argv+envp overflow. */
   RuleHandle failExecTooLarge(GenericContainer<?> container, double probability);
 
-  /** Inject {@code EMFILE} on {@code execve()} — per-process FD limit reached opening the binary. */
+  /**
+   * Inject {@code EMFILE} on {@code execve()} — per-process FD limit reached opening the binary.
+   */
   RuleHandle failExecFdLimit(GenericContainer<?> container, double probability);
 
   /** Inject {@code ENOENT} on {@code execveat()} — fd-relative exec failure. */

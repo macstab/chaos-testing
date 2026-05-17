@@ -99,8 +99,7 @@ class LibchaosTimeChaosIntegrationTest {
       chaos = new LibchaosTimeChaos();
 
       final RuleHandle handle =
-          chaos.apply(
-              container, TimeRule.errno(TimeSelector.CLOCK_GETTIME, TimeErrno.EINVAL));
+          chaos.apply(container, TimeRule.errno(TimeSelector.CLOCK_GETTIME, TimeErrno.EINVAL));
 
       final var cat = container.execInContainer("/bin/sh", "-c", "cat " + CONFIG_PATH);
       assertThat(cat.getStdout())
@@ -180,8 +179,7 @@ class LibchaosTimeChaosIntegrationTest {
       chaos = new LibchaosTimeChaos();
 
       final RuleHandle handle =
-          chaos.apply(
-              container, TimeRule.errno(TimeSelector.CLOCK_GETTIME, TimeErrno.EINVAL));
+          chaos.apply(container, TimeRule.errno(TimeSelector.CLOCK_GETTIME, TimeErrno.EINVAL));
 
       chaos.remove(container, handle);
 
@@ -205,9 +203,7 @@ class LibchaosTimeChaosIntegrationTest {
       final var cat =
           container.execInContainer(
               "/bin/sh", "-c", "[ -f " + CONFIG_PATH + " ] && cat " + CONFIG_PATH + " || true");
-      assertThat(cat.getStdout())
-          .doesNotContain("clock_gettime:")
-          .doesNotContain("clock_gettime/");
+      assertThat(cat.getStdout()).doesNotContain("clock_gettime:").doesNotContain("clock_gettime/");
     }
   }
 

@@ -22,8 +22,8 @@ import com.macstab.chaos.time.model.TimeSelector;
  * container has been prepared with libchaos-time <em>before</em> {@code container.start()} — the
  * {@code .so} is hooked via {@code LD_PRELOAD}, which the dynamic loader only honours at process
  * launch. Skipping preparation raises {@link LibchaosNotPreparedException} loudly. Annotate the
- * test class with {@code @SyscallLevelChaos(LibchaosLib.TIME)} to let {@code
- * ChaosTestingExtension} drive preparation.
+ * test class with {@code @SyscallLevelChaos(LibchaosLib.TIME)} to let {@code ChaosTestingExtension}
+ * drive preparation.
  *
  * <p><strong>Capability uplift over {@link TimeChaos}.</strong> The portable parent interface
  * ({@code shift} / {@code drift}) models whole-container wall-clock manipulation via libfaketime.
@@ -33,10 +33,9 @@ import com.macstab.chaos.time.model.TimeSelector;
  * <ul>
  *   <li><strong>Clock-read failure</strong> — make {@code clock_gettime()} return {@code EINVAL},
  *       {@code EFAULT}, {@code EPERM}, etc.
- *   <li><strong>Per-clock skew</strong> — {@code OFFSET:-1500} on {@code
- *       clock_gettime/monotonic} skews only the monotonic clock by -1.5s without touching
- *       wall-clock time — surfaces latent assumptions that wall-clock and monotonic move in
- *       lockstep.
+ *   <li><strong>Per-clock skew</strong> — {@code OFFSET:-1500} on {@code clock_gettime/monotonic}
+ *       skews only the monotonic clock by -1.5s without touching wall-clock time — surfaces latent
+ *       assumptions that wall-clock and monotonic move in lockstep.
  *   <li><strong>Sleep failure</strong> — {@code nanosleep()} / {@code usleep()} return {@code
  *       EINTR}: exercises the application's interrupted-sleep retry loop, bypassing
  *       SA_RESTART-style autorestart.
@@ -94,10 +93,7 @@ public interface AdvancedTimeChaos extends TimeChaos {
 
   /** Apply an errno fault to an arbitrary selector — escape hatch. */
   RuleHandle errno(
-      GenericContainer<?> container,
-      TimeSelector selector,
-      TimeErrno errno,
-      double probability);
+      GenericContainer<?> container, TimeSelector selector, TimeErrno errno, double probability);
 
   /** Apply a latency effect to an arbitrary selector. */
   RuleHandle latency(GenericContainer<?> container, TimeSelector selector, Duration delay);
@@ -120,8 +116,8 @@ public interface AdvancedTimeChaos extends TimeChaos {
   RuleHandle failClockGet(GenericContainer<?> container, double probability);
 
   /**
-   * Inject an arbitrary errno on {@code clock_gettime()} — gives access to {@code EFAULT}
-   * (bad pointer), {@code EPERM} (clock not permitted), {@code ENOSYS} (kernel missing the call).
+   * Inject an arbitrary errno on {@code clock_gettime()} — gives access to {@code EFAULT} (bad
+   * pointer), {@code EPERM} (clock not permitted), {@code ENOSYS} (kernel missing the call).
    */
   RuleHandle failClockGetWithErrno(
       GenericContainer<?> container, TimeErrno errno, double probability);

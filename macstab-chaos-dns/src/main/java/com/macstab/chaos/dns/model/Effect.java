@@ -66,7 +66,8 @@ public sealed interface Effect
 
   /**
    * @param delay non-negative delay
-   * @return latency effect with probability {@code 1.0} (works on both forward and reverse selectors)
+   * @return latency effect with probability {@code 1.0} (works on both forward and reverse
+   *     selectors)
    */
   static Effect latency(final Duration delay) {
     return new Latency(delay, 1.0);

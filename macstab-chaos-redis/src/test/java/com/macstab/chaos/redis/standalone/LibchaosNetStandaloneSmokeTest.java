@@ -28,8 +28,8 @@ import com.macstab.chaos.redis.extension.RedisContainerExtension;
  *   <li>{@code ControlFacade.connection()} resolves a non-null {@link ConnectionChaos} via {@code
  *       ServiceLoader}, proving the SPI wiring is intact.
  *   <li>Applying one rule via the simplest verb ({@code addLatency}) produces the libchaos-net
- *       config file inside the container at {@code /tmp/.chaos-net.conf}, proving the rule
- *       actually reached the {@code .so}.
+ *       config file inside the container at {@code /tmp/.chaos-net.conf}, proving the rule actually
+ *       reached the {@code .so}.
  * </ol>
  *
  * <p>This test is intentionally narrow — coverage of every verb belongs in the connection module's

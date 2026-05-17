@@ -132,9 +132,7 @@ public enum MemorySelector {
           MmapErrno.ENOSYS,
           MmapErrno.EPERM);
 
-  /**
-   * Intersection of every per-symbol set above — the one errno valid on every interposed call.
-   */
+  /** Intersection of every per-symbol set above — the one errno valid on every interposed call. */
   private static final Set<MmapErrno> WILDCARD_ERRNOS = EnumSet.of(MmapErrno.EINVAL);
 
   /**

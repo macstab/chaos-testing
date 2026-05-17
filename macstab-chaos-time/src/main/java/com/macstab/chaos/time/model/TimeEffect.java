@@ -145,8 +145,8 @@ public sealed interface TimeEffect
   /**
    * Add a signed-ms delta to the {@code struct timespec} returned by {@code clock_gettime}.
    *
-   * <p><strong>Wire form:</strong> {@code OFFSET:<signedMs>[@<probability>]}. The delta is signed
-   * — {@link Duration#toMillis()} preserves the sign so negative offsets render as {@code
+   * <p><strong>Wire form:</strong> {@code OFFSET:<signedMs>[@<probability>]}. The delta is signed —
+   * {@link Duration#toMillis()} preserves the sign so negative offsets render as {@code
    * OFFSET:-1500}. The {@code @<probability>} suffix is omitted when {@code probability == 1.0}.
    *
    * <p>Selector compatibility (OFFSET is only meaningful on {@code clock_gettime}) is enforced at

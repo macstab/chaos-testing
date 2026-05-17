@@ -94,8 +94,8 @@ public interface ChaosPattern<T> {
    * </ol>
    *
    * <p>Timestamps from {@code next} are offset by {@code thisDuration} so the merged stream stays
-   * monotonically increasing. If the total duration is shorter than {@code thisDuration} the
-   * second pattern is skipped.
+   * monotonically increasing. If the total duration is shorter than {@code thisDuration} the second
+   * pattern is skipped.
    *
    * @param next pattern to run after this one
    * @param thisDuration how long this pattern owns the timeline
@@ -116,8 +116,8 @@ public interface ChaosPattern<T> {
   }
 
   /**
-   * Repeat this pattern {@code n} times across the total duration, dividing each repetition
-   * evenly. For {@code n == 1} this is a no-op.
+   * Repeat this pattern {@code n} times across the total duration, dividing each repetition evenly.
+   * For {@code n == 1} this is a no-op.
    *
    * @param n repetition count ({@code >= 1})
    * @return composite pattern

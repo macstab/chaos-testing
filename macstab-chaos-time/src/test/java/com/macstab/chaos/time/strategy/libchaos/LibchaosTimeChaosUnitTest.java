@@ -76,8 +76,7 @@ class LibchaosTimeChaosUnitTest {
       assertThatThrownBy(
               () ->
                   chaos.apply(
-                      container,
-                      TimeRule.errno(TimeSelector.CLOCK_GETTIME, TimeErrno.EINVAL)))
+                      container, TimeRule.errno(TimeSelector.CLOCK_GETTIME, TimeErrno.EINVAL)))
           .isInstanceOf(LibchaosNotPreparedException.class)
           .hasMessageContaining("time")
           .hasMessageContaining("@SyscallLevelChaos");
@@ -97,7 +96,8 @@ class LibchaosTimeChaosUnitTest {
     void typed() {
       assertThatThrownBy(() -> chaos.failClockGet(container, 0.5))
           .isInstanceOf(LibchaosNotPreparedException.class);
-      assertThatThrownBy(() -> chaos.skewClock(container, TimeClock.MONOTONIC, Duration.ofMillis(-1500)))
+      assertThatThrownBy(
+              () -> chaos.skewClock(container, TimeClock.MONOTONIC, Duration.ofMillis(-1500)))
           .isInstanceOf(LibchaosNotPreparedException.class);
     }
   }
@@ -124,8 +124,7 @@ class LibchaosTimeChaosUnitTest {
     @Test
     void apply() {
       final RuleHandle h =
-          chaos.apply(
-              container, TimeRule.errno(TimeSelector.CLOCK_GETTIME, TimeErrno.EINVAL));
+          chaos.apply(container, TimeRule.errno(TimeSelector.CLOCK_GETTIME, TimeErrno.EINVAL));
       assertThat(h.owner()).matches("r[0-9]+");
       verify(transport).addRule(eq(container), eq(h.owner()), anyString());
     }
@@ -206,8 +205,7 @@ class LibchaosTimeChaosUnitTest {
     void offsetEscapeHatchProbability() {
       chaos.offset(container, TimeClock.REALTIME, Duration.ofMillis(500), 0.1);
       verify(transport)
-          .addRule(
-              eq(container), anyString(), contains("clock_gettime/realtime:OFFSET:500@0.1"));
+          .addRule(eq(container), anyString(), contains("clock_gettime/realtime:OFFSET:500@0.1"));
     }
   }
 

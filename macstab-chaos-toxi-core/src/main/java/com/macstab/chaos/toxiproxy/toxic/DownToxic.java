@@ -32,9 +32,9 @@ package com.macstab.chaos.toxiproxy.toxic;
  * <p>With {@code toxicity < 1.0}, {@code DownToxic} simulates packet loss: each connection has an
  * independent {@code toxicity}-probability of being silently dropped. This is useful for testing
  * retry logic under flaky network conditions. Unlike the kernel-level packet loss simulation in
- * {@code com.macstab.chaos.network.TcNetworkChaos#injectPacketLoss} (sibling module), this
- * operates at the connection level (not per-packet) — an affected connection drops all its data,
- * not a fraction of packets.
+ * {@code com.macstab.chaos.network.TcNetworkChaos#injectPacketLoss} (sibling module), this operates
+ * at the connection level (not per-packet) — an affected connection drops all its data, not a
+ * fraction of packets.
  *
  * <h2>Attributes JSON</h2>
  *

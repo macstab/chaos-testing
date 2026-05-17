@@ -219,8 +219,7 @@ public final class LibchaosTimeChaos implements AdvancedTimeChaos, TimeChaosStra
 
   @Override
   public RuleHandle failNanosleep(final GenericContainer<?> container, final double probability) {
-    return apply(
-        container, TimeRule.errno(TimeSelector.NANOSLEEP, TimeErrno.EINTR, probability));
+    return apply(container, TimeRule.errno(TimeSelector.NANOSLEEP, TimeErrno.EINTR, probability));
   }
 
   @Override

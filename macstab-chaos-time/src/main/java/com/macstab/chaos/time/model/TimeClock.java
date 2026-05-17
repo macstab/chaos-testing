@@ -7,13 +7,13 @@ import java.util.Locale;
  * Per-clock-id sub-selector for libchaos-time's {@code clock_gettime/<clock>} selector form.
  *
  * <p>Only the nine clock-id names listed below are accepted by the libchaos-time C parser (see
- * {@code chaos_time_config.c} §parse_clock_id). Each token corresponds to a Linux {@code
- * clockid_t} constant; libchaos-time falls back gracefully when the running kernel lacks support
- * for a given clock.
+ * {@code chaos_time_config.c} §parse_clock_id). Each token corresponds to a Linux {@code clockid_t}
+ * constant; libchaos-time falls back gracefully when the running kernel lacks support for a given
+ * clock.
  *
  * <p>A {@link TimeClock} is meaningful <strong>only</strong> when paired with {@link
- * TimeSelector#CLOCK_GETTIME}. {@link TimeRule} construction rejects any attempt to attach a
- * {@link TimeClock} to {@code nanosleep}, {@code usleep}, or the wildcard selector.
+ * TimeSelector#CLOCK_GETTIME}. {@link TimeRule} construction rejects any attempt to attach a {@link
+ * TimeClock} to {@code nanosleep}, {@code usleep}, or the wildcard selector.
  *
  * <p>The {@link #wireForm()} is the canonical lowercase token written to the config file (e.g.
  * {@code monotonic_raw}, not {@code MONOTONIC_RAW}).

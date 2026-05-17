@@ -63,12 +63,11 @@
  * <h2>The per-clock OFFSET unique capability</h2>
  *
  * <p>libchaos-time is the only library that lets a test skew <em>one</em> clock without touching
- * the others. {@code OFFSET:-1500} attached to {@code clock_gettime/monotonic} shifts
- * {@code CLOCK_MONOTONIC} reads 1.5s into the past while {@code CLOCK_REALTIME},
- * {@code CLOCK_BOOTTIME}, and the wall-clock timestamp seen by libfaketime stay correct. This is
- * the canonical surface for finding latent assumptions that wall-clock and monotonic time advance
- * in lockstep — they do not in production after suspend, NTP correction, or clock-source
- * migration.
+ * the others. {@code OFFSET:-1500} attached to {@code clock_gettime/monotonic} shifts {@code
+ * CLOCK_MONOTONIC} reads 1.5s into the past while {@code CLOCK_REALTIME}, {@code CLOCK_BOOTTIME},
+ * and the wall-clock timestamp seen by libfaketime stay correct. This is the canonical surface for
+ * finding latent assumptions that wall-clock and monotonic time advance in lockstep — they do not
+ * in production after suspend, NTP correction, or clock-source migration.
  *
  * <p><strong>Effect compatibility:</strong> {@code OFFSET} is rejected by the libchaos-time C
  * parser on every selector except {@code clock_gettime} (with or without a clock qualifier). The
@@ -88,9 +87,9 @@
  *
  * <p>Many time rules need a low probability to avoid breaking the container itself — {@code
  * clock_gettime:ERRNO:EINVAL@1.0} prevents the JVM from reading any timestamp, {@code
- * nanosleep:ERRNO:EINTR@1.0} stops every sleep, and so on. For sustained chaos use
- * {@code 0.001}–{@code 0.01}; for deterministic single-shot tests use {@code 1.0}. {@code OFFSET}
- * rules are typically safe at probability 1.0 because they do not cause syscall failures.
+ * nanosleep:ERRNO:EINTR@1.0} stops every sleep, and so on. For sustained chaos use {@code
+ * 0.001}–{@code 0.01}; for deterministic single-shot tests use {@code 1.0}. {@code OFFSET} rules
+ * are typically safe at probability 1.0 because they do not cause syscall failures.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see <a

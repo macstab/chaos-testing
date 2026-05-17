@@ -226,10 +226,10 @@ public @interface RedisStandalone {
    * <p>Default: {@code false} (secure by default)
    *
    * <p><strong>Orthogonal to {@link #enableNetworkChaos}:</strong> both flags may be {@code true}
-   * simultaneously — they cover different fault layers. {@link #enableNetworkChaos} operates on
-   * the kernel packet path ({@code tc/netem} + {@code iptables}); this flag operates on libc
-   * socket calls intercepted by {@code libchaos-net}. Use both to test packet-level and
-   * syscall-level failure modes independently.
+   * simultaneously — they cover different fault layers. {@link #enableNetworkChaos} operates on the
+   * kernel packet path ({@code tc/netem} + {@code iptables}); this flag operates on libc socket
+   * calls intercepted by {@code libchaos-net}. Use both to test packet-level and syscall-level
+   * failure modes independently.
    *
    * <p><strong>What This Enables:</strong>
    *
@@ -242,10 +242,10 @@ public @interface RedisStandalone {
    * </ul>
    *
    * <p><strong>Lifecycle:</strong> When {@code true}, {@code LibchaosTransport(LibchaosLib.NET)
-   * .prepare(container)} is invoked <em>before</em> {@code container.start()} so the dynamic
-   * loader honours the {@code LD_PRELOAD} hook at process launch. The Toxiproxy sidecar fallback
-   * inside {@code CompositeConnectionChaos} lazy-spawns on the first verb that cannot be
-   * satisfied by {@code libchaos-net}, so no extra annotation flag is required for that.
+   * .prepare(container)} is invoked <em>before</em> {@code container.start()} so the dynamic loader
+   * honours the {@code LD_PRELOAD} hook at process launch. The Toxiproxy sidecar fallback inside
+   * {@code CompositeConnectionChaos} lazy-spawns on the first verb that cannot be satisfied by
+   * {@code libchaos-net}, so no extra annotation flag is required for that.
    *
    * <p><strong>Example:</strong>
    *

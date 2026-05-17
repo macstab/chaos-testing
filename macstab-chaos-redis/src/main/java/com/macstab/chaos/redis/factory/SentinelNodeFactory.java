@@ -214,9 +214,9 @@ public final class SentinelNodeFactory {
 
   /**
    * Pre-start libchaos-net preparation: copies the {@code .so} into the image overlay and sets
-   * {@code LD_PRELOAD} so socket syscalls are intercepted at process launch. Must be invoked
-   * before {@code container.start()} — the dynamic loader honours {@code LD_PRELOAD} only at
-   * process startup.
+   * {@code LD_PRELOAD} so socket syscalls are intercepted at process launch. Must be invoked before
+   * {@code container.start()} — the dynamic loader honours {@code LD_PRELOAD} only at process
+   * startup.
    *
    * @param container container being configured (must not be running)
    * @param enableConnectionChaos if {@code false}, this method is a no-op

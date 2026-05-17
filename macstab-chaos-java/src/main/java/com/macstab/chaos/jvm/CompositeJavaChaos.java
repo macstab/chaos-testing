@@ -12,11 +12,11 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <p>Conceptually parallel to the {@code Composite<X>Chaos} facades in the libchaos modules
  * (connection / process / time / ...), but with one important distinction: <strong>the JVM agent's
- * primary surface is its own {@code ChaosControlPlane}</strong>, exposed by the
- * {@code chaos-agent-api} module. For tests where the agent runs <em>in the same JVM</em> as the
- * test process (typical for unit / integration tests of the application itself), use that API
- * directly via {@code com.macstab.chaos.jvm.testkit.ChaosAgentExtension} — there is no benefit to
- * adding a wrapper.
+ * primary surface is its own {@code ChaosControlPlane}</strong>, exposed by the {@code
+ * chaos-agent-api} module. For tests where the agent runs <em>in the same JVM</em> as the test
+ * process (typical for unit / integration tests of the application itself), use that API directly
+ * via {@code com.macstab.chaos.jvm.testkit.ChaosAgentExtension} — there is no benefit to adding a
+ * wrapper.
  *
  * <p>This facade exists for the <em>other</em> case: when the agent runs <strong>inside a target
  * container</strong> that the outer test is driving (e.g. testcontainers spinning up a Spring Boot
@@ -34,9 +34,9 @@ import lombok.extern.slf4j.Slf4j;
  *       #clearPlan(GenericContainer)} resets to no scenarios
  * </ol>
  *
- * <p>Use {@code com.macstab.chaos.jvm.api.ChaosPlan} (from {@code chaos-agent-api}) plus a
- * Jackson {@code ObjectMapper} to build plan JSON in a typed way. This module deliberately does
- * not re-export those types — they belong to the agent project.
+ * <p>Use {@code com.macstab.chaos.jvm.api.ChaosPlan} (from {@code chaos-agent-api}) plus a Jackson
+ * {@code ObjectMapper} to build plan JSON in a typed way. This module deliberately does not
+ * re-export those types — they belong to the agent project.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -98,8 +98,8 @@ public final class CompositeJavaChaos {
   }
 
   /**
-   * Underlying transport — exposed for advanced scenarios that need direct access to the agent
-   * jar path or the JAVA_TOOL_OPTIONS composition logic.
+   * Underlying transport — exposed for advanced scenarios that need direct access to the agent jar
+   * path or the JAVA_TOOL_OPTIONS composition logic.
    *
    * @return transport
    */

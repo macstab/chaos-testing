@@ -12,8 +12,8 @@ import org.testcontainers.utility.DockerImageName;
 /**
  * End-to-end proof that {@link JavaAgentTransport} delivers the chaos JVM agent into a real JDK 21
  * container: agent jar copied into the image overlay, plan file written, JAVA_TOOL_OPTIONS
- * augmented. We do not exercise the agent's runtime instrumentation here — the agent project's
- * own integration tests cover that surface. This test verifies the <em>delivery contract</em>.
+ * augmented. We do not exercise the agent's runtime instrumentation here — the agent project's own
+ * integration tests cover that surface. This test verifies the <em>delivery contract</em>.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -43,16 +43,15 @@ class JavaAgentTransportIntegrationTest {
     container.start();
 
     // Agent jar landed at the contract path.
-    assertThat(container.execInContainer("test", "-f", JavaAgentTransport.CONTAINER_AGENT_PATH)
-            .getExitCode())
+    assertThat(
+            container
+                .execInContainer("test", "-f", JavaAgentTransport.CONTAINER_AGENT_PATH)
+                .getExitCode())
         .isZero();
 
     // Plan file exists with valid empty-plan JSON.
     final var planContents =
-        container
-            .execInContainer("cat", JavaAgentTransport.CONTAINER_PLAN_PATH)
-            .getStdout()
-            .trim();
+        container.execInContainer("cat", JavaAgentTransport.CONTAINER_PLAN_PATH).getStdout().trim();
     assertThat(planContents).isEqualTo(JavaAgentTransport.EMPTY_PLAN_JSON);
 
     // JAVA_TOOL_OPTIONS picked up the -javaagent flag.
@@ -77,10 +76,7 @@ class JavaAgentTransportIntegrationTest {
     transport.applyPlan(container, customPlan);
 
     final var contents =
-        container
-            .execInContainer("cat", JavaAgentTransport.CONTAINER_PLAN_PATH)
-            .getStdout()
-            .trim();
+        container.execInContainer("cat", JavaAgentTransport.CONTAINER_PLAN_PATH).getStdout().trim();
     assertThat(contents).isEqualTo(customPlan);
   }
 
@@ -98,10 +94,7 @@ class JavaAgentTransportIntegrationTest {
     transport.clearPlan(container);
 
     final var contents =
-        container
-            .execInContainer("cat", JavaAgentTransport.CONTAINER_PLAN_PATH)
-            .getStdout()
-            .trim();
+        container.execInContainer("cat", JavaAgentTransport.CONTAINER_PLAN_PATH).getStdout().trim();
     assertThat(contents).isEqualTo(JavaAgentTransport.EMPTY_PLAN_JSON);
   }
 }

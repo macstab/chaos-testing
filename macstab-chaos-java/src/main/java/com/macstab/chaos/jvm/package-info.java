@@ -7,10 +7,11 @@
  * <p>The {@code chaos-testing-java-agent} project supports two ways of attaching the agent:
  *
  * <ol>
- *   <li><strong>In-process</strong> (test JVM = target JVM) — typical for unit / slice / integration
- *       tests of an application. Use the agent project's own {@code ChaosAgentExtension} (JUnit 5)
- *       or {@code @ChaosTest} (Spring Boot 3 / 4) — they self-attach via the Attach API and expose
- *       a {@code ChaosControlPlane} bean. This module is <em>not</em> involved.
+ *   <li><strong>In-process</strong> (test JVM = target JVM) — typical for unit / slice /
+ *       integration tests of an application. Use the agent project's own {@code
+ *       ChaosAgentExtension} (JUnit 5) or {@code @ChaosTest} (Spring Boot 3 / 4) — they self-attach
+ *       via the Attach API and expose a {@code ChaosControlPlane} bean. This module is <em>not</em>
+ *       involved.
  *   <li><strong>Container-side</strong> (test JVM ≠ target JVM) — when the test drives a separate
  *       Java container via testcontainers (Spring Boot app under test, Quarkus app, custom
  *       service). The agent must be delivered into that container with a {@code -javaagent} flag,
@@ -53,9 +54,9 @@
  *       {@code ChaosEffect}).
  *   <li>Bundle the agent jar (~12 MiB). The jar is resolved from Maven Central as a transitive
  *       dependency at test time and discovered by classpath scan.
- *   <li>Provide a JUnit 5 extension. The agent's {@code ChaosAgentExtension} covers the
- *       in-process case; the container-side case is too test-shape-specific to wrap usefully —
- *       call {@code prepare} / {@code applyPlan} from your existing setup hooks.
+ *   <li>Provide a JUnit 5 extension. The agent's {@code ChaosAgentExtension} covers the in-process
+ *       case; the container-side case is too test-shape-specific to wrap usefully — call {@code
+ *       prepare} / {@code applyPlan} from your existing setup hooks.
  * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH

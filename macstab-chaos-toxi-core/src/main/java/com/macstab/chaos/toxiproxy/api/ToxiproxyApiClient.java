@@ -75,9 +75,9 @@ import lombok.NonNull;
  * <h2>Stable Contract</h2>
  *
  * <p>This interface is a stable internal API. {@code com.macstab.chaos.proxy.ProxyChaosProvider},
- * {@code com.macstab.chaos.connection.ToxiproxyConnectionChaos} (both in sibling modules), and
- * test implementations depend on it. Method signatures may not change in a backwards-incompatible
- * way without a major version bump.
+ * {@code com.macstab.chaos.connection.ToxiproxyConnectionChaos} (both in sibling modules), and test
+ * implementations depend on it. Method signatures may not change in a backwards-incompatible way
+ * without a major version bump.
  *
  * <h2>Non-Goals</h2>
  *

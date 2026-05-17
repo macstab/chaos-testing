@@ -42,8 +42,8 @@ import lombok.extern.slf4j.Slf4j;
  * <p>{@link #advanced()} returns the registered {@link AdvancedTimeChaos} strategy (typically
  * {@link LibchaosTimeChaos}), which exposes typed VM-syscall-level verbs spanning {@code
  * clock_gettime}, {@code nanosleep}, and {@code usleep} — including the unique per-clock {@code
- * OFFSET} effect ({@link AdvancedTimeChaos#skewClock}). Advanced verbs require {@code
- * @SyscallLevelChaos(LibchaosLib.TIME)} on the test class — otherwise calls raise {@link
+ * OFFSET} effect ({@link AdvancedTimeChaos#skewClock}). Advanced verbs require
+ * {@code @SyscallLevelChaos(LibchaosLib.TIME)} on the test class — otherwise calls raise {@link
  * com.macstab.chaos.core.exception.LibchaosNotPreparedException}.
  *
  * @author Christian Schnapka - Macstab GmbH
@@ -55,8 +55,8 @@ public final class CompositeTimeChaos implements TimeChaosStrategy {
   private final AdvancedTimeChaos advanced;
 
   /**
-   * Creates a composite from the given strategies. Order is significant — strategies earlier in
-   * the list are preferred for verbs both can model.
+   * Creates a composite from the given strategies. Order is significant — strategies earlier in the
+   * list are preferred for verbs both can model.
    *
    * @throws NullPointerException if {@code strategies} or any element is null
    * @throws IllegalArgumentException if {@code strategies} is empty
@@ -89,7 +89,8 @@ public final class CompositeTimeChaos implements TimeChaosStrategy {
   /**
    * Convenience factory returning a composite with both backends, libchaos-time first.
    *
-   * @return composite wrapping {@code [LibchaosTimeChaos, LibfaketimeAdapter(LibfaketimeTimeChaos)]}
+   * @return composite wrapping {@code [LibchaosTimeChaos,
+   *     LibfaketimeAdapter(LibfaketimeTimeChaos)]}
    */
   public static CompositeTimeChaos standard() {
     return new CompositeTimeChaos(standardStrategies());

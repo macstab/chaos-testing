@@ -24,15 +24,12 @@ class TimeRuleTest {
     @DisplayName("null selector / clock-Optional / effect rejected")
     void nulls() {
       assertThatThrownBy(
-              () ->
-                  new TimeRule(
-                      null, Optional.empty(), TimeEffect.errno(TimeErrno.EINVAL)))
+              () -> new TimeRule(null, Optional.empty(), TimeEffect.errno(TimeErrno.EINVAL)))
           .isInstanceOf(NullPointerException.class);
       assertThatThrownBy(
               () -> new TimeRule(TimeSelector.NANOSLEEP, null, TimeEffect.errno(TimeErrno.EINTR)))
           .isInstanceOf(NullPointerException.class);
-      assertThatThrownBy(
-              () -> new TimeRule(TimeSelector.NANOSLEEP, Optional.empty(), null))
+      assertThatThrownBy(() -> new TimeRule(TimeSelector.NANOSLEEP, Optional.empty(), null))
           .isInstanceOf(NullPointerException.class);
     }
   }
@@ -67,9 +64,8 @@ class TimeRuleTest {
     @Test
     @DisplayName("TimeClock paired with NANOSLEEP / USLEEP / WILDCARD is rejected")
     void clockOnNonClockGettimeRejected() {
-      for (final TimeSelector s : new TimeSelector[] {
-        TimeSelector.NANOSLEEP, TimeSelector.USLEEP, TimeSelector.WILDCARD
-      }) {
+      for (final TimeSelector s :
+          new TimeSelector[] {TimeSelector.NANOSLEEP, TimeSelector.USLEEP, TimeSelector.WILDCARD}) {
         assertThatThrownBy(
                 () ->
                     new TimeRule(
@@ -110,9 +106,7 @@ class TimeRuleTest {
                   assertThatThrownBy(
                           () ->
                               new TimeRule(
-                                  s,
-                                  Optional.empty(),
-                                  TimeEffect.offset(Duration.ofMillis(100))))
+                                  s, Optional.empty(), TimeEffect.offset(Duration.ofMillis(100))))
                       .isInstanceOf(IllegalArgumentException.class)
                       .hasMessageContaining("OFFSET")
                       .hasMessageContaining(s.wireForm()));
@@ -168,7 +162,8 @@ class TimeRuleTest {
     }
 
     @Test
-    @DisplayName("factories enforce compat matrix — null clock rejected, OFFSET-on-nanosleep rejected")
+    @DisplayName(
+        "factories enforce compat matrix — null clock rejected, OFFSET-on-nanosleep rejected")
     void factoryRejectsBadCompat() {
       assertThatThrownBy(() -> TimeRule.errno((TimeClock) null, TimeErrno.EINVAL, 1.0))
           .isInstanceOf(NullPointerException.class);

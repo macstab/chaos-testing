@@ -29,8 +29,7 @@ import com.macstab.chaos.redis.extension.SentinelCluster;
  *       config file at {@code /tmp/.chaos-net.conf} inside the master container.
  * </ol>
  *
- * <p>Topology kept minimal (1 replica + 1 sentinel) — this is a wiring check, not a chaos
- * scenario.
+ * <p>Topology kept minimal (1 replica + 1 sentinel) — this is a wiring check, not a chaos scenario.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -58,7 +57,10 @@ class LibchaosNetSentinelSmokeTest {
   void shouldWriteConfigFileWhenRuleApplied(final SentinelCluster cluster) throws Exception {
     final GenericContainer<?> master = cluster.getMasterContainer();
 
-    cluster.getControl().connection().addLatency(master, "redis-master:6379", Duration.ofMillis(10));
+    cluster
+        .getControl()
+        .connection()
+        .addLatency(master, "redis-master:6379", Duration.ofMillis(10));
 
     final var result = master.execInContainer("test", "-s", "/tmp/.chaos-net.conf");
     assertThat(result.getExitCode())

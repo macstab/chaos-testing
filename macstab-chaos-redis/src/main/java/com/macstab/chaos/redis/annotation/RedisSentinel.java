@@ -246,27 +246,27 @@ public @interface RedisSentinel {
    * <p>Default: {@code false} (secure by default)
    *
    * <p><strong>Orthogonal to {@link #enableNetworkChaos}:</strong> both flags may be {@code true}
-   * simultaneously — they cover different fault layers. {@link #enableNetworkChaos} operates on
-   * the kernel packet path ({@code tc/netem} + {@code iptables}); this flag operates on libc
-   * socket calls intercepted by {@code libchaos-net}. Use both to test packet-level and
-   * syscall-level failure modes independently.
+   * simultaneously — they cover different fault layers. {@link #enableNetworkChaos} operates on the
+   * kernel packet path ({@code tc/netem} + {@code iptables}); this flag operates on libc socket
+   * calls intercepted by {@code libchaos-net}. Use both to test packet-level and syscall-level
+   * failure modes independently.
    *
    * <p><strong>What This Enables:</strong>
    *
    * <ul>
    *   <li>Per-syscall errno injection on {@code connect}, {@code bind}, {@code accept}, {@code
    *       send}, {@code recv}, {@code poll}, scoped to any cluster node
-   *   <li>UDP / unix-socket / DNS-level fault injection (the Sentinel pub-sub channel uses TCP
-   *       only — DNS faults exercise master discovery)
+   *   <li>UDP / unix-socket / DNS-level fault injection (the Sentinel pub-sub channel uses TCP only
+   *       — DNS faults exercise master discovery)
    *   <li>{@code recv}-corruption, file-descriptor exhaustion, listen/accept faults
    *   <li>Bandwidth shaping via the Toxiproxy fallback inside {@code CompositeConnectionChaos}
    * </ul>
    *
-   * <p><strong>Lifecycle:</strong> When {@code true}, every container (master + each replica +
-   * each sentinel) has {@code LibchaosTransport(LibchaosLib.NET).prepare(container)} invoked
-   * <em>before</em> {@code container.start()} so the dynamic loader honours the {@code
-   * LD_PRELOAD} hook at process launch. The Toxiproxy sidecar fallback inside {@code
-   * CompositeConnectionChaos} lazy-spawns on first use.
+   * <p><strong>Lifecycle:</strong> When {@code true}, every container (master + each replica + each
+   * sentinel) has {@code LibchaosTransport(LibchaosLib.NET).prepare(container)} invoked
+   * <em>before</em> {@code container.start()} so the dynamic loader honours the {@code LD_PRELOAD}
+   * hook at process launch. The Toxiproxy sidecar fallback inside {@code CompositeConnectionChaos}
+   * lazy-spawns on first use.
    *
    * <p><strong>Example (Per-Replica Connect Refusal):</strong>
    *

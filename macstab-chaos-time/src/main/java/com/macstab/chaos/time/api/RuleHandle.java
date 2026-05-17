@@ -8,8 +8,8 @@ import java.util.regex.Pattern;
  * Opaque handle for a previously-applied libchaos-time rule.
  *
  * <p>Returned by {@link AdvancedTimeChaos#apply} and friends; passed back to {@link
- * AdvancedTimeChaos#remove} to surgically remove a single rule. The handle's identity is its
- * {@code owner} string — the tag libchaos-time writes into the config file alongside each rule.
+ * AdvancedTimeChaos#remove} to surgically remove a single rule. The handle's identity is its {@code
+ * owner} string — the tag libchaos-time writes into the config file alongside each rule.
  *
  * <p>The {@code owner} format is {@code [a-z0-9_]+}; matches the libchaos grammar enforced by
  * {@code LibchaosTransport}. Callers normally do not construct {@code RuleHandle}s directly — the
