@@ -140,7 +140,32 @@ class ThreadLeakTest {
 }
 ```
 
-### Container-side — any JDK 21+ Java workload
+### Container-side — annotation-driven (recommended)
+
+For tests that use chaos-core's container annotations (`@RedisStandalone`, `@RedisSentinel`,
+etc.), add `@JvmAgentChaos` to the test class. The `ChaosTestingExtension` reflectively
+detects it and calls `JavaAgentTransport.prepare()` on every container it creates, before
+start. No manual calls required.
+
+```java
+@RedisStandalone(id = "app", version = "7.4")
+@JvmAgentChaos                    // ← auto-prepares the agent on every annotation-created container
+class MyTest {
+
+  @Test
+  void appHandlesJdbcAcquireFailure(RedisConnectionInfo info) {
+    // agent is already loaded inside info.container() — push a plan or use ControlPlane
+  }
+}
+```
+
+`@JvmAgentChaos` mirrors `@SyscallLevelChaos(LibchaosLib.X)` for the libchaos `.so` libraries.
+Both annotations can coexist on the same test class.
+
+### Container-side — manual (any test, no annotation framework)
+
+For tests that don't use chaos-core's annotation system, use `JavaAgentTransport` /
+`CompositeJavaChaos` directly:
 
 ```java
 import com.macstab.chaos.jvm.CompositeJavaChaos;

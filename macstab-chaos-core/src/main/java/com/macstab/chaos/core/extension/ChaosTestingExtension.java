@@ -168,6 +168,9 @@ public final class ChaosTestingExtension
     final LibchaosLib[] libsToPrepare =
         syscallChaosAnnotation == null ? new LibchaosLib[0] : syscallChaosAnnotation.value();
 
+    // @JvmAgentChaos detection — reflective so chaos-core stays free of chaos-java compile dep.
+    final boolean prepareJvmAgent = hasJvmAgentChaosAnnotation(testClass);
+
     // Extract all container annotations (including repeatable ones)
     final List<Annotation> containerAnnotations = extractContainerAnnotations(testClass);
 
@@ -181,7 +184,8 @@ public final class ChaosTestingExtension
             testClass.getSimpleName());
 
         final ContainerInstance instance =
-            createContainerInstance(plugin, annotation, resourcesAnnotation, libsToPrepare);
+            createContainerInstance(
+                plugin, annotation, resourcesAnnotation, libsToPrepare, prepareJvmAgent);
         containers.add(instance);
 
         log.info(
@@ -364,7 +368,8 @@ public final class ChaosTestingExtension
       final ChaosPlugin plugin,
       final Annotation annotation,
       final Resources resourcesAnnotation,
-      final LibchaosLib[] libsToPrepare) {
+      final LibchaosLib[] libsToPrepare,
+      final boolean prepareJvmAgent) {
 
     try {
       final GenericContainer<?> container = plugin.createContainer(annotation);
@@ -378,6 +383,7 @@ public final class ChaosTestingExtension
 
       applyResourceConstraints(container, annotation, resourcesAnnotation);
       prepareSyscallLevelChaos(container, libsToPrepare);
+      prepareJvmAgentChaos(container, prepareJvmAgent);
 
       container.start();
 
@@ -429,6 +435,66 @@ public final class ChaosTestingExtension
     for (final LibchaosLib lib : libsToPrepare) {
       log.info("Preparing libchaos-{} for container before start", lib.getShortName());
       new LibchaosTransport(lib).prepare(container);
+    }
+  }
+
+  // ==================== @JvmAgentChaos — reflective bridge to chaos-java ====================
+  // The chaos-java module is an optional consumer of chaos-core; chaos-core must not depend on it
+  // at compile time. We reach for the annotation and the transport class via Class.forName so the
+  // wiring activates only when chaos-java is on the classpath.
+
+  private static final String JVM_AGENT_CHAOS_ANNOTATION_FQN =
+      "com.macstab.chaos.jvm.annotation.JvmAgentChaos";
+  private static final String JVM_AGENT_TRANSPORT_FQN =
+      "com.macstab.chaos.jvm.JavaAgentTransport";
+
+  /**
+   * Reflectively checks whether {@code testClass} carries {@code @JvmAgentChaos}. Returns
+   * {@code false} if chaos-java is not on the classpath.
+   */
+  @SuppressWarnings("unchecked")
+  private boolean hasJvmAgentChaosAnnotation(final Class<?> testClass) {
+    try {
+      final Class<? extends Annotation> annotationClass =
+          (Class<? extends Annotation>) Class.forName(JVM_AGENT_CHAOS_ANNOTATION_FQN);
+      return testClass.isAnnotationPresent(annotationClass);
+    } catch (final ClassNotFoundException e) {
+      return false; // chaos-java not on classpath — annotation cannot have been used
+    }
+  }
+
+  /**
+   * Reflectively instantiates {@code JavaAgentTransport} and calls {@code prepare(container)}
+   * before the container starts — the JVM-agent analogue of {@link #prepareSyscallLevelChaos}.
+   * No-op when {@code prepareJvmAgent} is {@code false}.
+   *
+   * @throws ExtensionConfigurationException if {@code @JvmAgentChaos} is declared but chaos-java
+   *     is not on the classpath (a clear error beats opaque NoClassDefFoundError later)
+   */
+  private void prepareJvmAgentChaos(
+      final GenericContainer<?> container, final boolean prepareJvmAgent) {
+    if (!prepareJvmAgent) {
+      return;
+    }
+    try {
+      final Class<?> transportClass = Class.forName(JVM_AGENT_TRANSPORT_FQN);
+      final Object transport = transportClass.getDeclaredConstructor().newInstance();
+      transportClass
+          .getMethod("prepare", GenericContainer.class)
+          .invoke(transport, container);
+      log.info("Prepared chaos-jvm-agent for container before start (driven by @JvmAgentChaos)");
+    } catch (final ClassNotFoundException e) {
+      throw new ExtensionConfigurationException(
+          "@JvmAgentChaos requires macstab-chaos-java on the classpath. "
+              + "Add: testImplementation(\"com.macstab:macstab-chaos-java:${version}\") "
+              + "(or one of the framework wrappers: macstab-chaos-java-junit5 / "
+              + "-spring-boot3 / -spring-boot4 / -micronaut / -quarkus).",
+          e);
+    } catch (final Exception e) {
+      throw new ExtensionConfigurationException(
+          "Failed to prepare chaos-jvm-agent on container via JavaAgentTransport: "
+              + e.getMessage(),
+          e);
     }
   }
 

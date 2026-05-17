@@ -7,19 +7,45 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Marker annotation declaring that a test class drives chaos via the JVM agent ({@code
- * com.macstab.chaos.jvm:chaos-agent-bootstrap}).
+ * Opts a test class into JVM-agent fault injection for every container created by chaos-core's
+ * {@code ChaosTestingExtension}. The extension reflectively detects this annotation and calls
+ * {@code JavaAgentTransport.prepare(container)} <em>before</em> {@code container.start()} — the
+ * JVM-agent analogue of {@code @SyscallLevelChaos(LibchaosLib.X)} for the libchaos {@code .so}
+ * libraries.
  *
- * <p>Conceptual sibling of {@code @SyscallLevelChaos(LibchaosLib.X)} for libchaos {@code .so}
- * libraries: it documents the intended pre-start preparation contract — a test runner / extension
- * is expected to invoke {@code JavaAgentTransport.prepare(container)} on every container the
- * annotated test class spins up, before {@code container.start()}.
+ * <p><strong>Lifecycle contract.</strong> Like {@code LD_PRELOAD}, the {@code -javaagent} flag is
+ * only honoured at JVM start — the agent jar must be copied into the container image overlay and
+ * {@code JAVA_TOOL_OPTIONS} must be set before the container's main process boots. This annotation
+ * is the user-visible signal that the lifecycle hand-off is in play; the extension drives {@code
+ * JavaAgentTransport.prepare()} into the right window.
  *
- * <p>Today this annotation is a documentation hook — it is not yet consumed by a JUnit extension in
- * this repo. The chaos-testing-java-agent project ships its own {@code ChaosAgentExtension} and
- * {@code @ChaosTest} that wire test-process-side chaos directly. Use {@code @JvmAgentChaos} for the
- * container-side variant, where the agent runs inside a {@link
- * org.testcontainers.containers.GenericContainer} that the test is exercising.
+ * <h2>Combines with the agent's own in-process attach</h2>
+ *
+ * <p>The chaos-testing-java-agent project ships {@code ChaosAgentExtension} (JUnit 5) and {@code
+ * @ChaosTest} (Spring Boot 3 / 4) for the <em>in-process</em> path — when the test JVM <em>is</em>
+ * the target JVM. {@code @JvmAgentChaos} is for the <em>container-side</em> path — when the test
+ * drives a separate JDK 21+ Java container via testcontainers. Both annotations can co-exist on
+ * the same test class; each handles the path it owns.
+ *
+ * <h2>Example</h2>
+ *
+ * <pre>{@code
+ * @RedisStandalone   // creates a Redis container via the chaos-core plugin system
+ * @JvmAgentChaos     // prepares the JVM agent on every created container, pre-start
+ * class MyTest {
+ *
+ *   @Test
+ *   void appHandlesJdbcAcquireFailure(RedisConnectionInfo info) {
+ *     // agent is already loaded inside info.container() — push a plan via JavaAgentTransport
+ *     // or apply scenarios through the agent's own ControlPlane API.
+ *   }
+ * }
+ * }</pre>
+ *
+ * <p><strong>Required dependency.</strong> {@code @JvmAgentChaos} only takes effect when {@code
+ * macstab-chaos-java} (or a framework wrapper that pulls it transitively) is on the classpath.
+ * Declaring the annotation without the dependency raises {@code ExtensionConfigurationException}
+ * at test startup with a clear pointer to the missing build coordinate.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
