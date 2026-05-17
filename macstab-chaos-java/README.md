@@ -17,14 +17,25 @@ The agent supports two attachment paths. **Both work — they cover different te
 
 Pick your framework's wrapper module. Each one transitively pulls the agent's test starter, the testkit, and this module's container-side transport.
 
-| Framework | Gradle dependency |
+| Use case | Gradle dependency |
 |---|---|
-| Plain JUnit 5 | `testImplementation(project(":macstab-chaos-java-junit5"))` |
-| Spring Boot 3 | `testImplementation(project(":macstab-chaos-java-spring-boot3"))` |
-| Spring Boot 4 | `testImplementation(project(":macstab-chaos-java-spring-boot4"))` |
-| Micronaut | `testImplementation(project(":macstab-chaos-java-micronaut"))` |
-| Quarkus | `testImplementation(project(":macstab-chaos-java-quarkus"))` |
-| Bare (no framework starter) | `testImplementation(project(":macstab-chaos-java"))` |
+| Plain JUnit 5 tests | `testImplementation(project(":macstab-chaos-java-junit5"))` |
+| **Spring Boot 3 — running app (production / staging / CI runtime)** | `implementation(project(":macstab-chaos-java-spring-boot3"))` |
+| **Spring Boot 3 — `@SpringBootTest` JUnit chaos** | `testImplementation(project(":macstab-chaos-java-spring-boot3-test"))` |
+| **Spring Boot 4 — running app** | `implementation(project(":macstab-chaos-java-spring-boot4"))` |
+| **Spring Boot 4 — `@SpringBootTest` JUnit chaos** | `testImplementation(project(":macstab-chaos-java-spring-boot4-test"))` |
+| Micronaut | `implementation(project(":macstab-chaos-java-micronaut"))` |
+| Quarkus | `implementation(project(":macstab-chaos-java-quarkus"))` |
+| Bare (no framework starter — direct API only) | `testImplementation(project(":macstab-chaos-java"))` |
+
+**Spring Boot has two distinct starters**, mirroring the agent project's own split:
+- the **regular starter** (`*-spring-boot3`) wires the agent into the running app at startup,
+  for staging fault-injection / ops chaos / "chaos monkey"-style use — independent of any
+  test framework
+- the **test starter** (`*-spring-boot3-test`) layers `@ChaosTest` + `ChaosAgentExtension`
+  on top, for `@SpringBootTest`-driven JUnit chaos
+
+Add only the one you need. Adding both is harmless (the test starter depends on the regular starter transitively in the agent project).
 
 Coordinates resolve from Maven Central as `com.macstab:macstab-chaos-java-*:<version>` once published.
 

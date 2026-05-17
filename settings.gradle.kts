@@ -22,7 +22,9 @@ include(
     "macstab-chaos-java",
     "macstab-chaos-java-junit5",
     "macstab-chaos-java-spring-boot3",
+    "macstab-chaos-java-spring-boot3-test",
     "macstab-chaos-java-spring-boot4",
+    "macstab-chaos-java-spring-boot4-test",
     "macstab-chaos-java-micronaut",
     "macstab-chaos-java-quarkus"
 )

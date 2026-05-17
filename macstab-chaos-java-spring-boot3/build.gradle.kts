@@ -8,12 +8,15 @@ plugins {
 group = findProperty("group") as String
 version = findProperty("version") as String
 
-// Spring Boot 3 — bundles the agent's Spring Boot 3 test-starter (gives @ChaosTest + auto-config)
-// with the container-side transport. Use for both in-process Spring tests and tests that drive a
-// Spring container under test via testcontainers.
+// Spring Boot 3 — PRODUCTION starter. Bundles the agent's regular Spring Boot 3 starter
+// (NOT the test variant) with the container-side transport. Use this when you want chaos
+// available inside a running Spring Boot 3 app — staging fault-injection, CI failure-mode
+// exercises, "chaos monkey"-style ops — independent of any test framework.
 //
-//   testImplementation(project(":macstab-chaos-java-spring-boot3"))
+//   implementation(project(":macstab-chaos-java-spring-boot3"))
+//
+// For JUnit-driven @SpringBootTest chaos use `macstab-chaos-java-spring-boot3-test` instead.
 dependencies {
     api(project(":macstab-chaos-java"))
-    api("com.macstab.chaos.jvm:chaos-agent-spring-boot3-test-starter:${findProperty("jvmAgentVersion")}")
+    api("com.macstab.chaos.jvm:chaos-agent-spring-boot3-starter:${findProperty("jvmAgentVersion")}")
 }
