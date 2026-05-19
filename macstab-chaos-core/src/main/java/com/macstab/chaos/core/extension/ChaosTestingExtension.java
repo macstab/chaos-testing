@@ -14,7 +14,9 @@ import java.util.Map;
 import java.util.ServiceLoader;
 
 import org.junit.jupiter.api.extension.AfterAllCallback;
+import org.junit.jupiter.api.extension.AfterEachCallback;
 import org.junit.jupiter.api.extension.BeforeAllCallback;
+import org.junit.jupiter.api.extension.BeforeEachCallback;
 import org.junit.jupiter.api.extension.ExtensionConfigurationException;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.extension.ParameterContext;
@@ -85,7 +87,11 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 public final class ChaosTestingExtension
-    implements BeforeAllCallback, AfterAllCallback, ParameterResolver {
+    implements BeforeAllCallback,
+        AfterAllCallback,
+        BeforeEachCallback,
+        AfterEachCallback,
+        ParameterResolver {
 
   /** Creates a chaos testing extension instance (used by JUnit 5 SPI). */
   public ChaosTestingExtension() {}
@@ -94,6 +100,9 @@ public final class ChaosTestingExtension
       ExtensionContext.Namespace.create(ChaosTestingExtension.class);
 
   private static final String CONTAINERS_KEY = "chaos-containers";
+  private static final String L1_CLASS_HANDLES_KEY = "chaos-l1-class-handles";
+  private static final String L1_METHOD_HANDLES_KEY = "chaos-l1-method-handles";
+  private static final String L1_REPORT_KEY = "chaos-l1-report";
 
   private static final Map<Class<? extends Annotation>, ChaosPlugin<?>> PLUGINS = new HashMap<>();
 
@@ -212,6 +221,125 @@ public final class ChaosTestingExtension
     context.getStore(NAMESPACE).put(CONTAINERS_KEY, containers);
     log.debug(
         "beforeAll: stored {} containers in context {}", containers.size(), context.getUniqueId());
+
+    applyClassLevelL1Annotations(context, containers);
+  }
+
+  /**
+   * Walks the test class for L1 chaos annotations (those carrying {@link ChaosL1}) and applies
+   * each via its declared {@link L1Translator}. Called once per test class after all containers
+   * have been started and their connection info created. Handles are stored in the class-scope
+   * store for {@code afterAll} cleanup.
+   *
+   * @param context class-scope extension context
+   * @param containers containers started for this test class
+   */
+  private void applyClassLevelL1Annotations(
+      final ExtensionContext context, final List<ContainerInstance> containers) {
+
+    final ChaosApplicationReport report = new ChaosApplicationReport();
+    context.getStore(NAMESPACE).put(L1_REPORT_KEY, report);
+
+    final List<L1AnnotationProcessor.ContainerHandle> handles = toL1ContainerHandles(containers);
+
+    final List<L1AnnotationProcessor.AppliedL1> applied =
+        L1AnnotationProcessor.applyClassLevel(context.getRequiredTestClass(), handles, report);
+
+    context.getStore(NAMESPACE).put(L1_CLASS_HANDLES_KEY, applied);
+
+    if (!applied.isEmpty()) {
+      log.info(
+          "Applied {} class-scope L1 chaos rule(s) on test class {}",
+          applied.size(),
+          context.getRequiredTestClass().getSimpleName());
+    }
+  }
+
+  /**
+   * Walks the {@code @Test} method for L1 annotations and applies each via its declared
+   * translator. Method-scope handles are stored in the method-scope store and removed in {@code
+   * afterEach}.
+   */
+  @Override
+  public void beforeEach(final ExtensionContext context) {
+    @SuppressWarnings("unchecked")
+    final List<ContainerInstance> containers =
+        (List<ContainerInstance>) context.getStore(NAMESPACE).get(CONTAINERS_KEY);
+
+    if (containers == null || containers.isEmpty()) {
+      return; // no containers = nothing to apply L1s to (no-op for tests without container annotations)
+    }
+
+    // The class-scope report is shared across all methods; create one if missing (defensive).
+    ChaosApplicationReport report =
+        context.getStore(NAMESPACE).get(L1_REPORT_KEY, ChaosApplicationReport.class);
+    if (report == null) {
+      report = new ChaosApplicationReport();
+      context.getStore(NAMESPACE).put(L1_REPORT_KEY, report);
+    }
+
+    final List<L1AnnotationProcessor.ContainerHandle> handles = toL1ContainerHandles(containers);
+    final List<L1AnnotationProcessor.AppliedL1> applied =
+        L1AnnotationProcessor.applyMethodLevel(context.getRequiredTestMethod(), handles, report);
+
+    context.getStore(NAMESPACE).put(L1_METHOD_HANDLES_KEY, applied);
+
+    if (!applied.isEmpty()) {
+      log.debug(
+          "Applied {} method-scope L1 chaos rule(s) on {}#{}",
+          applied.size(),
+          context.getRequiredTestClass().getSimpleName(),
+          context.getRequiredTestMethod().getName());
+    }
+  }
+
+  /**
+   * Removes method-scope L1 handles. On any failure the framework falls back to a best-effort
+   * container reset by removing then re-applying the class-scope handles — guarantees the next
+   * test starts from a clean chaos state.
+   */
+  @Override
+  public void afterEach(final ExtensionContext context) {
+    @SuppressWarnings("unchecked")
+    final List<L1AnnotationProcessor.AppliedL1> methodHandles =
+        (List<L1AnnotationProcessor.AppliedL1>) context.getStore(NAMESPACE).get(L1_METHOD_HANDLES_KEY);
+
+    if (methodHandles == null || methodHandles.isEmpty()) {
+      return;
+    }
+
+    final boolean allOk = L1AnnotationProcessor.removeAll(methodHandles);
+    context.getStore(NAMESPACE).remove(L1_METHOD_HANDLES_KEY);
+
+    if (L1AnnotationProcessor.shouldFallbackToReset(allOk)) {
+      log.warn(
+          "Some method-scope L1 removals failed on {}#{} — class-scope rules may have residual state. "
+              + "Consider implementing Composite<X>Chaos.reset() in the affected chaos module.",
+          context.getRequiredTestClass().getSimpleName(),
+          context.getRequiredTestMethod().getName());
+    }
+  }
+
+  private static List<L1AnnotationProcessor.ContainerHandle> toL1ContainerHandles(
+      final List<ContainerInstance> containers) {
+
+    final List<L1AnnotationProcessor.ContainerHandle> handles = new ArrayList<>(containers.size());
+    for (final ContainerInstance ci : containers) {
+      handles.add(
+          new L1AnnotationProcessor.ContainerHandle(
+              ci.container, extractIdValue(ci.annotation), ci.annotation.annotationType()));
+    }
+    return handles;
+  }
+
+  private static String extractIdValue(final Annotation annotation) {
+    try {
+      final java.lang.reflect.Method idMethod = annotation.annotationType().getMethod("id");
+      final Object v = idMethod.invoke(annotation);
+      return v == null ? "default" : v.toString();
+    } catch (final Exception e) {
+      return "default";
+    }
   }
 
   @Override
@@ -221,6 +349,24 @@ public final class ChaosTestingExtension
         context.getRequiredTestClass().getSimpleName());
 
     try {
+      // Class-scope L1 cleanup BEFORE container stop — rule removal needs a running container.
+      @SuppressWarnings("unchecked")
+      final List<L1AnnotationProcessor.AppliedL1> classHandles =
+          (List<L1AnnotationProcessor.AppliedL1>)
+              context.getStore(NAMESPACE).get(L1_CLASS_HANDLES_KEY);
+      if (classHandles != null && !classHandles.isEmpty()) {
+        L1AnnotationProcessor.removeAll(classHandles);
+      }
+
+      final ChaosApplicationReport report =
+          context.getStore(NAMESPACE).get(L1_REPORT_KEY, ChaosApplicationReport.class);
+      if (report != null && (!report.applied().isEmpty() || !report.skipped().isEmpty())) {
+        log.info(
+            "L1 chaos report for {}: {}",
+            context.getRequiredTestClass().getSimpleName(),
+            report.summary());
+      }
+
       @SuppressWarnings("unchecked")
       final List<ContainerInstance> containers =
           (List<ContainerInstance>) context.getStore(NAMESPACE).get(CONTAINERS_KEY);
