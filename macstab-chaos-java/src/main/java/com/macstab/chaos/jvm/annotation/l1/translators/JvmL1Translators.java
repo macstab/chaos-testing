@@ -8,11 +8,13 @@ import java.util.EnumSet;
 import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.jvm.annotation.l1.JvmInterceptorBinding;
+import com.macstab.chaos.jvm.annotation.l1.JvmMethodBinding;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.api.ActivationPolicy;
 import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
+import com.macstab.chaos.jvm.api.NamePattern;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
@@ -47,20 +49,65 @@ final class JvmL1Translators {
    */
   static Object buildScenarioAndPush(
       final GenericContainer<?> container, final Annotation annotation, final ChaosEffect effect) {
+    return JvmPlanAccumulator.instance()
+        .addScenario(container, buildInterceptorScenario(annotation, effect));
+  }
+
+  /**
+   * Build (but do not push) the {@link ChaosScenario} for an interceptor annotation. Exposed
+   * package-private so unit tests can verify the constructed scenario without needing a running
+   * container.
+   */
+  static ChaosScenario buildInterceptorScenario(
+      final Annotation annotation, final ChaosEffect effect) {
     final JvmInterceptorBinding binding = readInterceptorBinding(annotation);
     final ChaosSelector selector =
         binding.selectorKind().build(EnumSet.of(binding.operationType()));
+    return buildScenarioWith(annotation, selector, effect);
+  }
+
+  static ChaosScenario buildScenarioWith(
+      final Annotation annotation, final ChaosSelector selector, final ChaosEffect effect) {
     final String id =
         JvmPlanAccumulator.instance().mintScenarioId(annotation.annotationType().getSimpleName());
-    final ChaosScenario scenario =
-        ChaosScenario.builder(id)
-            .description(
-                "L1: " + annotation.annotationType().getSimpleName())
-            .selector(selector)
-            .effect(effect)
-            .activationPolicy(ActivationPolicy.always())
-            .build();
-    return JvmPlanAccumulator.instance().addScenario(container, scenario);
+    return ChaosScenario.builder(id)
+        .description("L1: " + annotation.annotationType().getSimpleName())
+        .selector(selector)
+        .effect(effect)
+        .activationPolicy(ActivationPolicy.always())
+        .build();
+  }
+
+  /**
+   * Build (but do not push) the MethodSelector-targeted scenario for an L1 carrying
+   * {@link JvmMethodBinding}. Reads {@code classPattern} + {@code methodNamePattern} from the
+   * annotation; at least one must be non-blank (MethodSelector rejects the all-{@code ANY}
+   * combination by design to prevent JVM-wide instrumentation).
+   */
+  static ChaosScenario buildMethodScenario(
+      final Annotation annotation, final ChaosEffect effect) {
+    final JvmMethodBinding binding = readMethodBinding(annotation);
+    final String classPattern = readString(annotation, "classPattern", "");
+    final String methodNamePattern = readString(annotation, "methodNamePattern", "");
+    if (classPattern.isBlank() && methodNamePattern.isBlank()) {
+      throw new IllegalArgumentException(
+          "@"
+              + annotation.annotationType().getSimpleName()
+              + " requires classPattern or methodNamePattern to be non-blank — MethodSelector "
+              + "rejects the all-ANY combination to prevent accidental JVM-wide instrumentation.");
+    }
+    final NamePattern cls = classPattern.isBlank() ? NamePattern.any() : NamePattern.prefix(classPattern);
+    final NamePattern mth = methodNamePattern.isBlank() ? NamePattern.any() : NamePattern.prefix(methodNamePattern);
+    final ChaosSelector selector =
+        ChaosSelector.method(EnumSet.of(binding.operationType()), cls, mth);
+    return buildScenarioWith(annotation, selector, effect);
+  }
+
+  /** Push the method-targeted scenario through the accumulator (interceptor parallel). */
+  static Object buildMethodScenarioAndPush(
+      final GenericContainer<?> container, final Annotation annotation, final ChaosEffect effect) {
+    return JvmPlanAccumulator.instance()
+        .addScenario(container, buildMethodScenario(annotation, effect));
   }
 
   /**
@@ -79,16 +126,24 @@ final class JvmL1Translators {
       final Annotation annotation,
       final ChaosSelector selector,
       final ChaosEffect effect) {
+    return JvmPlanAccumulator.instance()
+        .addScenario(container, buildStressorScenario(annotation, selector, effect));
+  }
+
+  /**
+   * Build (but do not push) the {@link ChaosScenario} for a stressor annotation. Exposed
+   * package-private for the same testability reason as {@link #buildInterceptorScenario}.
+   */
+  static ChaosScenario buildStressorScenario(
+      final Annotation annotation, final ChaosSelector selector, final ChaosEffect effect) {
     final String id =
         JvmPlanAccumulator.instance().mintScenarioId(annotation.annotationType().getSimpleName());
-    final ChaosScenario scenario =
-        ChaosScenario.builder(id)
-            .description("L1 stressor: " + annotation.annotationType().getSimpleName())
-            .selector(selector)
-            .effect(effect)
-            .activationPolicy(ActivationPolicy.always())
-            .build();
-    return JvmPlanAccumulator.instance().addScenario(container, scenario);
+    return ChaosScenario.builder(id)
+        .description("L1 stressor: " + annotation.annotationType().getSimpleName())
+        .selector(selector)
+        .effect(effect)
+        .activationPolicy(ActivationPolicy.always())
+        .build();
   }
 
   /** Remove a scenario from the accumulator. Best-effort — swallows nothing, caller handles. */
@@ -170,6 +225,22 @@ final class JvmL1Translators {
               + annotation.annotationType().getName());
     }
     return binding;
+  }
+
+  static JvmMethodBinding readMethodBinding(final Annotation annotation) {
+    final JvmMethodBinding binding =
+        annotation.annotationType().getAnnotation(JvmMethodBinding.class);
+    if (binding == null) {
+      throw new IllegalStateException(
+          "@JvmMethodBinding meta-annotation missing on "
+              + annotation.annotationType().getName());
+    }
+    return binding;
+  }
+
+  /** True iff the annotation carries {@link JvmMethodBinding} rather than {@link JvmInterceptorBinding}. */
+  static boolean isMethodBinding(final Annotation annotation) {
+    return annotation.annotationType().isAnnotationPresent(JvmMethodBinding.class);
   }
 
   /** Bridge: helper to enforce OperationType is unused for stressors (compile-time check). */

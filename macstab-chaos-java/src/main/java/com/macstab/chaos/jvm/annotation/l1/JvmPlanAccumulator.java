@@ -71,6 +71,13 @@ public final class JvmPlanAccumulator {
    * Add {@code scenario} to {@code container}'s active set, re-serialise the merged plan, and
    * push via {@link CompositeJavaChaos#applyPlan}.
    *
+   * <p><strong>Rollback semantics.</strong> If the push fails (mock container in tests; agent
+   * not loaded; network error writing the plan file), the scenario is removed from the active
+   * set <em>before</em> the exception propagates — the accumulator's state always reflects
+   * what the agent has been told, never what we tried to tell it. Without rollback the next
+   * caller would re-push a plan containing the failed scenario and either repeat the error or
+   * silently activate it once the underlying issue clears.
+   *
    * @param container the running container the JVM agent is attached to
    * @param scenario the scenario to activate
    * @return the scenario's id (used as the opaque handle for {@link #removeScenario})
@@ -80,7 +87,16 @@ public final class JvmPlanAccumulator {
       final Map<String, ChaosScenario> active =
           state.computeIfAbsent(container, k -> new LinkedHashMap<>());
       active.put(scenario.id(), scenario);
-      pushMergedPlan(container, active);
+      try {
+        pushMergedPlan(container, active);
+      } catch (final RuntimeException push) {
+        // Roll back the addition so the in-memory state matches the agent's view.
+        active.remove(scenario.id());
+        if (active.isEmpty()) {
+          state.remove(container);
+        }
+        throw push;
+      }
     }
     return scenario.id();
   }

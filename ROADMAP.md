@@ -360,14 +360,22 @@ These already exist as typed-verb APIs (`AdvancedXChaos`). Each one ships a corr
 | chaos-dns          | **18**           | 15 EaiFault (3 wildcard selector kinds × 5 EAI errnos) + 3 latency. Per-host targeting + richer effects (REWRITE/SERVICE/OVERRIDE/FILTER_FAMILY/LIMIT/SHUFFLE) deferred to the imperative API. |
 | chaos-connection   | **47**           | Curated 36 errno across 8 NetOperations + 9 latency + 1 RECV-only Corrupt + 1 POLL-only Timeout. Endpoint always wildcard at L1. |
 | chaos-filesystem   | **53**           | Curated 36 errno across 13 IoOperations + 13 latency + 2 WRITE/PWRITE-only Torn + 2 READ/PREAD-only Corrupt. PathPrefix always wildcard at L1. |
-| chaos-java (JVM)   | **1**            | Escape-hatch `@ChaosJvmPlan(planJsonResource = "…")` only. Typed effect-specific surface (the planned 60+ annotations) deferred until `chaos-agent-api` (which holds `ChaosPlan` / `ChaosScenario` / `ChaosEffect` types) is reachable from this repository. |
-| **Total**          | **308**          | All landed in a single PR. |
+| chaos-java (JVM)   | **141**          | Full typed surface against `chaos-agent-api 1.0.0`. 140 typed annotations across 19 selector-family sub-packages (thread / executor / queue / async / scheduling / shutdown / class_loading / monitor / jvm_runtime / nio / network / thread_local / http_client / jdbc / dns / ssl / file_io / method / stressors) + 1 escape-hatch `@ChaosJvmPlan` for hand-written plans. |
+| **Total**          | **448**          | All landed in a single PR. |
 
 **Foundation in chaos-core:** `@ChaosL1` meta-annotation + `L1Translator` interface + `L1AnnotationProcessor` (class- and method-scope walking, ERROR/ABORT routing via `OnMissingEnv`, container-reset cleanup fallback) + `ChaosApplicationReport` (per-test applied/skipped summary). `ChaosTestingExtension` grows `BeforeEachCallback` + `AfterEachCallback` to support method-scope L1 annotations alongside class-scope ones.
 
 **Compile-time selector × errno safety.** Each L1 annotation encodes exactly one legal (selector, errno, effect) tuple — invalid POSIX combinations have no annotation class. Per-annotation `@<Module><Effect>Binding` meta-annotations expose the tuple to per-effect parameterised translators (one translator class per effect family, not per annotation), keeping the code surface tiny (~25 translator classes total) versus the file count of annotations (308 generated mechanically by per-module Python scripts).
 
-**Tests: 76/76 green** — chaos-core (13), memory (22), process (17), time (12), dns (9), connection (15), filesystem (14), java (2). Integration tests against real containers deferred to follow-on (`L1AnnotationIntegrationTest` per module is the established pattern; runs against alpine/debian for libchaos modules).
+**Tests: 113/113 green** — chaos-core (13), memory (22), process (17), time (12), dns (9), connection (15), filesystem (14), java (37 = 33 interceptor/stressor table-driven + 3 MethodSelector + 1 accumulator-rollback). Integration tests against real containers deferred to follow-on (`L1AnnotationIntegrationTest` per module is the established pattern; runs against alpine/debian for libchaos modules; chaos-java has the existing `JavaAgentTransportIntegrationTest` covering the agent file-transport path end-to-end).
+
+**JVM L1 design specifics:**
+
+- **Compile-time selector × operation safety:** Each annotation encodes one (selector kind, operation type) tuple via `@JvmInterceptorBinding`, plus the effect-specific attributes (delayMs / message / exceptionClassName / etc.). Invalid combinations have no annotation class.
+- **MethodSelector annotations** carry `classPattern` + `methodNamePattern` string attributes (prefix-matched); at least one must be non-blank — the typed `MethodSelector` rejects the all-`ANY` combination by design to prevent JVM-wide instrumentation.
+- **`JvmPlanAccumulator`** maintains per-container active-scenario state because the cross-container wire (`CompositeJavaChaos.applyPlan`) is wholesale plan replacement, not per-rule activate/deactivate. `addScenario` re-serialises the merged plan via Jackson and pushes; **rolls back** on push failure so the in-memory state always matches what the agent has been told.
+- **23 parameterised translators** (8 interceptor effect families + 15 stressor effects). Per-effect rather than per-annotation because attribute shapes vary per effect kind.
+- **Single dependency addition:** `jackson-databind` + `jackson-datatype-jsr310` for plan serialisation. `chaos-agent-api:1.0.0` was already on `macstab-chaos-java`'s classpath.
 
 
 | Module | Expected L1 count | Representative annotations (examples, not exhaustive) |

@@ -26,8 +26,10 @@ public final class ExceptionInjectionTranslator implements L1Translator<Annotati
         JvmL1Translators.readString(annotation, "exceptionClassName", "java.io.IOException");
     final String message =
         JvmL1Translators.readString(annotation, "message", "injected by chaos L1");
-    return JvmL1Translators.buildScenarioAndPush(
-        container, annotation, ChaosEffect.injectException(cls, message));
+    final ChaosEffect effect = ChaosEffect.injectException(cls, message);
+    return JvmL1Translators.isMethodBinding(annotation)
+        ? JvmL1Translators.buildMethodScenarioAndPush(container, annotation, effect)
+        : JvmL1Translators.buildScenarioAndPush(container, annotation, effect);
   }
 
   @Override

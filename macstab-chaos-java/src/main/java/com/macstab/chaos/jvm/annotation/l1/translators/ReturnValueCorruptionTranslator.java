@@ -25,8 +25,10 @@ public final class ReturnValueCorruptionTranslator implements L1Translator<Annot
   public Object apply(final GenericContainer<?> container, final Annotation annotation) {
     final ReturnValueStrategy strategy =
         JvmL1Translators.readEnum(annotation, "strategy", ReturnValueStrategy.NULL);
-    return JvmL1Translators.buildScenarioAndPush(
-        container, annotation, ChaosEffect.corruptReturnValue(strategy));
+    final ChaosEffect effect = ChaosEffect.corruptReturnValue(strategy);
+    return JvmL1Translators.isMethodBinding(annotation)
+        ? JvmL1Translators.buildMethodScenarioAndPush(container, annotation, effect)
+        : JvmL1Translators.buildScenarioAndPush(container, annotation, effect);
   }
 
   @Override
