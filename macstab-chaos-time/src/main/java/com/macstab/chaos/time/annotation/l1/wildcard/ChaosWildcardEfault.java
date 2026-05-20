@@ -67,7 +67,7 @@ import com.macstab.chaos.time.model.TimeSelector;
  */
 @Repeatable(ChaosWildcardEfault.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.TYPE, ElementType.METHOD})
+@Target({ElementType.TYPE, ElementType.METHOD, ElementType.FIELD})
 @ChaosL1(translator = "com.macstab.chaos.time.annotation.l1.translators.TimeErrnoTranslator")
 @TimeErrnoBinding(selector = TimeSelector.WILDCARD, errno = TimeErrno.EFAULT)
 public @interface ChaosWildcardEfault {

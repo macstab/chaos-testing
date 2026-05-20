@@ -67,7 +67,7 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  */
 @Repeatable(ChaosPwriteEio.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.TYPE, ElementType.METHOD})
+@Target({ElementType.TYPE, ElementType.METHOD, ElementType.FIELD})
 @ChaosL1(translator = "com.macstab.chaos.filesystem.annotation.l1.translators.IoErrnoTranslator")
 @IoErrnoBinding(operation = IoOperation.PWRITE, errno = Errno.EIO)
 public @interface ChaosPwriteEio {

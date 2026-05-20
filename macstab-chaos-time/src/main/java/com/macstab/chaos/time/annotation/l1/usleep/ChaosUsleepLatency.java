@@ -64,7 +64,7 @@ import com.macstab.chaos.time.model.TimeSelector;
  */
 @Repeatable(ChaosUsleepLatency.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.TYPE, ElementType.METHOD})
+@Target({ElementType.TYPE, ElementType.METHOD, ElementType.FIELD})
 @ChaosL1(translator = "com.macstab.chaos.time.annotation.l1.translators.TimeLatencyTranslator")
 @TimeLatencyBinding(selector = TimeSelector.USLEEP)
 public @interface ChaosUsleepLatency {

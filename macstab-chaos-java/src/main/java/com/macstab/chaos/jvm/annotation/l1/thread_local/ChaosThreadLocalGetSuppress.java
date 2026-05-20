@@ -31,7 +31,7 @@ import com.macstab.chaos.jvm.api.OperationType;
  */
 @Repeatable(ChaosThreadLocalGetSuppress.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.TYPE, ElementType.METHOD})
+@Target({ElementType.TYPE, ElementType.METHOD, ElementType.FIELD})
 @ChaosL1(translator = "com.macstab.chaos.jvm.annotation.l1.translators.SuppressTranslator")
 @JvmInterceptorBinding(selectorKind = JvmSelectorKind.THREAD_LOCAL, operationType = OperationType.THREAD_LOCAL_GET)
 public @interface ChaosThreadLocalGetSuppress {

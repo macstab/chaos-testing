@@ -67,7 +67,7 @@ import com.macstab.chaos.dns.model.EaiErrno;
  */
 @Repeatable(ChaosWildcardEaimemory.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.TYPE, ElementType.METHOD})
+@Target({ElementType.TYPE, ElementType.METHOD, ElementType.FIELD})
 @ChaosL1(translator = "com.macstab.chaos.dns.annotation.l1.translators.DnsEaiTranslator")
 @DnsEaiBinding(selectorKind = DnsSelectorKind.WILDCARD, errno = EaiErrno.EAI_MEMORY)
 public @interface ChaosWildcardEaimemory {

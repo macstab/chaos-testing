@@ -66,7 +66,7 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  */
 @Repeatable(ChaosPreadCorrupt.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.TYPE, ElementType.METHOD})
+@Target({ElementType.TYPE, ElementType.METHOD, ElementType.FIELD})
 @ChaosL1(translator = "com.macstab.chaos.filesystem.annotation.l1.translators.IoCorruptTranslator")
 @IoCorruptBinding(operation = IoOperation.PREAD)
 public @interface ChaosPreadCorrupt {

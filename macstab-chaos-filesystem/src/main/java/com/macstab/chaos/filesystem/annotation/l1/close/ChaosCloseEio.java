@@ -67,7 +67,7 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  */
 @Repeatable(ChaosCloseEio.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.TYPE, ElementType.METHOD})
+@Target({ElementType.TYPE, ElementType.METHOD, ElementType.FIELD})
 @ChaosL1(translator = "com.macstab.chaos.filesystem.annotation.l1.translators.IoErrnoTranslator")
 @IoErrnoBinding(operation = IoOperation.CLOSE, errno = Errno.EIO)
 public @interface ChaosCloseEio {

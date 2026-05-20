@@ -29,7 +29,7 @@ import com.macstab.chaos.jvm.api.OperationType;
  * @see com.macstab.chaos.jvm.api.ChaosSelector#nio(java.util.Set)
  */
 @Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.TYPE, ElementType.METHOD})
+@Target({ElementType.TYPE, ElementType.METHOD, ElementType.FIELD})
 @ChaosL1(translator = "com.macstab.chaos.jvm.annotation.l1.translators.SpuriousWakeupTranslator")
 @JvmInterceptorBinding(selectorKind = JvmSelectorKind.NIO, operationType = OperationType.NIO_SELECTOR_SELECT)
 public @interface ChaosNioSelectorSelectSpuriousWakeup {

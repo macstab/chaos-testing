@@ -66,7 +66,7 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  */
 @Repeatable(ChaosPwriteTorn.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.TYPE, ElementType.METHOD})
+@Target({ElementType.TYPE, ElementType.METHOD, ElementType.FIELD})
 @ChaosL1(translator = "com.macstab.chaos.filesystem.annotation.l1.translators.IoTornTranslator")
 @IoTornBinding(operation = IoOperation.PWRITE)
 public @interface ChaosPwriteTorn {

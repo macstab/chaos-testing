@@ -54,7 +54,7 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  */
 @Repeatable(ChaosMetaspacePressure.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.TYPE, ElementType.METHOD})
+@Target({ElementType.TYPE, ElementType.METHOD, ElementType.FIELD})
 @ChaosL1(translator = "com.macstab.chaos.jvm.annotation.l1.translators.MetaspacePressureTranslator")
 public @interface ChaosMetaspacePressure {
 

@@ -29,7 +29,7 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  */
 @Repeatable(ChaosRenameFromEacces.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.TYPE, ElementType.METHOD})
+@Target({ElementType.TYPE, ElementType.METHOD, ElementType.FIELD})
 @ChaosL1(translator = "com.macstab.chaos.filesystem.annotation.l1.translators.IoErrnoTranslator")
 @IoErrnoBinding(operation = IoOperation.RENAME_FROM, errno = Errno.EACCES)
 public @interface ChaosRenameFromEacces {

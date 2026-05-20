@@ -64,7 +64,7 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  */
 @Repeatable(ChaosClockGettimeOffset.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.TYPE, ElementType.METHOD})
+@Target({ElementType.TYPE, ElementType.METHOD, ElementType.FIELD})
 @ChaosL1(translator = "com.macstab.chaos.time.annotation.l1.translators.TimeOffsetTranslator")
 public @interface ChaosClockGettimeOffset {
 

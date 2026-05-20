@@ -31,7 +31,7 @@ import com.macstab.chaos.jvm.api.OperationType;
  */
 @Repeatable(ChaosNioChannelAcceptSuppress.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.TYPE, ElementType.METHOD})
+@Target({ElementType.TYPE, ElementType.METHOD, ElementType.FIELD})
 @ChaosL1(translator = "com.macstab.chaos.jvm.annotation.l1.translators.SuppressTranslator")
 @JvmInterceptorBinding(selectorKind = JvmSelectorKind.NIO, operationType = OperationType.NIO_CHANNEL_ACCEPT)
 public @interface ChaosNioChannelAcceptSuppress {

@@ -67,7 +67,7 @@ import com.macstab.chaos.memory.model.MemorySelector;
  */
 @Repeatable(ChaosMadviseLatency.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.TYPE, ElementType.METHOD})
+@Target({ElementType.TYPE, ElementType.METHOD, ElementType.FIELD})
 @ChaosL1(translator = "com.macstab.chaos.memory.annotation.l1.translators.MemoryLatencyTranslator")
 @MemoryLatencyBinding(selector = MemorySelector.MADVISE)
 public @interface ChaosMadviseLatency {

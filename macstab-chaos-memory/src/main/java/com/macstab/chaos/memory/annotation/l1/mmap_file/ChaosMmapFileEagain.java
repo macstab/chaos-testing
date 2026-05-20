@@ -81,7 +81,7 @@ import com.macstab.chaos.memory.model.MmapErrno;
  */
 @Repeatable(ChaosMmapFileEagain.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.TYPE, ElementType.METHOD})
+@Target({ElementType.TYPE, ElementType.METHOD, ElementType.FIELD})
 @ChaosL1(translator = "com.macstab.chaos.memory.annotation.l1.translators.MemoryErrnoTranslator")
 @MemoryErrnoBinding(selector = MemorySelector.MMAP_FILE, errno = MmapErrno.EAGAIN)
 public @interface ChaosMmapFileEagain {

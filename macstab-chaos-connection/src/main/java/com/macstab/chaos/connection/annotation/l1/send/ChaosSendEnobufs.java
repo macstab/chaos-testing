@@ -36,7 +36,7 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  */
 @Repeatable(ChaosSendEnobufs.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.TYPE, ElementType.METHOD})
+@Target({ElementType.TYPE, ElementType.METHOD, ElementType.FIELD})
 @ChaosL1(translator = "com.macstab.chaos.connection.annotation.l1.translators.ConnectionErrnoTranslator")
 @ConnectionErrnoBinding(operation = NetOperation.SEND, errno = Errno.ENOBUFS)
 public @interface ChaosSendEnobufs {

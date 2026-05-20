@@ -37,7 +37,7 @@ import com.macstab.chaos.process.model.ProcessSelector;
  */
 @Repeatable(ChaosExecveatEacces.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.TYPE, ElementType.METHOD})
+@Target({ElementType.TYPE, ElementType.METHOD, ElementType.FIELD})
 @ChaosL1(translator = "com.macstab.chaos.process.annotation.l1.translators.ProcessErrnoTranslator")
 @ProcessErrnoBinding(selector = ProcessSelector.EXECVEAT, errno = ProcessErrno.EACCES)
 public @interface ChaosExecveatEacces {
