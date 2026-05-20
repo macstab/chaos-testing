@@ -61,7 +61,8 @@ public final class ProcessFailAfterTranslator implements L1Translator<Annotation
       return 0L;
     } catch (final ReflectiveOperationException e) {
       throw new IllegalStateException(
-          "Failed to read successesBeforeFailure() from " + annotation.annotationType().getName(), e);
+          "Failed to read successesBeforeFailure() from " + annotation.annotationType().getName(),
+          e);
     }
   }
 }

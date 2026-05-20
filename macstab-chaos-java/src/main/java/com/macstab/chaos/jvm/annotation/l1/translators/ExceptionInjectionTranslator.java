@@ -9,9 +9,9 @@ import com.macstab.chaos.core.extension.L1Translator;
 import com.macstab.chaos.jvm.api.ChaosEffect;
 
 /**
- * L1 translator for {@code @ChaosXxxInjectException} interceptor annotations. Builds a
- * {@link ChaosEffect#injectException(String, String)} from the annotation's
- * {@code exceptionClassName} + {@code message} attributes.
+ * L1 translator for {@code @ChaosXxxInjectException} interceptor annotations. Builds a {@link
+ * ChaosEffect#injectException(String, String)} from the annotation's {@code exceptionClassName} +
+ * {@code message} attributes.
  *
  * @author Christian Schnapka - Macstab GmbH
  */

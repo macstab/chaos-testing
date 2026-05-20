@@ -2,6 +2,7 @@
 package com.macstab.chaos.jvm.annotation.l1.jvm_runtime;
 
 import java.lang.annotation.ElementType;
+import java.lang.annotation.Repeatable;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
@@ -28,6 +29,7 @@ import com.macstab.chaos.jvm.api.OperationType;
  * @see com.macstab.chaos.jvm.api.OperationType#SYSTEM_GC_REQUEST
  * @see com.macstab.chaos.jvm.api.ChaosSelector#jvmRuntime(java.util.Set)
  */
+@Repeatable(ChaosSystemGcRequestSuppress.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.TYPE, ElementType.METHOD})
 @ChaosL1(translator = "com.macstab.chaos.jvm.annotation.l1.translators.SuppressTranslator")
@@ -40,4 +42,24 @@ public @interface ChaosSystemGcRequestSuppress {
 
   /** @return policy when the JVM agent is not active on the container */
   OnMissingEnv onMissingEnv() default OnMissingEnv.ERROR;
+
+  /**
+   * Container that enables repeating this annotation on the same element. Do not use directly —
+   * Java adds it automatically when the annotation appears more than once on the same target.
+   *
+   * <p>Example:
+   * <pre>{@code
+   * @ChaosSystemGcRequestSuppress(id = "primary",  probability = 0.001)
+   * @ChaosSystemGcRequestSuppress(id = "replica",  probability = 0.01)
+   * class MultiContainerTest { ... }
+   * }</pre>
+   */
+  @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME)
+  @java.lang.annotation.Target({
+    java.lang.annotation.ElementType.TYPE,
+    java.lang.annotation.ElementType.METHOD
+  })
+  @interface Repeatable {
+    ChaosSystemGcRequestSuppress[] value();
+  }
 }

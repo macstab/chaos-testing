@@ -150,7 +150,8 @@ class TimeTranslatorsTest {
       final TimeRule rule = TimeOffsetTranslator.buildRule(pick(OffsetDefault.class));
       assertThat(rule.selector()).isEqualTo(TimeSelector.CLOCK_GETTIME);
       assertThat(rule.effect()).isInstanceOf(TimeEffect.Offset.class);
-      assertThat(((TimeEffect.Offset) rule.effect()).delta()).isEqualTo(Duration.ofMillis(-60_000L));
+      assertThat(((TimeEffect.Offset) rule.effect()).delta())
+          .isEqualTo(Duration.ofMillis(-60_000L));
     }
 
     @Test

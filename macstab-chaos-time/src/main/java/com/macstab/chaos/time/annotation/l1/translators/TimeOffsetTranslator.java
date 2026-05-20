@@ -18,9 +18,9 @@ import com.macstab.chaos.time.model.TimeRule;
  * unique third effect kind — it shifts the {@code struct timespec} returned by {@code
  * clock_gettime} by a configurable delta. Only valid on {@code CLOCK_GETTIME}.
  *
- * <p>This translator currently handles a single annotation ({@code ChaosClockGettimeOffset}),
- * but is kept parameterised so per-clock variants can be added later without changing the
- * translator wiring.
+ * <p>This translator currently handles a single annotation ({@code ChaosClockGettimeOffset}), but
+ * is kept parameterised so per-clock variants can be added later without changing the translator
+ * wiring.
  *
  * @author Christian Schnapka - Macstab GmbH
  */

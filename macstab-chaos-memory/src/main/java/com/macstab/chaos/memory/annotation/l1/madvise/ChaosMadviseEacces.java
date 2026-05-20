@@ -2,6 +2,7 @@
 package com.macstab.chaos.memory.annotation.l1.madvise;
 
 import java.lang.annotation.ElementType;
+import java.lang.annotation.Repeatable;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
@@ -41,6 +42,7 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * @see MemoryErrnoBinding
  * @see com.macstab.chaos.memory.model.MemoryRule#errno(MemorySelector, MmapErrno, double)
  */
+@Repeatable(ChaosMadviseEacces.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.TYPE, ElementType.METHOD})
 @ChaosL1(translator = "com.macstab.chaos.memory.annotation.l1.translators.MemoryErrnoTranslator")
@@ -62,4 +64,24 @@ public @interface ChaosMadviseEacces {
    *     fails at {@code beforeAll}; {@code ABORT} marks the test class YELLOW/aborted)
    */
   OnMissingEnv onMissingEnv() default OnMissingEnv.ERROR;
+
+  /**
+   * Container that enables repeating this annotation on the same element. Do not use directly —
+   * Java adds it automatically when the annotation appears more than once on the same target.
+   *
+   * <p>Example:
+   * <pre>{@code
+   * @ChaosMadviseEacces(id = "primary",  probability = 0.001)
+   * @ChaosMadviseEacces(id = "replica",  probability = 0.01)
+   * class MultiContainerTest { ... }
+   * }</pre>
+   */
+  @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME)
+  @java.lang.annotation.Target({
+    java.lang.annotation.ElementType.TYPE,
+    java.lang.annotation.ElementType.METHOD
+  })
+  @interface Repeatable {
+    ChaosMadviseEacces[] value();
+  }
 }

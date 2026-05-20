@@ -21,7 +21,9 @@ public final class SafepointStormTranslator implements L1Translator<Annotation> 
         container,
         annotation,
         ChaosSelector.stress(ChaosSelector.StressTarget.SAFEPOINT_STORM),
-        ChaosEffect.safepointStorm(java.time.Duration.ofMillis(JvmL1Translators.readLong(annotation, "gcIntervalMs", 100L))));
+        ChaosEffect.safepointStorm(
+            java.time.Duration.ofMillis(
+                JvmL1Translators.readLong(annotation, "gcIntervalMs", 100L))));
   }
 
   @Override

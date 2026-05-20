@@ -21,7 +21,10 @@ public final class ReferenceQueueFloodTranslator implements L1Translator<Annotat
         container,
         annotation,
         ChaosSelector.stress(ChaosSelector.StressTarget.REFERENCE_QUEUE_FLOOD),
-        ChaosEffect.referenceQueueFlood(JvmL1Translators.readInt(annotation, "referenceCount", 10_000), java.time.Duration.ofMillis(JvmL1Translators.readLong(annotation, "floodIntervalMs", 100L))));
+        ChaosEffect.referenceQueueFlood(
+            JvmL1Translators.readInt(annotation, "referenceCount", 10_000),
+            java.time.Duration.ofMillis(
+                JvmL1Translators.readLong(annotation, "floodIntervalMs", 100L))));
   }
 
   @Override

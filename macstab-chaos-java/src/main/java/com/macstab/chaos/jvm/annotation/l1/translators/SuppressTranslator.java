@@ -9,8 +9,8 @@ import com.macstab.chaos.core.extension.L1Translator;
 import com.macstab.chaos.jvm.api.ChaosEffect;
 
 /**
- * L1 translator for {@code @ChaosXxxSuppress} interceptor annotations. Builds a no-argument
- * {@link ChaosEffect#suppress()}.
+ * L1 translator for {@code @ChaosXxxSuppress} interceptor annotations. Builds a no-argument {@link
+ * ChaosEffect#suppress()}.
  *
  * @author Christian Schnapka - Macstab GmbH
  */

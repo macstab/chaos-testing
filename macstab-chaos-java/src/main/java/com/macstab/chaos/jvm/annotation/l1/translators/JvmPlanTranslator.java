@@ -16,9 +16,9 @@ import com.macstab.chaos.jvm.annotation.l1.ChaosJvmPlan;
 
 /**
  * L1 translator for {@link ChaosJvmPlan}. Loads the named classpath resource and pushes its
- * contents to the agent via {@link CompositeJavaChaos#applyPlan}. On cleanup, calls
- * {@link CompositeJavaChaos#clearPlan} — the agent's wire model is wholesale plan replacement,
- * not per-rule add/remove, so a single handle per container covers the whole plan.
+ * contents to the agent via {@link CompositeJavaChaos#applyPlan}. On cleanup, calls {@link
+ * CompositeJavaChaos#clearPlan} — the agent's wire model is wholesale plan replacement, not
+ * per-rule add/remove, so a single handle per container covers the whole plan.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -58,8 +58,7 @@ public final class JvmPlanTranslator implements L1Translator<Annotation> {
       final Method m = annotation.annotationType().getMethod("planJsonResource");
       final Object v = m.invoke(annotation);
       if (!(v instanceof String s) || s.isBlank()) {
-        throw new IllegalArgumentException(
-            "planJsonResource() must be a non-blank classpath path");
+        throw new IllegalArgumentException("planJsonResource() must be a non-blank classpath path");
       }
       return s;
     } catch (final NoSuchMethodException e) {
@@ -72,18 +71,18 @@ public final class JvmPlanTranslator implements L1Translator<Annotation> {
   }
 
   private static String loadResource(final String resource, final Annotation annotation) {
-    try (InputStream in =
-        JvmPlanTranslator.class.getResourceAsStream(resource)) {
+    try (InputStream in = JvmPlanTranslator.class.getResourceAsStream(resource)) {
       if (in == null) {
         throw new IllegalArgumentException(
-            "@" + annotation.annotationType().getSimpleName()
-                + " planJsonResource=\"" + resource
+            "@"
+                + annotation.annotationType().getSimpleName()
+                + " planJsonResource=\""
+                + resource
                 + "\" not found on the test classpath");
       }
       return new String(in.readAllBytes(), StandardCharsets.UTF_8);
     } catch (final IOException e) {
-      throw new IllegalStateException(
-          "failed to read JVM plan resource \"" + resource + "\"", e);
+      throw new IllegalStateException("failed to read JVM plan resource \"" + resource + "\"", e);
     }
   }
 }

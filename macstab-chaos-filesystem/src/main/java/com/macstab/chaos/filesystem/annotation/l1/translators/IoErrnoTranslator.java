@@ -15,8 +15,8 @@ import com.macstab.chaos.filesystem.model.IoRule;
 import com.macstab.chaos.filesystem.model.PathPrefix;
 
 /**
- * Parameterised L1 translator for every IO-errno L1 annotation. PathPrefix is always
- * {@link PathPrefix#wildcard()} at the L1 tier.
+ * Parameterised L1 translator for every IO-errno L1 annotation. PathPrefix is always {@link
+ * PathPrefix#wildcard()} at the L1 tier.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -41,8 +41,7 @@ public final class IoErrnoTranslator implements L1Translator<Annotation> {
   }
 
   static IoRule buildRule(final Annotation annotation) {
-    final IoErrnoBinding binding =
-        annotation.annotationType().getAnnotation(IoErrnoBinding.class);
+    final IoErrnoBinding binding = annotation.annotationType().getAnnotation(IoErrnoBinding.class);
     if (binding == null) {
       throw new IllegalStateException(
           "@IoErrnoBinding meta-annotation missing on " + annotation.annotationType().getName());

@@ -10,8 +10,8 @@ import com.macstab.chaos.core.extension.L1Translator;
 import com.macstab.chaos.jvm.api.ChaosEffect;
 
 /**
- * L1 translator for {@code @ChaosXxxGate} interceptor annotations. Builds a
- * {@link ChaosEffect#gate(Duration)} from the annotation's {@code maxBlockMs} attribute.
+ * L1 translator for {@code @ChaosXxxGate} interceptor annotations. Builds a {@link
+ * ChaosEffect#gate(Duration)} from the annotation's {@code maxBlockMs} attribute.
  *
  * @author Christian Schnapka - Macstab GmbH
  */

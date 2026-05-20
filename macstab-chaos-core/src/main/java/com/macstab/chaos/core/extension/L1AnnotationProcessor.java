@@ -21,8 +21,8 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * Walks an {@link AnnotatedElement} (test class or test method) for L1 chaos annotations — those
- * carrying the {@link ChaosL1} meta-annotation — resolves each annotation's translator via the
- * FQN encoded in the meta-annotation, and applies the translator to every matching container.
+ * carrying the {@link ChaosL1} meta-annotation — resolves each annotation's translator via the FQN
+ * encoded in the meta-annotation, and applies the translator to every matching container.
  *
  * <p>Lives outside {@code ChaosTestingExtension} so the extension stays focused on the existing
  * container lifecycle and so this code is independently unit-testable.
@@ -31,15 +31,15 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <ul>
  *   <li>{@link IllegalArgumentException} from a translator (developer error: invalid attribute
- *       combination, bad probability, etc.) is wrapped in {@link
- *       ExtensionConfigurationException} with annotation source context — always RED.
+ *       combination, bad probability, etc.) is wrapped in {@link ExtensionConfigurationException}
+ *       with annotation source context — always RED.
  *   <li>{@link LibchaosNotPreparedException} / {@link ChaosUnsupportedOperationException} from a
- *       translator (environment unavailability: libchaos {@code .so} missing, current backend
- *       can't honour the requested verb) is routed through the annotation's
- *       {@link OnMissingEnv} attribute — ERROR raises {@link ExtensionConfigurationException}
- *       (RED), ABORT raises {@link TestAbortedException} (YELLOW).
- *   <li>{@link ClassNotFoundException} on translator resolution (developer error: required
- *       chaos module not on classpath) is wrapped with a build-snippet hint — always RED.
+ *       translator (environment unavailability: libchaos {@code .so} missing, current backend can't
+ *       honour the requested verb) is routed through the annotation's {@link OnMissingEnv}
+ *       attribute — ERROR raises {@link ExtensionConfigurationException} (RED), ABORT raises {@link
+ *       TestAbortedException} (YELLOW).
+ *   <li>{@link ClassNotFoundException} on translator resolution (developer error: required chaos
+ *       module not on classpath) is wrapped with a build-snippet hint — always RED.
  * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
@@ -51,13 +51,15 @@ public final class L1AnnotationProcessor {
     throw new UnsupportedOperationException("Utility class");
   }
 
-  /** Cache of resolved translators keyed by FQN — translator instances are stateless per contract. */
+  /**
+   * Cache of resolved translators keyed by FQN — translator instances are stateless per contract.
+   */
   private static final ConcurrentMap<String, L1Translator<Annotation>> TRANSLATOR_CACHE =
       new ConcurrentHashMap<>();
 
   /**
-   * Apply every L1 annotation declared on {@code testClass} to its matching containers. Called
-   * from {@code ChaosTestingExtension.beforeAll} after all containers have been started and their
+   * Apply every L1 annotation declared on {@code testClass} to its matching containers. Called from
+   * {@code ChaosTestingExtension.beforeAll} after all containers have been started and their
    * connection info created.
    *
    * @param testClass test class to scan
@@ -105,9 +107,9 @@ public final class L1AnnotationProcessor {
   }
 
   /**
-   * Best-effort cleanup of previously-applied L1s. Each {@link L1Translator#remove} call is
-   * wrapped in try/catch; on failure the caller may invoke a container-wide reset as a safety
-   * net (see {@link #shouldFallbackToReset}).
+   * Best-effort cleanup of previously-applied L1s. Each {@link L1Translator#remove} call is wrapped
+   * in try/catch; on failure the caller may invoke a container-wide reset as a safety net (see
+   * {@link #shouldFallbackToReset}).
    *
    * @param applied handles to remove
    * @return {@code true} if every removal succeeded; {@code false} if any threw
@@ -173,7 +175,8 @@ public final class L1AnnotationProcessor {
     final String idFilter = extractStringAttribute(annotation, "id");
     final OnMissingEnv onMissingEnv = extractOnMissingEnvAttribute(annotation);
 
-    final List<ContainerHandle> matching = filterByContainerId(containers, idFilter, annotation, testClass);
+    final List<ContainerHandle> matching =
+        filterByContainerId(containers, idFilter, annotation, testClass);
 
     if (matching.isEmpty()) {
       throw devError(
@@ -224,9 +227,7 @@ public final class L1AnnotationProcessor {
                     "L1 translator class '%s' not found for @%s on %s. "
                         + "The required chaos module is missing from the classpath. "
                         + "Add the corresponding testImplementation dependency.",
-                    fqn,
-                    annotation.annotationType().getSimpleName(),
-                    testClass.getSimpleName()),
+                    fqn, annotation.annotationType().getSimpleName(), testClass.getSimpleName()),
                 e);
 
           } catch (final ReflectiveOperationException e) {
@@ -234,15 +235,14 @@ public final class L1AnnotationProcessor {
                 String.format(
                     "Failed to instantiate L1 translator '%s' for @%s on %s. "
                         + "Translator must have a public no-arg constructor.",
-                    fqn,
-                    annotation.annotationType().getSimpleName(),
-                    testClass.getSimpleName()),
+                    fqn, annotation.annotationType().getSimpleName(), testClass.getSimpleName()),
                 e);
           }
         });
   }
 
-  // ==================== Attribute extraction (reflective — no compile-time annotation dep) ====================
+  // ==================== Attribute extraction (reflective — no compile-time annotation dep)
+  // ====================
 
   private static String extractStringAttribute(final Annotation annotation, final String name) {
     try {
@@ -352,17 +352,16 @@ public final class L1AnnotationProcessor {
   // ==================== Public data carriers ====================
 
   /**
-   * Internal projection of a started container plus its id, decoupling the processor from
-   * {@code ChaosTestingExtension}'s private {@code ContainerInstance}.
+   * Internal projection of a started container plus its id, decoupling the processor from {@code
+   * ChaosTestingExtension}'s private {@code ContainerInstance}.
    *
    * @param container the running container
-   * @param id container id from its source annotation's {@code id()} attribute, or {@code "default"}
+   * @param id container id from its source annotation's {@code id()} attribute, or {@code
+   *     "default"}
    * @param sourceAnnotationType annotation class that registered this container (diagnostic only)
    */
   public record ContainerHandle(
-      GenericContainer<?> container,
-      String id,
-      Class<? extends Annotation> sourceAnnotationType) {
+      GenericContainer<?> container, String id, Class<? extends Annotation> sourceAnnotationType) {
 
     /** Validating canonical constructor. */
     public ContainerHandle {
@@ -373,8 +372,8 @@ public final class L1AnnotationProcessor {
   }
 
   /**
-   * Bundle of (annotation, container, translator, handle) needed to undo a previously-applied
-   * L1. Stored in the {@code ExtensionContext.Store} between apply and remove.
+   * Bundle of (annotation, container, translator, handle) needed to undo a previously-applied L1.
+   * Stored in the {@code ExtensionContext.Store} between apply and remove.
    *
    * @param annotation the L1 annotation instance that was applied
    * @param container the container the rule landed on

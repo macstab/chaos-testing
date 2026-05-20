@@ -34,8 +34,8 @@ class L1AnnotationProcessorTest {
   /** Test fixture: L1 annotation that delegates to {@link SuccessTranslator}. */
   @Retention(RetentionPolicy.RUNTIME)
   @Target({ElementType.TYPE, ElementType.METHOD})
-  @ChaosL1(translator =
-      "com.macstab.chaos.core.extension.L1AnnotationProcessorTest$SuccessTranslator")
+  @ChaosL1(
+      translator = "com.macstab.chaos.core.extension.L1AnnotationProcessorTest$SuccessTranslator")
   public @interface FixtureSuccess {
     String id() default "";
 
@@ -45,8 +45,8 @@ class L1AnnotationProcessorTest {
   /** Test fixture: L1 annotation whose translator throws {@link IllegalArgumentException}. */
   @Retention(RetentionPolicy.RUNTIME)
   @Target(ElementType.TYPE)
-  @ChaosL1(translator =
-      "com.macstab.chaos.core.extension.L1AnnotationProcessorTest$DevErrorTranslator")
+  @ChaosL1(
+      translator = "com.macstab.chaos.core.extension.L1AnnotationProcessorTest$DevErrorTranslator")
   public @interface FixtureDevError {
     String id() default "";
 
@@ -59,8 +59,9 @@ class L1AnnotationProcessorTest {
    */
   @Retention(RetentionPolicy.RUNTIME)
   @Target(ElementType.TYPE)
-  @ChaosL1(translator =
-      "com.macstab.chaos.core.extension.L1AnnotationProcessorTest$LibchaosMissingTranslator")
+  @ChaosL1(
+      translator =
+          "com.macstab.chaos.core.extension.L1AnnotationProcessorTest$LibchaosMissingTranslator")
   public @interface FixtureEnvMissingError {
     String id() default "";
 
@@ -70,8 +71,9 @@ class L1AnnotationProcessorTest {
   /** Same translator, default OnMissingEnv=ABORT. */
   @Retention(RetentionPolicy.RUNTIME)
   @Target(ElementType.TYPE)
-  @ChaosL1(translator =
-      "com.macstab.chaos.core.extension.L1AnnotationProcessorTest$LibchaosMissingTranslator")
+  @ChaosL1(
+      translator =
+          "com.macstab.chaos.core.extension.L1AnnotationProcessorTest$LibchaosMissingTranslator")
   public @interface FixtureEnvMissingAbort {
     String id() default "";
 
@@ -280,7 +282,8 @@ class L1AnnotationProcessorTest {
   class DevErrors {
 
     @Test
-    @DisplayName("translator IllegalArgumentException → ExtensionConfigurationException with context")
+    @DisplayName(
+        "translator IllegalArgumentException → ExtensionConfigurationException with context")
     void devErrorWrapped() {
       assertThatThrownBy(
               () ->
@@ -294,7 +297,8 @@ class L1AnnotationProcessorTest {
     }
 
     @Test
-    @DisplayName("translator class not on classpath → ExtensionConfigurationException with build hint")
+    @DisplayName(
+        "translator class not on classpath → ExtensionConfigurationException with build hint")
     void translatorClassMissing() {
       assertThatThrownBy(
               () ->
@@ -357,8 +361,9 @@ class L1AnnotationProcessorTest {
   // Inline annotation/translator for ChaosUnsupportedOperationException coverage.
   @Retention(RetentionPolicy.RUNTIME)
   @Target(ElementType.TYPE)
-  @ChaosL1(translator =
-      "com.macstab.chaos.core.extension.L1AnnotationProcessorTest$UnsupportedOpTranslator")
+  @ChaosL1(
+      translator =
+          "com.macstab.chaos.core.extension.L1AnnotationProcessorTest$UnsupportedOpTranslator")
   public @interface FixtureUnsupportedAbort {
     String id() default "";
 
@@ -424,8 +429,9 @@ class L1AnnotationProcessorTest {
 
   @Retention(RetentionPolicy.RUNTIME)
   @Target(ElementType.TYPE)
-  @ChaosL1(translator =
-      "com.macstab.chaos.core.extension.L1AnnotationProcessorTest$RemoveThrowingTranslator")
+  @ChaosL1(
+      translator =
+          "com.macstab.chaos.core.extension.L1AnnotationProcessorTest$RemoveThrowingTranslator")
   public @interface FixtureRemoveThrowing {
     String id() default "";
 
@@ -459,8 +465,7 @@ class L1AnnotationProcessorTest {
       assertThat(applied).hasSize(1);
       assertThat(SuccessTranslator.APPLY_COUNT).hasValue(1);
       assertThat(report.applied()).hasSize(1);
-      assertThat(report.applied().get(0).scope())
-          .isEqualTo(ChaosApplicationReport.Scope.METHOD);
+      assertThat(report.applied().get(0).scope()).isEqualTo(ChaosApplicationReport.Scope.METHOD);
     }
   }
 }

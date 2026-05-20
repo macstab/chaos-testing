@@ -21,7 +21,9 @@ public final class DirectBufferPressureTranslator implements L1Translator<Annota
         container,
         annotation,
         ChaosSelector.stress(ChaosSelector.StressTarget.DIRECT_BUFFER),
-        ChaosEffect.directBufferPressure(JvmL1Translators.readLong(annotation, "totalBytes", 256L * 1024L * 1024L), JvmL1Translators.readInt(annotation, "bufferSizeBytes", 1024 * 1024)));
+        ChaosEffect.directBufferPressure(
+            JvmL1Translators.readLong(annotation, "totalBytes", 256L * 1024L * 1024L),
+            JvmL1Translators.readInt(annotation, "bufferSizeBytes", 1024 * 1024)));
   }
 
   @Override

@@ -9,8 +9,8 @@ import com.macstab.chaos.core.extension.L1Translator;
 import com.macstab.chaos.jvm.api.ChaosEffect;
 
 /**
- * L1 translator for {@code @ChaosXxxReject} interceptor annotations. Builds a
- * {@link ChaosEffect#reject(String)} from the annotation's {@code message} attribute.
+ * L1 translator for {@code @ChaosXxxReject} interceptor annotations. Builds a {@link
+ * ChaosEffect#reject(String)} from the annotation's {@code message} attribute.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -23,7 +23,8 @@ public final class RejectTranslator implements L1Translator<Annotation> {
   public Object apply(final GenericContainer<?> container, final Annotation annotation) {
     final String message =
         JvmL1Translators.readString(annotation, "message", "rejected by chaos L1");
-    return JvmL1Translators.buildScenarioAndPush(container, annotation, ChaosEffect.reject(message));
+    return JvmL1Translators.buildScenarioAndPush(
+        container, annotation, ChaosEffect.reject(message));
   }
 
   @Override

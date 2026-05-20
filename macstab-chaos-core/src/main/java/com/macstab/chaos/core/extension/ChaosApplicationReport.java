@@ -12,10 +12,10 @@ import java.util.Objects;
  * environment couldn't honour them and the annotation opted into {@link OnMissingEnv#ABORT}).
  *
  * <p>One report is built per test invocation; class-scope L1s appear under {@link #applied()} or
- * {@link #skipped()} once at {@code beforeAll}, method-scope L1s append at each {@code
- * beforeEach}. After-cleanup observers can pull the report from the {@code ExtensionContext.Store}
- * to log a summary, attach to test reports, or assert (in framework integration tests) that the
- * expected rules were applied.
+ * {@link #skipped()} once at {@code beforeAll}, method-scope L1s append at each {@code beforeEach}.
+ * After-cleanup observers can pull the report from the {@code ExtensionContext.Store} to log a
+ * summary, attach to test reports, or assert (in framework integration tests) that the expected
+ * rules were applied.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -72,14 +72,18 @@ public final class ChaosApplicationReport {
    * @return one-line summary suitable for logging at info level
    */
   public String summary() {
-    return String.format("Applied: %d | Skipped (OnMissingEnv=ABORT): %d", applied.size(), skipped.size());
+    return String.format(
+        "Applied: %d | Skipped (OnMissingEnv=ABORT): %d", applied.size(), skipped.size());
   }
 
   /** Distinguishes class-level L1s (applied once per test class) from method-level (per test). */
   public enum Scope {
     /** L1 annotation declared on the test class — applied once at {@code beforeAll}. */
     CLASS,
-    /** L1 annotation declared on a {@code @Test} method — applied per invocation at {@code beforeEach}. */
+    /**
+     * L1 annotation declared on a {@code @Test} method — applied per invocation at {@code
+     * beforeEach}.
+     */
     METHOD
   }
 

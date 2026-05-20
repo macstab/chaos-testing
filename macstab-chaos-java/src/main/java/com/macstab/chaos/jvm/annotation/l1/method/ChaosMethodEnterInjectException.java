@@ -2,6 +2,7 @@
 package com.macstab.chaos.jvm.annotation.l1.method;
 
 import java.lang.annotation.ElementType;
+import java.lang.annotation.Repeatable;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
@@ -12,40 +13,108 @@ import com.macstab.chaos.jvm.annotation.l1.JvmMethodBinding;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * L1 chaos primitive: throw the configured exception at {@code METHOD_ENTER} for matched methods.
+ * Throw the configured exception at {@code method_enter} for matched methods.
  *
- * <p><strong>Pattern requirement.</strong> At least one of {@link #classPattern} or
- * {@link #methodNamePattern} must be non-blank — MethodSelector rejects the all-ANY combination
- * to prevent JVM-wide instrumentation. Patterns are prefix-matched against the binary class name
- * (dots) and bare method name respectively.
+ * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
+ * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
+ * alongside a container annotation and activates for the lifetime of the test class (class-scope)
+ * or a single {@code @Test} method (method-scope).
  *
- * <p><strong>Wiring requirement.</strong> The agent doesn't auto-instrument user methods; events
- * must be raised from inside an existing interceptor (Spring AOP, AspectJ, Micronaut / Quarkus,
- * ByteBuddy advice, …) calling {@code chaosRuntime.beforeMethodEnter(cls, mth)}.
+ * <p><strong>What chaos this applies:</strong> throw the configured exception at {@code METHOD_ENTER} for matched methods inside the JVM of the target container.
+ * The effect fires on every matching call, subject to the probability configured via
+ * {@link #probability()} if applicable. The rule is active from {@code beforeAll} until
+ * {@code afterAll} (class-scope) or from {@code beforeEach} until {@code afterEach}
+ * (method-scope).
+ *
+ * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the container's active {@code ChaosPlan} via {@link com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged plan and pushes it to the agent API after every change.
+ *
+ * <p><strong>What is required:</strong>
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
+ *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before
+ *       it starts; omitting it causes an {@code ExtensionConfigurationException} at
+ *       {@code beforeAll}.</li>
+ *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
+ *       {@code @JvmAgentChaos}; the agent is attached before container start.</li>
+ *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the translator
+ *       class cannot be loaded.</li>
+ *   <li><strong>Java container image</strong> — the target container must run a JVM process;
+ *       the agent cannot intercept native executables.</li>
+ * </ul>
+ *
+ * <h2>Example</h2>
+ *
+ * <pre>{@code
+ * @AppContainer
+ * @JvmAgentChaos
+ * @ChaosMethodEnterInjectException
+ * class JvmChaosTest {
+ *   @Test
+ *   void appHandlesFault(ConnectionInfo info) { ... }
+ * }
+ * }</pre>
+ *
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default
+ * empty string applies to every agent-capable container. Use the repeatable form
+ * ({@code @ChaosMethodEnterInjectExceptions}) to apply different configurations to different containers.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
+@Repeatable(ChaosMethodEnterInjectException.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.TYPE, ElementType.METHOD})
-@ChaosL1(translator = "com.macstab.chaos.jvm.annotation.l1.translators.ExceptionInjectionTranslator")
+@ChaosL1(
+    translator = "com.macstab.chaos.jvm.annotation.l1.translators.ExceptionInjectionTranslator")
 @JvmMethodBinding(operationType = OperationType.METHOD_ENTER)
 public @interface ChaosMethodEnterInjectException {
 
-  /** @return prefix matched against the binary class name (e.g. {@code "com.example.service"}) */
+  /**
+   * @return prefix matched against the binary class name (e.g. {@code "com.example.service"})
+   */
   String classPattern() default "";
 
-  /** @return prefix matched against the method name (e.g. {@code "save"}) */
+  /**
+   * @return prefix matched against the method name (e.g. {@code "save"})
+   */
   String methodNamePattern() default "";
 
-  /** @return binary class name of the exception to throw */
+  /**
+   * @return binary class name of the exception to throw
+   */
   String exceptionClassName() default "java.io.IOException";
 
-  /** @return exception message */
+  /**
+   * @return exception message
+   */
   String message() default "injected at METHOD_ENTER by chaos L1";
 
-  /** @return container id to bind to ({@code ""} = every matching container) */
+  /**
+   * @return container id to bind to ({@code ""} = every matching container)
+   */
   String id() default "";
 
-  /** @return policy when the JVM agent is not active on the container */
+  /**
+   * @return policy when the JVM agent is not active on the container
+   */
   OnMissingEnv onMissingEnv() default OnMissingEnv.ERROR;
+
+  /**
+   * Container that enables repeating this annotation on the same element. Do not use directly —
+   * Java adds it automatically when the annotation appears more than once on the same target.
+   *
+   * <p>Example:
+   * <pre>{@code
+   * @ChaosMethodEnterInjectException(id = "primary",  probability = 0.001)
+   * @ChaosMethodEnterInjectException(id = "replica",  probability = 0.01)
+   * class MultiContainerTest { ... }
+   * }</pre>
+   */
+  @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME)
+  @java.lang.annotation.Target({
+    java.lang.annotation.ElementType.TYPE,
+    java.lang.annotation.ElementType.METHOD
+  })
+  @interface Repeatable {
+    ChaosMethodEnterInjectException[] value();
+  }
 }

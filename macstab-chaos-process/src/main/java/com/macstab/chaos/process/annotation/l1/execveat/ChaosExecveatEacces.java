@@ -2,6 +2,7 @@
 package com.macstab.chaos.process.annotation.l1.execveat;
 
 import java.lang.annotation.ElementType;
+import java.lang.annotation.Repeatable;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
@@ -34,6 +35,7 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * @author Christian Schnapka - Macstab GmbH
  * @see com.macstab.chaos.process.model.ProcessRule#errno(ProcessSelector, ProcessErrno, double)
  */
+@Repeatable(ChaosExecveatEacces.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.TYPE, ElementType.METHOD})
 @ChaosL1(translator = "com.macstab.chaos.process.annotation.l1.translators.ProcessErrnoTranslator")
@@ -48,4 +50,24 @@ public @interface ChaosExecveatEacces {
 
   /** @return policy when the active backend cannot honour libchaos-process */
   OnMissingEnv onMissingEnv() default OnMissingEnv.ERROR;
+
+  /**
+   * Container that enables repeating this annotation on the same element. Do not use directly —
+   * Java adds it automatically when the annotation appears more than once on the same target.
+   *
+   * <p>Example:
+   * <pre>{@code
+   * @ChaosExecveatEacces(id = "primary",  probability = 0.001)
+   * @ChaosExecveatEacces(id = "replica",  probability = 0.01)
+   * class MultiContainerTest { ... }
+   * }</pre>
+   */
+  @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME)
+  @java.lang.annotation.Target({
+    java.lang.annotation.ElementType.TYPE,
+    java.lang.annotation.ElementType.METHOD
+  })
+  @interface Repeatable {
+    ChaosExecveatEacces[] value();
+  }
 }

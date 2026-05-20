@@ -14,21 +14,21 @@ import com.macstab.chaos.memory.api.RuleHandle;
 import com.macstab.chaos.memory.model.MemoryRule;
 
 /**
- * Parameterised L1 translator for every memory-errno L1 annotation. Reads the per-annotation
- * {@link MemoryErrnoBinding} meta-annotation to recover the (selector, errno) tuple, then builds
- * and applies the corresponding {@link MemoryRule} via {@link AdvancedMemoryChaos}.
+ * Parameterised L1 translator for every memory-errno L1 annotation. Reads the per-annotation {@link
+ * MemoryErrnoBinding} meta-annotation to recover the (selector, errno) tuple, then builds and
+ * applies the corresponding {@link MemoryRule} via {@link AdvancedMemoryChaos}.
  *
- * <p>One translator instance handles all 45 memory-errno L1 annotations — they differ only in
- * their {@link MemoryErrnoBinding} values and the {@code probability} attribute. The lookup is
- * O(1) (annotation metadata is class-bound and cached by the JVM).
+ * <p>One translator instance handles all 45 memory-errno L1 annotations — they differ only in their
+ * {@link MemoryErrnoBinding} values and the {@code probability} attribute. The lookup is O(1)
+ * (annotation metadata is class-bound and cached by the JVM).
  *
  * <p>Backend selection is deferred to {@link CompositeMemoryChaos#standard()}, which honours the
  * existing libchaos / cgroups strategy precedence. If no backend can honour memory chaos on the
  * given container the call surfaces {@link
  * com.macstab.chaos.core.exception.LibchaosNotPreparedException} or {@link
- * com.macstab.chaos.core.exception.ChaosUnsupportedOperationException} — the chaos-core
- * {@code L1AnnotationProcessor} catches both and routes through the annotation's
- * {@code OnMissingEnv} attribute.
+ * com.macstab.chaos.core.exception.ChaosUnsupportedOperationException} — the chaos-core {@code
+ * L1AnnotationProcessor} catches both and routes through the annotation's {@code OnMissingEnv}
+ * attribute.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -69,7 +69,8 @@ public final class MemoryErrnoTranslator implements L1Translator<Annotation> {
   @Override
   public void remove(final GenericContainer<?> container, final Object handle) {
     if (!(handle instanceof RuleHandle ruleHandle)) {
-      // Defensive — handle must be a memory RuleHandle. Silent on type mismatch (best-effort contract).
+      // Defensive — handle must be a memory RuleHandle. Silent on type mismatch (best-effort
+      // contract).
       return;
     }
     CompositeMemoryChaos.standard().advanced().remove(container, ruleHandle);

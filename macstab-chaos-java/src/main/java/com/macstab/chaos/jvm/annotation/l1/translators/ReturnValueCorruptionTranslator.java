@@ -10,9 +10,9 @@ import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosEffect.ReturnValueStrategy;
 
 /**
- * L1 translator for {@code @ChaosMethodExitXxx} annotations. Builds a
- * {@link ChaosEffect#corruptReturnValue(ReturnValueStrategy)} from the annotation's
- * {@code strategy} attribute.
+ * L1 translator for {@code @ChaosMethodExitXxx} annotations. Builds a {@link
+ * ChaosEffect#corruptReturnValue(ReturnValueStrategy)} from the annotation's {@code strategy}
+ * attribute.
  *
  * @author Christian Schnapka - Macstab GmbH
  */

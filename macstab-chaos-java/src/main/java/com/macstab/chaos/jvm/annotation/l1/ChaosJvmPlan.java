@@ -2,6 +2,7 @@
 package com.macstab.chaos.jvm.annotation.l1;
 
 import java.lang.annotation.ElementType;
+import java.lang.annotation.Repeatable;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
@@ -10,48 +11,54 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * L1 chaos primitive: load a hand-written JVM-agent plan JSON file (from the test classpath) and
- * push it into the target container via {@code CompositeJavaChaos.applyPlan}.
+ * Load a hand-written jvm-agent plan json file (from the test classpath) and push it into the target container via {@code compositejavachaos.
  *
- * <p><strong>Why this annotation exists right now.</strong> The chaos JVM agent's typed plan API
- * ({@code com.macstab.chaos.jvm.api.ChaosPlan} / {@code ChaosScenario} / {@code ChaosEffect})
- * lives in the {@code chaos-agent-api} project — separate from this repository. Until those
- * typed classes are reachable here, the L1 tier for JVM cannot generate the 60+ effect-specific
- * annotations the design calls for. This single annotation is the escape-hatch that bridges the
- * L1 lifecycle (apply on {@code beforeAll}/{@code beforeEach}, clear on
- * {@code afterEach}/{@code afterAll}) to the agent's wire format <em>today</em>, without
- * pretending to know the JSON schema.
+ * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
+ * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
+ * alongside a container annotation and activates for the lifetime of the test class (class-scope)
+ * or a single {@code @Test} method (method-scope).
  *
- * <p><strong>Follow-on.</strong> Once chaos-agent-api is reachable from this repo, the L1 tier
- * will grow per-effect annotations following the same selector × effect pattern proven for
- * libchaos modules ({@code @ChaosJdbcDelay}, {@code @ChaosHeapPressure}, etc.). This annotation
- * stays as the escape-hatch for plans not yet covered by the typed L1 surface.
+ * <p><strong>What chaos this applies:</strong> load a hand-written JVM-agent plan JSON file (from the test classpath) and push it into the target container via {@code CompositeJavaChaos inside the JVM of the target container.
+ * The effect fires on every matching call, subject to the probability configured via
+ * {@link #probability()} if applicable. The rule is active from {@code beforeAll} until
+ * {@code afterAll} (class-scope) or from {@code beforeEach} until {@code afterEach}
+ * (method-scope).
+ *
+ * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the container's active {@code ChaosPlan} via {@link com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged plan and pushes it to the agent API after every change.
+ *
+ * <p><strong>What is required:</strong>
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
+ *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before
+ *       it starts; omitting it causes an {@code ExtensionConfigurationException} at
+ *       {@code beforeAll}.</li>
+ *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
+ *       {@code @JvmAgentChaos}; the agent is attached before container start.</li>
+ *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the translator
+ *       class cannot be loaded.</li>
+ *   <li><strong>Java container image</strong> — the target container must run a JVM process;
+ *       the agent cannot intercept native executables.</li>
+ * </ul>
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
- * @RedisStandalone
+ * @AppContainer
  * @JvmAgentChaos
- * @ChaosJvmPlan(planJsonResource = "/chaos-plans/jdbc-latency.json")
- * class MyTest {
- *
+ * @ChaosJvmPlan
+ * class JvmChaosTest {
  *   @Test
- *   void appHandlesJdbcLatency(RedisConnectionInfo info) { ... }
+ *   void appHandlesFault(ConnectionInfo info) { ... }
  * }
  * }</pre>
  *
- * <p>The resource must be a classpath path readable by {@code
- * ClassLoader.getResourceAsStream(planJsonResource())}. Its contents are pushed verbatim to the
- * agent — the schema is the agent project's concern, not this library's.
- *
- * <p><strong>Cleanup:</strong> on {@code afterEach} (method-scope) or {@code afterAll}
- * (class-scope), the framework calls {@code CompositeJavaChaos.clearPlan} to reset the agent
- * to an empty plan ({@code {"scenarios":[]}}). Per-rule cleanup isn't possible because the
- * agent's wire model is wholesale plan replacement, not per-rule add/remove.
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default
+ * empty string applies to every agent-capable container. Use the repeatable form
+ * ({@code @ChaosJvmPlans}) to apply different configurations to different containers.
  *
  * @author Christian Schnapka - Macstab GmbH
- * @see com.macstab.chaos.jvm.CompositeJavaChaos#applyPlan
  */
+@Repeatable(ChaosJvmPlan.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.TYPE, ElementType.METHOD})
 @ChaosL1(translator = "com.macstab.chaos.jvm.annotation.l1.translators.JvmPlanTranslator")
@@ -68,8 +75,28 @@ public @interface ChaosJvmPlan {
   String id() default "";
 
   /**
-   * @return policy when the JVM agent is not active on the container ({@code ERROR} fails at
-   *     {@code beforeAll}; {@code ABORT} marks the test class YELLOW/aborted)
+   * @return policy when the JVM agent is not active on the container ({@code ERROR} fails at {@code
+   *     beforeAll}; {@code ABORT} marks the test class YELLOW/aborted)
    */
   OnMissingEnv onMissingEnv() default OnMissingEnv.ERROR;
+
+  /**
+   * Container that enables repeating this annotation on the same element. Do not use directly —
+   * Java adds it automatically when the annotation appears more than once on the same target.
+   *
+   * <p>Example:
+   * <pre>{@code
+   * @ChaosJvmPlan(id = "primary",  probability = 0.001)
+   * @ChaosJvmPlan(id = "replica",  probability = 0.01)
+   * class MultiContainerTest { ... }
+   * }</pre>
+   */
+  @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME)
+  @java.lang.annotation.Target({
+    java.lang.annotation.ElementType.TYPE,
+    java.lang.annotation.ElementType.METHOD
+  })
+  @interface Repeatable {
+    ChaosJvmPlan[] value();
+  }
 }

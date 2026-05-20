@@ -38,8 +38,7 @@ public final class DnsEaiTranslator implements L1Translator<Annotation> {
   }
 
   static DnsRule buildRule(final Annotation annotation) {
-    final DnsEaiBinding binding =
-        annotation.annotationType().getAnnotation(DnsEaiBinding.class);
+    final DnsEaiBinding binding = annotation.annotationType().getAnnotation(DnsEaiBinding.class);
     if (binding == null) {
       throw new IllegalStateException(
           "@DnsEaiBinding meta-annotation missing on " + annotation.annotationType().getName());

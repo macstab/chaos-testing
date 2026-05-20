@@ -21,7 +21,9 @@ public final class StringInternPressureTranslator implements L1Translator<Annota
         container,
         annotation,
         ChaosSelector.stress(ChaosSelector.StressTarget.STRING_INTERN_PRESSURE),
-        ChaosEffect.stringInternPressure(JvmL1Translators.readInt(annotation, "internCount", 100_000), JvmL1Translators.readInt(annotation, "stringLengthBytes", 64)));
+        ChaosEffect.stringInternPressure(
+            JvmL1Translators.readInt(annotation, "internCount", 100_000),
+            JvmL1Translators.readInt(annotation, "stringLengthBytes", 64)));
   }
 
   @Override

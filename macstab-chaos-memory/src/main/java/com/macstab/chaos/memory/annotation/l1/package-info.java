@@ -12,6 +12,8 @@
  *   <li>Is {@code @Target}-ed at both {@code TYPE} and {@code METHOD} — class-level annotations
  *       apply for the whole test class lifetime, method-level annotations apply for a single
  *       {@code @Test} invocation.
+ *   <li>Is {@code @Repeatable} so the same annotation type can appear multiple times on one
+ *       test class (e.g. different probabilities for different containers identified by {@code id}).
  *   <li>Carries {@code probability}, {@code id}, and {@code onMissingEnv} attributes; selector
  *       and errno are NOT attributes — they are part of the annotation name.
  *   <li>Is bound to either {@link com.macstab.chaos.memory.annotation.l1.translators.MemoryErrnoTranslator}

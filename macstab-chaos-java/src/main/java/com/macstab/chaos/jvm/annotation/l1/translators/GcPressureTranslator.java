@@ -21,7 +21,11 @@ public final class GcPressureTranslator implements L1Translator<Annotation> {
         container,
         annotation,
         ChaosSelector.stress(ChaosSelector.StressTarget.GC_PRESSURE),
-        ChaosEffect.gcPressure(JvmL1Translators.readLong(annotation, "allocationRateBytesPerSecond", 100L * 1024L * 1024L), java.time.Duration.ofMillis(JvmL1Translators.readLong(annotation, "durationMs", 60_000L))));
+        ChaosEffect.gcPressure(
+            JvmL1Translators.readLong(
+                annotation, "allocationRateBytesPerSecond", 100L * 1024L * 1024L),
+            java.time.Duration.ofMillis(
+                JvmL1Translators.readLong(annotation, "durationMs", 60_000L))));
   }
 
   @Override

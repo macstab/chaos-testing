@@ -16,8 +16,8 @@ import com.macstab.chaos.memory.model.MemoryRule;
 
 /**
  * Parameterised L1 translator for every memory-latency L1 annotation. Reads the per-annotation
- * {@link MemoryLatencyBinding} meta-annotation to recover the selector, then builds and applies
- * the corresponding {@link MemoryRule} via {@link AdvancedMemoryChaos}.
+ * {@link MemoryLatencyBinding} meta-annotation to recover the selector, then builds and applies the
+ * corresponding {@link MemoryRule} via {@link AdvancedMemoryChaos}.
  *
  * <p>One translator instance handles all 7 memory-latency L1 annotations.
  *

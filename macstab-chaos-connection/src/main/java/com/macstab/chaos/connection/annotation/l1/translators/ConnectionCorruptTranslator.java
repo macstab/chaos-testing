@@ -14,8 +14,8 @@ import com.macstab.chaos.connection.model.NetRule;
 import com.macstab.chaos.core.extension.L1Translator;
 
 /**
- * L1 translator for {@code ChaosRecvCorrupt} — the corruption effect is implicitly bound to
- * {@code RECV} (the only NetOperation for which corruption is meaningful).
+ * L1 translator for {@code ChaosRecvCorrupt} — the corruption effect is implicitly bound to {@code
+ * RECV} (the only NetOperation for which corruption is meaningful).
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -40,8 +40,7 @@ public final class ConnectionCorruptTranslator implements L1Translator<Annotatio
   }
 
   static NetRule buildRule(final Annotation annotation) {
-    return NetRule.corrupt(
-        Endpoint.wildcard(), readRate(annotation), readToxicity(annotation));
+    return NetRule.corrupt(Endpoint.wildcard(), readRate(annotation), readToxicity(annotation));
   }
 
   private static double readRate(final Annotation annotation) {

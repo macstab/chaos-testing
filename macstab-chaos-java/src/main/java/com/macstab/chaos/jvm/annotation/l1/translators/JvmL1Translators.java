@@ -19,15 +19,14 @@ import com.macstab.chaos.jvm.api.OperationType;
 
 /**
  * Shared helpers for the JVM L1 effect translators. Reads the per-annotation interceptor binding,
- * builds the typed selector, mints a unique scenario id, and pushes the resulting scenario into
- * the {@link JvmPlanAccumulator}.
+ * builds the typed selector, mints a unique scenario id, and pushes the resulting scenario into the
+ * {@link JvmPlanAccumulator}.
  *
- * <p>Each effect family ({@code DelayTranslator}, {@code RejectTranslator}, …) is a tiny class
- * that calls {@link #buildScenarioAndPush} with its effect-specific {@link ChaosEffect} built
- * from the annotation's attributes. This split exists because the effect attributes vary per
- * family (Delay has {@code delayMs}, Reject has {@code message}, ClockSkew has {@code skewMs} +
- * {@code mode}, etc.) and a single polymorphic translator would be cluttered with reflection
- * for every variant.
+ * <p>Each effect family ({@code DelayTranslator}, {@code RejectTranslator}, …) is a tiny class that
+ * calls {@link #buildScenarioAndPush} with its effect-specific {@link ChaosEffect} built from the
+ * annotation's attributes. This split exists because the effect attributes vary per family (Delay
+ * has {@code delayMs}, Reject has {@code message}, ClockSkew has {@code skewMs} + {@code mode},
+ * etc.) and a single polymorphic translator would be cluttered with reflection for every variant.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -39,8 +38,8 @@ final class JvmL1Translators {
 
   /**
    * Build a {@link ChaosScenario} from the annotation's {@link JvmInterceptorBinding} + the
-   * caller-provided effect, register it with the accumulator, and return the minted scenario id
-   * as the opaque L1 handle.
+   * caller-provided effect, register it with the accumulator, and return the minted scenario id as
+   * the opaque L1 handle.
    *
    * @param container target container the JVM agent is attached to
    * @param annotation the L1 annotation declaring the interceptor binding
@@ -79,13 +78,12 @@ final class JvmL1Translators {
   }
 
   /**
-   * Build (but do not push) the MethodSelector-targeted scenario for an L1 carrying
-   * {@link JvmMethodBinding}. Reads {@code classPattern} + {@code methodNamePattern} from the
-   * annotation; at least one must be non-blank (MethodSelector rejects the all-{@code ANY}
-   * combination by design to prevent JVM-wide instrumentation).
+   * Build (but do not push) the MethodSelector-targeted scenario for an L1 carrying {@link
+   * JvmMethodBinding}. Reads {@code classPattern} + {@code methodNamePattern} from the annotation;
+   * at least one must be non-blank (MethodSelector rejects the all-{@code ANY} combination by
+   * design to prevent JVM-wide instrumentation).
    */
-  static ChaosScenario buildMethodScenario(
-      final Annotation annotation, final ChaosEffect effect) {
+  static ChaosScenario buildMethodScenario(final Annotation annotation, final ChaosEffect effect) {
     final JvmMethodBinding binding = readMethodBinding(annotation);
     final String classPattern = readString(annotation, "classPattern", "");
     final String methodNamePattern = readString(annotation, "methodNamePattern", "");
@@ -96,8 +94,10 @@ final class JvmL1Translators {
               + " requires classPattern or methodNamePattern to be non-blank — MethodSelector "
               + "rejects the all-ANY combination to prevent accidental JVM-wide instrumentation.");
     }
-    final NamePattern cls = classPattern.isBlank() ? NamePattern.any() : NamePattern.prefix(classPattern);
-    final NamePattern mth = methodNamePattern.isBlank() ? NamePattern.any() : NamePattern.prefix(methodNamePattern);
+    final NamePattern cls =
+        classPattern.isBlank() ? NamePattern.any() : NamePattern.prefix(classPattern);
+    final NamePattern mth =
+        methodNamePattern.isBlank() ? NamePattern.any() : NamePattern.prefix(methodNamePattern);
     final ChaosSelector selector =
         ChaosSelector.method(EnumSet.of(binding.operationType()), cls, mth);
     return buildScenarioWith(annotation, selector, effect);
@@ -111,8 +111,8 @@ final class JvmL1Translators {
   }
 
   /**
-   * Build a {@link ChaosScenario} for a stressor (which uses the unique
-   * {@link com.macstab.chaos.jvm.api.ChaosSelector.StressSelector} keyed by target rather than an
+   * Build a {@link ChaosScenario} for a stressor (which uses the unique {@link
+   * com.macstab.chaos.jvm.api.ChaosSelector.StressSelector} keyed by target rather than an
    * interceptor binding).
    *
    * @param container target container
@@ -185,7 +185,8 @@ final class JvmL1Translators {
     }
   }
 
-  static boolean readBoolean(final Annotation annotation, final String name, final boolean fallback) {
+  static boolean readBoolean(
+      final Annotation annotation, final String name, final boolean fallback) {
     try {
       final Method m = annotation.annotationType().getMethod(name);
       final Object v = m.invoke(annotation);
@@ -232,13 +233,15 @@ final class JvmL1Translators {
         annotation.annotationType().getAnnotation(JvmMethodBinding.class);
     if (binding == null) {
       throw new IllegalStateException(
-          "@JvmMethodBinding meta-annotation missing on "
-              + annotation.annotationType().getName());
+          "@JvmMethodBinding meta-annotation missing on " + annotation.annotationType().getName());
     }
     return binding;
   }
 
-  /** True iff the annotation carries {@link JvmMethodBinding} rather than {@link JvmInterceptorBinding}. */
+  /**
+   * True iff the annotation carries {@link JvmMethodBinding} rather than {@link
+   * JvmInterceptorBinding}.
+   */
   static boolean isMethodBinding(final Annotation annotation) {
     return annotation.annotationType().isAnnotationPresent(JvmMethodBinding.class);
   }

@@ -21,7 +21,10 @@ public final class FinalizerBacklogTranslator implements L1Translator<Annotation
         container,
         annotation,
         ChaosSelector.stress(ChaosSelector.StressTarget.FINALIZER_BACKLOG),
-        ChaosEffect.finalizerBacklog(JvmL1Translators.readInt(annotation, "objectCount", 1000), java.time.Duration.ofMillis(JvmL1Translators.readLong(annotation, "finalizerDelayMs", 100L))));
+        ChaosEffect.finalizerBacklog(
+            JvmL1Translators.readInt(annotation, "objectCount", 1000),
+            java.time.Duration.ofMillis(
+                JvmL1Translators.readLong(annotation, "finalizerDelayMs", 100L))));
   }
 
   @Override

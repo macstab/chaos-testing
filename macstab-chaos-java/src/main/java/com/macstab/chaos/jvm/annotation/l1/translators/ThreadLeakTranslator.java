@@ -21,7 +21,10 @@ public final class ThreadLeakTranslator implements L1Translator<Annotation> {
         container,
         annotation,
         ChaosSelector.stress(ChaosSelector.StressTarget.THREAD_LEAK),
-        ChaosEffect.threadLeak(JvmL1Translators.readInt(annotation, "threadCount", 50), JvmL1Translators.readString(annotation, "namePrefix", "chaos-l1-leaked-"), JvmL1Translators.readBoolean(annotation, "daemon", true)));
+        ChaosEffect.threadLeak(
+            JvmL1Translators.readInt(annotation, "threadCount", 50),
+            JvmL1Translators.readString(annotation, "namePrefix", "chaos-l1-leaked-"),
+            JvmL1Translators.readBoolean(annotation, "daemon", true)));
   }
 
   @Override

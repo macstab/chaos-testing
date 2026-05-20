@@ -27,7 +27,6 @@ import com.macstab.chaos.connection.annotation.l1.send.ChaosSendEpipe;
 import com.macstab.chaos.connection.annotation.l1.send.ChaosSendLatency;
 import com.macstab.chaos.connection.model.Effect;
 import com.macstab.chaos.connection.model.Endpoint;
-import com.macstab.chaos.connection.model.Errno;
 import com.macstab.chaos.connection.model.NetOperation;
 import com.macstab.chaos.connection.model.NetRule;
 
@@ -96,17 +95,32 @@ class ConnectionTranslatorsTest {
 
     static Stream<Arguments> tuples() {
       return Stream.of(
-          Arguments.of(ConnectEconnrefused.class, NetOperation.CONNECT, com.macstab.chaos.connection.model.Errno.ECONNREFUSED),
-          Arguments.of(ConnectEhostunreach.class, NetOperation.CONNECT, com.macstab.chaos.connection.model.Errno.EHOSTUNREACH),
-          Arguments.of(AcceptEmfile.class, NetOperation.ACCEPT, com.macstab.chaos.connection.model.Errno.EMFILE),
-          Arguments.of(SendEpipe.class, NetOperation.SEND, com.macstab.chaos.connection.model.Errno.EPIPE),
-          Arguments.of(RecvEagain.class, NetOperation.RECV, com.macstab.chaos.connection.model.Errno.EAGAIN));
+          Arguments.of(
+              ConnectEconnrefused.class,
+              NetOperation.CONNECT,
+              com.macstab.chaos.connection.model.Errno.ECONNREFUSED),
+          Arguments.of(
+              ConnectEhostunreach.class,
+              NetOperation.CONNECT,
+              com.macstab.chaos.connection.model.Errno.EHOSTUNREACH),
+          Arguments.of(
+              AcceptEmfile.class,
+              NetOperation.ACCEPT,
+              com.macstab.chaos.connection.model.Errno.EMFILE),
+          Arguments.of(
+              SendEpipe.class, NetOperation.SEND, com.macstab.chaos.connection.model.Errno.EPIPE),
+          Arguments.of(
+              RecvEagain.class,
+              NetOperation.RECV,
+              com.macstab.chaos.connection.model.Errno.EAGAIN));
     }
 
     @ParameterizedTest(name = "{0} → ({1}, {2})")
     @MethodSource("tuples")
     void translates(
-        final Class<?> fixture, final NetOperation op, final com.macstab.chaos.connection.model.Errno expectedErrno) {
+        final Class<?> fixture,
+        final NetOperation op,
+        final com.macstab.chaos.connection.model.Errno expectedErrno) {
       final NetRule rule = ConnectionErrnoTranslator.buildRule(pick(fixture));
       assertThat(rule.endpoint()).isInstanceOf(Endpoint.Wildcard.class);
       assertThat(rule.operation()).isEqualTo(op);
@@ -117,7 +131,8 @@ class ConnectionTranslatorsTest {
 
     @Test
     void customToxicity() {
-      final NetRule rule = ConnectionErrnoTranslator.buildRule(pick(ConnectEconnrefusedCustom.class));
+      final NetRule rule =
+          ConnectionErrnoTranslator.buildRule(pick(ConnectEconnrefusedCustom.class));
       assertThat(rule.toxicity()).isEqualTo(0.1);
     }
 
@@ -157,7 +172,8 @@ class ConnectionTranslatorsTest {
 
     @Test
     void missingBinding() {
-      assertThatThrownBy(() -> ConnectionLatencyTranslator.buildRule(pick(WithPlainNoBinding.class)))
+      assertThatThrownBy(
+              () -> ConnectionLatencyTranslator.buildRule(pick(WithPlainNoBinding.class)))
           .isInstanceOf(IllegalStateException.class)
           .hasMessageContaining("@ConnectionLatencyBinding meta-annotation missing");
     }

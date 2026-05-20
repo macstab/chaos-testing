@@ -11,8 +11,8 @@ import com.macstab.chaos.jvm.api.ChaosEffect;
 
 /**
  * L1 translator for all {@code @ChaosXxxDelay} interceptor annotations across every JVM selector
- * family. Reads {@code delayMs} (and optional {@code maxDelayMs}) attributes to build a
- * {@link ChaosEffect#delay(Duration, Duration)}.
+ * family. Reads {@code delayMs} (and optional {@code maxDelayMs}) attributes to build a {@link
+ * ChaosEffect#delay(Duration, Duration)}.
  *
  * @author Christian Schnapka - Macstab GmbH
  */

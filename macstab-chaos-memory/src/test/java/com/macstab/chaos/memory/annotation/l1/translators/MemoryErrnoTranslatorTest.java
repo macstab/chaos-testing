@@ -98,7 +98,8 @@ class MemoryErrnoTranslatorTest {
 
   @ParameterizedTest(name = "{0} → ({1}, {2})")
   @MethodSource("annotationToTuple")
-  @DisplayName("each L1 annotation maps to the exact (selector, errno) tuple declared by its binding")
+  @DisplayName(
+      "each L1 annotation maps to the exact (selector, errno) tuple declared by its binding")
   void translatesEveryTuple(
       final Class<?> fixtureClass, final MemorySelector selector, final MmapErrno errno) {
 
@@ -134,7 +135,10 @@ class MemoryErrnoTranslatorTest {
 
   // ==================== Annotation discovery helper ====================
 
-  /** Returns the first annotation on {@code clazz} (test fixtures carry exactly one L1 + maybe binding). */
+  /**
+   * Returns the first annotation on {@code clazz} (test fixtures carry exactly one L1 + maybe
+   * binding).
+   */
   private static Annotation pickL1Annotation(final Class<?> clazz) {
     for (final Annotation a : clazz.getAnnotations()) {
       // skip JDK / framework annotations

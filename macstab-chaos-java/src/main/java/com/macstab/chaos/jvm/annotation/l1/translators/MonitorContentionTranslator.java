@@ -21,7 +21,9 @@ public final class MonitorContentionTranslator implements L1Translator<Annotatio
         container,
         annotation,
         ChaosSelector.stress(ChaosSelector.StressTarget.MONITOR_CONTENTION),
-        ChaosEffect.monitorContention(java.time.Duration.ofMillis(JvmL1Translators.readLong(annotation, "lockHoldMs", 50L)), JvmL1Translators.readInt(annotation, "contendingThreadCount", 8)));
+        ChaosEffect.monitorContention(
+            java.time.Duration.ofMillis(JvmL1Translators.readLong(annotation, "lockHoldMs", 50L)),
+            JvmL1Translators.readInt(annotation, "contendingThreadCount", 8)));
   }
 
   @Override

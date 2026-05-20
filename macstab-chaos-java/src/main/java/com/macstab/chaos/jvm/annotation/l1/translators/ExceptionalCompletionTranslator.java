@@ -10,8 +10,8 @@ import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosEffect.FailureKind;
 
 /**
- * L1 translator for {@code @ChaosAsyncCompleteXxx} annotations. Reads {@code failureKind} +
- * {@code message} and builds a {@link ChaosEffect#exceptionalCompletion(FailureKind, String)}.
+ * L1 translator for {@code @ChaosAsyncCompleteXxx} annotations. Reads {@code failureKind} + {@code
+ * message} and builds a {@link ChaosEffect#exceptionalCompletion(FailureKind, String)}.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -22,7 +22,8 @@ public final class ExceptionalCompletionTranslator implements L1Translator<Annot
 
   @Override
   public Object apply(final GenericContainer<?> container, final Annotation annotation) {
-    final FailureKind kind = JvmL1Translators.readEnum(annotation, "failureKind", FailureKind.RUNTIME);
+    final FailureKind kind =
+        JvmL1Translators.readEnum(annotation, "failureKind", FailureKind.RUNTIME);
     final String message =
         JvmL1Translators.readString(annotation, "message", "completed exceptionally by chaos L1");
     return JvmL1Translators.buildScenarioAndPush(

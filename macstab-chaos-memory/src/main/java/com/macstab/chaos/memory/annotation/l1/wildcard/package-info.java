@@ -1,6 +1,6 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 /**
- * L1 chaos primitives for the {@code every interposed VM} VM syscall family. Each annotation encodes
+ * L1 chaos primitives for the {@code every interposed VM syscall} VM syscall family. Each annotation encodes
  * exactly one (selector, errno) tuple — invalid POSIX combinations have no annotation class,
  * making the selector x errno matrix compile-time impossible to violate.
  *

@@ -21,7 +21,9 @@ public final class CodeCachePressureTranslator implements L1Translator<Annotatio
         container,
         annotation,
         ChaosSelector.stress(ChaosSelector.StressTarget.CODE_CACHE_PRESSURE),
-        ChaosEffect.codeCachePressure(JvmL1Translators.readInt(annotation, "classCount", 5_000), JvmL1Translators.readInt(annotation, "methodsPerClass", 50)));
+        ChaosEffect.codeCachePressure(
+            JvmL1Translators.readInt(annotation, "classCount", 5_000),
+            JvmL1Translators.readInt(annotation, "methodsPerClass", 50)));
   }
 
   @Override

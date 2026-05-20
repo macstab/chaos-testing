@@ -2,6 +2,7 @@
 package com.macstab.chaos.connection.annotation.l1.send;
 
 import java.lang.annotation.ElementType;
+import java.lang.annotation.Repeatable;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
@@ -13,38 +14,97 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * L1 chaos primitive: inject {@code ENOMEM} on every libchaos-net-intercepted
- * {@code send} syscall, gated by {@link #toxicity}.
+ * Injects {@code ENOMEM} on every libchaos-intercepted {@code send} call inside
+ * the target container, making the call fail as if the kernel returned {@code ENOMEM}.
  *
- * <p><strong>What this simulates:</strong> out of memory — kernel can't allocate socket buffers.
+ * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
+ * chaos unit. It encodes exactly one (selector, errno = {@code ENOMEM}) pair and has no
+ * runtime selector-errno matrix to validate. The combination is safe by construction: this
+ * annotation class exists only because {@code ENOMEM} is a valid POSIX result of
+ * {@code send}.
+ *
+ * <p><strong>What chaos this applies:</strong> on every {@code send} call that the
+ * libchaos interceptor sees, a Bernoulli trial with probability {@link #toxicity} is run.
+ * When it fires the interceptor returns {@code -1} and sets {@code errno = ENOMEM} — from
+ * the application's perspective this is indistinguishable from a real kernel-level failure.
+ * Specifically this simulates: out of memory — kernel cannot allocate the requested structure or buffer.
+ *
+ * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.NET)} annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-net.so} and prepend it to {@code LD_PRELOAD}. The shared library interposes socket-layer libc wrappers (connect, accept, socket, bind, listen, shutdown, send, recv, poll). This annotation installs a rule via {@code AdvancedConnectionChaos.apply(container, rule)}.
+ *
+ * <p><strong>What is required:</strong>
+ * <ul>
+ *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply
+ *       on macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.</li>
+ *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.NET)}</strong> on the container annotation
+ *       (e.g. {@code @RedisStandalone}) — omitting it causes an
+ *       {@code ExtensionConfigurationException} at {@code beforeAll}.</li>
+ *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
+ *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.</li>
+ *   <li><strong>{@code macstab-chaos-connection} on the test classpath</strong> — without it the translator
+ *       class cannot be loaded and the extension throws {@code ClassNotFoundException}.</li>
+ * </ul>
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.NET)
- * @ChaosSendEnomem(toxicity = 0.1)
- * class MyTest { ... }
+ * @ChaosSendEnomem(toxicity = 0.001)
+ * class FaultTest {
+ *   @Test
+ *   void appHandlesFailure(ConnectionInfo info) { ... }
+ * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> applies to every {@code send} call across all endpoints.
- * For per-endpoint targeting use the imperative {@code AdvancedConnectionChaos} API.
+ * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3 mirrors realistic OOM rates; 1.0 prevents the container from starting.
+ *
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every capable container in the test
+ * class. Use the repeatable form ({@code @ChaosSendEnomems}) to bind different probabilities to
+ * different containers simultaneously.
  *
  * @author Christian Schnapka - Macstab GmbH
- * @see com.macstab.chaos.connection.model.NetRule#errno
  */
+@Repeatable(ChaosSendEnomem.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.TYPE, ElementType.METHOD})
-@ChaosL1(translator = "com.macstab.chaos.connection.annotation.l1.translators.ConnectionErrnoTranslator")
+@ChaosL1(
+    translator = "com.macstab.chaos.connection.annotation.l1.translators.ConnectionErrnoTranslator")
 @ConnectionErrnoBinding(operation = NetOperation.SEND, errno = Errno.ENOMEM)
 public @interface ChaosSendEnomem {
 
-  /** @return probability the errno fires when matched, in {@code (0.0, 1.0]} */
+  /**
+   * @return probability the errno fires when matched, in {@code (0.0, 1.0]}
+   */
   double toxicity() default 1.0;
 
-  /** @return container id to bind to ({@code ""} = every matching container) */
+  /**
+   * @return container id to bind to ({@code ""} = every matching container)
+   */
   String id() default "";
 
-  /** @return policy when the active backend cannot honour libchaos-net */
+  /**
+   * @return policy when the active backend cannot honour libchaos-net
+   */
   OnMissingEnv onMissingEnv() default OnMissingEnv.ERROR;
+
+  /**
+   * Container that enables repeating this annotation on the same element. Do not use directly —
+   * Java adds it automatically when the annotation appears more than once on the same target.
+   *
+   * <p>Example:
+   * <pre>{@code
+   * @ChaosSendEnomem(id = "primary",  probability = 0.001)
+   * @ChaosSendEnomem(id = "replica",  probability = 0.01)
+   * class MultiContainerTest { ... }
+   * }</pre>
+   */
+  @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME)
+  @java.lang.annotation.Target({
+    java.lang.annotation.ElementType.TYPE,
+    java.lang.annotation.ElementType.METHOD
+  })
+  @interface Repeatable {
+    ChaosSendEnomem[] value();
+  }
 }

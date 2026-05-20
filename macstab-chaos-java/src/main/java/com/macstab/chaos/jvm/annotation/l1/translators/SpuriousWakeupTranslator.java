@@ -9,8 +9,8 @@ import com.macstab.chaos.core.extension.L1Translator;
 import com.macstab.chaos.jvm.api.ChaosEffect;
 
 /**
- * L1 translator for {@code @ChaosNioSelectSpuriousWakeup}. Builds the no-arg
- * {@link ChaosEffect#spuriousWakeup()}.
+ * L1 translator for {@code @ChaosNioSelectSpuriousWakeup}. Builds the no-arg {@link
+ * ChaosEffect#spuriousWakeup()}.
  *
  * @author Christian Schnapka - Macstab GmbH
  */

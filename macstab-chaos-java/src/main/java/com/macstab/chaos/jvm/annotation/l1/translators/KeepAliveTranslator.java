@@ -18,7 +18,8 @@ public final class KeepAliveTranslator implements L1Translator<Annotation> {
 
   @Override
   public Object apply(final GenericContainer<?> container, final Annotation annotation) {
-    final String threadName = JvmL1Translators.readString(annotation, "threadName", "chaos-l1-keepalive");
+    final String threadName =
+        JvmL1Translators.readString(annotation, "threadName", "chaos-l1-keepalive");
     final boolean daemon = JvmL1Translators.readBoolean(annotation, "daemon", true);
     final long heartbeatMs = JvmL1Translators.readLong(annotation, "heartbeatMs", 1000L);
     return JvmL1Translators.buildStressorScenarioAndPush(

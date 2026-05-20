@@ -21,11 +21,11 @@ import java.lang.annotation.Target;
  *
  * <h2>Combines with the agent's own in-process attach</h2>
  *
- * <p>The chaos-testing-java-agent project ships {@code ChaosAgentExtension} (JUnit 5) and {@code
- * @ChaosTest} (Spring Boot 3 / 4) for the <em>in-process</em> path — when the test JVM <em>is</em>
- * the target JVM. {@code @JvmAgentChaos} is for the <em>container-side</em> path — when the test
- * drives a separate JDK 21+ Java container via testcontainers. Both annotations can co-exist on
- * the same test class; each handles the path it owns.
+ * <p>The chaos-testing-java-agent project ships {@code ChaosAgentExtension} (JUnit 5) and
+ * {@code @ChaosTest} (Spring Boot 3 / 4) for the <em>in-process</em> path — when the test JVM
+ * <em>is</em> the target JVM. {@code @JvmAgentChaos} is for the <em>container-side</em> path — when
+ * the test drives a separate JDK 21+ Java container via testcontainers. Both annotations can
+ * co-exist on the same test class; each handles the path it owns.
  *
  * <h2>Example</h2>
  *
@@ -44,8 +44,8 @@ import java.lang.annotation.Target;
  *
  * <p><strong>Required dependency.</strong> {@code @JvmAgentChaos} only takes effect when {@code
  * macstab-chaos-java} (or a framework wrapper that pulls it transitively) is on the classpath.
- * Declaring the annotation without the dependency raises {@code ExtensionConfigurationException}
- * at test startup with a clear pointer to the missing build coordinate.
+ * Declaring the annotation without the dependency raises {@code ExtensionConfigurationException} at
+ * test startup with a clear pointer to the missing build coordinate.
  *
  * @author Christian Schnapka - Macstab GmbH
  */

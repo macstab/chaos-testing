@@ -14,8 +14,8 @@ import com.macstab.chaos.time.api.RuleHandle;
 import com.macstab.chaos.time.model.TimeRule;
 
 /**
- * Parameterised L1 translator for every time-errno L1 annotation. Reads the per-annotation
- * {@link TimeErrnoBinding} meta-annotation and constructs the corresponding {@link TimeRule}.
+ * Parameterised L1 translator for every time-errno L1 annotation. Reads the per-annotation {@link
+ * TimeErrnoBinding} meta-annotation and constructs the corresponding {@link TimeRule}.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -44,8 +44,7 @@ public final class TimeErrnoTranslator implements L1Translator<Annotation> {
         annotation.annotationType().getAnnotation(TimeErrnoBinding.class);
     if (binding == null) {
       throw new IllegalStateException(
-          "@TimeErrnoBinding meta-annotation missing on "
-              + annotation.annotationType().getName());
+          "@TimeErrnoBinding meta-annotation missing on " + annotation.annotationType().getName());
     }
     return TimeRule.errno(binding.selector(), binding.errno(), readProbability(annotation));
   }

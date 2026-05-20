@@ -17,9 +17,9 @@ import com.macstab.chaos.jvm.api.ChaosSelector;
 /**
  * Verifies the accumulator's rollback semantic — when {@code applyPlan} fails (mock container,
  * agent not loaded, file-system error), the failed scenario is removed from the active set
- * <em>before</em> the exception propagates. Without this guarantee the next add would re-push
- * the same broken plan and either repeat the error or silently activate a scenario the caller
- * thought failed.
+ * <em>before</em> the exception propagates. Without this guarantee the next add would re-push the
+ * same broken plan and either repeat the error or silently activate a scenario the caller thought
+ * failed.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -46,7 +46,8 @@ class JvmPlanAccumulatorTest {
 
     // Critical: the active set for this container must be empty after the failure.
     assertThat(JvmPlanAccumulator.instance().activeScenarios(container))
-        .as("accumulator must roll back the failed scenario; otherwise next add re-pushes the broken plan")
+        .as(
+            "accumulator must roll back the failed scenario; otherwise next add re-pushes the broken plan")
         .isEmpty();
   }
 }

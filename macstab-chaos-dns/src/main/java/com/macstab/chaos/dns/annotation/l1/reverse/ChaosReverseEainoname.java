@@ -2,6 +2,7 @@
 package com.macstab.chaos.dns.annotation.l1.reverse;
 
 import java.lang.annotation.ElementType;
+import java.lang.annotation.Repeatable;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
@@ -13,35 +14,91 @@ import com.macstab.chaos.dns.annotation.l1.DnsSelectorKind;
 import com.macstab.chaos.dns.model.EaiErrno;
 
 /**
- * L1 chaos primitive: inject {@code EAI_NONAME} on every libchaos-dns-intercepted
- * {@code getnameinfo} call inside the container.
+ * Injects {@code EAI_NONAME} on every libchaos-intercepted {@code reverse} call inside
+ * the target container, making the call fail as if the kernel returned {@code EAI_NONAME}.
  *
- * <p><strong>What this simulates:</strong> hostname not known — NXDOMAIN at the resolver; typical of misconfiguration or service deletion.
+ * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
+ * chaos unit. It encodes exactly one (selector, errno = {@code EAI_NONAME}) pair and has no
+ * runtime selector-errno matrix to validate. The combination is safe by construction: this
+ * annotation class exists only because {@code EAI_NONAME} is a valid POSIX result of
+ * {@code reverse}.
+ *
+ * <p><strong>What chaos this applies:</strong> on every {@code reverse} call that the
+ * libchaos interceptor sees, a Bernoulli trial with probability {@link #probability} is run.
+ * When it fires the interceptor returns {@code -1} and sets {@code errno = EAI_NONAME} — from
+ * the application's perspective this is indistinguishable from a real kernel-level failure.
+ * Specifically this simulates: hostname not found — NXDOMAIN; simulates service deletion or misconfiguration.
+ *
+ * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.DNS)} annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-dns.so} and prepend it to {@code LD_PRELOAD}. The shared library interposes the libc resolver wrappers {@code getaddrinfo} and {@code getnameinfo}. This annotation installs a rule via {@code AdvancedDnsChaos.apply(container, rule)}.
+ *
+ * <p><strong>What is required:</strong>
+ * <ul>
+ *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply
+ *       on macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.</li>
+ *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.DNS)}</strong> on the container annotation
+ *       (e.g. {@code @AppContainer}) — omitting it causes an
+ *       {@code ExtensionConfigurationException} at {@code beforeAll}.</li>
+ *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
+ *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.</li>
+ *   <li><strong>{@code macstab-chaos-dns} on the test classpath</strong> — without it the translator
+ *       class cannot be loaded and the extension throws {@code ClassNotFoundException}.</li>
+ * </ul>
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
- * @RedisStandalone
+ * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.DNS)
- * @ChaosReverseEainoname
- * class MyTest { ... }
+ * @ChaosReverseEainoname(probability = 0.001)
+ * class FaultTest {
+ *   @Test
+ *   void appHandlesFailure(ConnectionInfo info) { ... }
+ * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> applies to every {@code getnameinfo} lookup in the container.
- * For per-host targeting use the imperative {@code AdvancedDnsChaos.failResolution} API.
+ * <p><strong>Probability guidance:</strong> 1e-2 to 1e-1; 1.0 simulates a full DNS outage for the container.
+ *
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every capable container in the test
+ * class. Use the repeatable form ({@code @ChaosReverseEainonames}) to bind different probabilities to
+ * different containers simultaneously.
  *
  * @author Christian Schnapka - Macstab GmbH
- * @see com.macstab.chaos.dns.model.DnsRule#eai
  */
+@Repeatable(ChaosReverseEainoname.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.TYPE, ElementType.METHOD})
 @ChaosL1(translator = "com.macstab.chaos.dns.annotation.l1.translators.DnsEaiTranslator")
 @DnsEaiBinding(selectorKind = DnsSelectorKind.REVERSE, errno = EaiErrno.EAI_NONAME)
 public @interface ChaosReverseEainoname {
 
-  /** @return container id to bind to ({@code ""} = every matching container) */
+  /**
+   * @return container id to bind to ({@code ""} = every matching container)
+   */
   String id() default "";
 
-  /** @return policy when the active backend cannot honour libchaos-dns */
+  /**
+   * @return policy when the active backend cannot honour libchaos-dns
+   */
   OnMissingEnv onMissingEnv() default OnMissingEnv.ERROR;
+
+  /**
+   * Container that enables repeating this annotation on the same element. Do not use directly —
+   * Java adds it automatically when the annotation appears more than once on the same target.
+   *
+   * <p>Example:
+   * <pre>{@code
+   * @ChaosReverseEainoname(id = "primary",  probability = 0.001)
+   * @ChaosReverseEainoname(id = "replica",  probability = 0.01)
+   * class MultiContainerTest { ... }
+   * }</pre>
+   */
+  @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME)
+  @java.lang.annotation.Target({
+    java.lang.annotation.ElementType.TYPE,
+    java.lang.annotation.ElementType.METHOD
+  })
+  @interface Repeatable {
+    ChaosReverseEainoname[] value();
+  }
 }

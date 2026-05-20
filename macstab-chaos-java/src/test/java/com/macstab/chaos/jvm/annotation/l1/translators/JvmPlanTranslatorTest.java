@@ -42,7 +42,8 @@ class JvmPlanTranslatorTest {
   }
 
   @Test
-  @DisplayName("annotation with non-existent resource → IllegalArgumentException with classpath hint")
+  @DisplayName(
+      "annotation with non-existent resource → IllegalArgumentException with classpath hint")
   void missingResourceRejected() {
     final JvmPlanTranslator t = new JvmPlanTranslator();
     assertThatThrownBy(() -> t.apply(null, pick(MissingResource.class)))

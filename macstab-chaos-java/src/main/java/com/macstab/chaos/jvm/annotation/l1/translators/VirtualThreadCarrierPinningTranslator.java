@@ -21,7 +21,10 @@ public final class VirtualThreadCarrierPinningTranslator implements L1Translator
         container,
         annotation,
         ChaosSelector.stress(ChaosSelector.StressTarget.VIRTUAL_THREAD_CARRIER_PINNING),
-        ChaosEffect.virtualThreadCarrierPinning(JvmL1Translators.readInt(annotation, "pinnedThreadCount", 4), java.time.Duration.ofMillis(JvmL1Translators.readLong(annotation, "pinDurationMs", 100L))));
+        ChaosEffect.virtualThreadCarrierPinning(
+            JvmL1Translators.readInt(annotation, "pinnedThreadCount", 4),
+            java.time.Duration.ofMillis(
+                JvmL1Translators.readLong(annotation, "pinDurationMs", 100L))));
   }
 
   @Override

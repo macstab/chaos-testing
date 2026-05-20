@@ -16,8 +16,8 @@ import com.macstab.chaos.connection.model.NetRule;
 import com.macstab.chaos.core.extension.L1Translator;
 
 /**
- * Parameterised L1 translator for every connection-latency L1 annotation. Endpoint is always
- * {@link Endpoint#wildcard()} at the L1 tier.
+ * Parameterised L1 translator for every connection-latency L1 annotation. Endpoint is always {@link
+ * Endpoint#wildcard()} at the L1 tier.
  *
  * @author Christian Schnapka - Macstab GmbH
  */

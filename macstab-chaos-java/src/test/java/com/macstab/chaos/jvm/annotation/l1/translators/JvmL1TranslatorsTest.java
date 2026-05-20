@@ -53,10 +53,10 @@ import com.macstab.chaos.jvm.api.ChaosSelector;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Table-driven test of every effect-family translator. Uses the package-private
- * {@code JvmL1Translators.buildXxxScenario} helpers so the constructed {@link ChaosScenario} is
- * inspected directly — bypasses the {@code JvmPlanAccumulator} push that requires a working
- * container (covered separately by {@code JavaAgentTransportIntegrationTest}).
+ * Table-driven test of every effect-family translator. Uses the package-private {@code
+ * JvmL1Translators.buildXxxScenario} helpers so the constructed {@link ChaosScenario} is inspected
+ * directly — bypasses the {@code JvmPlanAccumulator} push that requires a working container
+ * (covered separately by {@code JavaAgentTransportIntegrationTest}).
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -68,7 +68,9 @@ class JvmL1TranslatorsTest {
   @ChaosJdbcConnectionAcquireDelay(delayMs = 250L, maxDelayMs = 500L)
   static class JdbcDelay250To500 {}
 
-  @ChaosJdbcStatementExecuteInjectException(exceptionClassName = "java.sql.SQLException", message = "boom")
+  @ChaosJdbcStatementExecuteInjectException(
+      exceptionClassName = "java.sql.SQLException",
+      message = "boom")
   static class JdbcSqlException {}
 
   @ChaosHttpClientSendDelay
@@ -93,10 +95,13 @@ class JvmL1TranslatorsTest {
   static class AsyncSuppress {}
 
   @ChaosAsyncCompleteExceptionalCompletion(
-      failureKind = ChaosEffect.FailureKind.TIMEOUT, message = "timeout via L1")
+      failureKind = ChaosEffect.FailureKind.TIMEOUT,
+      message = "timeout via L1")
   static class AsyncTimeout {}
 
-  @ChaosDnsResolveInjectException(exceptionClassName = "java.net.UnknownHostException", message = "no such host")
+  @ChaosDnsResolveInjectException(
+      exceptionClassName = "java.net.UnknownHostException",
+      message = "no such host")
   static class DnsUnknownHost {}
 
   @ChaosThreadStartDelay(delayMs = 50L)
@@ -114,7 +119,9 @@ class JvmL1TranslatorsTest {
   @ChaosSocketConnectReject(message = "connection refused via L1")
   static class SocketConnectReject {}
 
-  @ChaosSocketCloseInjectException(exceptionClassName = "java.io.IOException", message = "close fail")
+  @ChaosSocketCloseInjectException(
+      exceptionClassName = "java.io.IOException",
+      message = "close fail")
   static class SocketCloseException {}
 
   // Method-selector fixtures
@@ -126,7 +133,8 @@ class JvmL1TranslatorsTest {
   static class MethodEnterIo {}
 
   @ChaosMethodExitCorruptReturn(
-      classPattern = "com.example.dao.", strategy = ChaosEffect.ReturnValueStrategy.EMPTY)
+      classPattern = "com.example.dao.",
+      strategy = ChaosEffect.ReturnValueStrategy.EMPTY)
   static class MethodExitEmpty {}
 
   @ChaosMethodEnterInjectException // no patterns -> should fail at construction time
@@ -310,7 +318,8 @@ class JvmL1TranslatorsTest {
     final ChaosScenario s =
         JvmL1Translators.buildInterceptorScenario(
             pick(JdbcSqlException.class), buildEffectFor(pick(JdbcSqlException.class)));
-    final ChaosEffect.ExceptionInjectionEffect e = (ChaosEffect.ExceptionInjectionEffect) s.effect();
+    final ChaosEffect.ExceptionInjectionEffect e =
+        (ChaosEffect.ExceptionInjectionEffect) s.effect();
     assertThat(e.exceptionClassName()).isEqualTo("java.sql.SQLException");
     assertThat(e.message()).isEqualTo("boom");
   }
@@ -330,19 +339,56 @@ class JvmL1TranslatorsTest {
 
   static Stream<Arguments> stressors() {
     return Stream.of(
-        Arguments.of(HeapPressureSmall.class, ChaosSelector.StressTarget.HEAP, ChaosEffect.HeapPressureEffect.class),
-        Arguments.of(ThreadLeakSmall.class, ChaosSelector.StressTarget.THREAD_LEAK, ChaosEffect.ThreadLeakEffect.class),
-        Arguments.of(Deadlock3.class, ChaosSelector.StressTarget.DEADLOCK, ChaosEffect.DeadlockEffect.class),
-        Arguments.of(CodeCacheSmall.class, ChaosSelector.StressTarget.CODE_CACHE_PRESSURE, ChaosEffect.CodeCachePressureEffect.class),
-        Arguments.of(MetaspaceSmall.class, ChaosSelector.StressTarget.METASPACE, ChaosEffect.MetaspacePressureEffect.class),
-        Arguments.of(GcSmall.class, ChaosSelector.StressTarget.GC_PRESSURE, ChaosEffect.GcPressureEffect.class),
-        Arguments.of(FinalizerSmall.class, ChaosSelector.StressTarget.FINALIZER_BACKLOG, ChaosEffect.FinalizerBacklogEffect.class),
-        Arguments.of(ThreadLocalLeakSmall.class, ChaosSelector.StressTarget.THREAD_LOCAL_LEAK, ChaosEffect.ThreadLocalLeakEffect.class),
-        Arguments.of(MonitorContentionSmall.class, ChaosSelector.StressTarget.MONITOR_CONTENTION, ChaosEffect.MonitorContentionEffect.class),
-        Arguments.of(SafepointStormDefault.class, ChaosSelector.StressTarget.SAFEPOINT_STORM, ChaosEffect.SafepointStormEffect.class),
-        Arguments.of(StringInternSmall.class, ChaosSelector.StressTarget.STRING_INTERN_PRESSURE, ChaosEffect.StringInternPressureEffect.class),
-        Arguments.of(RefQueueSmall.class, ChaosSelector.StressTarget.REFERENCE_QUEUE_FLOOD, ChaosEffect.ReferenceQueueFloodEffect.class),
-        Arguments.of(VthreadPinSmall.class, ChaosSelector.StressTarget.VIRTUAL_THREAD_CARRIER_PINNING, ChaosEffect.VirtualThreadCarrierPinningEffect.class));
+        Arguments.of(
+            HeapPressureSmall.class,
+            ChaosSelector.StressTarget.HEAP,
+            ChaosEffect.HeapPressureEffect.class),
+        Arguments.of(
+            ThreadLeakSmall.class,
+            ChaosSelector.StressTarget.THREAD_LEAK,
+            ChaosEffect.ThreadLeakEffect.class),
+        Arguments.of(
+            Deadlock3.class, ChaosSelector.StressTarget.DEADLOCK, ChaosEffect.DeadlockEffect.class),
+        Arguments.of(
+            CodeCacheSmall.class,
+            ChaosSelector.StressTarget.CODE_CACHE_PRESSURE,
+            ChaosEffect.CodeCachePressureEffect.class),
+        Arguments.of(
+            MetaspaceSmall.class,
+            ChaosSelector.StressTarget.METASPACE,
+            ChaosEffect.MetaspacePressureEffect.class),
+        Arguments.of(
+            GcSmall.class,
+            ChaosSelector.StressTarget.GC_PRESSURE,
+            ChaosEffect.GcPressureEffect.class),
+        Arguments.of(
+            FinalizerSmall.class,
+            ChaosSelector.StressTarget.FINALIZER_BACKLOG,
+            ChaosEffect.FinalizerBacklogEffect.class),
+        Arguments.of(
+            ThreadLocalLeakSmall.class,
+            ChaosSelector.StressTarget.THREAD_LOCAL_LEAK,
+            ChaosEffect.ThreadLocalLeakEffect.class),
+        Arguments.of(
+            MonitorContentionSmall.class,
+            ChaosSelector.StressTarget.MONITOR_CONTENTION,
+            ChaosEffect.MonitorContentionEffect.class),
+        Arguments.of(
+            SafepointStormDefault.class,
+            ChaosSelector.StressTarget.SAFEPOINT_STORM,
+            ChaosEffect.SafepointStormEffect.class),
+        Arguments.of(
+            StringInternSmall.class,
+            ChaosSelector.StressTarget.STRING_INTERN_PRESSURE,
+            ChaosEffect.StringInternPressureEffect.class),
+        Arguments.of(
+            RefQueueSmall.class,
+            ChaosSelector.StressTarget.REFERENCE_QUEUE_FLOOD,
+            ChaosEffect.ReferenceQueueFloodEffect.class),
+        Arguments.of(
+            VthreadPinSmall.class,
+            ChaosSelector.StressTarget.VIRTUAL_THREAD_CARRIER_PINNING,
+            ChaosEffect.VirtualThreadCarrierPinningEffect.class));
   }
 
   @ParameterizedTest(name = "{0} → ({1}, {2})")
@@ -357,7 +403,8 @@ class JvmL1TranslatorsTest {
     final ChaosSelector selector = ChaosSelector.stress(expectedTarget);
     final ChaosScenario scenario = JvmL1Translators.buildStressorScenario(a, selector, effect);
     assertThat(scenario.selector()).isInstanceOf(ChaosSelector.StressSelector.class);
-    assertThat(((ChaosSelector.StressSelector) scenario.selector()).target()).isEqualTo(expectedTarget);
+    assertThat(((ChaosSelector.StressSelector) scenario.selector()).target())
+        .isEqualTo(expectedTarget);
     assertThat(scenario.effect()).isInstanceOf(expectedEffect);
   }
 
@@ -405,80 +452,102 @@ class JvmL1TranslatorsTest {
   // ==================== effect builder dispatch ====================
 
   /**
-   * Reproduce the per-effect translator's construction step without invoking the accumulator.
-   * The mapping must stay in sync with the translator classes — if a new effect is added, this
-   * switch must learn it.
+   * Reproduce the per-effect translator's construction step without invoking the accumulator. The
+   * mapping must stay in sync with the translator classes — if a new effect is added, this switch
+   * must learn it.
    */
   private static ChaosEffect buildEffectFor(final Annotation a) {
     final String tName =
-        a.annotationType().getAnnotation(com.macstab.chaos.core.extension.ChaosL1.class).translator();
+        a.annotationType()
+            .getAnnotation(com.macstab.chaos.core.extension.ChaosL1.class)
+            .translator();
     return switch (tName.substring(tName.lastIndexOf('.') + 1)) {
-      case "DelayTranslator" -> ChaosEffect.delay(
-          Duration.ofMillis(JvmL1Translators.readLong(a, "delayMs", 100L)),
-          Duration.ofMillis(
-              JvmL1Translators.readLong(a, "maxDelayMs", JvmL1Translators.readLong(a, "delayMs", 100L))));
-      case "RejectTranslator" -> ChaosEffect.reject(
-          JvmL1Translators.readString(a, "message", "rejected"));
+      case "DelayTranslator" ->
+          ChaosEffect.delay(
+              Duration.ofMillis(JvmL1Translators.readLong(a, "delayMs", 100L)),
+              Duration.ofMillis(
+                  JvmL1Translators.readLong(
+                      a, "maxDelayMs", JvmL1Translators.readLong(a, "delayMs", 100L))));
+      case "RejectTranslator" ->
+          ChaosEffect.reject(JvmL1Translators.readString(a, "message", "rejected"));
       case "SuppressTranslator" -> ChaosEffect.suppress();
-      case "GateTranslator" -> ChaosEffect.gate(
-          Duration.ofMillis(JvmL1Translators.readLong(a, "maxBlockMs", 30_000L)));
-      case "ExceptionInjectionTranslator" -> ChaosEffect.injectException(
-          JvmL1Translators.readString(a, "exceptionClassName", "java.io.IOException"),
-          JvmL1Translators.readString(a, "message", "injected"));
-      case "ClockSkewTranslator" -> ChaosEffect.skewClock(
-          Duration.ofMillis(JvmL1Translators.readLong(a, "skewMs", -60_000L)),
-          JvmL1Translators.readEnum(a, "mode", ChaosEffect.ClockSkewMode.FIXED));
+      case "GateTranslator" ->
+          ChaosEffect.gate(Duration.ofMillis(JvmL1Translators.readLong(a, "maxBlockMs", 30_000L)));
+      case "ExceptionInjectionTranslator" ->
+          ChaosEffect.injectException(
+              JvmL1Translators.readString(a, "exceptionClassName", "java.io.IOException"),
+              JvmL1Translators.readString(a, "message", "injected"));
+      case "ClockSkewTranslator" ->
+          ChaosEffect.skewClock(
+              Duration.ofMillis(JvmL1Translators.readLong(a, "skewMs", -60_000L)),
+              JvmL1Translators.readEnum(a, "mode", ChaosEffect.ClockSkewMode.FIXED));
       case "SpuriousWakeupTranslator" -> ChaosEffect.spuriousWakeup();
-      case "ExceptionalCompletionTranslator" -> ChaosEffect.exceptionalCompletion(
-          JvmL1Translators.readEnum(a, "failureKind", ChaosEffect.FailureKind.RUNTIME),
-          JvmL1Translators.readString(a, "message", "completed exceptionally"));
-      case "ReturnValueCorruptionTranslator" -> ChaosEffect.corruptReturnValue(
-          JvmL1Translators.readEnum(a, "strategy", ChaosEffect.ReturnValueStrategy.NULL));
-      case "HeapPressureTranslator" -> ChaosEffect.heapPressure(
-          JvmL1Translators.readLong(a, "bytes", 64L * 1024L * 1024L),
-          JvmL1Translators.readInt(a, "chunkSizeBytes", 1024 * 1024));
-      case "ThreadLeakTranslator" -> ChaosEffect.threadLeak(
-          JvmL1Translators.readInt(a, "threadCount", 50),
-          JvmL1Translators.readString(a, "namePrefix", "chaos-l1-leaked-"),
-          JvmL1Translators.readBoolean(a, "daemon", true));
-      case "DeadlockTranslator" -> ChaosEffect.deadlock(
-          JvmL1Translators.readInt(a, "participantCount", 2));
-      case "CodeCachePressureTranslator" -> ChaosEffect.codeCachePressure(
-          JvmL1Translators.readInt(a, "classCount", 5000),
-          JvmL1Translators.readInt(a, "methodsPerClass", 50));
-      case "MetaspacePressureTranslator" -> ChaosEffect.metaspacePressure(
-          JvmL1Translators.readInt(a, "generatedClassCount", 10_000),
-          JvmL1Translators.readInt(a, "fieldsPerClass", 10));
-      case "GcPressureTranslator" -> ChaosEffect.gcPressure(
-          JvmL1Translators.readLong(a, "allocationRateBytesPerSecond", 104_857_600L),
-          Duration.ofMillis(JvmL1Translators.readLong(a, "durationMs", 60_000L)));
-      case "FinalizerBacklogTranslator" -> ChaosEffect.finalizerBacklog(
-          JvmL1Translators.readInt(a, "objectCount", 1000),
-          Duration.ofMillis(JvmL1Translators.readLong(a, "finalizerDelayMs", 100L)));
-      case "ThreadLocalLeakTranslator" -> ChaosEffect.threadLocalLeak(
-          JvmL1Translators.readInt(a, "entriesPerThread", 100),
-          JvmL1Translators.readInt(a, "valueSizeBytes", 65_536));
-      case "MonitorContentionTranslator" -> ChaosEffect.monitorContention(
-          Duration.ofMillis(JvmL1Translators.readLong(a, "lockHoldMs", 50L)),
-          JvmL1Translators.readInt(a, "contendingThreadCount", 8));
-      case "SafepointStormTranslator" -> ChaosEffect.safepointStorm(
-          Duration.ofMillis(JvmL1Translators.readLong(a, "gcIntervalMs", 100L)));
-      case "StringInternPressureTranslator" -> ChaosEffect.stringInternPressure(
-          JvmL1Translators.readInt(a, "internCount", 100_000),
-          JvmL1Translators.readInt(a, "stringLengthBytes", 64));
-      case "ReferenceQueueFloodTranslator" -> ChaosEffect.referenceQueueFlood(
-          JvmL1Translators.readInt(a, "referenceCount", 10_000),
-          Duration.ofMillis(JvmL1Translators.readLong(a, "floodIntervalMs", 100L)));
-      case "VirtualThreadCarrierPinningTranslator" -> ChaosEffect.virtualThreadCarrierPinning(
-          JvmL1Translators.readInt(a, "pinnedThreadCount", 4),
-          Duration.ofMillis(JvmL1Translators.readLong(a, "pinDurationMs", 100L)));
-      case "KeepAliveTranslator" -> ChaosEffect.keepAlive(
-          JvmL1Translators.readString(a, "threadName", "chaos-l1-keepalive"),
-          JvmL1Translators.readBoolean(a, "daemon", true),
-          Duration.ofMillis(JvmL1Translators.readLong(a, "heartbeatMs", 1000L)));
-      case "DirectBufferPressureTranslator" -> ChaosEffect.directBufferPressure(
-          JvmL1Translators.readLong(a, "totalBytes", 256L * 1024L * 1024L),
-          JvmL1Translators.readInt(a, "bufferSizeBytes", 1024 * 1024));
+      case "ExceptionalCompletionTranslator" ->
+          ChaosEffect.exceptionalCompletion(
+              JvmL1Translators.readEnum(a, "failureKind", ChaosEffect.FailureKind.RUNTIME),
+              JvmL1Translators.readString(a, "message", "completed exceptionally"));
+      case "ReturnValueCorruptionTranslator" ->
+          ChaosEffect.corruptReturnValue(
+              JvmL1Translators.readEnum(a, "strategy", ChaosEffect.ReturnValueStrategy.NULL));
+      case "HeapPressureTranslator" ->
+          ChaosEffect.heapPressure(
+              JvmL1Translators.readLong(a, "bytes", 64L * 1024L * 1024L),
+              JvmL1Translators.readInt(a, "chunkSizeBytes", 1024 * 1024));
+      case "ThreadLeakTranslator" ->
+          ChaosEffect.threadLeak(
+              JvmL1Translators.readInt(a, "threadCount", 50),
+              JvmL1Translators.readString(a, "namePrefix", "chaos-l1-leaked-"),
+              JvmL1Translators.readBoolean(a, "daemon", true));
+      case "DeadlockTranslator" ->
+          ChaosEffect.deadlock(JvmL1Translators.readInt(a, "participantCount", 2));
+      case "CodeCachePressureTranslator" ->
+          ChaosEffect.codeCachePressure(
+              JvmL1Translators.readInt(a, "classCount", 5000),
+              JvmL1Translators.readInt(a, "methodsPerClass", 50));
+      case "MetaspacePressureTranslator" ->
+          ChaosEffect.metaspacePressure(
+              JvmL1Translators.readInt(a, "generatedClassCount", 10_000),
+              JvmL1Translators.readInt(a, "fieldsPerClass", 10));
+      case "GcPressureTranslator" ->
+          ChaosEffect.gcPressure(
+              JvmL1Translators.readLong(a, "allocationRateBytesPerSecond", 104_857_600L),
+              Duration.ofMillis(JvmL1Translators.readLong(a, "durationMs", 60_000L)));
+      case "FinalizerBacklogTranslator" ->
+          ChaosEffect.finalizerBacklog(
+              JvmL1Translators.readInt(a, "objectCount", 1000),
+              Duration.ofMillis(JvmL1Translators.readLong(a, "finalizerDelayMs", 100L)));
+      case "ThreadLocalLeakTranslator" ->
+          ChaosEffect.threadLocalLeak(
+              JvmL1Translators.readInt(a, "entriesPerThread", 100),
+              JvmL1Translators.readInt(a, "valueSizeBytes", 65_536));
+      case "MonitorContentionTranslator" ->
+          ChaosEffect.monitorContention(
+              Duration.ofMillis(JvmL1Translators.readLong(a, "lockHoldMs", 50L)),
+              JvmL1Translators.readInt(a, "contendingThreadCount", 8));
+      case "SafepointStormTranslator" ->
+          ChaosEffect.safepointStorm(
+              Duration.ofMillis(JvmL1Translators.readLong(a, "gcIntervalMs", 100L)));
+      case "StringInternPressureTranslator" ->
+          ChaosEffect.stringInternPressure(
+              JvmL1Translators.readInt(a, "internCount", 100_000),
+              JvmL1Translators.readInt(a, "stringLengthBytes", 64));
+      case "ReferenceQueueFloodTranslator" ->
+          ChaosEffect.referenceQueueFlood(
+              JvmL1Translators.readInt(a, "referenceCount", 10_000),
+              Duration.ofMillis(JvmL1Translators.readLong(a, "floodIntervalMs", 100L)));
+      case "VirtualThreadCarrierPinningTranslator" ->
+          ChaosEffect.virtualThreadCarrierPinning(
+              JvmL1Translators.readInt(a, "pinnedThreadCount", 4),
+              Duration.ofMillis(JvmL1Translators.readLong(a, "pinDurationMs", 100L)));
+      case "KeepAliveTranslator" ->
+          ChaosEffect.keepAlive(
+              JvmL1Translators.readString(a, "threadName", "chaos-l1-keepalive"),
+              JvmL1Translators.readBoolean(a, "daemon", true),
+              Duration.ofMillis(JvmL1Translators.readLong(a, "heartbeatMs", 1000L)));
+      case "DirectBufferPressureTranslator" ->
+          ChaosEffect.directBufferPressure(
+              JvmL1Translators.readLong(a, "totalBytes", 256L * 1024L * 1024L),
+              JvmL1Translators.readInt(a, "bufferSizeBytes", 1024 * 1024));
       default -> throw new IllegalStateException("Unknown translator: " + tName);
     };
   }

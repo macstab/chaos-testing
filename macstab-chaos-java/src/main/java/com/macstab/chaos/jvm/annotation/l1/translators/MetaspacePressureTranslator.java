@@ -21,7 +21,9 @@ public final class MetaspacePressureTranslator implements L1Translator<Annotatio
         container,
         annotation,
         ChaosSelector.stress(ChaosSelector.StressTarget.METASPACE),
-        ChaosEffect.metaspacePressure(JvmL1Translators.readInt(annotation, "generatedClassCount", 10_000), JvmL1Translators.readInt(annotation, "fieldsPerClass", 10)));
+        ChaosEffect.metaspacePressure(
+            JvmL1Translators.readInt(annotation, "generatedClassCount", 10_000),
+            JvmL1Translators.readInt(annotation, "fieldsPerClass", 10)));
   }
 
   @Override

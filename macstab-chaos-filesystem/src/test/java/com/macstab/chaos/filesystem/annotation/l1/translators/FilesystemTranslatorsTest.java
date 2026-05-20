@@ -27,7 +27,6 @@ import com.macstab.chaos.filesystem.annotation.l1.write.ChaosWriteEnospc;
 import com.macstab.chaos.filesystem.annotation.l1.write.ChaosWriteLatency;
 import com.macstab.chaos.filesystem.annotation.l1.write.ChaosWriteTorn;
 import com.macstab.chaos.filesystem.model.Effect;
-import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 import com.macstab.chaos.filesystem.model.IoRule;
 import com.macstab.chaos.filesystem.model.PathPrefix;
@@ -94,17 +93,26 @@ class FilesystemTranslatorsTest {
 
     static Stream<Arguments> tuples() {
       return Stream.of(
-          Arguments.of(OpenEacces.class, IoOperation.OPEN, com.macstab.chaos.filesystem.model.Errno.EACCES),
-          Arguments.of(OpenEnoent.class, IoOperation.OPEN, com.macstab.chaos.filesystem.model.Errno.ENOENT),
-          Arguments.of(WriteEnospc.class, IoOperation.WRITE, com.macstab.chaos.filesystem.model.Errno.ENOSPC),
-          Arguments.of(PreadEio.class, IoOperation.PREAD, com.macstab.chaos.filesystem.model.Errno.EIO),
-          Arguments.of(FsyncEio.class, IoOperation.FSYNC, com.macstab.chaos.filesystem.model.Errno.EIO));
+          Arguments.of(
+              OpenEacces.class, IoOperation.OPEN, com.macstab.chaos.filesystem.model.Errno.EACCES),
+          Arguments.of(
+              OpenEnoent.class, IoOperation.OPEN, com.macstab.chaos.filesystem.model.Errno.ENOENT),
+          Arguments.of(
+              WriteEnospc.class,
+              IoOperation.WRITE,
+              com.macstab.chaos.filesystem.model.Errno.ENOSPC),
+          Arguments.of(
+              PreadEio.class, IoOperation.PREAD, com.macstab.chaos.filesystem.model.Errno.EIO),
+          Arguments.of(
+              FsyncEio.class, IoOperation.FSYNC, com.macstab.chaos.filesystem.model.Errno.EIO));
     }
 
     @ParameterizedTest(name = "{0} → ({1}, {2})")
     @MethodSource("tuples")
     void translates(
-        final Class<?> fixture, final IoOperation op, final com.macstab.chaos.filesystem.model.Errno expectedErrno) {
+        final Class<?> fixture,
+        final IoOperation op,
+        final com.macstab.chaos.filesystem.model.Errno expectedErrno) {
       final IoRule rule = IoErrnoTranslator.buildRule(pick(fixture));
       assertThat(rule.path()).isInstanceOf(PathPrefix.Wildcard.class);
       assertThat(rule.operation()).isEqualTo(op);

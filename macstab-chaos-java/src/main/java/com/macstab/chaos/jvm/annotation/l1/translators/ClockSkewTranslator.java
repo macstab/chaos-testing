@@ -11,8 +11,8 @@ import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosEffect.ClockSkewMode;
 
 /**
- * L1 translator for {@code @ChaosClockXxxSkew} annotations. Reads {@code skewMs} + {@code mode}
- * and builds a {@link ChaosEffect#skewClock(Duration, ClockSkewMode)}.
+ * L1 translator for {@code @ChaosClockXxxSkew} annotations. Reads {@code skewMs} + {@code mode} and
+ * builds a {@link ChaosEffect#skewClock(Duration, ClockSkewMode)}.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
