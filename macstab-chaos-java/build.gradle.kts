@@ -20,6 +20,11 @@ dependencies {
     annotationProcessor("org.projectlombok:lombok:${findProperty("lombokVersion")}")
     implementation("org.slf4j:slf4j-api:${findProperty("slf4jVersion")}")
     implementation("org.testcontainers:testcontainers:1.20.4")
+    // jackson-databind serialises typed ChaosPlan / ChaosScenario into the JSON wire format the
+    // agent's startup-config poller reads. jackson-datatype-jsr310 covers Duration / Instant fields
+    // on ChaosEffect / ActivationPolicy.
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.19.4")
+    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.19.4")
 
     testCompileOnly("org.projectlombok:lombok:${findProperty("lombokVersion")}")
     testAnnotationProcessor("org.projectlombok:lombok:${findProperty("lombokVersion")}")
