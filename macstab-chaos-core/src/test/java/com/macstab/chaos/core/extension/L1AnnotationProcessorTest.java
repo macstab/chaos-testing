@@ -456,13 +456,16 @@ class L1AnnotationProcessorTest {
       SuccessTranslator.APPLY_COUNT.set(0);
 
       final ChaosApplicationReport report = newReport();
-      final List<L1AnnotationProcessor.AppliedL1> applied =
-          L1AnnotationProcessor.applyMethodLevel(
+      final List<L1AnnotationProcessor.AppliedL1> persistent = new java.util.ArrayList<>();
+      final L1AnnotationProcessor.MethodLevelResult result =
+          L1AnnotationProcessor.applyMethodLevelWithSuspension(
               MethodLevel.class.getDeclaredMethod("fixtureMethod"),
               List.of(handle("default")),
+              persistent,
               report);
 
-      assertThat(applied).hasSize(1);
+      assertThat(result.methodHandles()).hasSize(1);
+      assertThat(result.suspended()).isEmpty();
       assertThat(SuccessTranslator.APPLY_COUNT).hasValue(1);
       assertThat(report.applied()).hasSize(1);
       assertThat(report.applied().get(0).scope()).isEqualTo(ChaosApplicationReport.Scope.METHOD);

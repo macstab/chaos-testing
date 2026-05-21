@@ -100,8 +100,11 @@ public final class ChaosTestingExtension
       ExtensionContext.Namespace.create(ChaosTestingExtension.class);
 
   private static final String CONTAINERS_KEY = "chaos-containers";
-  private static final String L1_CLASS_HANDLES_KEY = "chaos-l1-class-handles";
+  /** Persistent L1 handles (class-scope + field-scope) — cleaned up in {@code afterAll}. */
+  private static final String L1_PERSISTENT_HANDLES_KEY = "chaos-l1-persistent-handles";
   private static final String L1_METHOD_HANDLES_KEY = "chaos-l1-method-handles";
+  /** Persistent handles suspended by a method-override — re-applied in {@code afterEach}. */
+  private static final String L1_SUSPENDED_HANDLES_KEY = "chaos-l1-suspended-handles";
   private static final String L1_REPORT_KEY = "chaos-l1-report";
 
   private static final Map<Class<? extends Annotation>, ChaosPlugin<?>> PLUGINS = new HashMap<>();
@@ -226,10 +229,16 @@ public final class ChaosTestingExtension
   }
 
   /**
-   * Walks the test class for L1 chaos annotations (those carrying {@link ChaosL1}) and applies each
-   * via its declared {@link L1Translator}. Called once per test class after all containers have
-   * been started and their connection info created. Handles are stored in the class-scope store for
-   * {@code afterAll} cleanup.
+   * Walks the test class and its fields for L1 chaos annotations (those carrying {@link ChaosL1})
+   * and applies each via its declared {@link L1Translator}. Called once per test class after all
+   * containers have been started. Both class-scope and field-scope handles are stored together as
+   * "persistent" handles cleaned up in {@code afterAll}.
+   *
+   * <p>Priority: field > class. Class-level rules that conflict with a field-level rule (same
+   * annotation type, same container) are permanently displaced — field rules win for the entire
+   * test class lifetime. Within a test method, method-level rules take highest priority and
+   * temporarily suspend whichever persistent rule they conflict with (restored in
+   * {@code afterEach}).
    *
    * @param context class-scope extension context
    * @param containers containers started for this test class
@@ -240,24 +249,38 @@ public final class ChaosTestingExtension
     final ChaosApplicationReport report = new ChaosApplicationReport();
     context.getStore(NAMESPACE).put(L1_REPORT_KEY, report);
 
+    final Class<?> testClass = context.getRequiredTestClass();
     final List<L1AnnotationProcessor.ContainerHandle> handles = toL1ContainerHandles(containers);
 
-    final List<L1AnnotationProcessor.AppliedL1> applied =
-        L1AnnotationProcessor.applyClassLevel(context.getRequiredTestClass(), handles, report);
+    // 1. Lowest priority: class-level (mutable — field overrides may shrink it below)
+    final List<L1AnnotationProcessor.AppliedL1> classHandles =
+        new ArrayList<>(L1AnnotationProcessor.applyClassLevel(testClass, handles, report));
 
-    context.getStore(NAMESPACE).put(L1_CLASS_HANDLES_KEY, applied);
+    // 2. Higher priority: field-level — permanently displaces conflicting class rules in-place
+    final List<L1AnnotationProcessor.AppliedL1> fieldHandles =
+        L1AnnotationProcessor.applyFieldLevel(
+            testClass, handles, PLUGINS.keySet(), classHandles, report);
 
-    if (!applied.isEmpty()) {
+    // Persistent = surviving class rules + field rules (both cleaned up in afterAll)
+    final List<L1AnnotationProcessor.AppliedL1> persistent = new ArrayList<>(classHandles);
+    persistent.addAll(fieldHandles);
+
+    context.getStore(NAMESPACE).put(L1_PERSISTENT_HANDLES_KEY, persistent);
+
+    if (!persistent.isEmpty()) {
       log.info(
-          "Applied {} class-scope L1 chaos rule(s) on test class {}",
-          applied.size(),
-          context.getRequiredTestClass().getSimpleName());
+          "Applied {} persistent L1 chaos rule(s) on test class {} ({} class-scope, {} field-scope)",
+          persistent.size(),
+          testClass.getSimpleName(),
+          classHandles.size(),
+          fieldHandles.size());
     }
   }
 
   /**
    * Walks the {@code @Test} method for L1 annotations and applies each via its declared translator.
-   * Method-scope handles are stored in the method-scope store and removed in {@code afterEach}.
+   * Method-scope rules that conflict with an active persistent (class/field-scope) rule suspend the
+   * persistent rule for the duration of this method; it is restored in {@code afterEach}.
    */
   @Override
   public void beforeEach(final ExtensionContext context) {
@@ -266,11 +289,9 @@ public final class ChaosTestingExtension
         (List<ContainerInstance>) context.getStore(NAMESPACE).get(CONTAINERS_KEY);
 
     if (containers == null || containers.isEmpty()) {
-      return; // no containers = nothing to apply L1s to (no-op for tests without container
-      // annotations)
+      return;
     }
 
-    // The class-scope report is shared across all methods; create one if missing (defensive).
     ChaosApplicationReport report =
         context.getStore(NAMESPACE).get(L1_REPORT_KEY, ChaosApplicationReport.class);
     if (report == null) {
@@ -278,25 +299,38 @@ public final class ChaosTestingExtension
       context.getStore(NAMESPACE).put(L1_REPORT_KEY, report);
     }
 
+    @SuppressWarnings("unchecked")
+    final List<L1AnnotationProcessor.AppliedL1> persistent =
+        (List<L1AnnotationProcessor.AppliedL1>)
+            context.getStore(NAMESPACE).get(L1_PERSISTENT_HANDLES_KEY);
+
     final List<L1AnnotationProcessor.ContainerHandle> handles = toL1ContainerHandles(containers);
-    final List<L1AnnotationProcessor.AppliedL1> applied =
-        L1AnnotationProcessor.applyMethodLevel(context.getRequiredTestMethod(), handles, report);
 
-    context.getStore(NAMESPACE).put(L1_METHOD_HANDLES_KEY, applied);
+    // persistentHandles may be null when no class/field L1s were declared
+    final List<L1AnnotationProcessor.AppliedL1> persistentForSuspension =
+        persistent != null ? persistent : new ArrayList<>();
 
-    if (!applied.isEmpty()) {
+    final L1AnnotationProcessor.MethodLevelResult result =
+        L1AnnotationProcessor.applyMethodLevelWithSuspension(
+            context.getRequiredTestMethod(), handles, persistentForSuspension, report);
+
+    context.getStore(NAMESPACE).put(L1_METHOD_HANDLES_KEY, result.methodHandles());
+    context.getStore(NAMESPACE).put(L1_SUSPENDED_HANDLES_KEY, result.suspended());
+
+    if (!result.methodHandles().isEmpty()) {
       log.debug(
-          "Applied {} method-scope L1 chaos rule(s) on {}#{}",
-          applied.size(),
+          "Applied {} method-scope L1 rule(s) on {}#{} ({} persistent rule(s) suspended)",
+          result.methodHandles().size(),
           context.getRequiredTestClass().getSimpleName(),
-          context.getRequiredTestMethod().getName());
+          context.getRequiredTestMethod().getName(),
+          result.suspended().size());
     }
   }
 
   /**
-   * Removes method-scope L1 handles. On any failure the framework falls back to a best-effort
-   * container reset by removing then re-applying the class-scope handles — guarantees the next test
-   * starts from a clean chaos state.
+   * Removes method-scope L1 handles, then restores any persistent (class/field-scope) rules that
+   * were suspended by a method-level override. The restored handles are added back to the
+   * persistent handle list so {@code afterAll} cleans them up correctly.
    */
   @Override
   public void afterEach(final ExtensionContext context) {
@@ -305,19 +339,45 @@ public final class ChaosTestingExtension
         (List<L1AnnotationProcessor.AppliedL1>)
             context.getStore(NAMESPACE).get(L1_METHOD_HANDLES_KEY);
 
-    if (methodHandles == null || methodHandles.isEmpty()) {
-      return;
+    if (methodHandles != null && !methodHandles.isEmpty()) {
+      final boolean allOk = L1AnnotationProcessor.removeAll(methodHandles);
+      context.getStore(NAMESPACE).remove(L1_METHOD_HANDLES_KEY);
+
+      if (L1AnnotationProcessor.shouldFallbackToReset(allOk)) {
+        log.warn(
+            "Some method-scope L1 removals failed on {}#{} — persistent rules may have residual state.",
+            context.getRequiredTestClass().getSimpleName(),
+            context.getRequiredTestMethod().getName());
+      }
     }
 
-    final boolean allOk = L1AnnotationProcessor.removeAll(methodHandles);
-    context.getStore(NAMESPACE).remove(L1_METHOD_HANDLES_KEY);
+    // Restore any persistent rules that were suspended to make room for method overrides
+    @SuppressWarnings("unchecked")
+    final List<L1AnnotationProcessor.AppliedL1> suspended =
+        (List<L1AnnotationProcessor.AppliedL1>)
+            context.getStore(NAMESPACE).get(L1_SUSPENDED_HANDLES_KEY);
 
-    if (L1AnnotationProcessor.shouldFallbackToReset(allOk)) {
-      log.warn(
-          "Some method-scope L1 removals failed on {}#{} — class-scope rules may have residual state. "
-              + "Consider implementing Composite<X>Chaos.reset() in the affected chaos module.",
-          context.getRequiredTestClass().getSimpleName(),
-          context.getRequiredTestMethod().getName());
+    if (suspended != null && !suspended.isEmpty()) {
+      final List<L1AnnotationProcessor.AppliedL1> restored =
+          L1AnnotationProcessor.reapply(suspended);
+      context.getStore(NAMESPACE).remove(L1_SUSPENDED_HANDLES_KEY);
+
+      // Add restored handles back to the persistent list so afterAll cleans them up
+      @SuppressWarnings("unchecked")
+      final List<L1AnnotationProcessor.AppliedL1> persistent =
+          (List<L1AnnotationProcessor.AppliedL1>)
+              context.getStore(NAMESPACE).get(L1_PERSISTENT_HANDLES_KEY);
+      if (persistent != null) {
+        persistent.addAll(restored);
+      }
+
+      if (!restored.isEmpty()) {
+        log.debug(
+            "Restored {} suspended persistent L1 rule(s) after {}#{}",
+            restored.size(),
+            context.getRequiredTestClass().getSimpleName(),
+            context.getRequiredTestMethod().getName());
+      }
     }
   }
 
@@ -350,13 +410,13 @@ public final class ChaosTestingExtension
         context.getRequiredTestClass().getSimpleName());
 
     try {
-      // Class-scope L1 cleanup BEFORE container stop — rule removal needs a running container.
+      // Persistent L1 cleanup (class + field scope) BEFORE container stop — rule removal needs a running container.
       @SuppressWarnings("unchecked")
-      final List<L1AnnotationProcessor.AppliedL1> classHandles =
+      final List<L1AnnotationProcessor.AppliedL1> persistentHandles =
           (List<L1AnnotationProcessor.AppliedL1>)
-              context.getStore(NAMESPACE).get(L1_CLASS_HANDLES_KEY);
-      if (classHandles != null && !classHandles.isEmpty()) {
-        L1AnnotationProcessor.removeAll(classHandles);
+              context.getStore(NAMESPACE).get(L1_PERSISTENT_HANDLES_KEY);
+      if (persistentHandles != null && !persistentHandles.isEmpty()) {
+        L1AnnotationProcessor.removeAll(persistentHandles);
       }
 
       final ChaosApplicationReport report =

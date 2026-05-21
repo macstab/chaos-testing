@@ -81,6 +81,11 @@ public final class ChaosApplicationReport {
     /** L1 annotation declared on the test class — applied once at {@code beforeAll}. */
     CLASS,
     /**
+     * L1 annotation declared on a field of the test class — applied once at {@code beforeAll}; the
+     * field name is used as the implicit container id when {@code id()} is empty.
+     */
+    FIELD,
+    /**
      * L1 annotation declared on a {@code @Test} method — applied per invocation at {@code
      * beforeEach}.
      */
