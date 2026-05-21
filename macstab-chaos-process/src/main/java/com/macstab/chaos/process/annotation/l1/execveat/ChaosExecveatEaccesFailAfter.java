@@ -14,34 +14,38 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Injects {@code ERRNO} on every libchaos-intercepted {@code execveat} call inside
- * the target container, making the call fail as if the kernel returned {@code ERRNO}.
+ * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code execveat} calls
+ * succeed, then injects {@code EACCES} on every subsequent call until the rule is removed.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ERRNO}) pair and has no
- * runtime selector-errno matrix to validate. The combination is safe by construction: this
- * annotation class exists only because {@code ERRNO} is a valid POSIX result of
- * {@code execveat}.
+ * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one
+ * (selector = {@code EXECVEAT}, errno = {@code EACCES}, effect = FAIL_AFTER) tuple.
+ * FAIL_AFTER is the process module's counter-gated effect — distinct from ERRNO (probabilistic)
+ * and LATENCY (unconditional). It models resource-exhaustion scenarios where the first N
+ * operations succeed and then the system runs out of capacity.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code execveat} call that the
- * libchaos interceptor sees, a Bernoulli trial with probability {@link #probability} is run.
- * When it fires the interceptor returns {@code -1} and sets {@code errno = ERRNO} — from
- * the application's perspective this is indistinguishable from a real kernel-level failure.
- * Specifically this simulates: a POSIX error condition.
+ * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
+ * {@code execveat} calls. After {@link #successesBeforeFailure} successes the counter trips and
+ * every subsequent call returns {@code -1} with {@code errno = EACCES}, regardless of real
+ * kernel capacity. The counter resets every time the rule is re-applied (e.g. across test methods
+ * if the annotation is at class scope).
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library interposes the libc wrappers for the process-management syscall family at the dynamic-linker level. This annotation installs a rule via {@code AdvancedProcessChaos.apply(container, rule)}.
+ * <p><strong>How this occurs (mechanism):</strong> the
+ * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes
+ * {@code ChaosTestingExtension} to upload {@code libchaos-process.so} and prepend it to
+ * {@code LD_PRELOAD}. The shared library interposes the libc wrappers for the process-management
+ * syscall family. This annotation installs a FAIL_AFTER rule via
+ * {@code AdvancedProcessChaos.apply(container, rule)}.
  *
  * <p><strong>What is required:</strong>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply
- *       on macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.</li>
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an
- *       {@code ExtensionConfigurationException} at {@code beforeAll}.</li>
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.</li>
- *   <li><strong>{@code macstab-chaos-process} on the test classpath</strong> — without it the translator
- *       class cannot be loaded and the extension throws {@code ClassNotFoundException}.</li>
+ *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or
+ *       Windows.</li>
+ *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
+ *       annotation — omitting it causes an {@code ExtensionConfigurationException} at
+ *       {@code beforeAll}.</li>
+ *   <li><strong>glibc-based container image</strong> — musl-based images may not honour
+ *       {@code LD_PRELOAD} for statically-linked processes.</li>
+ *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong></li>
  * </ul>
  *
  * <h2>Example</h2>
@@ -49,19 +53,20 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosExecveatEaccesFailAfter(probability = 0.001)
- * class FaultTest {
+ * @ChaosExecveatEaccesFailAfter(successesBeforeFailure = 128)
+ * class ProcessExhaustionTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void handlesExhaustion(ConnectionInfo info) { ... }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking container initialisation.
+ * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of
+ * {@code execveat} calls the application is expected to make before hitting the limit.
+ * Typically 5–200 for container-scoped tests. Zero means the very first call fails.
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosExecveatEaccesFailAfters}) to bind different probabilities to
- * different containers simultaneously.
+ * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty
+ * string applies to every capable container. Use the repeatable form
+ * ({@code @ChaosExecveatEaccesFailAfter.Repeatable}) to apply different counters to different containers.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -94,15 +99,16 @@ public @interface ChaosExecveatEaccesFailAfter {
    *
    * <p>Example:
    * <pre>{@code
-   * @ChaosExecveatEaccesFailAfter(id = "primary",  probability = 0.001)
-   * @ChaosExecveatEaccesFailAfter(id = "replica",  probability = 0.01)
+   * @ChaosExecveatEaccesFailAfter(id = "primary",  successesBeforeFailure = 64)
+   * @ChaosExecveatEaccesFailAfter(id = "replica",  successesBeforeFailure = 128)
    * class MultiContainerTest { ... }
    * }</pre>
    */
   @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME)
   @java.lang.annotation.Target({
     java.lang.annotation.ElementType.TYPE,
-    java.lang.annotation.ElementType.METHOD
+    java.lang.annotation.ElementType.METHOD,
+    java.lang.annotation.ElementType.FIELD
   })
   @interface Repeatable {
     ChaosExecveatEaccesFailAfter[] value();
