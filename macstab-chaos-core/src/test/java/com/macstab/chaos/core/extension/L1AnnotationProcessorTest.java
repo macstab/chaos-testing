@@ -10,7 +10,9 @@ import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.DisplayName;
@@ -33,7 +35,7 @@ class L1AnnotationProcessorTest {
 
   /** Test fixture: L1 annotation that delegates to {@link SuccessTranslator}. */
   @Retention(RetentionPolicy.RUNTIME)
-  @Target({ElementType.TYPE, ElementType.METHOD})
+  @Target({ElementType.TYPE, ElementType.METHOD, ElementType.FIELD})
   @ChaosL1(
       translator = "com.macstab.chaos.core.extension.L1AnnotationProcessorTest$SuccessTranslator")
   public @interface FixtureSuccess {
@@ -407,7 +409,6 @@ class L1AnnotationProcessorTest {
 
       assertThat(allOk).isTrue();
       assertThat(SuccessTranslator.REMOVE_COUNT).hasValue(2);
-      assertThat(L1AnnotationProcessor.shouldFallbackToReset(allOk)).isFalse();
     }
 
     @Test
@@ -423,7 +424,6 @@ class L1AnnotationProcessorTest {
       final boolean allOk = L1AnnotationProcessor.removeAll(applied);
 
       assertThat(allOk).isFalse();
-      assertThat(L1AnnotationProcessor.shouldFallbackToReset(allOk)).isTrue();
     }
   }
 
@@ -441,6 +441,37 @@ class L1AnnotationProcessorTest {
   @FixtureRemoveThrowing
   static class WithRemoveThrowing {}
 
+  // ==================== Field-scope fixture classes ====================
+
+  /** Field annotated with @FixtureSuccess — no co-located container annotation. */
+  static class WithFieldAnnotation {
+    @FixtureSuccess
+    Object someField;
+  }
+
+  /** Field annotated with @FixtureSuccess AND a fake container annotation co-located. */
+  @Retention(RetentionPolicy.RUNTIME)
+  @Target(ElementType.FIELD)
+  @interface FakeContainer {
+    String id() default "";
+  }
+
+  static class WithColocatedContainerAnnotation {
+    @FakeContainer(id = "primary")
+    @FixtureSuccess
+    Object primary;
+
+    @FakeContainer(id = "replica")
+    @FixtureSuccess
+    Object replica;
+  }
+
+  static class WithColocatedNoIdContainer {
+    @FakeContainer
+    @FixtureSuccess
+    Object theContainer;
+  }
+
   // ==================== Method-level scope ====================
 
   @Nested
@@ -456,7 +487,7 @@ class L1AnnotationProcessorTest {
       SuccessTranslator.APPLY_COUNT.set(0);
 
       final ChaosApplicationReport report = newReport();
-      final List<L1AnnotationProcessor.AppliedL1> persistent = new java.util.ArrayList<>();
+      final List<L1AnnotationProcessor.AppliedL1> persistent = new ArrayList<>();
       final L1AnnotationProcessor.MethodLevelResult result =
           L1AnnotationProcessor.applyMethodLevelWithSuspension(
               MethodLevel.class.getDeclaredMethod("fixtureMethod"),
@@ -469,6 +500,163 @@ class L1AnnotationProcessorTest {
       assertThat(SuccessTranslator.APPLY_COUNT).hasValue(1);
       assertThat(report.applied()).hasSize(1);
       assertThat(report.applied().get(0).scope()).isEqualTo(ChaosApplicationReport.Scope.METHOD);
+    }
+
+    @FixtureSuccess
+    void conflictMethod() {}
+
+    @Test
+    @DisplayName("method annotation conflicts with persistent rule: suspends persistent, applies method rule")
+    void methodSuspendsConflictingPersistentRule() throws Exception {
+      SuccessTranslator.APPLY_COUNT.set(0);
+      SuccessTranslator.REMOVE_COUNT.set(0);
+
+      final L1AnnotationProcessor.ContainerHandle ch = handle("default");
+      final ChaosApplicationReport classReport = newReport();
+
+      // Build a class-level persistent handle for the same annotation type + container
+      final List<L1AnnotationProcessor.AppliedL1> persistent =
+          new ArrayList<>(
+              L1AnnotationProcessor.applyClassLevel(
+                  WithSuccess.class, List.of(ch), classReport));
+      assertThat(persistent).hasSize(1);
+      assertThat(SuccessTranslator.APPLY_COUNT).hasValue(1);
+
+      // Now apply method level — same annotation type, same container → suspend class rule
+      final ChaosApplicationReport methodReport = newReport();
+      final L1AnnotationProcessor.MethodLevelResult result =
+          L1AnnotationProcessor.applyMethodLevelWithSuspension(
+              MethodLevel.class.getDeclaredMethod("conflictMethod"),
+              List.of(ch),
+              persistent,
+              methodReport);
+
+      // Persistent rule was removed from the list and from the container
+      assertThat(persistent).isEmpty();
+      assertThat(SuccessTranslator.REMOVE_COUNT).hasValue(1);
+
+      // Method rule was applied
+      assertThat(result.methodHandles()).hasSize(1);
+      assertThat(result.suspended()).hasSize(1);
+      assertThat(SuccessTranslator.APPLY_COUNT).hasValue(2);
+    }
+
+    @Test
+    @DisplayName("reapply restores suspended handles and returns new AppliedL1 entries")
+    void reapplyRestoresSuspendedHandles() throws Exception {
+      SuccessTranslator.APPLY_COUNT.set(0);
+      SuccessTranslator.REMOVE_COUNT.set(0);
+
+      final L1AnnotationProcessor.ContainerHandle ch = handle("default");
+      final ChaosApplicationReport report = newReport();
+
+      // Create a persistent handle to suspend
+      final List<L1AnnotationProcessor.AppliedL1> persistent =
+          new ArrayList<>(
+              L1AnnotationProcessor.applyClassLevel(WithSuccess.class, List.of(ch), report));
+
+      // Suspend it via method-level conflict
+      final L1AnnotationProcessor.MethodLevelResult result =
+          L1AnnotationProcessor.applyMethodLevelWithSuspension(
+              MethodLevel.class.getDeclaredMethod("conflictMethod"),
+              List.of(ch),
+              persistent,
+              newReport());
+
+      assertThat(result.suspended()).hasSize(1);
+      final int applyBeforeReapply = SuccessTranslator.APPLY_COUNT.get();
+
+      // Re-apply the suspended handles (simulates afterEach restoration)
+      final List<L1AnnotationProcessor.AppliedL1> restored =
+          L1AnnotationProcessor.reapply(result.suspended());
+
+      assertThat(restored).hasSize(1);
+      assertThat(SuccessTranslator.APPLY_COUNT).hasValue(applyBeforeReapply + 1);
+    }
+  }
+
+  // ==================== Field-level scope ====================
+
+  @Nested
+  @DisplayName("field-level scope")
+  class FieldLevel {
+
+    @Test
+    @DisplayName("applies annotation on a field using field name as id fallback when no container annotation")
+    void fieldNameFallbackAsId() {
+      SuccessTranslator.APPLY_COUNT.set(0);
+
+      final L1AnnotationProcessor.ContainerHandle ch = handle("someField");
+      final ChaosApplicationReport report = newReport();
+      final List<L1AnnotationProcessor.AppliedL1> classHandles = new ArrayList<>();
+
+      final List<L1AnnotationProcessor.AppliedL1> applied =
+          L1AnnotationProcessor.applyFieldLevel(
+              WithFieldAnnotation.class, List.of(ch), Set.of(), classHandles, report);
+
+      assertThat(applied).hasSize(1);
+      assertThat(SuccessTranslator.APPLY_COUNT).hasValue(1);
+      assertThat(report.applied()).hasSize(1);
+      assertThat(report.applied().get(0).scope()).isEqualTo(ChaosApplicationReport.Scope.FIELD);
+    }
+
+    @Test
+    @DisplayName("uses co-located container annotation id, not field name")
+    void colocatedContainerIdTakesPriority() {
+      SuccessTranslator.APPLY_COUNT.set(0);
+
+      final L1AnnotationProcessor.ContainerHandle primary = handle("primary");
+      final L1AnnotationProcessor.ContainerHandle replica = handle("replica");
+      final ChaosApplicationReport report = newReport();
+      final List<L1AnnotationProcessor.AppliedL1> classHandles = new ArrayList<>();
+
+      final List<L1AnnotationProcessor.AppliedL1> applied =
+          L1AnnotationProcessor.applyFieldLevel(
+              WithColocatedContainerAnnotation.class,
+              List.of(primary, replica),
+              Set.of(FakeContainer.class),
+              classHandles,
+              report);
+
+      // One rule per field → one per container (primary, replica)
+      assertThat(applied).hasSize(2);
+      assertThat(SuccessTranslator.APPLY_COUNT).hasValue(2);
+    }
+
+    @Test
+    @DisplayName("field rule permanently displaces conflicting class-level rule")
+    void fieldDisplacesClassRule() {
+      SuccessTranslator.APPLY_COUNT.set(0);
+      SuccessTranslator.REMOVE_COUNT.set(0);
+
+      final L1AnnotationProcessor.ContainerHandle primary = handle("primary");
+      final L1AnnotationProcessor.ContainerHandle replica = handle("replica");
+      final ChaosApplicationReport classReport = newReport();
+
+      // Class-level: same annotation type applies to both containers
+      final List<L1AnnotationProcessor.AppliedL1> classHandles =
+          new ArrayList<>(
+              L1AnnotationProcessor.applyClassLevel(
+                  WithSuccess.class, List.of(primary, replica), classReport));
+      assertThat(classHandles).hasSize(2); // class rule on both containers
+      assertThat(SuccessTranslator.APPLY_COUNT).hasValue(2);
+
+      // Field-level: annotation on "primary" field only → displaces class rule for primary
+      final List<L1AnnotationProcessor.AppliedL1> fieldHandles =
+          L1AnnotationProcessor.applyFieldLevel(
+              WithColocatedContainerAnnotation.class,
+              List.of(primary, replica),
+              Set.of(FakeContainer.class),
+              classHandles, // mutable — will be trimmed
+              classReport);
+
+      // Class rule for "primary" was removed; "replica" class rule survives
+      assertThat(classHandles).hasSize(1);
+      assertThat(classHandles.get(0).container()).isSameAs(replica.container());
+      assertThat(SuccessTranslator.REMOVE_COUNT).hasValue(1); // primary class rule removed
+
+      // Field rules applied for both fields
+      assertThat(fieldHandles).hasSize(2);
     }
   }
 }

@@ -63,6 +63,19 @@ import lombok.extern.slf4j.Slf4j;
  * <p><strong>Resource Constraints:</strong> Applies {@code @Resources} annotation (memory, CPU,
  * disk) to all containers. Platform-aware: disk constraints Linux-only, warns on macOS/Windows.
  *
+ * <p><strong>Known limitations:</strong>
+ *
+ * <ul>
+ *   <li><em>{@code @Nested} classes</em> — JUnit 5 fires a separate {@code beforeAll}/{@code
+ *       afterAll} for each {@code @Nested} class. The extension scans {@code
+ *       context.getRequiredTestClass()}, which for a nested class is the nested class itself, not
+ *       the enclosing class. Container annotations and L1 chaos annotations placed on the <em>outer</em>
+ *       class are therefore silently ignored when running inside a {@code @Nested} class. Place
+ *       container and chaos annotations directly on the nested class if it needs its own containers.
+ *   <li><em>Superclass annotations</em> — annotations declared on superclasses are not scanned.
+ *       Annotate the concrete test class directly.
+ * </ul>
+ *
  * <p><strong>Example Usage (User Never Sees This Extension):</strong>
  *
  * <pre>{@code
@@ -199,21 +212,6 @@ public final class ChaosTestingExtension
             createContainerInstance(
                 plugin, annotation, resourcesAnnotation, libsToPrepare, prepareJvmAgent);
         containers.add(instance);
-
-        log.info(
-            "Starting container: {} (image: {})",
-            annotation.annotationType().getSimpleName(),
-            instance.container.getDockerImageName());
-
-        instance.container.start();
-
-        log.info(
-            "Container started: {} -> {}{}",
-            annotation.annotationType().getSimpleName(),
-            instance.container.getHost(),
-            instance.container.getExposedPorts().isEmpty()
-                ? ""
-                : ":" + instance.container.getFirstMappedPort());
       }
     }
 
@@ -343,7 +341,7 @@ public final class ChaosTestingExtension
       final boolean allOk = L1AnnotationProcessor.removeAll(methodHandles);
       context.getStore(NAMESPACE).remove(L1_METHOD_HANDLES_KEY);
 
-      if (L1AnnotationProcessor.shouldFallbackToReset(allOk)) {
+      if (!allOk) {
         log.warn(
             "Some method-scope L1 removals failed on {}#{} — persistent rules may have residual state.",
             context.getRequiredTestClass().getSimpleName(),
@@ -592,7 +590,16 @@ public final class ChaosTestingExtension
       prepareSyscallLevelChaos(container, libsToPrepare);
       prepareJvmAgentChaos(container, prepareJvmAgent);
 
+      log.info(
+          "Starting container: {} (image: {})",
+          annotation.annotationType().getSimpleName(),
+          container.getDockerImageName());
       container.start();
+      log.info(
+          "Container started: {} -> {}{}",
+          annotation.annotationType().getSimpleName(),
+          container.getHost(),
+          container.getExposedPorts().isEmpty() ? "" : ":" + container.getFirstMappedPort());
 
       final Object connectionInfo = plugin.createConnectionInfo(container, annotation);
 

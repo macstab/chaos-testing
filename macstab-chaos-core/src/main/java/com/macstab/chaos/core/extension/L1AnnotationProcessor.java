@@ -165,6 +165,15 @@ public final class L1AnnotationProcessor {
         String idFilter = extractStringAttribute(annotation, "id");
         if (idFilter.isEmpty()) {
           idFilter = idHint;
+          if (idFilter.isEmpty() && containers.size() > 1) {
+            log.warn(
+                "@{} on field in {} has no id() and the co-located container annotation has no"
+                    + " id() either — rule will apply to ALL {} containers. Set id() on the"
+                    + " container annotation to scope it to one container.",
+                annotation.annotationType().getSimpleName(),
+                testClass.getSimpleName(),
+                containers.size());
+          }
         }
 
         final List<ContainerHandle> matching =
@@ -366,9 +375,8 @@ public final class L1AnnotationProcessor {
   }
 
   /**
-   * Best-effort cleanup of previously-applied L1s. Each {@link L1Translator#remove} call is wrapped
-   * in try/catch; on failure the caller may invoke a container-wide reset as a safety net (see
-   * {@link #shouldFallbackToReset}).
+   * Best-effort cleanup of previously-applied L1s. Each {@link L1Translator#remove} call is
+   * wrapped in try/catch so a single failure does not block cleanup of the remaining handles.
    *
    * @param applied handles to remove
    * @return {@code true} if every removal succeeded; {@code false} if any threw
@@ -383,19 +391,12 @@ public final class L1AnnotationProcessor {
       } catch (final Exception e) {
         allOk = false;
         log.warn(
-            "L1 cleanup failed for @{} — falling back to container.reset() if available",
+            "L1 cleanup failed for @{}",
             a.annotation().annotationType().getSimpleName(),
             e);
       }
     }
     return allOk;
-  }
-
-  /**
-   * Whether removal of {@code applied} should trigger a fallback container-wide reset.
-   */
-  public static boolean shouldFallbackToReset(final boolean allOk) {
-    return !allOk;
   }
 
   // ==================== Internal: per-element scan ====================

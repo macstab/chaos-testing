@@ -11,11 +11,10 @@ import java.util.Objects;
  * Per-test record of which L1 chaos annotations were actually applied vs skipped (because the
  * environment couldn't honour them and the annotation opted into {@link OnMissingEnv#ABORT}).
  *
- * <p>One report is built per test invocation; class-scope L1s appear under {@link #applied()} or
- * {@link #skipped()} once at {@code beforeAll}, method-scope L1s append at each {@code beforeEach}.
- * After-cleanup observers can pull the report from the {@code ExtensionContext.Store} to log a
- * summary, attach to test reports, or assert (in framework integration tests) that the expected
- * rules were applied.
+ * <p>One report is built per test class. Class-scope and field-scope L1s are recorded once at
+ * {@code beforeAll}; method-scope L1s are appended at each {@code beforeEach}. After-cleanup
+ * observers can pull the report from the {@code ExtensionContext.Store} to log a summary, attach
+ * to test reports, or assert (in framework integration tests) that the expected rules were applied.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
