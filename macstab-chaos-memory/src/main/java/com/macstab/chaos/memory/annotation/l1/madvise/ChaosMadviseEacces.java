@@ -14,10 +14,11 @@ import com.macstab.chaos.memory.model.MemorySelector;
 import com.macstab.chaos.memory.model.MmapErrno;
 
 /**
- * L1 chaos primitive: inject {@code EACCES} on every libchaos-memory-intercepted
- * {@code madvise} call inside the container, gated by {@link #probability}.
+ * L1 chaos primitive: inject {@code EACCES} on every libchaos-memory-intercepted {@code madvise}
+ * call inside the container, gated by {@link #probability}.
  *
- * <p><strong>What this simulates:</strong> permission denied — typical of selinux / apparmor / capability restrictions in the request path.
+ * <p><strong>What this simulates:</strong> permission denied — typical of selinux / apparmor /
+ * capability restrictions in the request path.
  *
  * <h2>Example</h2>
  *
@@ -32,11 +33,11 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * }</pre>
  *
  * <p><strong>Probability guidance:</strong> {@code 1e-4} to {@code 1e-3} mirrors realistic
- * production rates for {@code EACCES} on {@code madvise}; {@code 1.0} produces
- * ungrokable failures during container init.
+ * production rates for {@code EACCES} on {@code madvise}; {@code 1.0} produces ungrokable failures
+ * during container init.
  *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty
- * string applies the rule to every container in the test class.
+ * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
+ * applies the rule to every container in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see MemoryErrnoBinding
@@ -60,8 +61,8 @@ public @interface ChaosMadviseEacces {
   String id() default "";
 
   /**
-   * @return policy when the active backend cannot honour libchaos-memory ({@code ERROR}
-   *     fails at {@code beforeAll}; {@code ABORT} marks the test class YELLOW/aborted)
+   * @return policy when the active backend cannot honour libchaos-memory ({@code ERROR} fails at
+   *     {@code beforeAll}; {@code ABORT} marks the test class YELLOW/aborted)
    */
   OnMissingEnv onMissingEnv() default OnMissingEnv.ERROR;
 
@@ -70,6 +71,7 @@ public @interface ChaosMadviseEacces {
    * Java adds it automatically when the annotation appears more than once on the same target.
    *
    * <p>Example:
+   *
    * <pre>{@code
    * @ChaosMadviseEacces(id = "primary",  probability = 0.001)
    * @ChaosMadviseEacces(id = "replica",  probability = 0.01)

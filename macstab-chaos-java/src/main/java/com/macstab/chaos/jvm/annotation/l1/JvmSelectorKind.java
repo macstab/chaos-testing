@@ -7,14 +7,14 @@ import com.macstab.chaos.jvm.api.ChaosSelector;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * L1-tier projection of the typed {@link ChaosSelector} hierarchy onto the family of selectors
- * the L1 annotations target. Each enum constant knows how to build its corresponding selector
- * given the operation set encoded in the L1 annotation.
+ * L1-tier projection of the typed {@link ChaosSelector} hierarchy onto the family of selectors the
+ * L1 annotations target. Each enum constant knows how to build its corresponding selector given the
+ * operation set encoded in the L1 annotation.
  *
- * <p>Selectors that require additional parameters beyond an operation set (e.g.
- * {@code MethodSelector} which requires a class/method name pattern) are intentionally omitted
- * — those remain in the imperative {@code ChaosControlPlane} API. The L1 surface covers the
- * 16 stateless selector kinds whose only mandatory parameter is the operation set.
+ * <p>Selectors that require additional parameters beyond an operation set (e.g. {@code
+ * MethodSelector} which requires a class/method name pattern) are intentionally omitted — those
+ * remain in the imperative {@code ChaosControlPlane} API. The L1 surface covers the 16 stateless
+ * selector kinds whose only mandatory parameter is the operation set.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -148,7 +148,10 @@ public enum JvmSelectorKind {
     }
   },
 
-  /** {@link ChaosSelector#classLoading(Set, com.macstab.chaos.jvm.api.NamePattern)} with {@code any()} pattern. */
+  /**
+   * {@link ChaosSelector#classLoading(Set, com.macstab.chaos.jvm.api.NamePattern)} with {@code
+   * any()} pattern.
+   */
   CLASS_LOADING {
     @Override
     public ChaosSelector build(final Set<OperationType> operations) {

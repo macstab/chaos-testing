@@ -14,34 +14,38 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code EIO} on every libchaos-intercepted {@code allocate} call inside
- * the target container, making the call fail as if the kernel returned {@code EIO}.
+ * Injects {@code EIO} on every libchaos-intercepted {@code allocate} call inside the target
+ * container, making the call fail as if the kernel returned {@code EIO}.
  *
  * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EIO}) pair and has no
- * runtime selector-errno matrix to validate. The combination is safe by construction: this
- * annotation class exists only because {@code EIO} is a valid POSIX result of
- * {@code allocate}.
+ * chaos unit. It encodes exactly one (selector, errno = {@code EIO}) pair and has no runtime
+ * selector-errno matrix to validate. The combination is safe by construction: this annotation class
+ * exists only because {@code EIO} is a valid POSIX result of {@code allocate}.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code allocate} call that the
- * libchaos interceptor sees, a Bernoulli trial with probability {@link #probability} is run.
- * When it fires the interceptor returns {@code -1} and sets {@code errno = EIO} — from
- * the application's perspective this is indistinguishable from a real kernel-level failure.
- * Specifically this simulates: I/O error — disk failure, bad sector, or storage backend error.
+ * <p><strong>What chaos this applies:</strong> on every {@code allocate} call that the libchaos
+ * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
+ * the interceptor returns {@code -1} and sets {@code errno = EIO} — from the application's
+ * perspective this is indistinguishable from a real kernel-level failure. Specifically this
+ * simulates: I/O error — disk failure, bad sector, or storage backend error.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.IO)} annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-io.so} and prepend it to {@code LD_PRELOAD}. The shared library interposes the filesystem libc wrappers (open, read, write, close, fsync, etc.) at the dynamic-linker level. This annotation installs a rule via {@code AdvancedFilesystemChaos.apply(container, rule)}.
+ * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.IO)}
+ * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-io.so} and prepend it
+ * to {@code LD_PRELOAD}. The shared library interposes the filesystem libc wrappers (open, read,
+ * write, close, fsync, etc.) at the dynamic-linker level. This annotation installs a rule via
+ * {@code AdvancedFilesystemChaos.apply(container, rule)}.
  *
  * <p><strong>What is required:</strong>
+ *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply
- *       on macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.</li>
+ *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
+ *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
  *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.IO)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an
- *       {@code ExtensionConfigurationException} at {@code beforeAll}.</li>
+ *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
+ *       ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.</li>
- *   <li><strong>{@code macstab-chaos-filesystem} on the test classpath</strong> — without it the translator
- *       class cannot be loaded and the extension throws {@code ClassNotFoundException}.</li>
+ *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
+ *   <li><strong>{@code macstab-chaos-filesystem} on the test classpath</strong> — without it the
+ *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
  * </ul>
  *
  * <h2>Example</h2>
@@ -56,7 +60,8 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> very low rates (1e-5 to 1e-4); EIO at high rate produces unrecoverable data loss.
+ * <p><strong>Probability guidance:</strong> very low rates (1e-5 to 1e-4); EIO at high rate
+ * produces unrecoverable data loss.
  *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every capable container in the test
@@ -92,6 +97,7 @@ public @interface ChaosAllocateEio {
    * Java adds it automatically when the annotation appears more than once on the same target.
    *
    * <p>Example:
+   *
    * <pre>{@code
    * @ChaosAllocateEio(id = "primary",  probability = 0.001)
    * @ChaosAllocateEio(id = "replica",  probability = 0.01)

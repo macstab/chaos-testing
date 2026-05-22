@@ -10,8 +10,8 @@ import com.macstab.chaos.time.model.TimeErrno;
 import com.macstab.chaos.time.model.TimeSelector;
 
 /**
- * Meta-annotation declaring the (selector, errno) tuple encoded by a time-errno L1 annotation.
- * Read reflectively by {@code TimeErrnoTranslator}.
+ * Meta-annotation declaring the (selector, errno) tuple encoded by a time-errno L1 annotation. Read
+ * reflectively by {@code TimeErrnoTranslator}.
  *
  * @author Christian Schnapka - Macstab GmbH
  */

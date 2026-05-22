@@ -9,8 +9,8 @@ import java.lang.annotation.Target;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Meta-annotation declaring the operation encoded by an IO-corrupt L1 annotation. Operation must
- * be {@link IoOperation#READ} or {@link IoOperation#PREAD} per {@code IoRule.requireCompatible}.
+ * Meta-annotation declaring the operation encoded by an IO-corrupt L1 annotation. Operation must be
+ * {@link IoOperation#READ} or {@link IoOperation#PREAD} per {@code IoRule.requireCompatible}.
  *
  * @author Christian Schnapka - Macstab GmbH
  */

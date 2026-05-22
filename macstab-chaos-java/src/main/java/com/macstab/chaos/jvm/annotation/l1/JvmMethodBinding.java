@@ -20,6 +20,8 @@ import com.macstab.chaos.jvm.api.OperationType;
 @Target(ElementType.ANNOTATION_TYPE)
 public @interface JvmMethodBinding {
 
-  /** @return either {@link OperationType#METHOD_ENTER} or {@link OperationType#METHOD_EXIT} */
+  /**
+   * @return either {@link OperationType#METHOD_ENTER} or {@link OperationType#METHOD_EXIT}
+   */
   OperationType operationType();
 }

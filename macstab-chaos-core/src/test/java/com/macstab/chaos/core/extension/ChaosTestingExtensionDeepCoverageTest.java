@@ -472,7 +472,8 @@ class ChaosTestingExtensionDeepCoverageTest {
 
       assertThatCode(() -> ext.beforeAll(ec)).doesNotThrowAnyException();
       // Two empty lists stored: one for containers, one for persistent L1 handles
-      verify(store, times(2)).put(any(), argThat(arg -> arg instanceof List && ((List<?>) arg).isEmpty()));
+      verify(store, times(2))
+          .put(any(), argThat(arg -> arg instanceof List && ((List<?>) arg).isEmpty()));
     }
 
     static class PlainClass {}

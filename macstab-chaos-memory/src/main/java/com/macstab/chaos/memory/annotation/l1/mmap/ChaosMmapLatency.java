@@ -13,12 +13,12 @@ import com.macstab.chaos.memory.annotation.l1.MemoryLatencyBinding;
 import com.macstab.chaos.memory.model.MemorySelector;
 
 /**
- * Delays every libchaos-memory-intercepted {@code mmap} call by {@link #delayMs}
- * milliseconds before delegating to the real kernel call.
+ * Delays every libchaos-memory-intercepted {@code mmap} call by {@link #delayMs} milliseconds
+ * before delegating to the real kernel call.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one
- * (selector = {@code MMAP}, effect = LATENCY) pair. Unlike the errno variants, the
- * latency primitive always delegates to the kernel — it only adds wall-clock cost before doing so.
+ * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
+ * = {@code MMAP}, effect = LATENCY) pair. Unlike the errno variants, the latency primitive always
+ * delegates to the kernel — it only adds wall-clock cost before doing so.
  *
  * <p><strong>What chaos this applies:</strong> every {@code mmap} call intercepted by
  * libchaos-memory blocks for {@link #delayMs} ms before the kernel call is issued. This simulates
@@ -27,21 +27,21 @@ import com.macstab.chaos.memory.model.MemorySelector;
  * which add latency to allocations and can exhaust application-level timeouts.
  *
  * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.MEMORY)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-memory.so} and prepend it to {@code LD_PRELOAD} before the container
- * starts. The shared library interposes the libc wrappers for the {@code MMAP} syscall
- * family. This annotation installs a LATENCY rule via
- * {@code AdvancedMemoryChaos.apply(container, rule)} that configures the sleep duration.
+ * {@code @SyscallLevelChaos(LibchaosLib.MEMORY)} annotation causes {@code ChaosTestingExtension} to
+ * upload {@code libchaos-memory.so} and prepend it to {@code LD_PRELOAD} before the container
+ * starts. The shared library interposes the libc wrappers for the {@code MMAP} syscall family. This
+ * annotation installs a LATENCY rule via {@code AdvancedMemoryChaos.apply(container, rule)} that
+ * configures the sleep duration.
  *
  * <p><strong>What is required:</strong>
+ *
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.</li>
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.MEMORY)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at
- *       {@code beforeAll}.</li>
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour
- *       {@code LD_PRELOAD} for statically-linked processes.</li>
- *   <li><strong>{@code macstab-chaos-memory} on the test classpath.</strong></li>
+ *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
+ *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.MEMORY)}</strong> on the container annotation
+ *       — omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
+ *       LD_PRELOAD} for statically-linked processes.
+ *   <li><strong>{@code macstab-chaos-memory} on the test classpath.</strong>
  * </ul>
  *
  * <h2>Example</h2>
@@ -73,8 +73,8 @@ import com.macstab.chaos.memory.model.MemorySelector;
 public @interface ChaosMmapLatency {
 
   /**
-   * Latency to inject before every matching {@code mmap} call, in milliseconds.
-   * Must be non-negative. Zero is valid but produces no observable effect.
+   * Latency to inject before every matching {@code mmap} call, in milliseconds. Must be
+   * non-negative. Zero is valid but produces no observable effect.
    */
   long delayMs() default 50L;
 
@@ -87,9 +87,9 @@ public @interface ChaosMmapLatency {
   String id() default "";
 
   /**
-   * Policy applied when the active backend cannot honour the libchaos-memory requirement.
-   * {@link OnMissingEnv#ERROR} fails the test class at {@code beforeAll};
-   * {@link OnMissingEnv#ABORT} raises a {@code TestAbortedException} (YELLOW in CI).
+   * Policy applied when the active backend cannot honour the libchaos-memory requirement. {@link
+   * OnMissingEnv#ERROR} fails the test class at {@code beforeAll}; {@link OnMissingEnv#ABORT}
+   * raises a {@code TestAbortedException} (YELLOW in CI).
    */
   OnMissingEnv onMissingEnv() default OnMissingEnv.ERROR;
 
@@ -98,6 +98,7 @@ public @interface ChaosMmapLatency {
    * Java adds it automatically when the annotation appears more than once on the same target.
    *
    * <p>Example:
+   *
    * <pre>{@code
    * @ChaosMmapLatency(id = "primary",  probability = 0.001)
    * @ChaosMmapLatency(id = "replica",  probability = 0.01)

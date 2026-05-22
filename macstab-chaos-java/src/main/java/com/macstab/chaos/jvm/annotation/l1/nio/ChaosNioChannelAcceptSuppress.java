@@ -14,7 +14,8 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * L1 chaos primitive: silently suppress the NIO_CHANNEL_ACCEPT operation; callers receive null/false/no-op per operation semantics.
+ * L1 chaos primitive: silently suppress the NIO_CHANNEL_ACCEPT operation; callers receive
+ * null/false/no-op per operation semantics.
  *
  * <h2>Example</h2>
  *
@@ -33,14 +34,19 @@ import com.macstab.chaos.jvm.api.OperationType;
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.TYPE, ElementType.METHOD, ElementType.FIELD})
 @ChaosL1(translator = "com.macstab.chaos.jvm.annotation.l1.translators.SuppressTranslator")
-@JvmInterceptorBinding(selectorKind = JvmSelectorKind.NIO, operationType = OperationType.NIO_CHANNEL_ACCEPT)
+@JvmInterceptorBinding(
+    selectorKind = JvmSelectorKind.NIO,
+    operationType = OperationType.NIO_CHANNEL_ACCEPT)
 public @interface ChaosNioChannelAcceptSuppress {
 
-
-  /** @return container id to bind to ({@code ""} = every matching container) */
+  /**
+   * @return container id to bind to ({@code ""} = every matching container)
+   */
   String id() default "";
 
-  /** @return policy when the JVM agent is not active on the container */
+  /**
+   * @return policy when the JVM agent is not active on the container
+   */
   OnMissingEnv onMissingEnv() default OnMissingEnv.ERROR;
 
   /**
@@ -48,6 +54,7 @@ public @interface ChaosNioChannelAcceptSuppress {
    * Java adds it automatically when the annotation appears more than once on the same target.
    *
    * <p>Example:
+   *
    * <pre>{@code
    * @ChaosNioChannelAcceptSuppress(id = "primary",  probability = 0.001)
    * @ChaosNioChannelAcceptSuppress(id = "replica",  probability = 0.01)

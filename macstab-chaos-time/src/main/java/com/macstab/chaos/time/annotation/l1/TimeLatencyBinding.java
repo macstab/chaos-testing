@@ -9,8 +9,8 @@ import java.lang.annotation.Target;
 import com.macstab.chaos.time.model.TimeSelector;
 
 /**
- * Meta-annotation declaring the selector encoded by a time-latency L1 annotation. Read
- * reflectively by {@code TimeLatencyTranslator}.
+ * Meta-annotation declaring the selector encoded by a time-latency L1 annotation. Read reflectively
+ * by {@code TimeLatencyTranslator}.
  *
  * @author Christian Schnapka - Macstab GmbH
  */

@@ -19,9 +19,13 @@ import com.macstab.chaos.process.model.ProcessSelector;
 @Target(ElementType.ANNOTATION_TYPE)
 public @interface ProcessErrnoBinding {
 
-  /** @return the libchaos-process selector this annotation targets */
+  /**
+   * @return the libchaos-process selector this annotation targets
+   */
   ProcessSelector selector();
 
-  /** @return the errno this annotation injects */
+  /**
+   * @return the errno this annotation injects
+   */
   ProcessErrno errno();
 }

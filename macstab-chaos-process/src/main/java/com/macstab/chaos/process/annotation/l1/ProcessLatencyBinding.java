@@ -18,6 +18,8 @@ import com.macstab.chaos.process.model.ProcessSelector;
 @Target(ElementType.ANNOTATION_TYPE)
 public @interface ProcessLatencyBinding {
 
-  /** @return the libchaos-process selector this latency annotation targets */
+  /**
+   * @return the libchaos-process selector this latency annotation targets
+   */
   ProcessSelector selector();
 }

@@ -69,9 +69,10 @@ import lombok.extern.slf4j.Slf4j;
  *   <li><em>{@code @Nested} classes</em> — JUnit 5 fires a separate {@code beforeAll}/{@code
  *       afterAll} for each {@code @Nested} class. The extension scans {@code
  *       context.getRequiredTestClass()}, which for a nested class is the nested class itself, not
- *       the enclosing class. Container annotations and L1 chaos annotations placed on the <em>outer</em>
- *       class are therefore silently ignored when running inside a {@code @Nested} class. Place
- *       container and chaos annotations directly on the nested class if it needs its own containers.
+ *       the enclosing class. Container annotations and L1 chaos annotations placed on the
+ *       <em>outer</em> class are therefore silently ignored when running inside a {@code @Nested}
+ *       class. Place container and chaos annotations directly on the nested class if it needs its
+ *       own containers.
  *   <li><em>Superclass annotations</em> — annotations declared on superclasses are not scanned.
  *       Annotate the concrete test class directly.
  * </ul>
@@ -113,11 +114,15 @@ public final class ChaosTestingExtension
       ExtensionContext.Namespace.create(ChaosTestingExtension.class);
 
   private static final String CONTAINERS_KEY = "chaos-containers";
+
   /** Persistent L1 handles (class-scope + field-scope) — cleaned up in {@code afterAll}. */
   private static final String L1_PERSISTENT_HANDLES_KEY = "chaos-l1-persistent-handles";
+
   private static final String L1_METHOD_HANDLES_KEY = "chaos-l1-method-handles";
+
   /** Persistent handles suspended by a method-override — re-applied in {@code afterEach}. */
   private static final String L1_SUSPENDED_HANDLES_KEY = "chaos-l1-suspended-handles";
+
   private static final String L1_REPORT_KEY = "chaos-l1-report";
 
   private static final Map<Class<? extends Annotation>, ChaosPlugin<?>> PLUGINS = new HashMap<>();
@@ -235,8 +240,8 @@ public final class ChaosTestingExtension
    * <p>Priority: field > class. Class-level rules that conflict with a field-level rule (same
    * annotation type, same container) are permanently displaced — field rules win for the entire
    * test class lifetime. Within a test method, method-level rules take highest priority and
-   * temporarily suspend whichever persistent rule they conflict with (restored in
-   * {@code afterEach}).
+   * temporarily suspend whichever persistent rule they conflict with (restored in {@code
+   * afterEach}).
    *
    * @param context class-scope extension context
    * @param containers containers started for this test class
@@ -408,7 +413,8 @@ public final class ChaosTestingExtension
         context.getRequiredTestClass().getSimpleName());
 
     try {
-      // Persistent L1 cleanup (class + field scope) BEFORE container stop — rule removal needs a running container.
+      // Persistent L1 cleanup (class + field scope) BEFORE container stop — rule removal needs a
+      // running container.
       @SuppressWarnings("unchecked")
       final List<L1AnnotationProcessor.AppliedL1> persistentHandles =
           (List<L1AnnotationProcessor.AppliedL1>)

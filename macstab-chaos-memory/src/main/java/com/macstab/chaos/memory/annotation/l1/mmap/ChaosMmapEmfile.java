@@ -14,46 +14,46 @@ import com.macstab.chaos.memory.model.MemorySelector;
 import com.macstab.chaos.memory.model.MmapErrno;
 
 /**
- * Injects {@code EMFILE} on every libchaos-memory-intercepted {@code mmap} call inside
- * the target container, making the call fail as if the kernel returned {@code EMFILE}.
+ * Injects {@code EMFILE} on every libchaos-memory-intercepted {@code mmap} call inside the target
+ * container, making the call fail as if the kernel returned {@code EMFILE}.
  *
  * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector = {@code MMAP}, errno = {@code EMFILE})
- * pair. The combination is safe by construction: this annotation class exists only because
- * {@code EMFILE} is a valid POSIX result of {@code mmap}; the invalid combinations
- * simply have no annotation class, so the selector × errno matrix cannot be violated at compile
- * time.
+ * chaos unit. It encodes exactly one (selector = {@code MMAP}, errno = {@code EMFILE}) pair. The
+ * combination is safe by construction: this annotation class exists only because {@code EMFILE} is
+ * a valid POSIX result of {@code mmap}; the invalid combinations simply have no annotation class,
+ * so the selector × errno matrix cannot be violated at compile time.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code mmap} call that the
- * libchaos-memory interceptor sees, a Bernoulli trial with probability {@link #probability} is run.
- * When it fires the interceptor returns {@code -1} and sets {@code errno = EMFILE} before the
- * kernel call completes — from the application perspective this is indistinguishable from a real
- * kernel-level failure. Specifically this simulates: per-process file-descriptor limit reached — typical of fd-leaks in connection pools.
+ * <p><strong>What chaos this applies:</strong> on every {@code mmap} call that the libchaos-memory
+ * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
+ * the interceptor returns {@code -1} and sets {@code errno = EMFILE} before the kernel call
+ * completes — from the application perspective this is indistinguishable from a real kernel-level
+ * failure. Specifically this simulates: per-process file-descriptor limit reached — typical of
+ * fd-leaks in connection pools.
  *
  * <p><strong>How this occurs (mechanism):</strong> the
  * {@code @SyscallLevelChaos(LibchaosLib.MEMORY)} annotation on the container declaration causes
- * {@code ChaosTestingExtension} to upload {@code libchaos-memory.so} into the container and
- * prepend it to {@code LD_PRELOAD} before the container process starts. The shared library
- * interposes the libc wrappers for {@code mmap}, {@code munmap}, {@code mprotect}, and
- * {@code madvise} at the dynamic-linker level. This annotation then installs a rule via
- * {@code AdvancedMemoryChaos.apply(container, rule)} that configures the interposer with the
- * selector and probability you specify.
+ * {@code ChaosTestingExtension} to upload {@code libchaos-memory.so} into the container and prepend
+ * it to {@code LD_PRELOAD} before the container process starts. The shared library interposes the
+ * libc wrappers for {@code mmap}, {@code munmap}, {@code mprotect}, and {@code madvise} at the
+ * dynamic-linker level. This annotation then installs a rule via {@code
+ * AdvancedMemoryChaos.apply(container, rule)} that configures the interposer with the selector and
+ * probability you specify.
  *
  * <p><strong>What is required:</strong>
+ *
  * <ul>
  *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD} which does not apply on
- *       macOS or Windows containers; annotate the test class with
- *       {@code @DisabledOnOs(OS.WINDOWS)} and be aware of macOS Docker limitations.</li>
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.MEMORY)}</strong> on the container
- *       annotation (e.g. {@code @RedisStandalone}) — this installs the shared library before
- *       container start; omitting it causes an {@code ExtensionConfigurationException} at
- *       {@code beforeAll}.</li>
+ *       macOS or Windows containers; annotate the test class with {@code @DisabledOnOs(OS.WINDOWS)}
+ *       and be aware of macOS Docker limitations.
+ *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.MEMORY)}</strong> on the container annotation
+ *       (e.g. {@code @RedisStandalone}) — this installs the shared library before container start;
+ *       omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) do not
  *       honour {@code LD_PRELOAD} for statically-linked binaries; use a glibc variant or the
- *       Debian-slim image instead.</li>
+ *       Debian-slim image instead.
  *   <li><strong>{@code macstab-chaos-memory} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and {@code ChaosTestingExtension} throws
- *       {@code ClassNotFoundException} wrapped in {@code ExtensionConfigurationException}.</li>
+ *       translator class cannot be loaded and {@code ChaosTestingExtension} throws {@code
+ *       ClassNotFoundException} wrapped in {@code ExtensionConfigurationException}.
  * </ul>
  *
  * <h2>Example</h2>
@@ -68,11 +68,12 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2 to simulate fd-limit pressure; combine with low rlimit for realism.
+ * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2 to simulate fd-limit pressure; combine
+ * with low rlimit for realism.
  *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every memory-chaos-capable container
- * in the test class. Use the repeatable form ({@code @ChaosMmapEmfiles}) to bind different
+ * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
+ * the test class. Use the repeatable form ({@code @ChaosMmapEmfiles}) to bind different
  * probabilities to different containers simultaneously.
  *
  * @author Christian Schnapka - Macstab GmbH
@@ -87,28 +88,28 @@ import com.macstab.chaos.memory.model.MmapErrno;
 public @interface ChaosMmapEmfile {
 
   /**
-   * Probability that the fault fires when the rule matches, in the range {@code (0.0, 1.0]}.
-   * A value of {@code 1.0} makes every matching call fail; {@code 0.001} fails one call in a
+   * Probability that the fault fires when the rule matches, in the range {@code (0.0, 1.0]}. A
+   * value of {@code 1.0} makes every matching call fail; {@code 0.001} fails one call in a
    * thousand. Values outside the range {@code (0.0, 1.0]} are rejected at rule construction time.
    */
   double probability() default 1.0;
 
   /**
-   * Container id to bind this rule to. The value must match the {@code id} attribute of a
-   * container annotation (e.g. {@code @RedisStandalone(id = "primary")}) on the same test class.
-   * The default empty string {@code ""} applies the rule to every memory-chaos-capable container
-   * in the test class. A non-empty id that does not match any declared container causes an
-   * {@code ExtensionConfigurationException} at {@code beforeAll}.
+   * Container id to bind this rule to. The value must match the {@code id} attribute of a container
+   * annotation (e.g. {@code @RedisStandalone(id = "primary")}) on the same test class. The default
+   * empty string {@code ""} applies the rule to every memory-chaos-capable container in the test
+   * class. A non-empty id that does not match any declared container causes an {@code
+   * ExtensionConfigurationException} at {@code beforeAll}.
    */
   String id() default "";
 
   /**
-   * Policy applied when the active backend cannot honour the libchaos-memory requirement.
-   * {@link OnMissingEnv#ERROR} (the default) fails the test class with an
-   * {@code ExtensionConfigurationException} at {@code beforeAll}. {@link OnMissingEnv#ABORT}
-   * raises a {@code TestAbortedException} instead, which most CI systems report as YELLOW
-   * (skipped/aborted) rather than RED (failed), keeping the build clean in environments where
-   * libchaos is unavailable.
+   * Policy applied when the active backend cannot honour the libchaos-memory requirement. {@link
+   * OnMissingEnv#ERROR} (the default) fails the test class with an {@code
+   * ExtensionConfigurationException} at {@code beforeAll}. {@link OnMissingEnv#ABORT} raises a
+   * {@code TestAbortedException} instead, which most CI systems report as YELLOW (skipped/aborted)
+   * rather than RED (failed), keeping the build clean in environments where libchaos is
+   * unavailable.
    */
   OnMissingEnv onMissingEnv() default OnMissingEnv.ERROR;
 
@@ -117,6 +118,7 @@ public @interface ChaosMmapEmfile {
    * Java adds it automatically when the annotation appears more than once on the same target.
    *
    * <p>Example:
+   *
    * <pre>{@code
    * @ChaosMmapEmfile(id = "primary",  probability = 0.001)
    * @ChaosMmapEmfile(id = "replica",  probability = 0.01)

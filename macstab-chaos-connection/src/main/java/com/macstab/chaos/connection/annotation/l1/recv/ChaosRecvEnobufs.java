@@ -14,10 +14,11 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * L1 chaos primitive: inject {@code ENOBUFS} on every libchaos-net-intercepted
- * {@code recv} syscall, gated by {@link #toxicity}.
+ * L1 chaos primitive: inject {@code ENOBUFS} on every libchaos-net-intercepted {@code recv}
+ * syscall, gated by {@link #toxicity}.
  *
- * <p><strong>What this simulates:</strong> no buffer space available — kernel send buffers exhausted.
+ * <p><strong>What this simulates:</strong> no buffer space available — kernel send buffers
+ * exhausted.
  *
  * <h2>Example</h2>
  *
@@ -28,8 +29,8 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * class MyTest { ... }
  * }</pre>
  *
- * <p><strong>Scope:</strong> applies to every {@code recv} call across all endpoints.
- * For per-endpoint targeting use the imperative {@code AdvancedConnectionChaos} API.
+ * <p><strong>Scope:</strong> applies to every {@code recv} call across all endpoints. For
+ * per-endpoint targeting use the imperative {@code AdvancedConnectionChaos} API.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see com.macstab.chaos.connection.model.NetRule#errno
@@ -37,17 +38,24 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
 @Repeatable(ChaosRecvEnobufs.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.TYPE, ElementType.METHOD, ElementType.FIELD})
-@ChaosL1(translator = "com.macstab.chaos.connection.annotation.l1.translators.ConnectionErrnoTranslator")
+@ChaosL1(
+    translator = "com.macstab.chaos.connection.annotation.l1.translators.ConnectionErrnoTranslator")
 @ConnectionErrnoBinding(operation = NetOperation.RECV, errno = Errno.ENOBUFS)
 public @interface ChaosRecvEnobufs {
 
-  /** @return probability the errno fires when matched, in {@code (0.0, 1.0]} */
+  /**
+   * @return probability the errno fires when matched, in {@code (0.0, 1.0]}
+   */
   double toxicity() default 1.0;
 
-  /** @return container id to bind to ({@code ""} = every matching container) */
+  /**
+   * @return container id to bind to ({@code ""} = every matching container)
+   */
   String id() default "";
 
-  /** @return policy when the active backend cannot honour libchaos-net */
+  /**
+   * @return policy when the active backend cannot honour libchaos-net
+   */
   OnMissingEnv onMissingEnv() default OnMissingEnv.ERROR;
 
   /**
@@ -55,6 +63,7 @@ public @interface ChaosRecvEnobufs {
    * Java adds it automatically when the annotation appears more than once on the same target.
    *
    * <p>Example:
+   *
    * <pre>{@code
    * @ChaosRecvEnobufs(id = "primary",  probability = 0.001)
    * @ChaosRecvEnobufs(id = "replica",  probability = 0.01)

@@ -14,34 +14,39 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code ECONNREFUSED} on every libchaos-intercepted {@code connect} call inside
- * the target container, making the call fail as if the kernel returned {@code ECONNREFUSED}.
+ * Injects {@code ECONNREFUSED} on every libchaos-intercepted {@code connect} call inside the target
+ * container, making the call fail as if the kernel returned {@code ECONNREFUSED}.
  *
  * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
  * chaos unit. It encodes exactly one (selector, errno = {@code ECONNREFUSED}) pair and has no
  * runtime selector-errno matrix to validate. The combination is safe by construction: this
- * annotation class exists only because {@code ECONNREFUSED} is a valid POSIX result of
- * {@code connect}.
+ * annotation class exists only because {@code ECONNREFUSED} is a valid POSIX result of {@code
+ * connect}.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code connect} call that the
- * libchaos interceptor sees, a Bernoulli trial with probability {@link #toxicity} is run.
- * When it fires the interceptor returns {@code -1} and sets {@code errno = ECONNREFUSED} — from
- * the application's perspective this is indistinguishable from a real kernel-level failure.
- * Specifically this simulates: connection refused — peer is up but not listening.
+ * <p><strong>What chaos this applies:</strong> on every {@code connect} call that the libchaos
+ * interceptor sees, a Bernoulli trial with probability {@link #toxicity} is run. When it fires the
+ * interceptor returns {@code -1} and sets {@code errno = ECONNREFUSED} — from the application's
+ * perspective this is indistinguishable from a real kernel-level failure. Specifically this
+ * simulates: connection refused — peer is up but not listening.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.NET)} annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-net.so} and prepend it to {@code LD_PRELOAD}. The shared library interposes socket-layer libc wrappers (connect, accept, socket, bind, listen, shutdown, send, recv, poll). This annotation installs a rule via {@code AdvancedConnectionChaos.apply(container, rule)}.
+ * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.NET)}
+ * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-net.so} and prepend it
+ * to {@code LD_PRELOAD}. The shared library interposes socket-layer libc wrappers (connect, accept,
+ * socket, bind, listen, shutdown, send, recv, poll). This annotation installs a rule via {@code
+ * AdvancedConnectionChaos.apply(container, rule)}.
  *
  * <p><strong>What is required:</strong>
+ *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply
- *       on macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.</li>
+ *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
+ *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
  *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.NET)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an
- *       {@code ExtensionConfigurationException} at {@code beforeAll}.</li>
+ *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
+ *       ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.</li>
- *   <li><strong>{@code macstab-chaos-connection} on the test classpath</strong> — without it the translator
- *       class cannot be loaded and the extension throws {@code ClassNotFoundException}.</li>
+ *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
+ *   <li><strong>{@code macstab-chaos-connection} on the test classpath</strong> — without it the
+ *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
  * </ul>
  *
  * <h2>Example</h2>
@@ -56,12 +61,13 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-2 to 1e-1 for connection-refused testing; 1.0 prevents all connections.
+ * <p><strong>Probability guidance:</strong> 1e-2 to 1e-1 for connection-refused testing; 1.0
+ * prevents all connections.
  *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosConnectEconnrefuseds}) to bind different probabilities to
- * different containers simultaneously.
+ * class. Use the repeatable form ({@code @ChaosConnectEconnrefuseds}) to bind different
+ * probabilities to different containers simultaneously.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -93,6 +99,7 @@ public @interface ChaosConnectEconnrefused {
    * Java adds it automatically when the annotation appears more than once on the same target.
    *
    * <p>Example:
+   *
    * <pre>{@code
    * @ChaosConnectEconnrefused(id = "primary",  probability = 0.001)
    * @ChaosConnectEconnrefused(id = "replica",  probability = 0.01)

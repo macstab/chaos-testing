@@ -14,15 +14,16 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * L1 chaos primitive: inject {@code EACCES} on every libchaos-io-intercepted
- * {@code open} syscall, gated by {@link #probability}.
+ * L1 chaos primitive: inject {@code EACCES} on every libchaos-io-intercepted {@code open} syscall,
+ * gated by {@link #probability}.
  *
- * <p><strong>What this simulates:</strong> permission denied — typical of selinux / apparmor / cap-drop restrictions.
+ * <p><strong>What this simulates:</strong> permission denied — typical of selinux / apparmor /
+ * cap-drop restrictions.
  *
- * <p><strong>Scope:</strong> applies to every path inside the container. Per-path targeting
- * remains in the imperative {@code AdvancedFilesystemChaos} API. <strong>Caution:</strong>
- * filesystem-wide errors can break container init (apt-get / apk add / service start) —
- * prefer low probabilities and pair with appropriate fault-tolerance in the test target.
+ * <p><strong>Scope:</strong> applies to every path inside the container. Per-path targeting remains
+ * in the imperative {@code AdvancedFilesystemChaos} API. <strong>Caution:</strong> filesystem-wide
+ * errors can break container init (apt-get / apk add / service start) — prefer low probabilities
+ * and pair with appropriate fault-tolerance in the test target.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see com.macstab.chaos.filesystem.model.IoRule#errno
@@ -34,13 +35,19 @@ import com.macstab.chaos.filesystem.model.IoOperation;
 @IoErrnoBinding(operation = IoOperation.OPEN, errno = Errno.EACCES)
 public @interface ChaosOpenEacces {
 
-  /** @return probability the errno fires when matched, in {@code (0.0, 1.0]} */
+  /**
+   * @return probability the errno fires when matched, in {@code (0.0, 1.0]}
+   */
   double probability() default 1.0;
 
-  /** @return container id to bind to ({@code ""} = every matching container) */
+  /**
+   * @return container id to bind to ({@code ""} = every matching container)
+   */
   String id() default "";
 
-  /** @return policy when the active backend cannot honour libchaos-io */
+  /**
+   * @return policy when the active backend cannot honour libchaos-io
+   */
   OnMissingEnv onMissingEnv() default OnMissingEnv.ERROR;
 
   /**
@@ -48,6 +55,7 @@ public @interface ChaosOpenEacces {
    * Java adds it automatically when the annotation appears more than once on the same target.
    *
    * <p>Example:
+   *
    * <pre>{@code
    * @ChaosOpenEacces(id = "primary",  probability = 0.001)
    * @ChaosOpenEacces(id = "replica",  probability = 0.01)

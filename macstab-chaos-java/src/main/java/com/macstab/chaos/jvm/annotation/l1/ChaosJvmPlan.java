@@ -85,6 +85,7 @@ public @interface ChaosJvmPlan {
    * Java adds it automatically when the annotation appears more than once on the same target.
    *
    * <p>Example:
+   *
    * <pre>{@code
    * @ChaosJvmPlan(id = "primary",  probability = 0.001)
    * @ChaosJvmPlan(id = "replica",  probability = 0.01)

@@ -40,6 +40,8 @@ public enum DnsSelectorKind {
     }
   };
 
-  /** @return the concrete DnsSelector singleton for this kind */
+  /**
+   * @return the concrete DnsSelector singleton for this kind
+   */
   public abstract DnsSelector toSelector();
 }

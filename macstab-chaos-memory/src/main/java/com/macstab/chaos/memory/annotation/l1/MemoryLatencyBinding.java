@@ -22,6 +22,8 @@ import com.macstab.chaos.memory.model.MemorySelector;
 @Target(ElementType.ANNOTATION_TYPE)
 public @interface MemoryLatencyBinding {
 
-  /** @return the libchaos-memory selector this latency annotation targets */
+  /**
+   * @return the libchaos-memory selector this latency annotation targets
+   */
   MemorySelector selector();
 }

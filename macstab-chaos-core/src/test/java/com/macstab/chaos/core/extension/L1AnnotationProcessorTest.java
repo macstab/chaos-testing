@@ -445,8 +445,7 @@ class L1AnnotationProcessorTest {
 
   /** Field annotated with @FixtureSuccess — no co-located container annotation. */
   static class WithFieldAnnotation {
-    @FixtureSuccess
-    Object someField;
+    @FixtureSuccess Object someField;
   }
 
   /** Field annotated with @FixtureSuccess AND a fake container annotation co-located. */
@@ -467,9 +466,7 @@ class L1AnnotationProcessorTest {
   }
 
   static class WithColocatedNoIdContainer {
-    @FakeContainer
-    @FixtureSuccess
-    Object theContainer;
+    @FakeContainer @FixtureSuccess Object theContainer;
   }
 
   // ==================== Method-level scope ====================
@@ -506,7 +503,8 @@ class L1AnnotationProcessorTest {
     void conflictMethod() {}
 
     @Test
-    @DisplayName("method annotation conflicts with persistent rule: suspends persistent, applies method rule")
+    @DisplayName(
+        "method annotation conflicts with persistent rule: suspends persistent, applies method rule")
     void methodSuspendsConflictingPersistentRule() throws Exception {
       SuccessTranslator.APPLY_COUNT.set(0);
       SuccessTranslator.REMOVE_COUNT.set(0);
@@ -517,8 +515,7 @@ class L1AnnotationProcessorTest {
       // Build a class-level persistent handle for the same annotation type + container
       final List<L1AnnotationProcessor.AppliedL1> persistent =
           new ArrayList<>(
-              L1AnnotationProcessor.applyClassLevel(
-                  WithSuccess.class, List.of(ch), classReport));
+              L1AnnotationProcessor.applyClassLevel(WithSuccess.class, List.of(ch), classReport));
       assertThat(persistent).hasSize(1);
       assertThat(SuccessTranslator.APPLY_COUNT).hasValue(1);
 
@@ -582,7 +579,8 @@ class L1AnnotationProcessorTest {
   class FieldLevel {
 
     @Test
-    @DisplayName("applies annotation on a field using field name as id fallback when no container annotation")
+    @DisplayName(
+        "applies annotation on a field using field name as id fallback when no container annotation")
     void fieldNameFallbackAsId() {
       SuccessTranslator.APPLY_COUNT.set(0);
 

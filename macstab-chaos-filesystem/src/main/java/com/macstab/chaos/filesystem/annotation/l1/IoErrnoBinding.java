@@ -10,8 +10,8 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Meta-annotation declaring the (operation, errno) tuple encoded by an IO-errno L1 annotation.
- * Read reflectively by {@code IoErrnoTranslator}.
+ * Meta-annotation declaring the (operation, errno) tuple encoded by an IO-errno L1 annotation. Read
+ * reflectively by {@code IoErrnoTranslator}.
  *
  * @author Christian Schnapka - Macstab GmbH
  */

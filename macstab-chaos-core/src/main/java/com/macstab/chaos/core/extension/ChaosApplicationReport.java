@@ -13,8 +13,8 @@ import java.util.Objects;
  *
  * <p>One report is built per test class. Class-scope and field-scope L1s are recorded once at
  * {@code beforeAll}; method-scope L1s are appended at each {@code beforeEach}. After-cleanup
- * observers can pull the report from the {@code ExtensionContext.Store} to log a summary, attach
- * to test reports, or assert (in framework integration tests) that the expected rules were applied.
+ * observers can pull the report from the {@code ExtensionContext.Store} to log a summary, attach to
+ * test reports, or assert (in framework integration tests) that the expected rules were applied.
  *
  * @author Christian Schnapka - Macstab GmbH
  */

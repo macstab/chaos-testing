@@ -14,10 +14,11 @@ import com.macstab.chaos.time.model.TimeErrno;
 import com.macstab.chaos.time.model.TimeSelector;
 
 /**
- * L1 chaos primitive: inject {@code ENOSYS} on every libchaos-time-intercepted
- * {@code usleep} call, gated by {@link #probability}.
+ * L1 chaos primitive: inject {@code ENOSYS} on every libchaos-time-intercepted {@code usleep} call,
+ * gated by {@link #probability}.
  *
- * <p><strong>What this simulates:</strong> function not implemented — kernel lacks the time syscall variant.
+ * <p><strong>What this simulates:</strong> function not implemented — kernel lacks the time syscall
+ * variant.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see com.macstab.chaos.time.model.TimeRule#errno(TimeSelector, TimeErrno, double)
@@ -29,13 +30,19 @@ import com.macstab.chaos.time.model.TimeSelector;
 @TimeErrnoBinding(selector = TimeSelector.USLEEP, errno = TimeErrno.ENOSYS)
 public @interface ChaosUsleepEnosys {
 
-  /** @return probability the errno fires when matched, in {@code (0.0, 1.0]} */
+  /**
+   * @return probability the errno fires when matched, in {@code (0.0, 1.0]}
+   */
   double probability() default 1.0;
 
-  /** @return container id to bind to ({@code ""} = every matching container) */
+  /**
+   * @return container id to bind to ({@code ""} = every matching container)
+   */
   String id() default "";
 
-  /** @return policy when the active backend cannot honour libchaos-time */
+  /**
+   * @return policy when the active backend cannot honour libchaos-time
+   */
   OnMissingEnv onMissingEnv() default OnMissingEnv.ERROR;
 
   /**
@@ -43,6 +50,7 @@ public @interface ChaosUsleepEnosys {
    * Java adds it automatically when the annotation appears more than once on the same target.
    *
    * <p>Example:
+   *
    * <pre>{@code
    * @ChaosUsleepEnosys(id = "primary",  probability = 0.001)
    * @ChaosUsleepEnosys(id = "replica",  probability = 0.01)

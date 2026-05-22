@@ -115,27 +115,30 @@ public final class L1AnnotationProcessor {
    */
   /**
    * Apply every L1 annotation declared on fields of {@code testClass}, permanently displacing any
-   * conflicting class-level rule for the same annotation type and container. Priority: field > class.
+   * conflicting class-level rule for the same annotation type and container. Priority: field >
+   * class.
    *
    * <p>Conflicting entries in {@code classHandles} are removed in-place and their rules removed
    * from the container — field rules win for the entire test-class lifetime. The result contains
    * only the new field-level handles; the caller's {@code classHandles} list is already trimmed.
    *
    * <p>Id resolution when a field annotation's {@code id()} is empty:
+   *
    * <ol>
-   *   <li>If the same field also carries a container annotation (one of
-   *       {@code containerAnnotationTypes}), use that container's {@code id()} value (which may be
-   *       {@code ""}, meaning every container). This lets an L1 sit beside its container
-   *       annotation without repeating the id string.
+   *   <li>If the same field also carries a container annotation (one of {@code
+   *       containerAnnotationTypes}), use that container's {@code id()} value (which may be {@code
+   *       ""}, meaning every container). This lets an L1 sit beside its container annotation
+   *       without repeating the id string.
    *   <li>Otherwise fall back to the field's own name as the id filter.
    * </ol>
+   *
    * When {@code id()} is non-empty on the L1 annotation it takes precedence unconditionally.
    *
    * @param testClass test class whose fields are scanned
    * @param containers all containers started for this test class
    * @param containerAnnotationTypes annotation types handled by known {@code ChaosPlugin}s
-   * @param classHandles mutable list of class-scope handles; conflicting entries are extracted
-   *     and their rules removed from containers
+   * @param classHandles mutable list of class-scope handles; conflicting entries are extracted and
+   *     their rules removed from containers
    * @param report cumulative report (mutated)
    * @return field-level handles for cleanup in {@code afterAll}
    */
@@ -199,8 +202,7 @@ public final class L1AnnotationProcessor {
 
           } catch (final LibchaosNotPreparedException | ChaosUnsupportedOperationException e) {
             routeEnvUnavailable(
-                annotation, testClass, ChaosApplicationReport.Scope.FIELD, onMissingEnv, e,
-                report);
+                annotation, testClass, ChaosApplicationReport.Scope.FIELD, onMissingEnv, e, report);
             return applied;
           }
         }
@@ -210,9 +212,9 @@ public final class L1AnnotationProcessor {
   }
 
   /**
-   * Removes from {@code classHandles} any rule for {@code annotationType} on {@code container}
-   * and calls {@code translator.remove} to deactivate it. Field rules permanently win over class
-   * rules — no restoration in {@code afterAll}.
+   * Removes from {@code classHandles} any rule for {@code annotationType} on {@code container} and
+   * calls {@code translator.remove} to deactivate it. Field rules permanently win over class rules
+   * — no restoration in {@code afterAll}.
    */
   private static void displaceClassRule(
       final Class<? extends Annotation> annotationType,
@@ -238,8 +240,8 @@ public final class L1AnnotationProcessor {
   }
 
   /**
-   * Resolves the id hint for field-level L1 annotations whose own {@code id()} is empty.
-   * Prefers the co-located container annotation's id; falls back to the field name.
+   * Resolves the id hint for field-level L1 annotations whose own {@code id()} is empty. Prefers
+   * the co-located container annotation's id; falls back to the field name.
    */
   private static String resolveFieldIdHint(
       final Field field, final Set<Class<? extends Annotation>> containerAnnotationTypes) {
@@ -258,8 +260,8 @@ public final class L1AnnotationProcessor {
    * annotation type applied to the same container.
    *
    * <p>Conflicting rules are removed from {@code persistentHandles} (in-place mutation) and
-   * returned in {@link MethodLevelResult#suspended()} so that
-   * {@link #reapply(List, ChaosApplicationReport)} can restore them in {@code afterEach}.
+   * returned in {@link MethodLevelResult#suspended()} so that {@link #reapply(List,
+   * ChaosApplicationReport)} can restore them in {@code afterEach}.
    *
    * @param testMethod the {@code @Test}-annotated method
    * @param containers all containers started for the enclosing test class
@@ -362,8 +364,7 @@ public final class L1AnnotationProcessor {
       try {
         final Object handle = s.translator().apply(s.container(), s.annotation());
         restored.add(new AppliedL1(s.annotation(), s.container(), s.translator(), handle));
-        log.debug(
-            "Restored suspended @{}", s.annotation().annotationType().getSimpleName());
+        log.debug("Restored suspended @{}", s.annotation().annotationType().getSimpleName());
       } catch (final Exception e) {
         log.warn(
             "Failed to restore suspended L1 @{} after method exit — container chaos state may be inconsistent",
@@ -375,8 +376,8 @@ public final class L1AnnotationProcessor {
   }
 
   /**
-   * Best-effort cleanup of previously-applied L1s. Each {@link L1Translator#remove} call is
-   * wrapped in try/catch so a single failure does not block cleanup of the remaining handles.
+   * Best-effort cleanup of previously-applied L1s. Each {@link L1Translator#remove} call is wrapped
+   * in try/catch so a single failure does not block cleanup of the remaining handles.
    *
    * @param applied handles to remove
    * @return {@code true} if every removal succeeded; {@code false} if any threw
@@ -390,10 +391,7 @@ public final class L1AnnotationProcessor {
         a.translator().remove(a.container(), a.handle());
       } catch (final Exception e) {
         allOk = false;
-        log.warn(
-            "L1 cleanup failed for @{}",
-            a.annotation().annotationType().getSimpleName(),
-            e);
+        log.warn("L1 cleanup failed for @{}", a.annotation().annotationType().getSimpleName(), e);
       }
     }
     return allOk;
@@ -404,7 +402,8 @@ public final class L1AnnotationProcessor {
   /**
    * Scans {@code element} for L1 annotations and applies each to matching containers.
    *
-   * @param fieldNameHint when non-null (field scope), used as id fallback when {@code id()} is empty
+   * @param fieldNameHint when non-null (field scope), used as id fallback when {@code id()} is
+   *     empty
    */
   private static List<AppliedL1> applyElementAnnotations(
       final AnnotatedElement element,
@@ -700,8 +699,8 @@ public final class L1AnnotationProcessor {
   public record MethodLevelResult(List<AppliedL1> methodHandles, List<AppliedL1> suspended) {}
 
   /**
-   * Internal projection of a started container plus its id, decoupling the processor from
-   * {@code ChaosTestingExtension}'s private {@code ContainerInstance}.
+   * Internal projection of a started container plus its id, decoupling the processor from {@code
+   * ChaosTestingExtension}'s private {@code ContainerInstance}.
    *
    * @param container the running container
    * @param id container id from its source annotation's {@code id()} attribute, or {@code

@@ -14,10 +14,11 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * L1 chaos primitive: inject {@code EACCES} on every libchaos-process-intercepted
- * {@code execveat} call inside the container, gated by {@link #probability}.
+ * L1 chaos primitive: inject {@code EACCES} on every libchaos-process-intercepted {@code execveat}
+ * call inside the container, gated by {@link #probability}.
  *
- * <p><strong>What this simulates:</strong> permission denied — typical of selinux / apparmor / cap-drop restrictions in the request path.
+ * <p><strong>What this simulates:</strong> permission denied — typical of selinux / apparmor /
+ * cap-drop restrictions in the request path.
  *
  * <h2>Example</h2>
  *
@@ -29,8 +30,8 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * }</pre>
  *
  * <p><strong>Probability guidance:</strong> {@code 1e-3} to {@code 1e-2} mirrors realistic
- * production rates for {@code EACCES} on {@code execveat}; {@code 1.0} typically
- * breaks container init or service-start.
+ * production rates for {@code EACCES} on {@code execveat}; {@code 1.0} typically breaks container
+ * init or service-start.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see com.macstab.chaos.process.model.ProcessRule#errno(ProcessSelector, ProcessErrno, double)
@@ -42,13 +43,19 @@ import com.macstab.chaos.process.model.ProcessSelector;
 @ProcessErrnoBinding(selector = ProcessSelector.EXECVEAT, errno = ProcessErrno.EACCES)
 public @interface ChaosExecveatEacces {
 
-  /** @return probability the errno fires when the rule matches, in {@code (0.0, 1.0]} */
+  /**
+   * @return probability the errno fires when the rule matches, in {@code (0.0, 1.0]}
+   */
   double probability() default 1.0;
 
-  /** @return container id to bind to ({@code ""} = every matching container) */
+  /**
+   * @return container id to bind to ({@code ""} = every matching container)
+   */
   String id() default "";
 
-  /** @return policy when the active backend cannot honour libchaos-process */
+  /**
+   * @return policy when the active backend cannot honour libchaos-process
+   */
   OnMissingEnv onMissingEnv() default OnMissingEnv.ERROR;
 
   /**
@@ -56,6 +63,7 @@ public @interface ChaosExecveatEacces {
    * Java adds it automatically when the annotation appears more than once on the same target.
    *
    * <p>Example:
+   *
    * <pre>{@code
    * @ChaosExecveatEacces(id = "primary",  probability = 0.001)
    * @ChaosExecveatEacces(id = "replica",  probability = 0.01)

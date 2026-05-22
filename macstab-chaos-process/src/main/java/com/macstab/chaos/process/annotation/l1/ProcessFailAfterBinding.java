@@ -23,9 +23,13 @@ import com.macstab.chaos.process.model.ProcessSelector;
 @Target(ElementType.ANNOTATION_TYPE)
 public @interface ProcessFailAfterBinding {
 
-  /** @return the libchaos-process selector this annotation targets */
+  /**
+   * @return the libchaos-process selector this annotation targets
+   */
   ProcessSelector selector();
 
-  /** @return the errno injected once the counter passes the threshold */
+  /**
+   * @return the errno injected once the counter passes the threshold
+   */
   ProcessErrno errno();
 }

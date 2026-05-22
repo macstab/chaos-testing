@@ -11,27 +11,34 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Activates a self-driving JVM stressor that load N synthetic classes to exhaust metaspace inside the target container's JVM for the
- * duration of the test class or test method.
+ * Activates a self-driving JVM stressor that load N synthetic classes to exhaust metaspace inside
+ * the target container's JVM for the duration of the test class or test method.
  *
  * <p><strong>What this annotation is:</strong> a JVM agent stressor L1 primitive. Unlike
  * interceptor primitives, stressors don't intercept a specific JVM operation — they spawn a
- * self-driving background routine that runs from activation ({@code beforeAll} or
- * {@code beforeEach}) until cleanup ({@code afterAll} or {@code afterEach}).
+ * self-driving background routine that runs from activation ({@code beforeAll} or {@code
+ * beforeEach}) until cleanup ({@code afterAll} or {@code afterEach}).
  *
- * <p><strong>What chaos this applies:</strong> the stressor load N synthetic classes to exhaust metaspace. The effect persists
- * throughout the test and is not probabilistic — it runs continuously at the configured intensity
- * until the rule is removed.
+ * <p><strong>What chaos this applies:</strong> the stressor load N synthetic classes to exhaust
+ * metaspace. The effect persists throughout the test and is not probabilistic — it runs
+ * continuously at the configured intensity until the rule is removed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the container's active {@code ChaosPlan} via {@link com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged plan and pushes it to the agent API after every change.
+ * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
+ * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
+ * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
+ * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
+ * container's active {@code ChaosPlan} via {@link
+ * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
+ * plan and pushes it to the agent API after every change.
  *
  * <p><strong>What is required:</strong>
+ *
  * <ul>
  *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — attaches the chaos agent before container start.</li>
- *   <li><strong>The chaos agent JAR</strong> accessible at the configured path.</li>
- *   <li><strong>{@code macstab-chaos-java} on the test classpath.</strong></li>
- *   <li><strong>Java container image</strong> — the target must run a JVM process.</li>
+ *       {@code @AppContainer}) — attaches the chaos agent before container start.
+ *   <li><strong>The chaos agent JAR</strong> accessible at the configured path.
+ *   <li><strong>{@code macstab-chaos-java} on the test classpath.</strong>
+ *   <li><strong>Java container image</strong> — the target must run a JVM process.
  * </ul>
  *
  * <h2>Example</h2>
@@ -47,8 +54,9 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * }</pre>
  *
  * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every agent-capable container. Use the repeatable form ({@code @ChaosMetaspacePressures}) to
- * apply different stressor intensities to different containers.
+ * applies to every agent-capable container. Use the repeatable form
+ * ({@code @ChaosMetaspacePressures}) to apply different stressor intensities to different
+ * containers.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -83,6 +91,7 @@ public @interface ChaosMetaspacePressure {
    * Java adds it automatically when the annotation appears more than once on the same target.
    *
    * <p>Example:
+   *
    * <pre>{@code
    * @ChaosMetaspacePressure(id = "primary",  probability = 0.001)
    * @ChaosMetaspacePressure(id = "replica",  probability = 0.01)
