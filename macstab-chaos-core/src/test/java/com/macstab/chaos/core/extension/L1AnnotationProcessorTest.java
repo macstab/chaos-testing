@@ -469,6 +469,16 @@ class L1AnnotationProcessorTest {
     @FakeContainer @FixtureSuccess Object theContainer;
   }
 
+  /** Only the primary field has @FixtureSuccess — the replica class rule must survive. */
+  static class WithOnlyPrimaryFieldAnnotation {
+    @FakeContainer(id = "primary")
+    @FixtureSuccess
+    Object primary;
+
+    @FakeContainer(id = "replica")
+    Object replica;
+  }
+
   // ==================== Method-level scope ====================
 
   @Nested
@@ -639,22 +649,22 @@ class L1AnnotationProcessorTest {
       assertThat(classHandles).hasSize(2); // class rule on both containers
       assertThat(SuccessTranslator.APPLY_COUNT).hasValue(2);
 
-      // Field-level: annotation on "primary" field only → displaces class rule for primary
+      // Field-level: only "primary" field has @FixtureSuccess → displaces class rule for primary only
       final List<L1AnnotationProcessor.AppliedL1> fieldHandles =
           L1AnnotationProcessor.applyFieldLevel(
-              WithColocatedContainerAnnotation.class,
+              WithOnlyPrimaryFieldAnnotation.class,
               List.of(primary, replica),
               Set.of(FakeContainer.class),
-              classHandles, // mutable — will be trimmed
+              classHandles, // mutable — primary class rule will be removed
               classReport);
 
       // Class rule for "primary" was removed; "replica" class rule survives
       assertThat(classHandles).hasSize(1);
       assertThat(classHandles.get(0).container()).isSameAs(replica.container());
-      assertThat(SuccessTranslator.REMOVE_COUNT).hasValue(1); // primary class rule removed
+      assertThat(SuccessTranslator.REMOVE_COUNT).hasValue(1); // only primary class rule displaced
 
-      // Field rules applied for both fields
-      assertThat(fieldHandles).hasSize(2);
+      // Field rule applied for primary only
+      assertThat(fieldHandles).hasSize(1);
     }
   }
 }
