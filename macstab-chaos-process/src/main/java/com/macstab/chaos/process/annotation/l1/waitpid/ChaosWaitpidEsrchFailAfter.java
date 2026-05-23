@@ -14,61 +14,94 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code waitpid} calls
- * succeed, then injects {@code ESRCH} on every subsequent call until the rule is removed.
+ * After {@link #successesBeforeFailure} successful {@code waitpid} calls, injects {@code ESRCH}
+ * on every subsequent call, modelling the scenario where a process group dissolves after N
+ * successful waits and all subsequent group waits find a non-existent process group.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code WAITPID}, errno = {@code ESRCH}, effect = FAIL_AFTER) tuple. FAIL_AFTER is the process
- * module's counter-gated effect — distinct from ERRNO (probabilistic) and LATENCY (unconditional).
- * It models resource-exhaustion scenarios where the first N operations succeed and then the system
- * runs out of capacity.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code WAITPID}, errno = {@code ESRCH},
+ * effect = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N calls succeed,
+ * then the counter trips permanently and every subsequent call returns the error code until the
+ * rule is removed. Compile-time safety: invalid selector/errno/effect combinations have no
+ * annotation class.
  *
- * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
- * {@code waitpid} calls. After {@link #successesBeforeFailure} successes the counter trips and
- * every subsequent call returns {@code -1} with {@code errno = ESRCH}, regardless of real kernel
- * capacity. The counter resets every time the rule is re-applied (e.g. across test methods if the
- * annotation is at class scope).
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code waitpid} wrapper at the dynamic-linker level.</li>
+ *   <li>The interposer maintains a per-rule success counter; the counter does not reset
+ *       automatically between test methods when the annotation is at class scope.</li>
+ *   <li>Once the counter reaches zero it trips permanently: every subsequent {@code waitpid}
+ *       call returns {@code -1} with {@code errno = ESRCH}.</li>
+ *   <li>The calling code receives: return value {@code -1}, {@code errno = ESRCH} (3); the
+ *       process or process group being waited for does not exist as a child of the caller.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family. This annotation installs
- * a FAIL_AFTER rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at {@code
- *       beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>The first {@link #successesBeforeFailure} calls proceed normally; all subsequent calls
+ *       return ESRCH; assert that the application treats ESRCH as a diagnostic signal indicating
+ *       that the pid being tracked has become stale — the process or group has already been
+ *       reaped by another waiter or has exited before the call.</li>
+ *   <li>FAIL_AFTER models the process-group-dissolution scenario: N children are reaped from a
+ *       process group; the (N+1)th wait attempts to reap from the same group; the group has
+ *       dissolved (all members exited and reaped); subsequent group waits return ESRCH — assert
+ *       that the application detects this dissolution and cleans up the group's registry entry.</li>
+ *   <li>Assert that the application does not retry on ESRCH — the process/group does not exist
+ *       and will not reappear; assert that the stale pid or pgid is logged for diagnostic
+ *       purposes so operators can trace the premature dissolution.</li>
  * </ul>
+ * Production failure mode: a process pool reaps workers using a group waitpid loop; the pool
+ * tracks the process group id in a registry; after N workers are reaped the group dissolves;
+ * subsequent waits return ESRCH; the pool does not clean the registry entry and continues
+ * waiting for the dissolved group; the registry entry remains stale indefinitely, preventing
+ * the pool from creating a new group with the same id.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>FAIL_AFTER models the process-group-dissolution threshold: N group members are reaped; after
+ * N successful waits all members have exited and their zombies have been collected; the group
+ * dissolves; subsequent group waits return ESRCH. Real ESRCH from this source is deterministic —
+ * it fires on the (N+1)th wait and persists. waitpid returns -1 and sets errno; checking
+ * {@code if (ret == -1 && errno == ESRCH)} is correct.
+ *
+ * <p>The counter does not reset between test methods when the annotation is at class scope. This
+ * enables sequential testing: the first test method exercises N successful group waits (the group
+ * exists and has members); subsequent test methods exercise the ESRCH-group-dissolved phase.
+ * Set {@link #successesBeforeFailure} to the number of group members expected to be reaped before
+ * the group dissolves.
+ *
+ * <p>ESRCH from waitpid on a specific positive pid is distinct from ESRCH on a negative pgid.
+ * For a specific pid, ESRCH means the process does not exist at all (it may have been reaped by
+ * a concurrent waiter). For a pgid, ESRCH means no process in the group is a child of the caller.
+ * Both cases warrant non-retryable diagnostic handling, but the log message should distinguish
+ * between the two to aid operator investigation.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosWaitpidEsrchFailAfter(successesBeforeFailure = 128)
- * class ProcessExhaustionTest {
+ * @ChaosWaitpidEsrchFailAfter(successesBeforeFailure = 8)
+ * class WaitpidGroupDissolutionTest {
  *   @Test
- *   void handlesExhaustion(ConnectionInfo info) { ... }
+ *   void processPoolCleansGroupRegistryOnEsrchAndLogsGroupId(ConnectionInfo info) {
+ *     // first 8 group waits succeed; subsequent waits return ESRCH;
+ *     // verify group registry cleaned; pgid logged; no retry; ESRCH vs ECHILD distinguished;
+ *     // new group can be created after cleanup
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of {@code
- * waitpid} calls the application is expected to make before hitting the limit. Typically 5–200 for
- * container-scoped tests. Zero means the very first call fails.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form
- * ({@code @ChaosWaitpidEsrchFailAfter.Repeatable}) to apply different counters to different
- * containers.
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to the expected
+ * number of group members that will be reaped before group dissolution; values 2–50 cover most
+ * process group scenarios; 0 means the group does not exist from the first wait.
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessFailAfterBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#failAfter(ProcessSelector, ProcessErrno, long)
  */
 @Repeatable(ChaosWaitpidEsrchFailAfter.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

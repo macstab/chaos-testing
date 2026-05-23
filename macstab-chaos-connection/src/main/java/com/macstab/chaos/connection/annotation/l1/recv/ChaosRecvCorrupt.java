@@ -11,61 +11,94 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code ERRNO} on every libchaos-intercepted {@code recv} call inside the target
- * container, making the call fail as if the kernel returned {@code ERRNO}.
+ * Corrupts bytes in the buffer returned by each intercepted {@code recv(2)} call, flipping random
+ * bits in the received data at a per-byte probability of {@link #rate}, simulating bit errors
+ * introduced by hardware or network corruption between the sender and the application.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ERRNO}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code ERRNO} is a valid POSIX result of {@code recv}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code recv} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #toxicity} is run. When it fires the
- * interceptor returns {@code -1} and sets {@code errno = ERRNO} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: a POSIX error condition.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code RECV}, effect = CORRUPTION)
+ * tuple. The injection operates at two granularities: a Bernoulli trial with probability
+ * {@link #toxicity} gates whether any corruption is applied to the current {@code recv} call; when
+ * it fires, each byte in the returned buffer is independently subjected to a bit-flip with
+ * probability {@link #rate}. The corruption occurs after the real kernel call has returned
+ * successfully — the byte count is not changed, only the content.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.NET)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-net.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes socket-layer libc wrappers (connect, accept,
- * socket, bind, listen, shutdown, send, recv, poll). This annotation installs a rule via {@code
- * AdvancedConnectionChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
+ *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
+ *       {@code poll} at the dynamic-linker level.
+ *   <li>On each intercepted {@code recv} call a Bernoulli trial with probability {@link #toxicity}
+ *       is conducted; when it fires, each byte in the returned buffer is independently flipped with
+ *       probability {@link #rate} before being returned to the caller.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.NET)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-connection} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>Protocol parsers that perform checksum or CRC validation must detect corruption and either
+ *       request retransmission (for request-response protocols) or close the connection (for
+ *       streaming protocols); assert that the parser does not silently accept malformed messages.
+ *   <li>Protocols with length-prefixed frames (Redis RESP, HTTP/2, gRPC) will misparse frame
+ *       boundaries when length fields are corrupted; assert that the parser detects the
+ *       out-of-bounds condition and closes the connection rather than reading into adjacent memory.
+ *   <li>TLS-encrypted channels perform HMAC verification on each record; corruption within a TLS
+ *       record will be detected by the TLS layer and result in a {@code bad_record_mac} alert
+ *       rather than being passed to the application; assert that the TLS alert is handled
+ *       gracefully and that reconnection is attempted.
+ *   <li>Assert that the application's corruption detection metric or error counter fires and that
+ *       repeated corruption triggers a circuit-breaker or connection replacement.
  * </ul>
+ *
+ * <p>In production, byte-level corruption occurs on faulty network hardware (NIC buffers,
+ * switch fabrics, cable connections) and on storage devices used for network packet buffering.
+ * While TCP's 16-bit checksum catches most corruption, it has a non-trivial false-negative rate
+ * for multi-bit errors; this injection simulates corruption that passes TCP's checksum and reaches
+ * the application.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>TCP provides a 16-bit one's complement checksum over the pseudo-header, TCP header, and data.
+ * The probability that a burst of bit errors passes TCP's checksum undetected is approximately
+ * 1/65536 for random independent errors; structured errors (e.g., swapped bytes, inverted words)
+ * can pass with much higher probability. This injection simulates corruption that has already passed
+ * the TCP checksum, representing the subset of real-world corruption events that TCP does not catch.
+ *
+ * <p>Application-layer framing protocols are the primary defence: Redis RESP uses {@code \r\n}
+ * delimiters and integer length prefixes that are likely to be corrupted by byte flips; HTTP/2 uses
+ * per-frame 24-bit length fields; gRPC uses a 4-byte big-endian length prefix. Corruption of these
+ * fields causes the receiver to misinterpret frame boundaries and will typically produce a parse
+ * error within a few frames. The injection tests whether the parse error handling is robust and
+ * does not cause crashes, memory overreads, or data loss.
+ *
+ * <p>The two-level probability model ({@link #toxicity} per-call, {@link #rate} per-byte) allows
+ * independent control of how frequently corruption events occur and how severe each event is.
+ * A low toxicity (e.g., 0.01) with moderate rate (e.g., 0.01) produces infrequent but noticeable
+ * corruption; a high toxicity with very low rate (e.g., 0.001) produces frequent events with
+ * typically one corrupted byte per event.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.NET)
- * @ChaosRecvCorrupt(toxicity = 0.001)
- * class FaultTest {
+ * @ChaosRecvCorrupt(rate = 0.001, toxicity = 0.01)
+ * class RecvCorruptTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void protocolParserDetectsAndRejectsCorruptedFrames(ConnectionInfo info) {
+ *     // assert that parse errors are detected and connections are re-established
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosRecvCorrupts}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosRecvEconnreset
+ * @see ChaosRecvLatency
  */
 @Repeatable(ChaosRecvCorrupt.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

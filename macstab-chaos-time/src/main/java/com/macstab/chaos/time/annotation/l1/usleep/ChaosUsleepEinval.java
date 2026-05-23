@@ -14,61 +14,79 @@ import com.macstab.chaos.time.model.TimeErrno;
 import com.macstab.chaos.time.model.TimeSelector;
 
 /**
- * Injects {@code EINVAL} on every libchaos-intercepted {@code usleep} call inside the target
- * container, making the call fail as if the kernel returned {@code EINVAL}.
+ * Injects {@code EINVAL} into {@code usleep(3)}, causing the call to return {@code -1} with
+ * {@code errno = EINVAL} as if the microsecond argument exceeded the valid range.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EINVAL}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EINVAL} is a valid POSIX result of {@code usleep}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code usleep} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = EINVAL} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: invalid argument — bad length, flags, or option; the universal canary errno.
+ * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code USLEEP}, errno = {@code EINVAL})
+ * tuple. The tuple is safe by construction — {@code EINVAL} is a documented POSIX result of
+ * {@code usleep(3)} when the {@code usec} argument is greater than or equal to 1,000,000 (one second).
+ * No runtime selector-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.TIME)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-time.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the libc wrappers for {@code clock_gettime},
- * {@code nanosleep}, and {@code usleep}. This annotation installs a rule via {@code
- * AdvancedTimeChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
+ *       at the dynamic-linker level.
+ *   <li>On every intercepted {@code usleep} call a Bernoulli trial with probability
+ *       {@link #probability} is conducted.
+ *   <li>When the trial fires the interposer returns {@code -1} and sets {@code errno = EINVAL}
+ *       without sleeping — the sleep is rejected.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.TIME)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-time} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>The sleep is skipped; callers without error handling will proceed immediately without the
+ *       intended back-off, producing a busy-loop.
+ *   <li>Code that passes {@code usec} values computed from division or scaling may pass values
+ *       ≥ 1,000,000 due to integer arithmetic bugs; this annotation surfaces those bugs.
+ *   <li>Assert that the application bounds the {@code usec} argument to the legal range before
+ *       calling {@code usleep} and handles the error gracefully.
  * </ul>
+ *
+ * <p>In production, {@code EINVAL} from {@code usleep} indicates a programming error — the
+ * microsecond argument was out of the legal range. The POSIX specification requires callers to
+ * use {@code nanosleep} for sleep intervals of one second or longer.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The POSIX 2017 specification states that {@code usleep} behavior is undefined when
+ * {@code usec >= 1000000}; some implementations raise {@code EINVAL}, others clamp to the maximum.
+ * On Linux with glibc, the glibc wrapper converts {@code usec} to a {@code timespec} and calls
+ * {@code nanosleep}; since {@code nanosleep} accepts any number of seconds, glibc never actually
+ * raises {@code EINVAL} for large values on Linux. {@code libchaos-time.so} injects it anyway
+ * to simulate the POSIX-compliant behavior and test that callers do not rely on the glibc extension.
+ *
+ * <p>This injection is most useful for testing C libraries called from JNI that use {@code usleep}
+ * with computed arguments — particularly when the computation involves unit conversion from
+ * milliseconds to microseconds and the value can occasionally overflow the 999999 µs limit.
+ *
+ * <p>Sibling annotations: {@link ChaosUsleepEintr} targets signal interruption;
+ * {@link ChaosUsleepEfault} targets bad pointer arguments.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.TIME)
- * @ChaosUsleepEinval(probability = 0.001)
- * class FaultTest {
+ * @ChaosUsleepEinval(probability = 0.01)
+ * class UsleepEinvalTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void backoffComputationDoesNotExceedUsleepMaximum(ConnectionInfo info) {
+ *     // assert that the computed usec value is always in [0, 999999]
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosUsleepEinvals}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosUsleepEintr
+ * @see ChaosUsleepEfault
+ * @see com.macstab.chaos.time.annotation.l1.TimeErrnoBinding
  */
 @Repeatable(ChaosUsleepEinval.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

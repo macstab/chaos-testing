@@ -14,67 +14,96 @@ import com.macstab.chaos.memory.model.MemorySelector;
 import com.macstab.chaos.memory.model.MmapErrno;
 
 /**
- * Injects {@code EFAULT} on every libchaos-memory-intercepted {@code munmap} call inside the target
- * container, making the call fail as if the kernel returned {@code EFAULT}.
+ * Injects {@code EFAULT} into {@code munmap} calls intercepted by libchaos-memory, causing the
+ * calling code to observe a bad-address failure when attempting to unmap a memory region.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector = {@code MUNMAP}, errno = {@code EFAULT}) pair. The
- * combination is safe by construction: this annotation class exists only because {@code EFAULT} is
- * a valid POSIX result of {@code munmap}; the invalid combinations simply have no annotation class,
- * so the selector × errno matrix cannot be violated at compile time.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-memory primitive — one (selector = {@code MUNMAP}, errno = {@code EFAULT})
+ * tuple. The {@code MUNMAP} selector intercepts {@code munmap} calls only, leaving {@code mmap},
+ * {@code mprotect}, and {@code madvise} unaffected. Compile-time safety: invalid selector/errno
+ * combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code munmap} call that the
- * libchaos-memory interceptor sees, a Bernoulli trial with probability {@link #probability} is run.
- * When it fires the interceptor returns {@code -1} and sets {@code errno = EFAULT} before the
- * kernel call completes — from the application perspective this is indistinguishable from a real
- * kernel-level failure. Specifically this simulates: bad address — typical of unhandled
- * SIGSEGV-adjacent edge cases in JIT or native code.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
+ *       interposing the libc {@code munmap} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code munmap} call the interposer runs a Bernoulli trial with probability
+ *       {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = EFAULT} and returns {@code -1}
+ *       without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 14,
+ *       {@code strerror}: "Bad address"; the memory region is NOT unmapped.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.MEMORY)} annotation on the container declaration causes
- * {@code ChaosTestingExtension} to upload {@code libchaos-memory.so} into the container and prepend
- * it to {@code LD_PRELOAD} before the container process starts. The shared library interposes the
- * libc wrappers for {@code mmap}, {@code munmap}, {@code mprotect}, and {@code madvise} at the
- * dynamic-linker level. This annotation then installs a rule via {@code
- * AdvancedMemoryChaos.apply(container, rule)} that configures the interposer with the selector and
- * probability you specify.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD} which does not apply on
- *       macOS or Windows containers; annotate the test class with {@code @DisabledOnOs(OS.WINDOWS)}
- *       and be aware of macOS Docker limitations.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.MEMORY)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — this installs the shared library before container start;
- *       omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) do not
- *       honour {@code LD_PRELOAD} for statically-linked binaries; use a glibc variant or the
- *       Debian-slim image instead.
- *   <li><strong>{@code macstab-chaos-memory} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and {@code ChaosTestingExtension} throws {@code
- *       ClassNotFoundException} wrapped in {@code ExtensionConfigurationException}.
+ *   <li>{@code munmap} returns {@code -1}; {@code errno = EFAULT} (14); the memory region
+ *       remains mapped — the application must not treat the region as released and must not
+ *       attempt to reuse its address for another mapping.</li>
+ *   <li>Memory managers and slab allocators that unmap regions on free paths must handle a
+ *       failed {@code munmap} without leaking the region — the failed {@code munmap} is a VMA
+ *       leak that inflates the process's virtual address usage; assert that the allocator
+ *       tracks and retries or reports the leaked region.</li>
+ *   <li>Assert that the application surfaces a structured error that includes the address and
+ *       length of the failed unmap — without this context, leaked VMAs are unattributable in
+ *       post-mortem analysis.</li>
  * </ul>
+ * Production failure mode: a native allocator or JVM that silently discards a failed
+ * {@code munmap} result accumulates unmapped-but-still-mapped VMAs; over time the VMA count
+ * approaches {@code vm.max_map_count}, causing subsequent {@code mmap} calls to fail with
+ * {@code ENOMEM} in an apparently unrelated code path.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>POSIX specifies {@code EFAULT} for {@code munmap} when the address range {@code [addr,
+ * addr+len)} is not within the process's accessible address space. On Linux, the kernel
+ * validates the range in {@code do_munmap}: if {@code addr} is not page-aligned, or if
+ * {@code addr + len} overflows, or if the range extends beyond the process's address space
+ * limit, the kernel returns {@code -EINVAL} (not {@code EFAULT}) — making real {@code EFAULT}
+ * from {@code munmap} extremely rare in practice. However, Linux kernel 2.4 and earlier did
+ * return {@code EFAULT} for some of these conditions, and other POSIX-compliant kernels may
+ * still do so.
+ *
+ * <p>The practical value of this annotation is to exercise the error-handling path for the
+ * rare but spec-compliant {@code munmap} failure — a path that is almost universally absent
+ * in production code. Most code ignores the return value of {@code munmap} entirely, relying
+ * on POSIX's statement that "on success it is not possible for {@code munmap} to fail." This
+ * annotation reveals the unhandled failure mode: if the interposer fires, the region is not
+ * unmapped, and any subsequent code that reuses the address will either see stale data or
+ * receive {@code EBUSY}/{@code EINVAL} from a mapping attempt that overlaps the live region.
+ *
+ * <p>The glibc {@code free} function, when it calls {@code munmap} internally (for chunks
+ * above {@code MMAP_THRESHOLD}), ignores the return value of {@code munmap}. If the
+ * {@code munmap} fails, glibc treats the chunk as freed but the kernel still considers the
+ * region mapped — creating a divergence between glibc's internal state and the kernel's VMA
+ * table. This is a latent double-accounting bug that only manifests when the address range is
+ * later reused by a new {@code mmap} call that overlaps the un-released region.
+ *
+ * <p>Compared with {@code EINVAL}: both prevent the {@code munmap} from completing, but
+ * {@code EFAULT} indicates the address range is structurally invalid (out of process space or
+ * not page-aligned); {@code EINVAL} indicates the arguments are internally inconsistent (zero
+ * length or invalid flag combination). Both are non-transient and require the caller to correct
+ * the address or length before retrying.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.MEMORY)
- * @ChaosMunmapEfault(probability = 0.001)
- * class MemoryFaultTest {
+ * @ChaosMunmapEfault(probability = 0.00005)
+ * class MunmapFailureTest {
  *   @Test
- *   void appHandlesEfaultOnAlloc(RedisConnectionInfo info) { ... }
+ *   void allocatorHandlesMunmapEfaultWithoutVmaLeak(RedisConnectionInfo info) {
+ *     // verify VMA count does not grow unboundedly when munmap occasionally fails
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> very low rates (1e-5 to 1e-4); EFAULT at high rate
- * produces unmaskable crashes.
- *
+ * <p><strong>Probability guidance:</strong> very low (1e-5 to 1e-4); {@code EFAULT} at high
+ * rates prevents the glibc allocator from returning memory to the OS, eventually causing virtual
+ * address space exhaustion.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
- * the test class. Use the repeatable form ({@code @ChaosMunmapEfaults}) to bind different
- * probabilities to different containers simultaneously.
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see MemoryErrnoBinding

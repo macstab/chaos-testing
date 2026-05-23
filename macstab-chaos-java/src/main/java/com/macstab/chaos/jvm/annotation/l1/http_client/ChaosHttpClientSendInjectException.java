@@ -14,59 +14,101 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Throw the configured exception at the http_client_send call site.
+ * Intercepts {@code HttpClient.send()} and throws an arbitrary configurable exception class before
+ * any network activity occurs, allowing tests to verify handling of specific exception types that
+ * the JDK HTTP client or wrapping libraries may surface.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> throw the configured exception at the
- * HTTP_CLIENT_SEND call site inside the JVM of the target container. The effect fires on every
- * matching call, subject to the probability configured via {@link #probability()} if applicable.
- * The rule is active from {@code beforeAll} until {@code afterAll} (class-scope) or from {@code
- * beforeEach} until {@code afterEach} (method-scope).
+ * A JVM agent L1 chaos primitive — one typed annotation per (selector family, operation type,
+ * effect) tuple. It is declared on a test class or method alongside a container annotation and
+ * activates for the lifetime of the test class ({@code beforeAll} / {@code afterAll}) or a single
+ * test method ({@code beforeEach} / {@code afterEach}).
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>Before every call to {@code java.net.http.HttpClient#send(HttpRequest,
+ *       HttpResponse.BodyHandler)} inside the target container's JVM, the chaos agent intercepts
+ *       the thread.
+ *   <li>The agent reflectively instantiates the class named by {@link #exceptionClassName()} with
+ *       the message from {@link #message()}, then throws it.
+ *   <li>No network activity occurs; the exception propagates to the caller immediately.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>Every {@code HttpClient.send()} call throws the configured exception; assert that the
+ *       application's exception handler for that specific type is invoked correctly.
+ *   <li>Use {@code java.net.http.HttpConnectTimeoutException} to test connect-timeout handlers
+ *       separately from {@code java.io.IOException} general-failure handlers.
+ *   <li>Framework-level error translation: Spring's {@code RestTemplate} wraps most HTTP client
+ *       exceptions in {@code ResourceAccessException}; assert that translation is correct.
+ *   <li><strong>Production failure mode:</strong> DNS resolution failure surfaces as
+ *       {@code java.net.UnknownHostException}; inject that to verify the application returns a
+ *       meaningful user-facing error rather than a raw stack trace.
  * </ul>
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The exception injection translator uses {@code Class.forName(exceptionClassName)} on the
+ * agent's class loader, then instantiates the exception via the single-argument
+ * {@code (String message)} constructor. If the class is not found or lacks that constructor, the
+ * agent falls back to wrapping a {@code RuntimeException} and logs a warning — the fault still
+ * fires, but with a different type than requested. Always verify the injected type at test
+ * authoring time.
+ *
+ * <p>The interception point is the same {@code jdk.internal.net.http.HttpClientImpl#send} entry
+ * used by all HTTP_CLIENT_SEND rules. Because the throw happens before any socket work, the
+ * connection pool is untouched and no file descriptors are consumed. The exception is thrown
+ * without wrapping, so if the configured class is a checked exception that the caller does not
+ * catch, the JVM will propagate it as an undeclared checked exception (technically legal at
+ * bytecode level when thrown through Byte Buddy's intercept mechanism).
+ *
+ * <p>The difference between this annotation and {@link ChaosHttpClientSendReject} is precision:
+ * {@code Reject} always uses {@code IOException} (matching the JDK's declared throws), while
+ * {@code InjectException} accepts any class including {@code HttpTimeoutException},
+ * {@code SSLHandshakeException}, or application-specific unchecked exceptions.
+ *
+ * <p>For testing SSL handshake failures specifically, inject
+ * {@code javax.net.ssl.SSLHandshakeException}; this exercises the branch in application code that
+ * handles certificate errors, which is distinct from the branch that handles connection refused.
+ *
+ * <p>When combined with method-scope, you can inject the fault for a single {@code @Test} and
+ * verify that exactly one retry is attempted by counting mock invocations before and after the
+ * fault window.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosHttpClientSendInjectException
- * class JvmChaosTest {
+ * @ChaosHttpClientSendInjectException(
+ *     exceptionClassName = "java.net.http.HttpConnectTimeoutException",
+ *     message = "synthetic connect timeout")
+ * class ConnectTimeoutHandlingTest {
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void applicationLogsTimeoutAndReturns504(ConnectionInfo info) {
+ *     // assert HTTP 504 response and timeout metric incremented
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosHttpClientSendInjectExceptions}) to apply different configurations to different
- * containers.
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation is required; omitting
+ *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
+ *       {@code @JvmAgentChaos}; it is attached before the container starts.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
+ *       translator class can be resolved.
+ *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
+ *       intercept native executables.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosHttpClientSendReject
+ * @see ChaosHttpClientSendAsyncInjectException
  */
 @Repeatable(ChaosHttpClientSendInjectException.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

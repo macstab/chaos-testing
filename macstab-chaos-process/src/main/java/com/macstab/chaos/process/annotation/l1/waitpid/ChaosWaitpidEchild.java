@@ -14,61 +14,98 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Injects {@code ECHILD} on every libchaos-intercepted {@code waitpid} call inside the target
- * container, making the call fail as if the kernel returned {@code ECHILD}.
+ * Injects {@code ECHILD} into {@code waitpid} calls intercepted by libchaos-process, causing the
+ * calling code to observe a no-child-processes failure when attempting to reap a child process.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ECHILD}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code ECHILD} is a valid POSIX result of {@code waitpid}.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code WAITPID}, errno = {@code ECHILD}) tuple.
+ * The {@code WAITPID} selector intercepts {@code waitpid} calls only, leaving {@code fork},
+ * {@code posix_spawn}, and all other process syscalls unaffected. Compile-time safety: invalid
+ * selector/errno combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code waitpid} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = ECHILD} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: no child processes — waitpid with no eligible child; typical of double-waits.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code waitpid} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code waitpid} call the interposer runs a Bernoulli trial with probability
+ *       {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer returns {@code -1} and sets {@code errno = ECHILD}
+ *       without issuing the real kernel call.</li>
+ *   <li>The calling code receives: return value {@code -1}, {@code errno = ECHILD} (10),
+ *       {@code strerror(ECHILD)}: "No child processes"; the specified pid does not exist as a
+ *       child of the calling process, or the child has already been waited for and its zombie
+ *       entry has been removed.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family at the dynamic-linker
- * level. This annotation installs a rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code waitpid} returns {@code -1} with {@code errno == ECHILD}; assert that the
+ *       application handles ECHILD without treating it as an unexpected error — ECHILD is the
+ *       normal result when using {@code waitpid(-1, ...)} to reap all children in a SIGCHLD
+ *       handler (the loop terminates when ECHILD is returned, indicating no more children to
+ *       reap).</li>
+ *   <li>Applications that call {@code waitpid} on a specific pid may receive ECHILD if the child
+ *       has already been reaped by a concurrent SIGCHLD handler or a double-wait bug — assert that
+ *       the application does not treat ECHILD from a specific-pid waitpid as a fatal error and
+ *       instead logs the pid for diagnostic purposes.</li>
+ *   <li>Assert that the application does not enter an infinite retry loop on ECHILD — unlike
+ *       EINTR (which warrants retry), ECHILD indicates the child is gone and retrying waitpid
+ *       for the same pid will produce ECHILD on every subsequent attempt.</li>
  * </ul>
+ * Production failure mode: a process supervisor uses a SIGCHLD handler that calls
+ * {@code waitpid(-1, WNOHANG)} in a loop; the loop does not terminate on ECHILD and retries
+ * indefinitely; the SIGCHLD handler consumes 100% CPU after all children have been reaped;
+ * the supervisor appears stuck and does not accept new process launch requests.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>{@code ECHILD} from {@code waitpid} has two distinct sources: (1) the pid argument does not
+ * refer to a child of the calling process — either the pid was never a child, or the child has
+ * already been reaped and its zombie entry removed; (2) when pid is -1 (wait for any child), ECHILD
+ * is returned when there are no children at all. The two cases have different semantic meaning:
+ * pid=-1 ECHILD is a normal loop-termination condition; specific-pid ECHILD is a diagnostic signal
+ * for a double-wait or pid-reuse bug.
+ *
+ * <p>waitpid returns -1 on error and sets errno (unlike POSIX spawn which returns the error code
+ * directly). Code that tests {@code if (ret == -1 && errno == ECHILD)} is correct. A common bug
+ * is checking only {@code if (ret < 0)} without also checking {@code errno == ECHILD}, which
+ * conflates ECHILD (no-child, expected in loops) with EINVAL (invalid options, programming error)
+ * and ESRCH (stale pid, diagnostic signal).
+ *
+ * <p>SIGCHLD handler design affects ECHILD likelihood: a handler that calls
+ * {@code waitpid(-1, &status, WNOHANG)} in a loop until ECHILD must terminate on ECHILD without
+ * error logging; the ECHILD return is the correct and expected loop-exit condition. Applications
+ * that log ECHILD at ERROR level in SIGCHLD handlers produce false-positive alerts on every signal
+ * delivery after the last child exits.
+ *
+ * <p>PID recycling is a related concern: a child exits, is reaped, and the kernel recycles its pid
+ * to a new process; a subsequent waitpid on the old pid receives ECHILD (the new process is not a
+ * child of the caller); if the application did not notice the child exit and retries waitpid, it
+ * will receive ECHILD and must not interpret this as the new process exiting.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosWaitpidEchild(probability = 0.001)
- * class FaultTest {
+ * @ChaosWaitpidEchild(probability = 0.01)
+ * class WaitpidChildTerminationTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void sigchlHandlerTerminatesReapLoopOnEchildAndDoesNotLogAsError(ConnectionInfo info) {
+ *     // verify ECHILD terminates waitpid(-1) loop; ECHILD not logged at ERROR;
+ *     // specific-pid ECHILD logged at WARN with pid; no infinite retry on ECHILD
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
+ * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2; ECHILD occurs normally in waitpid loops;
+ * any non-zero probability exercises the ECHILD loop-termination path.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosWaitpidEchilds}) to bind different probabilities to
- * different containers simultaneously.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessErrnoBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#errno(ProcessSelector, ProcessErrno, double)
  */
 @Repeatable(ChaosWaitpidEchild.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

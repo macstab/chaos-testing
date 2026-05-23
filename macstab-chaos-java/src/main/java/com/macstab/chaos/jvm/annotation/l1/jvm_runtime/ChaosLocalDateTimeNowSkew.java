@@ -14,56 +14,94 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Skew the value returned from local_date_time_now.
+ * Shifts the {@link java.time.LocalDateTime} returned by {@code LocalDateTime.now()} by a
+ * configurable offset, simulating clock skew for timezone-agnostic datetime operations.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> skew the value returned from LOCAL_DATE_TIME_NOW
- * inside the JVM of the target container. The effect fires on every matching call, subject to the
- * probability configured via {@link #probability()} if applicable. The rule is active from {@code
- * beforeAll} until {@code afterAll} (class-scope) or from {@code beforeEach} until {@code
- * afterEach} (method-scope).
+ * <p>A JVM agent L1 chaos primitive targeting the {@code LOCAL_DATE_TIME_NOW} operation — one typed
+ * annotation per (selector family, operation type, effect) tuple. Declared on a test class or
+ * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until
+ * {@code afterAll}/{@code afterEach} respectively.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>The chaos agent intercepts every call to {@code LocalDateTime.now()} in the target
+ *       container's JVM.
+ *   <li>The interceptor returns a {@code LocalDateTime} shifted by {@link #skewMs()} milliseconds
+ *       relative to the true local time; a negative value moves it into the past.
+ *   <li>The {@link #mode()} selects constant ({@code FIXED}), growing ({@code DRIFT}), or pinned
+ *       ({@code FREEZE}) skew behaviour.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li><strong>Audit log timestamps wrong.</strong> Entities stamped with {@code LocalDateTime.now()}
+ *       at creation or modification time will carry a shifted timestamp that violates chronological
+ *       ordering of audit trails; assert that the application validates or rejects records with
+ *       future timestamps.
+ *   <li><strong>Business-rule windows broken.</strong> Applications that check whether
+ *       {@code LocalDateTime.now()} falls within an open/close window (trading hours, maintenance
+ *       blackout) will make wrong decisions; assert that boundary conditions are handled
+ *       idempotently.
+ *   <li><strong>Scheduled-task drift.</strong> In-process schedulers that compare
+ *       {@code LocalDateTime.now()} against a next-run time will fire tasks early or skip them.
+ *   <li><strong>Production failure mode:</strong> audit logs with future timestamps can violate
+ *       GDPR retention constraints enforced by downstream data-lake pipelines that reject
+ *       records whose timestamp exceeds the ingestion time by more than a configurable tolerance.
  * </ul>
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code LocalDateTime.now()} resolves the current date and time in the JVM's default time zone
+ * without any offset-from-UTC information, making it the simplest of the java.time "now" methods.
+ * Because it discards timezone context, it is commonly used for display, logging, and business
+ * rules that are inherently local — but this also means skewing it produces effects that are
+ * invisible to any code that uses zone-aware types such as {@code ZonedDateTime} or
+ * {@code OffsetDateTime}.
+ *
+ * <p>The agent intercepts {@code LocalDateTime.now(ZoneId)} (the method ultimately called by all
+ * no-arg and single-arg variants) using standard Byte Buddy method-entry advice, replaces the
+ * {@code LocalDateTime} result with one adjusted by the skew amount, and returns it to the caller.
+ * No native-method delegation is required because {@code LocalDateTime.now()} is a pure Java
+ * method.
+ *
+ * <p>Mixing this annotation with {@link ChaosInstantNowSkew} or
+ * {@link ChaosSystemClockMillisSkew} on the same container creates an inconsistency between the
+ * different time APIs, which is a realistic scenario on nodes that do not propagate clock
+ * corrections uniformly through all layers (e.g. the OS clock is corrected by NTP but the JVM's
+ * default {@code Clock} instance is cached and not refreshed). Tests that assert internal
+ * consistency between timestamps produced by different APIs will catch this class of bug.
+ *
+ * <p>The {@code FREEZE} mode is particularly useful for testing date-based pagination or report
+ * generation that assumes {@code LocalDateTime.now()} advances between page requests; frozen, the
+ * code may produce identical page boundaries on every call or enter an infinite loop.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosLocalDateTimeNowSkew
- * class JvmChaosTest {
+ * @ChaosLocalDateTimeNowSkew(skewMs = 86_400_000) // +1 day
+ * class LocalDateTimeSkewTest {
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void auditLogDoesNotAcceptFutureTimestamps(ConnectionInfo info) { ... }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosLocalDateTimeNowSkews}) to apply different configurations to different containers.
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
+ *       agent before the container JVM starts; omitting it causes an
+ *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
+ *       {@code @JvmAgentChaos}.
+ *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the
+ *       translator.
+ *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
+ *       intercept native executables.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
  */

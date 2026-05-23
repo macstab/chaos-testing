@@ -14,19 +14,94 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * L1 chaos primitive: inject {@code EACCES} on every libchaos-io-intercepted {@code rename_from}
- * syscall, gated by {@link #probability}.
+ * Injects {@code EACCES} into {@code rename(2)} as observed from the source (old) path, causing
+ * the call to return {@code -1} with {@code errno = EACCES} as if the calling process does not
+ * have write permission on the directory containing the source file.
  *
- * <p><strong>What this simulates:</strong> permission denied — typical of selinux / apparmor /
- * cap-drop restrictions.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>Scope:</strong> applies to every path inside the container. Per-path targeting remains
- * in the imperative {@code AdvancedFilesystemChaos} API. <strong>Caution:</strong> filesystem-wide
- * errors can break container init (apt-get / apk add / service start) — prefer low probabilities
- * and pair with appropriate fault-tolerance in the test target.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code RENAME_FROM}, errno = {@code EACCES})
+ * tuple. The {@code RENAME_FROM} operation models the permission check on the source path of
+ * {@code rename(2)}. A Bernoulli trial with probability {@link #probability} is run on each
+ * intercepted {@code rename} call; when it fires the interposer returns {@code -1} with
+ * {@code errno = EACCES} without performing any real kernel operation. No runtime operation-errno
+ * validation is needed.
+ *
+ * <h2>What chaos this applies</h2>
+ *
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
+ *       extension to upload {@code libchaos-io.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
+ *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
+ *       {@code fallocate} at the dynamic-linker level.
+ *   <li>On each intercepted {@code rename} call a Bernoulli trial with probability {@link #probability}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = EACCES}, simulating a permission failure on the source path.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
+ *
+ * <ul>
+ *   <li>{@code EACCES} from a rename on the source path means the process cannot remove the
+ *       source directory entry; the file is not moved or renamed. Assert that the application
+ *       treats this as a permission error and does not assume the rename was partially performed
+ *       (rename is atomic: it either fully succeeds or fails without any visible effect).
+ *   <li>The "write-to-temporary-then-rename" atomic update pattern uses rename to make the new
+ *       file visible atomically; an {@code EACCES} on the source path (the temporary file's
+ *       directory) means the rename failed and the target file is unchanged. Assert that the
+ *       application rolls back the write attempt and reports the permission failure.
+ *   <li>Log rotation implementations that rename the current log file to an archive name must
+ *       handle {@code EACCES} on the rename; assert that the rotation fails gracefully and the
+ *       application continues to write to the original log file.
+ *   <li>Assert that the application's error path on rename {@code EACCES} correctly identifies
+ *       the affected path and the permission that was missing, enabling operators to diagnose
+ *       the configuration issue.
+ * </ul>
+ *
+ * <p>In production, {@code EACCES} from {@code rename} on the source path occurs when a security
+ * policy (SELinux, AppArmor, filesystem ACL) prevents write access to the directory containing
+ * the source file, when the sticky bit is set on the source directory and the process does not
+ * own the source file or the directory, and when a container's security context is changed
+ * between the temporary file creation and the rename.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code rename(2)} is an atomic directory operation: it removes the old name and adds the new
+ * name in a single filesystem transaction, ensuring that observers either see the old name or the
+ * new name, never an intermediate state. Implementing this atomically requires write permission on
+ * both the source directory (to remove the old entry) and the destination directory (to add the
+ * new entry). This annotation simulates a permission failure on the source directory.
+ *
+ * <p>When the rename fails, no visible change has occurred: the source file is still at its
+ * original location and the destination is unchanged (or still absent if the destination did not
+ * previously exist). Applications that use rename for atomic updates can safely retry or report
+ * failure without concern for partial state.
+ *
+ * <p>Java's {@code Files.move(Path, Path, CopyOption...)} with {@code ATOMIC_MOVE} calls
+ * {@code rename(2)} and throws an {@code IOException} with the message "Permission denied" when
+ * the underlying call returns {@code EACCES}. Non-atomic move operations (without {@code ATOMIC_MOVE})
+ * may fall back to a copy-then-delete sequence, which can leave partial state on failure.
+ *
+ * <h2>Example</h2>
+ *
+ * <pre>{@code
+ * @AppContainer
+ * @SyscallLevelChaos(LibchaosLib.IO)
+ * @ChaosRenameFromEacces(probability = 0.001)
+ * class RenameFromEaccesTest {
+ *   @Test
+ *   void atomicFileUpdateRollsBackOnRenamePermissionFailure() {
+ *     // assert that EACCES on rename leaves the target file unchanged and reports the error
+ *   }
+ * }
+ * }</pre>
  *
  * @author Christian Schnapka - Macstab GmbH
- * @see com.macstab.chaos.filesystem.model.IoRule#errno
+ * @see ChaosRenameToEacces
+ * @see ChaosUnlinkEacces
+ * @see com.macstab.chaos.filesystem.annotation.l1.IoErrnoBinding
  */
 @Repeatable(ChaosRenameFromEacces.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

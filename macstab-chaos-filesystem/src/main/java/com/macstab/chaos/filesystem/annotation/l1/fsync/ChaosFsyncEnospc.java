@@ -14,40 +14,77 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code ENOSPC} on every libchaos-intercepted {@code fsync} call inside the target
- * container, making the call fail as if the kernel returned {@code ENOSPC}.
+ * Injects {@code ENOSPC} into {@code fsync(2)}, causing the call to return {@code -1} with
+ * {@code errno = ENOSPC} as if the kernel ran out of disk space while allocating journal blocks
+ * or indirect blocks needed to flush the file's dirty data to the storage device.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ENOSPC}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code ENOSPC} is a valid POSIX result of {@code fsync}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code fsync} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = ENOSPC} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: no space left on device — disk-full; canary for cleanup / log-rotation / disk-pressure
- * bugs.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code FSYNC}, errno = {@code ENOSPC})
+ * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
+ * {@code fsync} call; when it fires the interposer returns {@code -1} with {@code errno = ENOSPC}
+ * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.IO)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-io.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the filesystem libc wrappers (open, read,
- * write, close, fsync, etc.) at the dynamic-linker level. This annotation installs a rule via
- * {@code AdvancedFilesystemChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
+ *       extension to upload {@code libchaos-io.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
+ *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
+ *       {@code fallocate} at the dynamic-linker level.
+ *   <li>On each intercepted {@code fsync} call a Bernoulli trial with probability {@link #probability}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = ENOSPC}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.IO)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-filesystem} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code ENOSPC} from {@code fsync} means the durability guarantee failed because the
+ *       filesystem ran out of space while flushing metadata (journal blocks, indirect blocks,
+ *       directory entries) that were deferred from the preceding write operations. The preceding
+ *       writes appeared to succeed but are not durable. Assert that the application treats
+ *       fsync-time {@code ENOSPC} with the same severity as write-time {@code ENOSPC}.
+ *   <li>WAL implementations must handle {@code ENOSPC} on the WAL fsync by aborting all
+ *       transactions that were waiting for this fsync's durability guarantee; assert that no
+ *       transaction is acknowledged as committed when the WAL fsync failed due to disk exhaustion.
+ *   <li>Journalled filesystems (ext4 with journalling, XFS) must flush journal blocks before
+ *       flushing data blocks; an {@code ENOSPC} during journal flushing is returned as
+ *       {@code ENOSPC} from {@code fsync}. Assert that the application does not assume the data
+ *       is durable when only the writes (not the subsequent fsync) succeeded.
+ *   <li>Assert that the application emits a "disk full — fsync failed" alert that is distinct from
+ *       a write-time disk-full alert, enabling operators to identify that the filesystem is full
+ *       and that recent writes may not be durable.
  * </ul>
+ *
+ * <p>In production, {@code ENOSPC} from {@code fsync} is less common than from {@code write} but
+ * occurs on journalled filesystems when the journal fills up (because pending transactions have not
+ * been checkpointed) and a new journal block allocation fails, and on copy-on-write filesystems
+ * (Btrfs, ZFS) where the fsync triggers the allocation of new on-disk blocks for the CoW pages
+ * and the allocation fails because the filesystem has no free blocks.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code fsync(2)} flushes all dirty data and metadata for the file to the storage device.
+ * On a journalled filesystem, this involves writing the dirty data pages, writing the updated
+ * metadata to the journal, and waiting for the journal commit to be acknowledged by the device.
+ * Each step may require allocating new blocks (journal blocks, indirect blocks), and any of these
+ * allocations can fail with {@code ENOSPC} if the filesystem has no free blocks. The application
+ * sees a single {@code ENOSPC} from the {@code fsync} call, even though the write calls that
+ * created the dirty pages returned successfully.
+ *
+ * <p>This is the "deferred ENOSPC" scenario: the filesystem accepts writes into the page cache
+ * even when it cannot immediately guarantee block allocation, deferring the allocation to the
+ * writeback or fsync path. Applications that write data and then fsync to make it durable must
+ * handle {@code ENOSPC} from the fsync, not just from the write, to correctly detect all
+ * disk-full conditions.
+ *
+ * <p>Java's {@code FileChannel.force(true)} calls {@code fsync(2)} and throws an {@code IOException}
+ * with the message "No space left on device" when the underlying call returns {@code ENOSPC}.
+ * Application code that catches {@code IOException} from {@code force()} must treat this as a
+ * fatal durability failure.
  *
  * <h2>Example</h2>
  *
@@ -55,21 +92,18 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.IO)
  * @ChaosFsyncEnospc(probability = 0.001)
- * class FaultTest {
+ * class FsyncEnospcTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void diskFullOnFsyncAbortsTransactionAndAlertsOperators() {
+ *     // assert that ENOSPC on fsync causes transaction abort and a disk-full alert
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2 to simulate disk-pressure; ensure the app
- * has disk-full handling.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosFsyncEnospcs}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosFsyncEio
+ * @see ChaosWriteEnospc
+ * @see com.macstab.chaos.filesystem.annotation.l1.IoErrnoBinding
  */
 @Repeatable(ChaosFsyncEnospc.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

@@ -14,58 +14,117 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Delay the nio_channel_write operation by the configured number of milliseconds.
+ * Intercepts {@code SocketChannel.write(ByteBuffer)} and holds the calling thread for
+ * {@link #delayMs()} milliseconds before flushing bytes to the kernel send buffer, simulating a
+ * slow sender or a saturated network interface as experienced by Netty, Undertow, and all
+ * NIO-based frameworks that write to the channel directly.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> delay the NIO_CHANNEL_WRITE operation by the
- * configured number of milliseconds inside the JVM of the target container. The effect fires on
- * every matching call, subject to the probability configured via {@link #probability()} if
- * applicable. The rule is active from {@code beforeAll} until {@code afterAll} (class-scope) or
- * from {@code beforeEach} until {@code afterEach} (method-scope).
+ * A JVM agent L1 chaos primitive — one typed annotation per (selector family, operation type,
+ * effect) tuple. It is declared on a test class or method alongside a container annotation and
+ * activates for the lifetime of the test class ({@code beforeAll} / {@code afterAll}) or a single
+ * test method ({@code beforeEach} / {@code afterEach}).
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>Before every call to {@code java.nio.channels.SocketChannel#write(ByteBuffer)} inside the
+ *       target container's JVM, the chaos agent intercepts the calling thread.
+ *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()},
+ *       {@link #maxDelayMs()}]; equal values produce a deterministic delay.
+ *   <li>Control returns and the underlying {@code write()} executes normally, copying bytes from
+ *       the application's {@code ByteBuffer} into the kernel TCP send buffer.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>Netty's write pipeline is blocked during the delay; any subsequent writes queued on the
+ *       same channel accumulate in Netty's {@code ChannelOutboundBuffer}; assert that the buffer's
+ *       high-water mark is crossed and that {@code Channel.isWritable()} returns {@code false},
+ *       triggering back-pressure notifications to the application.
+ *   <li>Write-timeout handlers (Netty's {@code IdleStateHandler} with {@code writerIdleTime}) may
+ *       fire during the delay if the delay exceeds the configured idle time; assert that the
+ *       application closes or reconnects the channel correctly rather than leaving a stale channel
+ *       in the pool.
+ *   <li>HTTP/2 frame writers flush HEADERS and DATA frames via {@code SocketChannel.write()};
+ *       each frame incurs the delay, causing stream-level flow control windows to remain open while
+ *       the sender holds data; assert that the receiver does not time out on an incomplete response.
+ *   <li>Reactor Netty's outbound pipeline eventually calls {@code SocketChannel.write()} after
+ *       encoding; a long delay here means the {@code Mono.timeout()} on the subscriber fires
+ *       before the request bytes are sent; assert that the timeout propagates as
+ *       {@code TimeoutException} and that the connection is evicted from the pool.
+ *   <li><strong>Production failure mode:</strong> a network interface on the application host
+ *       becomes saturated; the OS kernel write buffer fills for all outbound connections; every
+ *       {@code SocketChannel.write()} blocks in {@code send(2)} (blocking channels) or returns
+ *       zero bytes written (non-blocking channels); Netty re-registers {@code OP_WRITE} interest
+ *       on the selector and retries on the next loop iteration; the event loop is occupied
+ *       servicing write-ready events instead of read-ready events, starving inbound processing
+ *       and causing inbound requests to queue behind the saturated outbound path.
  * </ul>
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The interception targets {@code sun.nio.ch.SocketChannelImpl#write(ByteBuffer)}, the JDK's
+ * internal implementation of {@code SocketChannel}. Netty's {@code NioSocketChannel.doWriteBytes()}
+ * calls this method directly inside the event loop thread after dequeuing a buffer from
+ * {@code ChannelOutboundBuffer}. The chaos delay fires synchronously before the kernel {@code send}
+ * syscall, blocking the event loop thread for the duration of the sleep.
+ *
+ * <p>In non-blocking mode, {@code SocketChannel.write()} returns the number of bytes actually
+ * written, which may be less than the buffer's remaining bytes if the kernel send buffer is full.
+ * Netty handles partial writes by re-registering {@code SelectionKey.OP_WRITE} interest on the
+ * selector and retrying when the selector signals write readiness. The chaos delay compounds with
+ * each retry: a message requiring three write calls incurs the delay three times, one per
+ * {@code write()} invocation.
+ *
+ * <p>Netty's {@code ChannelOutboundBuffer} tracks the total pending bytes across all queued writes.
+ * When the total exceeds the configured high-water mark ({@code WriteBufferWaterMark.high()}),
+ * Netty sets {@code Channel.isWritable()} to {@code false} and fires
+ * {@code channelWritabilityChanged(false)} on all handlers. Handlers that respect back-pressure
+ * should pause sending new messages. The delay annotation exercises this path by slowing down the
+ * write path enough for the buffer to cross the high-water mark.
+ *
+ * <p>Undertow's XNIO layer uses {@code StreamSinkChannel.write()} which delegates to
+ * {@code SocketChannel.write()} for the underlying channel; the same intercept fires. Reactive
+ * HTTP clients built on Reactor Netty ultimately call through the same chain: Flux encoding →
+ * Netty pipeline → {@code NioSocketChannel.doWriteBytes()} → {@code SocketChannelImpl.write()}.
+ *
+ * <p>Combining this annotation with {@link ChaosNioChannelReadDelay} models a symmetric
+ * congested-link scenario. Combining it with {@link ChaosNioSelectorSelectDelay} models a fully
+ * degraded NIO pipeline where both selector readiness notification and the actual write are
+ * delayed, which is the worst-case profile for a throttled container network interface.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosNioChannelWriteDelay
- * class JvmChaosTest {
+ * @ChaosNioChannelWriteDelay(delayMs = 300)
+ * class SlowSenderBackPressureTest {
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void channelWritabilityChangedFiresAndPausesProducer(ConnectionInfo info) {
+ *     // assert Channel.isWritable() becomes false and producer pauses
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosNioChannelWriteDelays}) to apply different configurations to different containers.
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation is required; omitting
+ *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
+ *       {@code @JvmAgentChaos}; it is attached before the container starts.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
+ *       translator class can be resolved.
+ *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
+ *       intercept native executables.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosNioChannelWriteInjectException
+ * @see ChaosNioChannelReadDelay
+ * @see ChaosNioSelectorSelectDelay
  */
 @Repeatable(ChaosNioChannelWriteDelay.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

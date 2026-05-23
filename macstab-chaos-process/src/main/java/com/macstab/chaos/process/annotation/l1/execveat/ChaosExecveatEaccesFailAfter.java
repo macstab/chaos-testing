@@ -14,61 +14,102 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code execveat} calls
- * succeed, then injects {@code EACCES} on every subsequent call until the rule is removed.
+ * After {@link #successesBeforeFailure} successful {@code execveat} calls, injects {@code EACCES}
+ * on every subsequent call, causing the calling code to observe a permission-denied failure that
+ * persists for the remainder of the test.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code EXECVEAT}, errno = {@code EACCES}, effect = FAIL_AFTER) tuple. FAIL_AFTER is the process
- * module's counter-gated effect — distinct from ERRNO (probabilistic) and LATENCY (unconditional).
- * It models resource-exhaustion scenarios where the first N operations succeed and then the system
- * runs out of capacity.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code EXECVEAT}, errno = {@code EACCES}, effect
+ * = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N calls succeed, then the
+ * counter trips permanently and every subsequent call fails until the rule is removed. This is
+ * distinct from ERRNO (independent Bernoulli trial on each call) and LATENCY (unconditional delay).
+ * Compile-time safety: invalid selector/errno/effect combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
- * {@code execveat} calls. After {@link #successesBeforeFailure} successes the counter trips and
- * every subsequent call returns {@code -1} with {@code errno = EACCES}, regardless of real kernel
- * capacity. The counter resets every time the rule is re-applied (e.g. across test methods if the
- * annotation is at class scope).
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code execveat} wrapper at the dynamic-linker level.</li>
+ *   <li>The interposer maintains a per-rule success counter. Each {@code execveat} call that
+ *       passes the counter check decrements the remaining budget; the counter does not reset
+ *       automatically between test methods when the annotation is at class scope.</li>
+ *   <li>Once the counter reaches zero it trips permanently: every subsequent {@code execveat} call
+ *       sets {@code errno = EACCES} and returns {@code -1} without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 13,
+ *       {@code strerror}: "Permission denied"; the {@code dirfd} must be closed by the caller
+ *       to avoid an fd leak since no close-on-exec processing occurs for failed execs.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family. This annotation installs
- * a FAIL_AFTER rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at {@code
- *       beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>The first {@link #successesBeforeFailure} calls proceed normally; all subsequent calls
+ *       return {@code -1} with {@code errno = EACCES}; assert that the counter threshold corresponds
+ *       to the expected number of exec calls before an LSM policy change or credential rotation
+ *       takes effect in the application's lifecycle.</li>
+ *   <li>Container runtimes using {@code execveat} must close the open {@code dirfd} in the
+ *       {@code EACCES} error path — assert that each failure closes the dirfd before propagating
+ *       the error, since failed execs do not trigger {@code FD_CLOEXEC} processing on the dirfd.</li>
+ *   <li>Assert that the application distinguishes a post-N EACCES from EPERM — EACCES (13) means
+ *       the process's credentials or the file's permissions denied exec, suggesting a configuration
+ *       or deployment fix; EPERM (1) means an operation-class denial requiring a capability change;
+ *       these require different runbook actions and the diagnostic must identify which occurred.</li>
  * </ul>
+ * Production failure mode: a container runtime uses {@code execveat} to launch workloads; an LSM
+ * policy update ({@code auditd} policy reload, AppArmor profile revision) denies the exec type
+ * after the first N launches succeed; subsequent exec calls return {@code EACCES}; the runtime
+ * leaks the open dirfd on each failure, progressively exhausting {@code RLIMIT_NOFILE}.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>FAIL_AFTER is the appropriate model for LSM policy change scenarios. Real {@code EACCES}
+ * from {@code execveat} is not random — it occurs when a policy change takes effect while the
+ * runtime is mid-operation. The first N execs proceed before the policy update; then the LSM hook
+ * ({@code security_bprm_check} in the kernel) begins denying subsequent exec attempts. FAIL_AFTER
+ * with threshold N reproduces this state-machine transition: N successes followed by permanent
+ * failure captures what probabilistic ERRNO cannot — the fact that real policy denials are sticky.
+ *
+ * <p>The {@code execveat} context has a notable difference from {@code execve}: the LSM hook is
+ * applied to the already-open file description pointed to by {@code dirfd}, not to a fresh path
+ * lookup. This means an LSM policy label that was applied to the file after the dirfd was opened
+ * may differ from what a fresh {@code execve} path lookup would encounter. FAIL_AFTER tests this
+ * scenario where the first N dirfds are opened before the label changes, and subsequent opens
+ * pick up the new label that causes {@code EACCES} from the LSM check.
+ *
+ * <p>A {@code noexec} mount flag on the filesystem backing the {@code dirfd} is another source
+ * of sticky {@code EACCES}: if the mount is remounted with {@code noexec} after the process
+ * opens existing dirfds (which remain valid), any new dirfd opened after the remount and passed
+ * to {@code execveat} will trigger {@code EACCES}. FAIL_AFTER with threshold 0 tests this case
+ * where the runtime must handle {@code EACCES} from the very first exec attempt.
+ *
+ * <p>The counter does not reset between test methods at class scope, enabling a test class to
+ * exercise the pre-change phase in early methods and the post-change (denial) phase in later
+ * methods without restarting the container. This matches the real production timeline: the policy
+ * change happens once and all subsequent execs are denied.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosExecveatEaccesFailAfter(successesBeforeFailure = 128)
- * class ProcessExhaustionTest {
+ * @ChaosExecveatEaccesFailAfter(successesBeforeFailure = 10)
+ * class ExecveatLsmPolicyChangeTest {
  *   @Test
- *   void handlesExhaustion(ConnectionInfo info) { ... }
+ *   void runtimeClosesDirfdAndReportsLsmDenialAfterThreshold(ConnectionInfo info) {
+ *     // first 10 execveat calls succeed; subsequent calls return EACCES;
+ *     // verify dirfd closed on each failure; EACCES reported as LSM policy denial
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of {@code
- * execveat} calls the application is expected to make before hitting the limit. Typically 5–200 for
- * container-scoped tests. Zero means the very first call fails.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form
- * ({@code @ChaosExecveatEaccesFailAfter.Repeatable}) to apply different counters to different
- * containers.
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to match the
+ * expected number of successful execs before the policy change takes effect; values in the
+ * range 5–50 cover most runtime lifecycle scenarios; 0 means the first exec fails (mount
+ * remounted noexec before any launch).
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessFailAfterBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#failAfter(ProcessSelector, ProcessErrno, long)
  */
 @Repeatable(ChaosExecveatEaccesFailAfter.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

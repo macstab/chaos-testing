@@ -14,67 +14,93 @@ import com.macstab.chaos.memory.model.MemorySelector;
 import com.macstab.chaos.memory.model.MmapErrno;
 
 /**
- * Injects {@code EFAULT} on every libchaos-memory-intercepted {@code mprotect} call inside the
- * target container, making the call fail as if the kernel returned {@code EFAULT}.
+ * Injects {@code EFAULT} into {@code mprotect} calls intercepted by libchaos-memory, causing
+ * the calling code to observe a bad-address failure when attempting to change the protection
+ * attributes of a memory region.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector = {@code MPROTECT}, errno = {@code EFAULT}) pair.
- * The combination is safe by construction: this annotation class exists only because {@code EFAULT}
- * is a valid POSIX result of {@code mprotect}; the invalid combinations simply have no annotation
- * class, so the selector × errno matrix cannot be violated at compile time.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-memory primitive — one (selector = {@code MPROTECT}, errno = {@code EFAULT})
+ * tuple. The {@code MPROTECT} selector intercepts {@code mprotect} calls only, leaving
+ * {@code mmap}, {@code munmap}, and {@code madvise} unaffected. Compile-time safety: invalid
+ * selector/errno combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code mprotect} call that the
- * libchaos-memory interceptor sees, a Bernoulli trial with probability {@link #probability} is run.
- * When it fires the interceptor returns {@code -1} and sets {@code errno = EFAULT} before the
- * kernel call completes — from the application perspective this is indistinguishable from a real
- * kernel-level failure. Specifically this simulates: bad address — typical of unhandled
- * SIGSEGV-adjacent edge cases in JIT or native code.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
+ *       interposing the libc {@code mprotect} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code mprotect} call the interposer runs a Bernoulli trial with probability
+ *       {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = EFAULT} and returns {@code -1}
+ *       without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 14,
+ *       {@code strerror}: "Bad address".</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.MEMORY)} annotation on the container declaration causes
- * {@code ChaosTestingExtension} to upload {@code libchaos-memory.so} into the container and prepend
- * it to {@code LD_PRELOAD} before the container process starts. The shared library interposes the
- * libc wrappers for {@code mmap}, {@code munmap}, {@code mprotect}, and {@code madvise} at the
- * dynamic-linker level. This annotation then installs a rule via {@code
- * AdvancedMemoryChaos.apply(container, rule)} that configures the interposer with the selector and
- * probability you specify.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD} which does not apply on
- *       macOS or Windows containers; annotate the test class with {@code @DisabledOnOs(OS.WINDOWS)}
- *       and be aware of macOS Docker limitations.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.MEMORY)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — this installs the shared library before container start;
- *       omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) do not
- *       honour {@code LD_PRELOAD} for statically-linked binaries; use a glibc variant or the
- *       Debian-slim image instead.
- *   <li><strong>{@code macstab-chaos-memory} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and {@code ChaosTestingExtension} throws {@code
- *       ClassNotFoundException} wrapped in {@code ExtensionConfigurationException}.
+ *   <li>{@code mprotect} returns {@code -1}; {@code errno = EFAULT} (14); the region's protection
+ *       is unchanged — the application must not assume the protection change took effect and must
+ *       not access the region with the assumed (but not granted) protection.</li>
+ *   <li>JIT compilers and native memory managers that compute region addresses from base pointer
+ *       arithmetic must assert that the computed address is within a live mapping before calling
+ *       {@code mprotect}; assert that an {@code EFAULT} response triggers address recomputation
+ *       rather than a crash.</li>
+ *   <li>Assert that the application surfaces a structured error message that includes the
+ *       address and length passed to {@code mprotect} so operators can diagnose stale address
+ *       calculation bugs from logs.</li>
  * </ul>
+ * Production failure mode: a native code generator or JIT that caches the base address of a
+ * code arena passes a stale address to {@code mprotect} after the arena has been unmapped and
+ * reallocated by the runtime; the kernel returns {@code EFAULT} because the stale address no
+ * longer refers to a live mapping, causing the protection change to silently fail.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>POSIX specifies {@code EFAULT} for {@code mprotect} when the {@code addr} parameter points
+ * to an address not in the process's accessible address space, or when {@code addr + len}
+ * overflows the address space. On Linux, the kernel validates the range in
+ * {@code mprotect_fixup} by walking the VMA list; if any part of {@code [addr, addr+len)} is
+ * not covered by a VMA, the kernel returns {@code -EFAULT}.
+ *
+ * <p>Real {@code EFAULT} from {@code mprotect} is rare in well-structured code because the
+ * caller always obtains the address from a prior {@code mmap} return value. The failure mode
+ * arises when the address is computed indirectly: a JIT that stores the start address of a code
+ * region in a field and later passes it to {@code mprotect} for the W-to-X flip can produce
+ * a stale address if a concurrent GC or arena reset unmapped the region between the store and
+ * the {@code mprotect} call. This race is extremely difficult to reproduce in normal testing.
+ *
+ * <p>An arithmetic path to {@code EFAULT} exists when {@code addr + len} wraps around the
+ * 64-bit address space: if {@code addr} is near {@code ULONG_MAX} and {@code len} is large,
+ * the addition overflows, and the kernel returns {@code EFAULT}. This is a latent integer
+ * overflow in the address-range computation that only manifests with very large mappings.
+ * Languages that use 32-bit integers for memory sizes and promote them to 64-bit without
+ * sign-extension are at risk.
+ *
+ * <p>Compared with {@code EINVAL}: {@code EFAULT} occurs when the address range is not
+ * accessible (structural VMA gap or address overflow); {@code EINVAL} occurs when the
+ * protection flags are structurally invalid (e.g. {@code PROT_GROWSDOWN | PROT_EXEC} on an
+ * architecture that doesn't support it). Both are non-transient and indicate a programming
+ * error in the calling code.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.MEMORY)
- * @ChaosMprotectEfault(probability = 0.001)
- * class MemoryFaultTest {
+ * @ChaosMprotectEfault(probability = 0.00005)
+ * class StaleAddressTest {
  *   @Test
- *   void appHandlesEfaultOnAlloc(RedisConnectionInfo info) { ... }
+ *   void appHandlesEfaultOnMprotect(RedisConnectionInfo info) {
+ *     // verify stale-address EFAULT is logged with address and len, and no crash follows
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> very low rates (1e-5 to 1e-4); EFAULT at high rate
- * produces unmaskable crashes.
- *
+ * <p><strong>Probability guidance:</strong> very low (1e-5 to 1e-4); {@code EFAULT} at high
+ * rates denies all protection transitions, causing process abort during JVM startup when the
+ * JIT code cache cannot be made executable.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
- * the test class. Use the repeatable form ({@code @ChaosMprotectEfaults}) to bind different
- * probabilities to different containers simultaneously.
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see MemoryErrnoBinding

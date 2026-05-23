@@ -13,58 +13,96 @@ import com.macstab.chaos.filesystem.annotation.l1.IoLatencyBinding;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Delays every libchaos-intercepted {@code pwrite} call by {@link #delayMs} milliseconds before
- * delegating to the real kernel call, making the operation succeed but take longer than expected.
+ * Delays every {@code pwrite(2)} call by an additional {@link #delayMs} milliseconds before
+ * delegating to the real kernel call, making positional file writes slower than the application
+ * expects while still persisting the data normally at the requested offset.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one
- * (selector, effect = LATENCY) pair. Unlike errno variants, the latency primitive always delegates
- * to the kernel — it only adds wall-clock cost before doing so.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> every {@code pwrite} call intercepted by libchaos
- * blocks for {@link #delayMs} ms before the kernel call is issued. This simulates the wall-clock
- * cost increase from resource pressure, kernel scheduling stalls, or slow hardware — none of which
- * return an errno but all of which can exhaust application-level timeouts, saturate connection-pool
- * wait budgets, and surface hidden latency assumptions.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code PWRITE}, effect = LATENCY)
+ * tuple. Unlike errno variants, the latency primitive always delegates to the real kernel call
+ * after the configured extra delay — the data is written normally. No probability gate is applied;
+ * the delay fires on every intercepted {@code pwrite} call. No runtime operation-effect validation
+ * is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.IO)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-io.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the filesystem libc wrappers (open, read,
- * write, close, fsync, etc.) at the dynamic-linker level. This annotation installs a rule via
- * {@code AdvancedFilesystemChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
+ *       extension to upload {@code libchaos-io.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
+ *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
+ *       {@code fallocate} at the dynamic-linker level.
+ *   <li>On each intercepted {@code pwrite} call the interposer sleeps for {@link #delayMs} ms
+ *       before issuing the real kernel call.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.IO)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-filesystem} on the test classpath.</strong>
+ *   <li>Positional file write operations take longer than normal; applications that use
+ *       {@code pwrite} for random-access page writes (B-tree page updates, WAL record placement,
+ *       heap file page writes) will see increased latency per write. Assert that the application's
+ *       transaction commit deadline accounts for the accumulated delay across all page writes
+ *       in the transaction.
+ *   <li>Database engines that write to multiple pages per transaction using concurrent worker
+ *       threads each incur the delay independently; a transaction that modifies N pages from N
+ *       writer threads accumulates N × {@link #delayMs} of total wait time. Assert that the
+ *       transaction timeout is calibrated for the worst-case number of page writes per transaction.
+ *   <li>Applications that hold a write lock while performing {@code pwrite} calls will block other
+ *       transactions from acquiring the lock for the duration of the delay; assert that the lock
+ *       timeout is longer than the maximum expected {@code pwrite} latency under slow storage, and
+ *       that the lock holder releases it correctly even when writes are slow.
+ *   <li>Assert that slow {@code pwrite} calls do not cause the WAL checkpointer to time out,
+ *       leaving stale WAL entries that prevent log truncation and cause the WAL to grow unboundedly.
  * </ul>
+ *
+ * <p>In production, slow {@code pwrite} calls occur when cgroup I/O bandwidth throttling limits
+ * the process's write rate and each write must wait for its I/O token budget to replenish, when
+ * the storage device's write cache is full and subsequent writes must wait for the device to flush
+ * its internal buffer, and when a network filesystem introduces per-RPC latency due to server load
+ * or network congestion.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code pwrite(2)} is the positional variant of {@code write(2)}, writing to a caller-supplied
+ * offset without modifying the file's current position. This makes it the preferred write primitive
+ * for multi-threaded random-access workloads such as database page writers. For buffered I/O, the
+ * kernel accepts data into the page cache without waiting for the storage device; the write latency
+ * is bounded by the memory bandwidth and the kernel's lock on the page cache entry. For direct I/O
+ * ({@code O_DIRECT}), the write waits for the storage device to acknowledge the write, making the
+ * latency proportional to the device's write latency.
+ *
+ * <p>This injection adds the delay before the kernel call, simulating the scheduling stall and
+ * I/O queue depth that occurs under write pressure without requiring actual slow storage. The delay
+ * fires on every {@code pwrite} call regardless of whether the write hits an existing page or
+ * allocates new blocks; on a fast system with low write pressure this makes the injection more
+ * severe than real slow storage (where only allocation-heavy writes are slow).
+ *
+ * <p>Java's {@code FileChannel.write(ByteBuffer, long)} maps directly to {@code pwrite(2)} on
+ * Linux. When multiple threads call {@code channel.write(buf, offset)} concurrently, each call
+ * independently incurs the injected delay. Thread pool sizing assumptions tuned for fast storage
+ * may result in thread starvation when every thread is blocked on a delayed {@code pwrite}.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.IO)
- * @ChaosPwriteLatency(delayMs = 200)
- * class LatencyTest {
+ * @ChaosPwriteLatency(delayMs = 50)
+ * class PwriteLatencyTest {
  *   @Test
- *   void appHandlesSlowOperation(ConnectionInfo info) { ... }
+ *   void transactionCommitCompletesWithinDeadlineUnderSlowPageWrites() {
+ *     // assert that transaction commit finishes within its deadline even when page writes are slow
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Delay guidance:</strong> {@code 10}–{@code 200} ms simulates realistic stall events;
- * values above application-level timeouts produce cascading failures rather than isolated latency
- * observations — intentional in some scenarios, noisy in others.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form ({@code @ChaosPwriteLatencys}) to set
- * different delays on different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosWriteLatency
+ * @see ChaosPreadLatency
+ * @see com.macstab.chaos.filesystem.annotation.l1.IoLatencyBinding
  */
 @Repeatable(ChaosPwriteLatency.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

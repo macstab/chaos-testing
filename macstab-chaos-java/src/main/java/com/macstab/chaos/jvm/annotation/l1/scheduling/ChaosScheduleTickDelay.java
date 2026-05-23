@@ -14,58 +14,112 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Delay the schedule_tick operation by the configured number of milliseconds.
+ * Parks the scheduler worker thread for the configured number of milliseconds when the
+ * {@code ScheduledThreadPoolExecutor} dequeues a ready task — every scheduled task starts
+ * executing at least {@code delayMs} later than its trigger time.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> delay the SCHEDULE_TICK operation by the configured
- * number of milliseconds inside the JVM of the target container. The effect fires on every matching
- * call, subject to the probability configured via {@link #probability()} if applicable. The rule is
- * active from {@code beforeAll} until {@code afterAll} (class-scope) or from {@code beforeEach}
- * until {@code afterEach} (method-scope).
+ * <p>An L1 JVM chaos primitive targeting the {@code SCHEDULING} selector family with the
+ * {@code delay} effect applied to the {@code SCHEDULE_TICK} operation. It intercepts the tick
+ * path — the moment a pool worker dequeues a {@code ScheduledFutureTask} whose delay has elapsed
+ * and is about to invoke it — and parks the worker for {@code delayMs} before calling the task's
+ * {@code run} method. The annotation is declared on the test class or method alongside a container
+ * annotation and is active for the lifetime of the annotated scope.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <p>The JVM agent installs a Byte Buddy interceptor on the internal task-execution path of
+ * {@code ScheduledThreadPoolExecutor} (specifically the point where the dequeued
+ * {@code ScheduledFutureTask} is about to call its wrapped {@code Runnable} or
+ * {@code Callable}). When the interceptor fires:
+ *
+ * <ol>
+ *   <li>Execution is captured after the task has been dequeued from the {@code DelayedWorkQueue}
+ *       but before the task's {@code run()} method is invoked.
+ *   <li>The delay effect calls {@code LockSupport.parkNanos} on the pool worker thread for the
+ *       configured duration.
+ *   <li>After the park returns, the task's {@code run()} method executes normally on the same
+ *       worker thread.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>A task scheduled with {@code schedule(task, 100, MILLISECONDS)} does not execute until at
+ *       least {@code 100 + delayMs} milliseconds after submission — assert via a timestamp
+ *       captured inside the task body.
+ *   <li>For {@code scheduleAtFixedRate(task, 0, 1000, MILLISECONDS)}, each tick fires at least
+ *       {@code delayMs} late; assert that the inter-tick wall-clock interval is at least
+ *       {@code 1000 + delayMs} ms.
+ *   <li>The worker thread is in {@code TIMED_WAITING} state for the duration of the park — assert
+ *       via {@code ThreadMXBean.getThreadInfo}.
+ *   <li>Tasks that drive SLA-sensitive side effects (e.g. lease renewal, metric flush) miss their
+ *       deadlines — assert that downstream consumers detect the late signal.
  * </ul>
+ *
+ * <p><strong>Production failure mode this simulates:</strong> a CPU-throttled container where the
+ * scheduler worker is preempted by the kernel for hundreds of milliseconds between dequeuing the
+ * task and starting its execution — a distributed-lock renewal task fires late, the lock expires
+ * while the renewal logic is parked, and a competing node acquires the lock, causing dual writes
+ * to a shared resource.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p><strong>Interception point.</strong> {@code ScheduledThreadPoolExecutor} delegates task
+ * execution to the inner {@code ScheduledFutureTask#run()} method, which calls either
+ * {@code callable.call()} or {@code runnable.run()}. The agent instruments this delegation point.
+ * The dequeue from {@code DelayedWorkQueue} has already occurred when the interceptor fires —
+ * the task is no longer in the queue, so {@code executor.getQueue().size()} decreases before the
+ * delay, not after.
+ *
+ * <p><strong>Worker-thread occupancy.</strong> The park occupies the pool worker thread for
+ * {@code delayMs}. If all pool threads are simultaneously in the delay park (e.g. when many tasks
+ * become ready at the same tick), no other scheduled tasks can be dequeued during that window —
+ * the effective scheduler stalls for the full delay even if some tasks became ready before others.
+ *
+ * <p><strong>Distinction from {@code ChaosScheduleSubmitDelay}.</strong> The submit delay fires
+ * at submission time, before the task is enqueued. The tick delay fires at execution time, after
+ * the task is dequeued. The tick delay shifts the task's actual execution later without affecting
+ * the task's position in the delay queue or its nominal trigger time.
+ *
+ * <p><strong>Fixed-rate vs fixed-delay tasks.</strong> For {@code scheduleAtFixedRate}, the next
+ * execution is computed from the previous trigger time (not the completion time). Adding a tick
+ * delay does not shift the next trigger time — the scheduler will attempt to "catch up" by
+ * executing the next tick sooner. For {@code scheduleWithFixedDelay}, the next trigger is computed
+ * from the completion time, so adding a tick delay pushes all subsequent ticks later by
+ * {@code delayMs} cumulatively.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosScheduleTickDelay
- * class JvmChaosTest {
+ * @ChaosScheduleTickDelay(delayMs = 500)
+ * class ScheduleTickDelayTest {
+ *
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void renewalTaskFiresLateAndLockExpires(AppConnectionInfo info) {
+ *     assertThatThrownBy(() -> client.assertLeadershipMaintained(info, Duration.ofSeconds(1)))
+ *         .isInstanceOf(LeadershipLostException.class);
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosScheduleTickDelays}) to apply different configurations to different containers.
+ * <p><strong>Required:</strong>
+ *
+ * <ul>
+ *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
+ *   <li>A Java container image — the container must run a JVM process.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see com.macstab.chaos.jvm.api.OperationType#SCHEDULE_TICK
+ * @see com.macstab.chaos.jvm.api.ChaosSelector#scheduling(java.util.Set)
+ * @see ChaosScheduleTickSuppress
+ * @see ChaosScheduleSubmitDelay
  */
 @Repeatable(ChaosScheduleTickDelay.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

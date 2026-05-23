@@ -13,58 +13,100 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Delays every libchaos-intercepted {@code send} call by {@link #delayMs} milliseconds before
- * delegating to the real kernel call, making the operation succeed but take longer than expected.
+ * Delays every {@code send(2)} call by an additional {@link #delayMs} milliseconds before
+ * delegating to the real kernel call, making data transmission slower than the application expects
+ * while still delivering the actual sent data.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one
- * (selector, effect = LATENCY) pair. Unlike errno variants, the latency primitive always delegates
- * to the kernel — it only adds wall-clock cost before doing so.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> every {@code send} call intercepted by libchaos
- * blocks for {@link #delayMs} ms before the kernel call is issued. This simulates the wall-clock
- * cost increase from resource pressure, kernel scheduling stalls, or slow hardware — none of which
- * return an errno but all of which can exhaust application-level timeouts, saturate connection-pool
- * wait budgets, and surface hidden latency assumptions.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code SEND}, effect = LATENCY) tuple.
+ * Unlike errno variants, the latency primitive always delegates to the real kernel call after the
+ * configured extra delay — the data is transmitted normally. A Bernoulli trial with probability
+ * {@link #toxicity} gates whether the delay fires on each call. No runtime operation-effect
+ * validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.NET)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-net.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes socket-layer libc wrappers (connect, accept,
- * socket, bind, listen, shutdown, send, recv, poll). This annotation installs a rule via {@code
- * AdvancedConnectionChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
+ *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
+ *       {@code poll} at the dynamic-linker level.
+ *   <li>On each intercepted {@code send} call a Bernoulli trial with probability {@link #toxicity}
+ *       is conducted; when it fires the interposer sleeps for {@link #delayMs} ms before issuing
+ *       the real kernel call.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.NET)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-connection} on the test classpath.</strong>
+ *   <li>End-to-end request latency increases by the injected delay on each send call; assert that
+ *       the application's write timeout is configured to accommodate the injected delay without
+ *       triggering a false timeout.
+ *   <li>Streaming or chunked protocols that perform many small sends per request accumulate the
+ *       injected delay on every send call; assert that the protocol implementation uses buffered
+ *       writes or {@code sendmsg} to minimize the number of send calls per request.
+ *   <li>The delay occupies the thread during the entire sleep period before data enters the kernel
+ *       send buffer; for blocking sockets this means the send call takes at least {@link #delayMs}
+ *       longer than the network round-trip time. Assert that upstream timeouts account for this
+ *       additional write-side cost.
+ *   <li>Assert that TCP's Nagle algorithm interaction is as expected: with the delay injected before
+ *       the send call, small writes that would normally be coalesced by Nagle may now be buffered
+ *       for longer, potentially improving throughput at the cost of increased latency.
  * </ul>
+ *
+ * <p>In production, slow {@code send} calls occur when the process is CPU throttled by cgroups and
+ * spends extended time waiting to be scheduled before entering the kernel's send path, when the
+ * send buffer is nearly full and the caller must wait for TCP's flow control to drain it, and when
+ * NUMA topology causes the process to run on a CPU distant from the NIC's memory domain, increasing
+ * the cost of copying user data into kernel sk_buff structures.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The injected delay is added before the {@code send} syscall, so the total send time observed
+ * by the caller is {@link #delayMs} plus the time for the kernel to copy data into the send buffer
+ * and (for blocking sockets with a full buffer) the time for TCP's flow control to drain the buffer.
+ * If the send buffer has space when {@code send} is called, the kernel call itself returns quickly
+ * after a memcpy; the total observed latency is dominated by the injection delay.
+ *
+ * <p>For protocols that require multiple send calls to deliver one logical request (e.g., HTTP/1.1
+ * with chunked encoding, or a protocol that sends a header and then a body as separate write calls),
+ * the effective per-request latency increase is N × {@link #delayMs} where N is the number of send
+ * calls per request. This helps reveal whether application-level write timeouts are calibrated for
+ * the worst-case number of send calls per request rather than for a single bulk write.
+ *
+ * <p>TCP's Nagle algorithm coalesces small sends into larger segments to reduce the number of
+ * packets on the wire. With send-side latency injected, small writes are delayed before entering
+ * the kernel, which gives Nagle more data to coalesce. Applications that disable Nagle via
+ * {@code TCP_NODELAY} (common in low-latency RPC frameworks) will not benefit from this coalescing
+ * effect, and each delayed send will result in a separate small packet on the wire.
+ *
+ * <p>Java's blocking {@code Socket.getOutputStream().write()} calls translate to one or more
+ * {@code send} or {@code write} syscalls depending on the buffer size and the JVM implementation.
+ * Java's NIO {@code SocketChannel.write()} calls translate directly to {@code write} or
+ * {@code sendmsg} syscalls. Both paths are intercepted by libchaos-net when the process runs with
+ * the shared library in {@code LD_PRELOAD}.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.NET)
- * @ChaosSendLatency(delayMs = 200)
- * class LatencyTest {
+ * @ChaosSendLatency(delayMs = 150, toxicity = 0.3)
+ * class SendLatencyTest {
  *   @Test
- *   void appHandlesSlowOperation(ConnectionInfo info) { ... }
+ *   void writeTimeoutFiresCorrectlyUnderSlowSend(ConnectionInfo info) {
+ *     // assert that write timeout fires when send delay exceeds the configured threshold
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Delay guidance:</strong> {@code 10}–{@code 200} ms simulates realistic stall events;
- * values above application-level timeouts produce cascading failures rather than isolated latency
- * observations — intentional in some scenarios, noisy in others.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form ({@code @ChaosSendLatencys}) to set
- * different delays on different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosRecvLatency
+ * @see ChaosSendEtimedout
+ * @see com.macstab.chaos.connection.annotation.l1.ConnectionLatencyBinding
  */
 @Repeatable(ChaosSendLatency.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

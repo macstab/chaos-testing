@@ -14,40 +14,79 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code ENOSPC} on every libchaos-intercepted {@code rename to} call inside the target
- * container, making the call fail as if the kernel returned {@code ENOSPC}.
+ * Injects {@code ENOSPC} into {@code rename(2)} as observed from the destination (new) path, causing
+ * the call to return {@code -1} with {@code errno = ENOSPC} as if the filesystem has no space left
+ * to allocate additional directory blocks for the new entry in the destination directory.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ENOSPC}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code ENOSPC} is a valid POSIX result of {@code rename to}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code rename to} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = ENOSPC} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: no space left on device — disk-full; canary for cleanup / log-rotation / disk-pressure
- * bugs.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code RENAME_TO}, errno = {@code ENOSPC})
+ * tuple. The {@code RENAME_TO} operation models the destination-path space check of {@code rename(2)}:
+ * when the destination directory must grow to accommodate a new entry and the filesystem has no free
+ * blocks to extend it, the kernel returns {@code ENOSPC}. A Bernoulli trial with probability
+ * {@link #probability} is run on each intercepted {@code rename} call; when it fires the interposer
+ * returns {@code -1} with {@code errno = ENOSPC} without performing any real kernel operation.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.IO)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-io.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the filesystem libc wrappers (open, read,
- * write, close, fsync, etc.) at the dynamic-linker level. This annotation installs a rule via
- * {@code AdvancedFilesystemChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
+ *       extension to upload {@code libchaos-io.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
+ *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
+ *       {@code fallocate} at the dynamic-linker level.
+ *   <li>On each intercepted {@code rename} call a Bernoulli trial with probability {@link #probability}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = ENOSPC}, simulating a disk-full condition blocking the destination-directory
+ *       extension.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.IO)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-filesystem} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code ENOSPC} from {@code rename} on the destination path means the destination directory
+ *       cannot grow; the source file remains at its original location and the destination is
+ *       unchanged. Assert that the application cleans up the source (temporary) file and reports the
+ *       disk-full condition rather than leaving orphan files on a full filesystem.
+ *   <li>The "write-to-temporary-then-rename" atomic update pattern leaves the target file in its
+ *       previous state on {@code ENOSPC}; assert that the application falls back to the previous
+ *       content and notifies callers that the update was not applied.
+ *   <li>Applications that continuously write output files to a shared directory (log writers, report
+ *       generators) will eventually hit {@code ENOSPC} when the directory is full; assert that the
+ *       application does not silently drop data but surfaces a "disk full" alert to operations.
+ *   <li>Assert that the application does not retry the rename without first verifying that free
+ *       space has been reclaimed — a retry loop on a full filesystem will spin until a timeout.
  * </ul>
+ *
+ * <p>In production, {@code ENOSPC} from {@code rename} on the destination path is rare on filesystems
+ * where directories are not size-limited (most modern Linux filesystems extend directories
+ * dynamically), but occurs when the filesystem itself is genuinely full and cannot allocate the
+ * directory block needed to store the new entry. On HTree-indexed ext4 directories with many
+ * existing entries, adding an entry may require allocating an additional leaf block.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code rename(2)} within a single filesystem modifies both the source and destination
+ * directories in a single atomic VFS transaction. For most renames to an existing destination
+ * entry (overwrite), no new directory block is needed — the existing destination slot is reused.
+ * For renames to a new destination name in a full directory block, the filesystem must allocate
+ * a new directory block before committing the rename. If the filesystem is full at this point,
+ * the kernel returns {@code ENOSPC} and the rename fails atomically without modifying any
+ * directory state.
+ *
+ * <p>On ext4 with HTree (htree) indexing enabled (the default for large directories), directory
+ * entries are stored in a B-tree; adding a new name to a full leaf node requires allocating a new
+ * leaf block. On a filesystem with no free blocks, this allocation fails with {@code ENOSPC}.
+ * Non-indexed small directories store entries linearly in a single block and cannot overflow in
+ * the same way until the single block is full.
+ *
+ * <p>Java's {@code Files.move(Path, Path, CopyOption...)} with {@code ATOMIC_MOVE} throws an
+ * {@code IOException} with the message "No space left on device" when the underlying rename call
+ * returns {@code ENOSPC}. Application code that catches this exception should check whether the
+ * {@code ENOSPC} originated from the destination directory being full (metadata space) or from the
+ * data file being full (data space), though in practice the two are indistinguishable at the Java
+ * exception level.
  *
  * <h2>Example</h2>
  *
@@ -55,21 +94,18 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.IO)
  * @ChaosRenameToEnospc(probability = 0.001)
- * class FaultTest {
+ * class RenameToEnospcTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void atomicUpdateCleansTempFileAndAlertsDiskFull() {
+ *     // assert that ENOSPC on rename to target removes temp file and surfaces disk-full alert
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2 to simulate disk-pressure; ensure the app
- * has disk-full handling.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosRenameToEnospcs}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosRenameToEacces
+ * @see ChaosWriteEnospc
+ * @see com.macstab.chaos.filesystem.annotation.l1.IoErrnoBinding
  */
 @Repeatable(ChaosRenameToEnospc.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

@@ -14,40 +14,71 @@ import com.macstab.chaos.time.model.TimeErrno;
 import com.macstab.chaos.time.model.TimeSelector;
 
 /**
- * Injects {@code EAGAIN} on every libchaos-intercepted {@code wildcard} call inside the target
- * container, making the call fail as if the kernel returned {@code EAGAIN}.
+ * Injects {@code EAGAIN} into every interposed time syscall ({@code clock_gettime}, {@code nanosleep},
+ * {@code usleep}), causing each to return {@code -1} with {@code errno = EAGAIN} as if a temporary
+ * resource constraint prevented the operation.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EAGAIN}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EAGAIN} is a valid POSIX result of {@code wildcard}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code wildcard} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = EAGAIN} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: temporary failure / resource temporarily unavailable — typical of RLIMIT exhaustion or
- * kernel pressure.
+ * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code WILDCARD}, errno = {@code EAGAIN})
+ * tuple. The {@code WILDCARD} selector matches all three interposed time syscalls simultaneously —
+ * equivalent to applying {@link ChaosClockGettimeEagain}, {@link ChaosNanosleepEagain}, and
+ * {@link ChaosUsleepEagain} in a single annotation. No runtime selector-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.TIME)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-time.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the libc wrappers for {@code clock_gettime},
- * {@code nanosleep}, and {@code usleep}. This annotation installs a rule via {@code
- * AdvancedTimeChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
+ *       at the dynamic-linker level.
+ *   <li>On every intercepted call to any of the three syscalls a Bernoulli trial with probability
+ *       {@link #probability} is conducted independently.
+ *   <li>When the trial fires the interposer returns {@code -1} and sets {@code errno = EAGAIN}
+ *       without performing any real work.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.TIME)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-time} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code EAGAIN} is not a documented POSIX result of {@code clock_gettime} or
+ *       {@code nanosleep}; applications that check only for {@code EINTR} or {@code EINVAL} will
+ *       treat this as an unexpected error, exercising their default error-handling branch.
+ *   <li>Applications that blindly loop on any non-zero return from time syscalls will busy-spin
+ *       indefinitely under this injection, revealing the absence of a proper error-code check.
+ *   <li>Assert that the application treats unrecognised errno values from time syscalls as fatal
+ *       programming errors and either aborts with a clear message or propagates a structured
+ *       exception rather than entering a retry loop.
  * </ul>
+ *
+ * <p>In production, {@code EAGAIN} from time syscalls is not a standard kernel behaviour on Linux;
+ * its appearance signals a misconfigured or custom kernel, or a seccomp policy that translates
+ * disallowed syscalls to {@code EAGAIN} rather than {@code ENOSYS} or {@code EPERM}.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code EAGAIN} is normally associated with non-blocking I/O and resource limits
+ * ({@code RLIMIT_NPROC}, futex contention) rather than time syscalls. Neither {@code clock_gettime}
+ * nor {@code nanosleep} nor {@code usleep} returns {@code EAGAIN} in any standard Linux kernel
+ * code path. This injection therefore exercises the "unknown errno" handling posture of the
+ * application — the path that executes when an error is received that the developer never
+ * anticipated.
+ *
+ * <p>Some seccomp-bpf policies are configured to return {@code EAGAIN} for all unrecognised syscall
+ * numbers as a denial strategy that appears less suspicious than {@code ENOSYS}. A process running
+ * under such a policy would receive {@code EAGAIN} from any time syscall that the seccomp filter
+ * has not explicitly allowed. This injection simulates that outcome without requiring a custom
+ * seccomp profile in the test environment.
+ *
+ * <p>The {@code WILDCARD} selector applies the injection to all three time syscalls simultaneously,
+ * making it impossible for the application to fall back from one time interface to another. Code
+ * that catches {@code EAGAIN} on {@code nanosleep} and retries via {@code usleep} will encounter
+ * the same error, fully exercising the no-fallback-available code path.
+ *
+ * <p>Sibling per-syscall annotations ({@link ChaosClockGettimeEagain}, {@link ChaosNanosleepEagain},
+ * {@link ChaosUsleepEagain}) allow targeted injection to a single syscall when a narrower test
+ * scope is needed.
  *
  * <h2>Example</h2>
  *
@@ -55,21 +86,19 @@ import com.macstab.chaos.time.model.TimeSelector;
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.TIME)
  * @ChaosWildcardEagain(probability = 0.001)
- * class FaultTest {
+ * class WildcardEagainTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void applicationHandlesUnexpectedEagainAcrossAllTimeSyscalls(ConnectionInfo info) {
+ *     // assert that no busy-spin occurs and that a structured error is emitted
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3 to simulate transient pressure; high rates
- * saturate retry budgets.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosWildcardEagains}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosClockGettimeEagain
+ * @see ChaosNanosleepEagain
+ * @see ChaosUsleepEagain
+ * @see com.macstab.chaos.time.annotation.l1.TimeErrnoBinding
  */
 @Repeatable(ChaosWildcardEagain.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

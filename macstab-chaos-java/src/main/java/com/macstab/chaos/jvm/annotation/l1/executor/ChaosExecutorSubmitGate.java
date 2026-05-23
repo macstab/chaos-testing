@@ -14,58 +14,116 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Block the executor_submit operation until released or the configured timeout elapses.
+ * Blocks every {@link java.util.concurrent.ExecutorService#submit ExecutorService.submit} call on
+ * the submitting thread until the test releases the gate or {@link #maxBlockMs} elapses, giving
+ * the test precise control over the exact moment a task enters the executor's queue.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> block the EXECUTOR_SUBMIT operation until released
- * or the configured timeout elapses inside the JVM of the target container. The effect fires on
- * every matching call, subject to the probability configured via {@link #probability()} if
- * applicable. The rule is active from {@code beforeAll} until {@code afterAll} (class-scope) or
- * from {@code beforeEach} until {@code afterEach} (method-scope).
+ * <p>An L1 JVM chaos primitive in the {@code EXECUTOR} selector family targeting the {@code
+ * EXECUTOR_SUBMIT} operation with the {@code gate} effect. Unlike {@link ChaosExecutorSubmitDelay},
+ * which parks the submitting thread for a fixed random duration, the gate effect blocks the thread
+ * indefinitely on an internal {@code CountDownLatch} (or equivalent barrier) until the test
+ * framework signals release — or until {@link #maxBlockMs} ms have elapsed as a safety timeout.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <p>The gate is the correct primitive when a test needs to assert on the application's in-flight
+ * state at a precise moment: the gate pauses all new task submissions while existing tasks drain,
+ * so the test can inspect queue depth, thread-pool state, or other metrics with no race.
  *
- * <p><strong>What is required:</strong>
+ * <h2>What chaos this applies</h2>
+ *
+ * <p>The JVM agent installs a Byte Buddy interceptor on the {@code submit} methods of
+ * {@code ExecutorService} and {@code ForkJoinPool}. When the interceptor fires:
+ *
+ * <ol>
+ *   <li>The interceptor is entered on the submitting thread before the task enters the queue.
+ *   <li>The gate effect acquires an internal latch and blocks the thread with
+ *       {@code latch.await(maxBlockMs, MILLISECONDS)}.
+ *   <li>The test calls the agent's gate-release API; the latch counts down, unblocking the thread.
+ *   <li>Alternatively, if {@link #maxBlockMs} elapses before the gate is released, the latch
+ *       times out and the thread continues — the submission proceeds normally after the timeout.
+ *   <li>After unblocking, the original {@code submit} body executes and the task enters the queue.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>{@code executor.submit(task)} does not return until the gate is released or {@link
+ *       #maxBlockMs} ms pass — the call is synchronously blocked.
+ *   <li>While the gate is held, the executor's work queue does not grow — no new tasks are
+ *       enqueued — making queue-depth assertions deterministic.
+ *   <li>The returned {@code Future} completes normally after the gate is released and the task
+ *       eventually runs.
+ *   <li>Caller threads that hold locks while submitting tasks will hold those locks for the
+ *       duration of the gate block, potentially causing secondary contention in the application.
  * </ul>
+ *
+ * <p><strong>Production failure mode:</strong> a scheduler submits periodic tasks to a shared
+ * pool, but the pool becomes saturated during a traffic spike — submissions block behind a full
+ * queue for an unpredictable duration; the gate replicates this condition in a controlled,
+ * repeatable way.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p><strong>Interception point.</strong> The agent targets {@code submit} overloads on
+ * {@code java.util.concurrent.ExecutorService} and {@code java.util.concurrent.ForkJoinPool}
+ * via Byte Buddy retransformation of bootstrap-loaded JDK classes. The latch used by the gate is
+ * managed by the agent's in-process gate registry, keyed by the plan rule identifier.
+ *
+ * <p><strong>Gate release mechanism.</strong> The test calls the agent's HTTP control API (or the
+ * in-process API if running in the same JVM) to send a release signal to the named gate. The
+ * agent decrements the latch, which is observed by all threads blocked in the gate interceptor.
+ * Multiple threads that hit the gate simultaneously are all released at once when the latch reaches
+ * zero.
+ *
+ * <p><strong>maxBlockMs safety timeout.</strong> If the test framework fails to release the gate
+ * (e.g., due to test timeout or unexpected early failure), the {@link #maxBlockMs} ceiling prevents
+ * the application thread from blocking forever, allowing the container to eventually reach a clean
+ * state for the next test.
+ *
+ * <p><strong>Interaction with virtual threads.</strong> Under Project Loom, virtual threads blocked
+ * on the latch are unmounted from their carrier, freeing the platform thread for other work during
+ * the block. This means a gated submit on a virtual thread does not starve the platform thread
+ * pool — though the virtual thread itself is still frozen until the gate is released.
+ *
+ * <p><strong>Distinguishing from siblings.</strong> {@link ChaosExecutorSubmitDelay} releases
+ * automatically after a fixed sleep. {@link ChaosExecutorSubmitReject} never admits the task.
+ * The gate is the only primitive that gives the test explicit, external control over the exact
+ * timing of when the submission is admitted.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosExecutorSubmitGate
- * class JvmChaosTest {
+ * @ChaosExecutorSubmitGate(maxBlockMs = 5000)
+ * class GatedSubmitTest {
+ *
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void queueDepthIsZeroWhileGateHeld(AppConnectionInfo info, ChaosGateControl gate)
+ *       throws Exception {
+ *     // trigger a background task that will block on submit
+ *     client.triggerBackgroundTaskAsync(info);
+ *     // assert the queue is not yet populated
+ *     assertThat(metrics.executorQueueDepth(info)).isEqualTo(0);
+ *     // release the gate; task enters the queue
+ *     gate.release();
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosExecutorSubmitGates}) to apply different configurations to different containers.
+ * <ul>
+ *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
+ *   <li>A Java container image — the container must run a JVM process.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see com.macstab.chaos.jvm.api.OperationType#EXECUTOR_SUBMIT
+ * @see com.macstab.chaos.jvm.api.ChaosSelector#executor(java.util.Set)
+ * @see ChaosExecutorSubmitDelay
+ * @see ChaosExecutorSubmitReject
  */
 @Repeatable(ChaosExecutorSubmitGate.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

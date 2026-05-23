@@ -14,60 +14,114 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Reject the shutdown_hook_register operation by throwing an appropriate exception for the
- * operation type.
+ * Throws the configured exception inside {@link Runtime#addShutdownHook(Thread)
+ * Runtime.addShutdownHook(thread)} before the hook is registered — the hook thread is never stored
+ * in the JVM's shutdown-hook map and never executes when the JVM terminates.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> reject the SHUTDOWN_HOOK_REGISTER operation by
- * throwing an appropriate exception for the operation type inside the JVM of the target container.
- * The effect fires on every matching call, subject to the probability configured via {@link
- * #probability()} if applicable. The rule is active from {@code beforeAll} until {@code afterAll}
- * (class-scope) or from {@code beforeEach} until {@code afterEach} (method-scope).
+ * <p>An L1 JVM chaos primitive targeting the {@code SHUTDOWN} selector family with the
+ * {@code reject} effect applied to the {@code SHUTDOWN_HOOK_REGISTER} operation. It intercepts
+ * {@code Runtime.getRuntime().addShutdownHook(Thread)} and throws before the hook thread is
+ * validated or stored, exercising application code that must handle failed hook registration. The
+ * annotation is declared on the test class or method alongside a container annotation and is
+ * active for the lifetime of the annotated scope (class-scope: {@code beforeAll} to
+ * {@code afterAll}; method-scope: {@code beforeEach} to {@code afterEach}).
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <p>The JVM agent installs a Byte Buddy interceptor on {@code Runtime#addShutdownHook(Thread)}.
+ * When the interceptor fires:
+ *
+ * <ol>
+ *   <li>Execution is captured before the hook thread is passed to the internal
+ *       {@code ApplicationShutdownHooks.add(Thread)} helper.
+ *   <li>The reject effect constructs and throws the configured exception (default message:
+ *       {@code "rejected by chaos L1"}) from within the interceptor body.
+ *   <li>The exception propagates to the caller of {@code addShutdownHook} — the JVM's hook map is
+ *       not modified, and the hook thread remains in the NEW state forever (it is never started by
+ *       the JVM's shutdown sequence).
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>The caller of {@code addShutdownHook} receives the configured exception — assert that the
+ *       application logs a warning or propagates the failure, rather than silently ignoring it.
+ *   <li>When the container is stopped gracefully (SIGTERM), the rejected hook's {@code run()}
+ *       method is never invoked — assert that the side effects the hook was responsible for
+ *       (connection draining, file flushing, metric export) do not occur.
+ *   <li>Application frameworks that register shutdown hooks during initialisation (Spring,
+ *       Hibernate) throw during context startup — assert that the framework's error handler
+ *       catches the exception and either re-throws or falls back gracefully.
  * </ul>
+ *
+ * <p><strong>Production failure mode this simulates:</strong> a JVM in the middle of a graceful
+ * shutdown that has already called {@code System.exit()} and whose shutdown sequence is
+ * underway — any subsequent {@code addShutdownHook} calls throw {@link IllegalStateException}
+ * because hook registration is closed. A race between application startup and a concurrent
+ * shutdown signal can reproduce this: the hook fails to register, the connection pool's drain
+ * hook never runs, and in-flight database writes are rolled back by the server's idle-connection
+ * timeout rather than by the application's graceful drain.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p><strong>Interception point.</strong> The agent intercepts the public
+ * {@code Runtime.addShutdownHook(Thread)} method, which is a thin wrapper around
+ * {@code ApplicationShutdownHooks.add(Thread)}. The rejection fires before the internal lock on
+ * {@code ApplicationShutdownHooks} is acquired — the hook map is untouched and no JVM-internal
+ * state is affected by the injected exception.
+ *
+ * <p><strong>Exception type.</strong> The JVM's own rejection path for
+ * {@code addShutdownHook} uses {@link IllegalStateException} (shutdown already in progress) and
+ * {@link IllegalArgumentException} (hook already registered). The chaos reject effect throws the
+ * configured exception class, defaulting to a {@code RuntimeException} with the configured
+ * message. Configure {@code exceptionClassName = "java.lang.IllegalStateException"} to mimic the
+ * production failure mode precisely and exercise the application code that catches that specific
+ * type.
+ *
+ * <p><strong>Distinction from {@code ChaosShutdownHookRegisterDelay}.</strong> The delay effect
+ * eventually registers the hook after a park; the hook will execute on JVM exit. The reject effect
+ * prevents registration entirely; the hook never runs. Use delay to test registration-latency
+ * tolerance; use reject to test whether the application detects and reports missing hooks.
+ *
+ * <p><strong>Multiple hooks and partial rejection.</strong> If the application registers several
+ * hooks (e.g. one per framework subsystem), rejecting all of them leaves the JVM with no cleanup
+ * logic. Combine this annotation with probability-based filtering (if supported by the
+ * {@code probability} attribute) to reject only a fraction of hooks and test partial-cleanup
+ * scenarios.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosShutdownHookRegisterReject
- * class JvmChaosTest {
+ * @ChaosShutdownHookRegisterReject(message = "shutdown hooks disabled")
+ * class ShutdownHookRejectTest {
+ *
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void drainDoesNotRunWhenHookIsNotRegistered(AppConnectionInfo info) throws Exception {
+ *     // stop the container to trigger shutdown
+ *     info.container().stop();
+ *     // drain metric should be zero because the hook never ran
+ *     assertThat(metrics.getConnectionsDrained()).isEqualTo(0);
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosShutdownHookRegisterRejects}) to apply different configurations to different
- * containers.
+ * <p><strong>Required:</strong>
+ *
+ * <ul>
+ *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
+ *   <li>A Java container image — the container must run a JVM process.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see com.macstab.chaos.jvm.api.OperationType#SHUTDOWN_HOOK_REGISTER
+ * @see com.macstab.chaos.jvm.api.ChaosSelector#shutdown(java.util.Set)
+ * @see ChaosShutdownHookRegisterDelay
  */
 @Repeatable(ChaosShutdownHookRegisterReject.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

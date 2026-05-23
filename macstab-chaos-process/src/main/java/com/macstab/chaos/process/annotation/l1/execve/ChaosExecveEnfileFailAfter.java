@@ -14,61 +14,87 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code execve} calls succeed,
- * then injects {@code ENFILE} on every subsequent call until the rule is removed.
+ * Allows the first {@link #successesBeforeFailure} {@code execve} calls to succeed, then injects
+ * {@code ENFILE} on every subsequent call, simulating system-wide file-table exhaustion that
+ * causes exec failures after a bounded number of successful process image replacements.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code EXECVE}, errno = {@code ENFILE}, effect = FAIL_AFTER) tuple. FAIL_AFTER is the process
- * module's counter-gated effect — distinct from ERRNO (probabilistic) and LATENCY (unconditional).
- * It models resource-exhaustion scenarios where the first N operations succeed and then the system
- * runs out of capacity.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code EXECVE}, errno = {@code ENFILE},
+ * effect = FAIL_AFTER) tuple. FAIL_AFTER is libchaos-process's counter-gated effect: the first
+ * {@link #successesBeforeFailure} matched calls succeed normally; every call after that returns
+ * {@code -1} with {@code errno = ENFILE} until the rule is removed. This models progressive
+ * system-wide file handle exhaustion where the aggregate file usage across all processes on the
+ * node reaches {@code fs.file-max}, preventing any new file opens including the binary open
+ * required for exec.
  *
- * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
- * {@code execve} calls. After {@link #successesBeforeFailure} successes the counter trips and every
- * subsequent call returns {@code -1} with {@code errno = ENFILE}, regardless of real kernel
- * capacity. The counter resets every time the rule is re-applied (e.g. across test methods if the
- * annotation is at class scope).
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code execve} wrapper at the dynamic-linker level.</li>
+ *   <li>The interposer maintains a per-rule atomic counter of successful {@code execve} calls.</li>
+ *   <li>Once the counter reaches {@link #successesBeforeFailure}, it trips and every subsequent
+ *       intercepted call sets {@code errno = ENFILE} and returns {@code -1} without executing.</li>
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 23,
+ *       {@code strerror}: "Too many open files in system"; the counter remains tripped until removal.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family. This annotation installs
- * a FAIL_AFTER rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at {@code
- *       beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>The first {@link #successesBeforeFailure} {@code execve} calls succeed; subsequent calls
+ *       fail with {@code ENFILE} — the application must treat this as a platform-capacity event
+ *       and surface an alert for operator intervention, not as an in-process fd-leak or a missing
+ *       binary.</li>
+ *   <li>Unlike {@code EMFILE} (fixable by closing leaked fds in-process), {@code ENFILE} cannot
+ *       be resolved by the application alone — assert that the application does not attempt to
+ *       close its own fds in response to {@code ENFILE} from exec, and instead surfaces a
+ *       platform-capacity alert with the system-wide fd count ({@code /proc/sys/fs/file-nr}).</li>
+ *   <li>Assert that the application correctly implements backpressure when exec-ENFILE persists
+ *       across retries: it should stop accepting new requests that require subprocess spawning
+ *       rather than accumulating a queue of spawn attempts that will all fail.</li>
  * </ul>
+ * Production failure mode: a high-density Kubernetes node runs many containers with aggregate
+ * file handle usage approaching {@code fs.file-max}; a burst of concurrent exec calls from
+ * multiple containers simultaneously pushes the node over the system-wide limit; all subsequent
+ * exec calls on the node fail with {@code ENFILE} regardless of which container makes them —
+ * a node-wide cascading failure triggered by the aggregate file handle usage.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>The FAIL_AFTER model for exec-ENFILE captures the progressive system-wide exhaustion curve:
+ * as aggregate file usage grows, each exec that opens the binary contributes to the global count;
+ * eventually the N-th exec is the one that pushes the system over the limit, and all subsequent
+ * execs fail. The deterministic threshold makes this boundary reproducible in tests.
+ *
+ * <p>The operational distinction between EMFILE and ENFILE is critical for runbooks: the
+ * application's diagnostic message must name the specific errno and recommend different actions.
+ * For EMFILE: "check this process's fd count and look for leaks." For ENFILE: "check the node's
+ * system-wide file handle count with {@code cat /proc/sys/fs/file-nr} and alert the platform team
+ * to raise {@code fs.file-max}." Applications that report both as "too many open files" without
+ * distinguishing which limit was hit make operator response significantly harder.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosExecveEnfileFailAfter(successesBeforeFailure = 128)
- * class ProcessExhaustionTest {
+ * @ChaosExecveEnfileFailAfter(successesBeforeFailure = 50)
+ * class SystemFdExhaustionTest {
  *   @Test
- *   void handlesExhaustion(ConnectionInfo info) { ... }
+ *   void applicationDistinguishesEnfileFromEmfileAndAlertsPlatformTeam(ConnectionInfo info) {
+ *     // verify ENFILE triggers platform-capacity alert; application does not try to close own fds
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of {@code execve}
- * calls the application is expected to make before hitting the limit. Typically 5–200 for
- * container-scoped tests. Zero means the very first call fails.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form
- * ({@code @ChaosExecveEnfileFailAfter.Repeatable}) to apply different counters to different
- * containers.
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to the number of
+ * exec calls the application makes during the normal request cycle before system-wide exhaustion
+ * would occur; the value depends on the node's {@code fs.file-max} and aggregate file usage.
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessFailAfterBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#failAfter(ProcessSelector, ProcessErrno, long)
  */
 @Repeatable(ChaosExecveEnfileFailAfter.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

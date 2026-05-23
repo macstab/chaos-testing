@@ -14,62 +14,100 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code every interposed
- * process syscall} calls succeed, then injects {@code EINVAL} on every subsequent call until the
- * rule is removed.
+ * After {@link #successesBeforeFailure} successful process-management syscall invocations across
+ * all intercepted families, injects {@code EINVAL} on every subsequent call, modelling a
+ * configuration regression scenario where a hot-reload introduces invalid attribute values for
+ * thread creation, spawn, or waitpid options after N successful operations.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code WILDCARD}, errno = {@code EINVAL}, effect = FAIL_AFTER) tuple. FAIL_AFTER is the process
- * module's counter-gated effect — distinct from ERRNO (probabilistic) and LATENCY (unconditional).
- * It models resource-exhaustion scenarios where the first N operations succeed and then the system
- * runs out of capacity.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code WILDCARD}, errno = {@code EINVAL},
+ * effect = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N intercepted
+ * process-management calls (across all families — fork, execve, posix_spawn, pthread_create,
+ * waitpid) succeed, then the counter trips permanently and every subsequent call returns the error
+ * code until the rule is removed. Compile-time safety: invalid selector/errno/effect combinations
+ * have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
- * {@code every interposed process syscall} calls. After {@link #successesBeforeFailure} successes
- * the counter trips and every subsequent call returns {@code -1} with {@code errno = EINVAL},
- * regardless of real kernel capacity. The counter resets every time the rule is re-applied (e.g.
- * across test methods if the annotation is at class scope).
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing every process-management libc wrapper at the dynamic-linker level.</li>
+ *   <li>The interposer maintains a per-rule success counter shared across all intercepted syscall
+ *       families; the counter does not reset automatically between test methods when the annotation
+ *       is at class scope.</li>
+ *   <li>Once the counter reaches zero it trips permanently: every subsequent process-management
+ *       call returns {@code -1} (or the errno value directly for pthread_create and posix_spawn)
+ *       with {@code errno = EINVAL}.</li>
+ *   <li>The calling code receives: {@code waitpid()}/{@code fork()} return {@code -1} with
+ *       {@code errno = EINVAL} (22); {@code posix_spawn}/{@code pthread_create} return
+ *       {@code EINVAL} directly; {@code strerror(EINVAL)}: "Invalid argument".</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family. This annotation installs
- * a FAIL_AFTER rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at {@code
- *       beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>The first {@link #successesBeforeFailure} process-management calls proceed normally; all
+ *       subsequent calls return EINVAL permanently; assert that the application logs the specific
+ *       argument values that caused EINVAL on each affected call site — EINVAL is a programming
+ *       error and the argument values are the primary diagnostic for root-cause analysis.</li>
+ *   <li>FAIL_AFTER models the configuration regression scenario: N process-management calls succeed
+ *       with valid configuration; a hot-reload introduces an invalid pthread_attr_t stack size
+ *       or waitpid options bitmask; all subsequent calls return EINVAL — assert that the application
+ *       identifies the specific configuration value that caused the regression and does not retry
+ *       with the same invalid value.</li>
+ *   <li>Assert that EINVAL from waitpid during child monitoring causes the application to detect
+ *       and alert on zombie accumulation — children that exit while waitpid always returns EINVAL
+ *       cannot be reaped and become permanent zombies; assert that the application stops spawning
+ *       new children until the EINVAL condition is resolved.</li>
  * </ul>
+ * Production failure mode: a hot-reload of thread pool configuration changes the stack size to a
+ * value below PTHREAD_STACK_MIN; all subsequent pthread_create and waitpid calls start returning
+ * EINVAL; the application's generic error handler does not log the specific attribute values;
+ * operators cannot identify the regression; the thread pool exhausts while zombies accumulate.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>EINVAL from different process-management syscalls has different root causes: from
+ * {@code pthread_create}, it indicates an invalid {@code pthread_attr_t} (stack size below
+ * PTHREAD_STACK_MIN=16384, invalid scheduling policy, priority out of range, invalid guard size);
+ * from {@code waitpid}, it indicates an invalid options bitmask (non-standard extension bits);
+ * from {@code posix_spawn}, it indicates an invalid {@code posix_spawnattr_t} or
+ * {@code posix_spawn_file_actions_t} value. All are non-retryable programming errors.
+ *
+ * <p>The WILDCARD counter charges across all families. The EINVAL phase begins when the combined
+ * traffic exhausts the counter. After the EINVAL phase starts, all process-management operations
+ * return EINVAL simultaneously — the application must detect that EINVAL is firing cross-family
+ * and trace it to the configuration regression that caused the invalid argument values.
+ *
+ * <p>A critical secondary consequence: when waitpid starts returning EINVAL, children that exit
+ * cannot be reaped and become permanent zombies. Zombie accumulation rate equals the child spawn
+ * rate. The application must detect EINVAL from waitpid and stop spawning new children to prevent
+ * the process table from filling. The wildcard variant tests whether this zombie accumulation
+ * alert fires when EINVAL affects waitpid in combination with other families.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosWildcardEinvalFailAfter(successesBeforeFailure = 128)
- * class ProcessExhaustionTest {
+ * @ChaosWildcardEinvalFailAfter(successesBeforeFailure = 25)
+ * class ConfigRegressionTest {
  *   @Test
- *   void handlesExhaustion(ConnectionInfo info) { ... }
+ *   void applicationLogsArgumentValuesOnEinvalAndStopsSpawningToPreventZombies(ConnectionInfo info) {
+ *     // first 25 process calls succeed; subsequent calls return EINVAL;
+ *     // verify argument values logged on every path; verify zombie accumulation alert;
+ *     // verify spawning stopped; verify no retry with same invalid arguments
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of {@code every
- * interposed process syscall} calls the application is expected to make before hitting the limit.
- * Typically 5–200 for container-scoped tests. Zero means the very first call fails.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form
- * ({@code @ChaosWildcardEinvalFailAfter.Repeatable}) to apply different counters to different
- * containers.
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to the total number
+ * of process-management calls during the valid-configuration phase; values 10–200 cover typical
+ * init + steady-state phases; 0 means EINVAL fires from the very first call.
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessFailAfterBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#failAfter(ProcessSelector, ProcessErrno, long)
  */
 @Repeatable(ChaosWildcardEinvalFailAfter.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

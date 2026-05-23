@@ -14,61 +14,87 @@ import com.macstab.chaos.dns.annotation.l1.DnsSelectorKind;
 import com.macstab.chaos.dns.model.EaiErrno;
 
 /**
- * Injects {@code EAI_MEMORY} on every libchaos-intercepted {@code reverse} call inside the target
- * container, making the call fail as if the kernel returned {@code EAI_MEMORY}.
+ * Injects {@code EAI_MEMORY} into every {@code getnameinfo(3)} call (reverse DNS lookup), causing
+ * the call to return {@code EAI_MEMORY} as if the resolver could not allocate memory needed to
+ * resolve an IP address to a hostname.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EAI_MEMORY}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EAI_MEMORY} is a valid POSIX result of {@code reverse}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code reverse} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = EAI_MEMORY} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: resolver memory allocation failure — host-side memory pressure during resolution.
+ * <p>L1 libchaos primitive. Encodes exactly one (selectorKind = {@code REVERSE}, errno =
+ * {@code EAI_MEMORY}) tuple. This annotation always fires on every intercepted reverse lookup —
+ * there is no per-call probability field. Use it when you need every reverse resolution attempt to
+ * fail with an out-of-memory condition so that the application's memory-pressure handling in the
+ * reverse-lookup path is exercised. No runtime selector-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.DNS)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-dns.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the libc resolver wrappers {@code
- * getaddrinfo} and {@code getnameinfo}. This annotation installs a rule via {@code
- * AdvancedDnsChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.DNS)} on the container definition causes the
+ *       extension to upload {@code libchaos-dns.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code getaddrinfo(3)} and {@code getnameinfo(3)} at the
+ *       dynamic-linker level.
+ *   <li>On every intercepted {@code getnameinfo} call the interposer immediately returns
+ *       {@code EAI_MEMORY} without performing any real resolver query.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.DNS)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-dns} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>Every reverse lookup fails with a memory-exhaustion indicator; the application must fall
+ *       back to the raw IP address without attempting to retry or cache the result.
+ *   <li>Components that pre-allocate hostname buffers before calling {@code getnameinfo} must
+ *       handle the case where the call fails despite the buffer being available — {@code EAI_MEMORY}
+ *       indicates that the resolver's own internal allocation failed, not the caller's buffer.
+ *   <li>Assert that the application does not propagate an {@code OutOfMemoryError} when it
+ *       receives {@code EAI_MEMORY} from a native resolver call; the native heap and the JVM heap
+ *       are separate allocations.
  * </ul>
+ *
+ * <p>In production, {@code EAI_MEMORY} from {@code getnameinfo} occurs when the process is near
+ * its native memory limit and the glibc resolver cannot allocate the internal structures it needs
+ * to send and parse the PTR query. This is more likely in long-running processes that accumulate
+ * native memory fragmentation over time.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code getnameinfo(3)} allocates internal buffers for parsing the DNS response and
+ * constructing the returned hostname string. When {@code malloc} fails inside the resolver,
+ * {@code getnameinfo} returns {@code EAI_MEMORY}. Unlike {@code EAI_FAIL} or {@code EAI_AGAIN},
+ * this error is entirely host-side and indicates a process-level resource exhaustion rather than
+ * a DNS infrastructure problem.
+ *
+ * <p>Because {@code getnameinfo} writes its result into a caller-supplied buffer (rather than
+ * returning a heap-allocated pointer as {@code getaddrinfo} does), the allocation that fails is
+ * entirely internal to the glibc resolver. The caller's buffer is not populated on
+ * {@code EAI_MEMORY} — application code must not read from the output hostname buffer when the
+ * return value is non-zero.
+ *
+ * <p>Java's {@code InetAddress.getHostName()} silently suppresses resolver errors and returns
+ * the IP address string on failure. Application code that calls native resolver APIs through JNI
+ * must explicitly check the return value and handle {@code EAI_MEMORY} without assuming that the
+ * output hostname buffer contains a valid C string.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.DNS)
- * @ChaosReverseEaimemory(probability = 0.001)
- * class FaultTest {
+ * @ChaosReverseEaimemory
+ * class ReverseEaimemoryTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void applicationDoesNotReadFromUninitialisedBufferOnReverseLookupMemoryFailure(ConnectionInfo info) {
+ *     // assert that the application falls back to the raw IP address safely
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosReverseEaimemorys}) to bind different probabilities
- * to different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosReverseEaiagain
+ * @see ChaosReverseEaifail
+ * @see ChaosForwardEaimemory
+ * @see ChaosWildcardEaimemory
+ * @see com.macstab.chaos.dns.annotation.l1.DnsEaiBinding
  */
 @Repeatable(ChaosReverseEaimemory.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

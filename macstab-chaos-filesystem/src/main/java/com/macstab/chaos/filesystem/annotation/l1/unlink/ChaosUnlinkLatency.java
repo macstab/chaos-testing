@@ -13,58 +13,92 @@ import com.macstab.chaos.filesystem.annotation.l1.IoLatencyBinding;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Delays every libchaos-intercepted {@code unlink} call by {@link #delayMs} milliseconds before
- * delegating to the real kernel call, making the operation succeed but take longer than expected.
+ * Delays every {@code unlink(2)} call by an additional {@link #delayMs} milliseconds before
+ * delegating to the real kernel call, making file deletion slower than the application expects
+ * while still successfully removing the directory entry.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one
- * (selector, effect = LATENCY) pair. Unlike errno variants, the latency primitive always delegates
- * to the kernel — it only adds wall-clock cost before doing so.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> every {@code unlink} call intercepted by libchaos
- * blocks for {@link #delayMs} ms before the kernel call is issued. This simulates the wall-clock
- * cost increase from resource pressure, kernel scheduling stalls, or slow hardware — none of which
- * return an errno but all of which can exhaust application-level timeouts, saturate connection-pool
- * wait budgets, and surface hidden latency assumptions.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code UNLINK}, effect = LATENCY)
+ * tuple. Unlike errno variants, the latency primitive always delegates to the real kernel call
+ * after the configured extra delay — the file is deleted normally. No probability gate is applied;
+ * the delay fires on every intercepted {@code unlink} call. No runtime operation-effect validation
+ * is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.IO)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-io.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the filesystem libc wrappers (open, read,
- * write, close, fsync, etc.) at the dynamic-linker level. This annotation installs a rule via
- * {@code AdvancedFilesystemChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
+ *       extension to upload {@code libchaos-io.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
+ *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
+ *       {@code fallocate} at the dynamic-linker level.
+ *   <li>On each intercepted {@code unlink} call the interposer sleeps for {@link #delayMs} ms
+ *       before issuing the real kernel call.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.IO)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-filesystem} on the test classpath.</strong>
+ *   <li>File deletion operations take longer than normal; applications that delete many temporary
+ *       files in a tight loop (cleanup after batch processing, log archival deletion) will see
+ *       increased cleanup latency. Assert that the cleanup operation's timeout accounts for the
+ *       accumulated delay across all deleted files.
+ *   <li>Applications that delete a file and then immediately create a new file at the same path
+ *       (a "recreate" pattern) will see the window between deletion and creation extended by the
+ *       injected delay; assert that the application handles concurrent access during this window
+ *       rather than assuming the deletion is instantaneous.
+ *   <li>Log rotation implementations that delete expired archive files may accumulate significant
+ *       delay when deleting many archives; assert that the rotation timeout is calibrated for the
+ *       worst-case number of deletions per rotation cycle.
+ *   <li>Assert that slow unlink operations on a background cleanup thread do not block the
+ *       application's main request processing path; cleanup should be asynchronous and should not
+ *       hold any lock that the request processing path needs.
  * </ul>
+ *
+ * <p>In production, slow {@code unlink} calls occur on network filesystems (NFS, CIFS) where
+ * the server must acknowledge the deletion before the client-side unlink returns, on HDD-backed
+ * filesystems when the directory's data blocks must be read into the page cache before the entry
+ * can be removed, and when the filesystem's free block bitmap must be updated for a large file
+ * and the bitmap blocks are not cached.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code unlink(2)} removes a directory entry and decrements the inode's link count. The
+ * directory modification requires writing the parent directory's data blocks (to remove the
+ * entry) and updating the inode's metadata. For journalled filesystems, this also requires
+ * writing a journal transaction. On a warm cache with a small directory, the operation completes
+ * in microseconds. On a cold cache with a large directory (many entries per block), the operation
+ * requires reading and writing directory blocks.
+ *
+ * <p>For a file with a single link (the common case), the inode and data blocks are freed after
+ * the unlink if no file descriptors are open. Freeing large files requires walking and freeing
+ * many data blocks, indirect blocks, and double-indirect blocks. This "deferred free" work can
+ * make unlink slow for large files on filesystems without delayed deallocation.
+ *
+ * <p>Java's {@code Files.delete(Path)} and {@code File.delete()} both call {@code unlink(2)}.
+ * The delay applies before the kernel call, so the calling thread blocks for the duration of the
+ * delay plus the actual kernel operation time.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.IO)
- * @ChaosUnlinkLatency(delayMs = 200)
- * class LatencyTest {
+ * @ChaosUnlinkLatency(delayMs = 50)
+ * class UnlinkLatencyTest {
  *   @Test
- *   void appHandlesSlowOperation(ConnectionInfo info) { ... }
+ *   void cleanupLoopCompletesWithinDeadlineUnderSlowDeletion() {
+ *     // assert that batch file cleanup finishes within its timeout even when each unlink is slow
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Delay guidance:</strong> {@code 10}–{@code 200} ms simulates realistic stall events;
- * values above application-level timeouts produce cascading failures rather than isolated latency
- * observations — intentional in some scenarios, noisy in others.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form ({@code @ChaosUnlinkLatencys}) to set
- * different delays on different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosOpenLatency
+ * @see ChaosRenameFromLatency
+ * @see com.macstab.chaos.filesystem.annotation.l1.IoLatencyBinding
  */
 @Repeatable(ChaosUnlinkLatency.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

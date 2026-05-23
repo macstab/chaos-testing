@@ -14,58 +14,106 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Delay the queue_poll operation by the configured number of milliseconds.
+ * Parks the consuming thread for {@link #delayMs} to {@link #maxDelayMs} milliseconds before every
+ * {@link java.util.concurrent.BlockingQueue#poll() BlockingQueue.poll()} call, adding artificial
+ * latency to non-blocking dequeue attempts without preventing items from eventually being consumed
+ * or forcing a {@code null} return.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> delay the QUEUE_POLL operation by the configured
- * number of milliseconds inside the JVM of the target container. The effect fires on every matching
- * call, subject to the probability configured via {@link #probability()} if applicable. The rule is
- * active from {@code beforeAll} until {@code afterAll} (class-scope) or from {@code beforeEach}
- * until {@code afterEach} (method-scope).
+ * <p>An L1 JVM chaos primitive in the {@code QUEUE} selector family targeting the {@code QUEUE_POLL}
+ * operation with the {@code delay} effect. It intercepts every non-blocking {@code poll()} call on
+ * {@code BlockingQueue} implementations in the container JVM and parks the consuming thread for the
+ * configured duration before allowing the poll to attempt to dequeue an item. After the sleep,
+ * {@code poll()} executes normally — it returns the head item if one is available, or {@code null}
+ * if the queue is empty at that moment.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <p>This is the non-blocking-dequeue analogue of {@link ChaosQueueTakeDelay}. Where {@code take}
+ * blocks until an item is available, {@code poll} returns immediately whether or not an item is
+ * present — the delay only stretches the time before the check.
  *
- * <p><strong>What is required:</strong>
+ * <h2>What chaos this applies</h2>
+ *
+ * <p>The JVM agent installs a Byte Buddy interceptor on {@code BlockingQueue.poll()} (and the
+ * timed variant {@code poll(long, TimeUnit)}). When the interceptor fires:
+ *
+ * <ol>
+ *   <li>The interceptor is entered on the consuming thread before the queue's lock is acquired.
+ *   <li>The delay effect calls {@code Thread.sleep(delayMs)} (or a random value in {@code
+ *       [delayMs, maxDelayMs]}), parking the thread.
+ *   <li>After the sleep, the original {@code poll()} body executes: the lock is acquired, the
+ *       head item is removed and returned if present, or {@code null} is returned if empty.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>{@code queue.poll()} returns the head item (or {@code null}) but takes at least
+ *       {@link #delayMs} ms longer than normal.
+ *   <li>Tight poll loops (e.g., a busy-spin consumer using {@code while (queue.poll() != null)})
+ *       are slowed to at most {@code 1000/delayMs} polls per second per thread.
+ *   <li>Items produced during the delay may accumulate in the queue before the poll check — the
+ *       poll is more likely to return an item (not {@code null}) than it would without the delay
+ *       if the producer is active.
+ *   <li>Time-sensitive timed poll calls lose part of their timeout budget to the delay.
  * </ul>
+ *
+ * <p><strong>Production failure mode:</strong> a busy-wait consumer polls at high frequency to
+ * minimise latency; during a scheduler starvation event, each poll call is delayed by the OS
+ * scheduler, causing the consumer loop to process items far slower than expected while consuming
+ * 100% of its CPU budget in the loop itself.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p><strong>Interception point.</strong> The agent targets {@code BlockingQueue#poll()} and
+ * {@code BlockingQueue#poll(long, TimeUnit)} via Byte Buddy retransformation of JDK classes. The
+ * delay fires before the queue's internal {@code ReentrantLock} (or CAS) is entered, so no lock
+ * contention is introduced by the sleep.
+ *
+ * <p><strong>Race with producers.</strong> During the sleep, other threads can enqueue items. A
+ * poll that would have returned {@code null} (empty queue at call time) may return an item after
+ * the sleep if a producer enqueued something during the delay window. This changes the timing of
+ * {@code null} vs non-{@code null} returns, potentially exposing empty-queue handling paths that
+ * would never fire in normal usage patterns.
+ *
+ * <p><strong>Timed poll interaction.</strong> For the timed variant {@code poll(timeout, unit)},
+ * the delay is additive: the total block is at most {@code delayMs + timeout}. The timeout clock
+ * starts after the sleep, so the consumer waits up to the full specified timeout for an item.
+ *
+ * <p><strong>Distinguishing from siblings.</strong> {@link ChaosQueuePollSuppress} makes every
+ * {@code poll} return {@code null} immediately (item dropped). {@link ChaosQueueTakeDelay} targets
+ * the blocking {@code take} path. This annotation targets the non-blocking {@code poll} path and
+ * preserves its correctness while stretching its timing.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosQueuePollDelay
- * class JvmChaosTest {
+ * @ChaosQueuePollDelay(delayMs = 50)
+ * class SlowPollTest {
+ *
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void consumerThroughputDropsWhenPollIsSlowed(AppConnectionInfo info) throws Exception {
+ *     client.startProducing(info, 20);
+ *     Thread.sleep(600); // 12 polls at 50ms each = 12 items consumed maximum
+ *     assertThat(metrics.consumedCount(info)).isLessThanOrEqualTo(12);
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosQueuePollDelays}) to apply different configurations to different containers.
+ * <ul>
+ *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
+ *   <li>A Java container image — the container must run a JVM process.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see com.macstab.chaos.jvm.api.OperationType#QUEUE_POLL
+ * @see com.macstab.chaos.jvm.api.ChaosSelector#queue(java.util.Set)
+ * @see ChaosQueuePollSuppress
+ * @see ChaosQueueTakeDelay
  */
 @Repeatable(ChaosQueuePollDelay.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

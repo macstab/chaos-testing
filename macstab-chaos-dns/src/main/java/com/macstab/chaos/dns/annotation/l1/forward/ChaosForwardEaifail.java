@@ -14,61 +14,89 @@ import com.macstab.chaos.dns.annotation.l1.DnsSelectorKind;
 import com.macstab.chaos.dns.model.EaiErrno;
 
 /**
- * Injects {@code EAI_FAIL} on every libchaos-intercepted {@code forward} call inside the target
- * container, making the call fail as if the kernel returned {@code EAI_FAIL}.
+ * Injects {@code EAI_FAIL} into every {@code getaddrinfo(3)} call (forward DNS lookup), causing
+ * the call to return {@code EAI_FAIL} as if the authoritative name server returned a permanent
+ * failure response.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EAI_FAIL}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EAI_FAIL} is a valid POSIX result of {@code forward}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code forward} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = EAI_FAIL} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: non-recoverable DNS failure — SERVFAIL or authoritative server outage.
+ * <p>L1 libchaos primitive. Encodes exactly one (selectorKind = {@code FORWARD}, errno =
+ * {@code EAI_FAIL}) tuple. This annotation always fires on every intercepted forward lookup —
+ * there is no per-call probability field. Use it when you need every resolution attempt to fail
+ * permanently so that the application's hard-failure code paths are exercised. No runtime
+ * selector-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.DNS)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-dns.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the libc resolver wrappers {@code
- * getaddrinfo} and {@code getnameinfo}. This annotation installs a rule via {@code
- * AdvancedDnsChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.DNS)} on the container definition causes the
+ *       extension to upload {@code libchaos-dns.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code getaddrinfo(3)} and {@code getnameinfo(3)} at the
+ *       dynamic-linker level.
+ *   <li>On every intercepted {@code getaddrinfo} call the interposer immediately returns
+ *       {@code EAI_FAIL} without performing any real resolver query.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.DNS)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-dns} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>Every hostname resolution fails with a non-retriable error; the application must not retry
+ *       indefinitely and must surface a clear diagnostic rather than looping until timeout.
+ *   <li>Unlike {@code EAI_AGAIN}, {@code EAI_FAIL} signals a permanent authoritative failure;
+ *       applications that treat all DNS errors as transient will over-retry and exhaust their
+ *       retry budgets unnecessarily.
+ *   <li>Circuit breakers that monitor DNS failures should open faster on {@code EAI_FAIL} than on
+ *       {@code EAI_AGAIN}; assert that the breaker distinguishes the two error classes.
+ *   <li>Assert that the application fails fast, emits a structured error with the hostname that
+ *       could not be resolved, and does not leave partially-initialised subsystems in an undefined
+ *       state.
  * </ul>
+ *
+ * <p>In production, {@code EAI_FAIL} from {@code getaddrinfo} occurs when the authoritative DNS
+ * server returns {@code NXDOMAIN} ({@code RCODE 3}) or when a misconfigured zone causes repeated
+ * {@code SERVFAIL} responses that the resolver treats as authoritative. It also occurs when the
+ * DNS search domain is misconfigured and no matching zone exists.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code EAI_FAIL} is defined by POSIX as "non-recoverable failure in name resolution". The
+ * glibc resolver returns it when the upstream DNS server returns a response that indicates a
+ * permanent error — specifically when {@code h_errno} is set to {@code NO_RECOVERY}. Unlike
+ * {@code EAI_NONAME} (which signals "host not found"), {@code EAI_FAIL} indicates a resolver-level
+ * infrastructure failure rather than a legitimate NXDOMAIN response.
+ *
+ * <p>Java's {@code InetAddress.getByName()} maps {@code EAI_FAIL} to an {@code UnknownHostException}
+ * with a message that does not distinguish it from {@code EAI_NONAME}. Application code that relies
+ * solely on the exception type cannot tell permanent resolution failures from transient ones. This
+ * injection makes that limitation visible: an application that retries {@code UnknownHostException}
+ * indefinitely will loop forever under this injection, revealing a missing max-retry guard.
+ *
+ * <p>Kubernetes pods that use DNS for service discovery (e.g. connecting to
+ * {@code my-service.default.svc.cluster.local}) will receive {@code EAI_FAIL} if the in-cluster
+ * DNS infrastructure (CoreDNS) is unable to answer the query at all. Injecting this error at the
+ * application layer simulates that condition without requiring a CoreDNS failure in the test
+ * environment.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.DNS)
- * @ChaosForwardEaifail(probability = 0.001)
- * class FaultTest {
+ * @ChaosForwardEaifail
+ * class ForwardEaifailTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void applicationFailsFastOnPermanentDnsFailure(ConnectionInfo info) {
+ *     // assert that the application does not retry and emits a structured error
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosForwardEaifails}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosForwardEaiagain
+ * @see ChaosForwardEainoname
+ * @see ChaosWildcardEaifail
+ * @see com.macstab.chaos.dns.annotation.l1.DnsEaiBinding
  */
 @Repeatable(ChaosForwardEaifail.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

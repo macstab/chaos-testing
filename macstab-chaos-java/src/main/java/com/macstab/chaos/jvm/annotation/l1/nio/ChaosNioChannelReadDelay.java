@@ -14,58 +14,107 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Delay the nio_channel_read operation by the configured number of milliseconds.
+ * Intercepts {@code SocketChannel.read(ByteBuffer)} and holds the calling thread for
+ * {@link #delayMs()} milliseconds before reading bytes from the kernel receive buffer, inflating
+ * the time between {@code SelectionKey.OP_READ} readiness and actual data consumption in Netty,
+ * Undertow, and NIO-based async I/O frameworks.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> delay the NIO_CHANNEL_READ operation by the
- * configured number of milliseconds inside the JVM of the target container. The effect fires on
- * every matching call, subject to the probability configured via {@link #probability()} if
- * applicable. The rule is active from {@code beforeAll} until {@code afterAll} (class-scope) or
- * from {@code beforeEach} until {@code afterEach} (method-scope).
+ * A JVM agent L1 chaos primitive — one typed annotation per (selector family, operation type,
+ * effect) tuple. It is declared on a test class or method alongside a container annotation and
+ * activates for the lifetime of the test class ({@code beforeAll} / {@code afterAll}) or a single
+ * test method ({@code beforeEach} / {@code afterEach}).
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>Before every call to {@code java.nio.channels.SocketChannel#read(ByteBuffer)} inside the
+ *       target container's JVM, the chaos agent intercepts the calling thread.
+ *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()},
+ *       {@link #maxDelayMs()}]; equal values produce a deterministic delay.
+ *   <li>Control returns and the underlying {@code read()} executes normally, draining bytes from
+ *       the kernel socket receive buffer into the application's {@code ByteBuffer}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>The event loop thread that processes {@code OP_READ} events is blocked during the delay;
+ *       all other channels registered on the same event loop are starved of I/O processing;
+ *       assert that event-loop starvation detection (Netty's {@code BlockingOperationDetector})
+ *       fires or that the application metrics show event-loop lag.
+ *   <li>HTTP/2 flow control: if the application delays reading for long enough, the sender's
+ *       send window is exhausted and the sender blocks; assert that the application does not
+ *       deadlock when both sides are waiting.
+ *   <li>Read-timeout handlers (Netty's {@code IdleStateHandler} with {@code readerIdleTime}) may
+ *       fire during the delay if the delay is longer than the configured idle time; assert that
+ *       the application closes or reconnects the channel correctly.
+ *   <li><strong>Production failure mode:</strong> a slow consumer application delays reading from
+ *       its Netty channels; the TCP receive buffer fills; the TCP window shrinks to zero; the
+ *       sender's TCP stack blocks, backing pressure all the way to the upstream service — an
+ *       application-level slowdown causes a network-level propagation that appears to upstream
+ *       services as a packet loss event.
  * </ul>
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The interception targets {@code sun.nio.ch.SocketChannelImpl#read(ByteBuffer)}, the JDK's
+ * internal implementation. The call is made by Netty's {@code NioByteUnsafe.read()} inside the
+ * event loop thread after {@code Selector.select()} returns {@code OP_READ} as ready for the
+ * channel. The chaos delay fires between the selector wakeup and the actual read syscall
+ * ({@code recvmsg} or {@code read} on Linux), causing the kernel receive buffer to hold data
+ * during the sleep.
+ *
+ * <p>During the delay, the TCP receive window remains open (the kernel has already acknowledged
+ * the data in the receive buffer at the TCP level). The sender can continue pushing data until
+ * the receive buffer fills, at which point the TCP window shrinks to zero and the sender pauses.
+ * This is the correct model for testing back-pressure propagation: the chaos delay simulates a
+ * slow consumer, and the back-pressure propagates to the sender at the TCP layer.
+ *
+ * <p>In Netty, {@code NioByteUnsafe.read()} reads in a loop until the channel has no more data
+ * or the configured {@code maxMessagesPerRead} is reached. Each loop iteration calls
+ * {@code SocketChannel.read()}, so the chaos delay fires on every iteration of the read loop —
+ * a large message split across multiple TCP segments will incur the delay once per
+ * {@code read()} call, potentially multiplying the total delay.
+ *
+ * <p>For {@code ScatteringByteChannel#read(ByteBuffer[])} (scatter reads used by zero-copy
+ * optimised paths), a separate intercept is required; this annotation covers only the single
+ * {@code ByteBuffer} variant which is the most common path in application code.
+ *
+ * <p>Combining this with {@link ChaosNioChannelWriteDelay} simulates a symmetric slow-link
+ * scenario where both incoming and outgoing data are delayed, which is the typical effect of a
+ * throttled network interface or a satellite link with high latency in both directions.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosNioChannelReadDelay
- * class JvmChaosTest {
+ * @ChaosNioChannelReadDelay(delayMs = 200)
+ * class EventLoopStarvationTest {
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void eventLoopLagIsDetectedAndAlertsAreFired(ConnectionInfo info) {
+ *     // assert event-loop lag metric exceeds threshold
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosNioChannelReadDelays}) to apply different configurations to different containers.
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation is required; omitting
+ *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
+ *       {@code @JvmAgentChaos}; it is attached before the container starts.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
+ *       translator class can be resolved.
+ *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
+ *       intercept native executables.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosNioChannelReadInjectException
+ * @see ChaosNioChannelWriteDelay
+ * @see ChaosNioSelectorSelectDelay
  */
 @Repeatable(ChaosNioChannelReadDelay.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

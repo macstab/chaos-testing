@@ -14,61 +14,86 @@ import com.macstab.chaos.dns.annotation.l1.DnsSelectorKind;
 import com.macstab.chaos.dns.model.EaiErrno;
 
 /**
- * Injects {@code EAI_SYSTEM} on every libchaos-intercepted {@code forward} call inside the target
- * container, making the call fail as if the kernel returned {@code EAI_SYSTEM}.
+ * Injects {@code EAI_SYSTEM} into every {@code getaddrinfo(3)} call (forward DNS lookup), causing
+ * the call to return {@code EAI_SYSTEM} as if an underlying system call failed during name
+ * resolution and set {@code errno} to a specific POSIX error code.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EAI_SYSTEM}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EAI_SYSTEM} is a valid POSIX result of {@code forward}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code forward} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = EAI_SYSTEM} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: resolver syscall failure — consult errno for detail; resolver-side fd exhaustion.
+ * <p>L1 libchaos primitive. Encodes exactly one (selectorKind = {@code FORWARD}, errno =
+ * {@code EAI_SYSTEM}) tuple. This annotation always fires on every intercepted forward lookup —
+ * there is no per-call probability field. Use it when you need every resolution attempt to fail
+ * with a system-level error so that the application's handling of resolver-infrastructure faults
+ * is exercised. No runtime selector-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.DNS)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-dns.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the libc resolver wrappers {@code
- * getaddrinfo} and {@code getnameinfo}. This annotation installs a rule via {@code
- * AdvancedDnsChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.DNS)} on the container definition causes the
+ *       extension to upload {@code libchaos-dns.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code getaddrinfo(3)} and {@code getnameinfo(3)} at the
+ *       dynamic-linker level.
+ *   <li>On every intercepted {@code getaddrinfo} call the interposer immediately returns
+ *       {@code EAI_SYSTEM} without performing any real resolver query.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.DNS)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-dns} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code EAI_SYSTEM} carries an additional system {@code errno} value that callers must
+ *       inspect to diagnose the root cause; applications that log only the {@code EAI_*} code
+ *       without examining {@code errno} will produce incomplete diagnostics.
+ *   <li>The injected {@code EAI_SYSTEM} is not associated with a specific underlying {@code errno},
+ *       so the application must handle the case where {@code errno} is zero or undefined when
+ *       {@code EAI_SYSTEM} is received.
+ *   <li>Assert that the application always calls {@code gai_strerror(EAI_SYSTEM)} in addition to
+ *       checking {@code errno} and that both values appear in the error report.
  * </ul>
+ *
+ * <p>In production, {@code EAI_SYSTEM} from {@code getaddrinfo} occurs when the resolver cannot
+ * open a UDP socket to send the DNS query (file descriptor exhaustion, {@code EMFILE}), when a
+ * network interface disappears during the resolver's UDP send ({@code ENETDOWN}), or when the
+ * process's resource limits prevent the resolver from completing a system call it needs.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code EAI_SYSTEM} is defined by POSIX as "system error returned in errno". It is the
+ * escape hatch that allows {@code getaddrinfo} to signal syscall-level failures that do not map
+ * to any of the named {@code EAI_*} codes. When the glibc resolver encounters a syscall failure
+ * (e.g. {@code socket(2)} returns {@code EMFILE} when trying to open a UDP socket for the query),
+ * it returns {@code EAI_SYSTEM} and leaves {@code errno} set to the syscall's error code.
+ *
+ * <p>Application code that handles {@code EAI_*} errors with a switch statement and has a
+ * {@code default: throw new RuntimeException()} branch will typically reach that branch on
+ * {@code EAI_SYSTEM}, revealing whether the exception message includes both the resolver error
+ * code and the underlying {@code errno}. This injection makes that code path reachable without
+ * requiring file descriptor exhaustion or network interface failure in the test environment.
+ *
+ * <p>Java's {@code InetAddress} maps all {@code EAI_*} codes to {@code UnknownHostException}
+ * and does not expose the original code or the secondary {@code errno}. Native DNS clients accessed
+ * via JNI (c-ares, libadns) preserve the {@code EAI_SYSTEM} code in their own error structures;
+ * this injection ensures those structures are correctly populated and surfaced to the Java caller.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.DNS)
- * @ChaosForwardEaisystem(probability = 0.001)
- * class FaultTest {
+ * @ChaosForwardEaisystem
+ * class ForwardEaisystemTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void applicationIncludesBothEaiCodeAndErrnoInDiagnostic(ConnectionInfo info) {
+ *     // assert that the error report contains the EAI_SYSTEM code and an errno description
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosForwardEaisystems}) to bind different probabilities
- * to different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosForwardEaifail
+ * @see ChaosForwardEaiagain
+ * @see ChaosWildcardEaisystem
+ * @see com.macstab.chaos.dns.annotation.l1.DnsEaiBinding
  */
 @Repeatable(ChaosForwardEaisystem.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

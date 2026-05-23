@@ -14,39 +14,56 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Injects {@code EMFILE} on every libchaos-intercepted {@code posix spawnp} call inside the target
- * container, making the call fail as if the kernel returned {@code EMFILE}.
+ * Injects {@code EMFILE} into {@code posix_spawnp} calls intercepted by libchaos-process, causing
+ * the calling code to observe a per-process fd-table exhaustion failure when attempting to spawn a
+ * new process via {@code $PATH} lookup.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EMFILE}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EMFILE} is a valid POSIX result of {@code posix spawnp}.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code POSIX_SPAWNP}, errno = {@code EMFILE})
+ * tuple. The {@code POSIX_SPAWNP} selector intercepts {@code posix_spawnp} calls only, leaving
+ * {@code posix_spawn}, {@code fork}, and all other process syscalls unaffected. Compile-time safety:
+ * invalid selector/errno combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code posix spawnp} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = EMFILE} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: per-process file-descriptor limit reached — typical of fd-leaks in connection pools.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code posix_spawnp} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code posix_spawnp} call the interposer runs a Bernoulli trial with probability
+ *       {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer returns {@code EMFILE} directly (POSIX spawn returns
+ *       the error code, not -1) without issuing the real kernel call.</li>
+ *   <li>The calling code receives: return value {@code EMFILE} (24),
+ *       {@code strerror}: "Too many open files"; the process's fd table has reached
+ *       {@code RLIMIT_NOFILE}; no child process is created.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family at the dynamic-linker
- * level. This annotation installs a rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code posix_spawnp} returns {@code EMFILE}; no child process is created; assert that
+ *       the application reports the current fd count in the diagnostic and does not call
+ *       {@code waitpid} on an uninitialised pid after the failure.</li>
+ *   <li>The {@code $PATH} search in {@code posix_spawnp} opens directory fds to traverse PATH
+ *       directories; when the fd table is nearly full, the PATH search itself may consume the
+ *       last remaining slots — assert that the application detects fd exhaustion at or before
+ *       the spawn call rather than only after seeing the EMFILE return value.</li>
+ *   <li>Assert that the application distinguishes {@code posix_spawnp}-EMFILE (24, per-process
+ *       fd table full, fixable by closing leaked fds) from ENFILE (23, system-wide, requires
+ *       platform escalation) — the operator runbook differs.</li>
  * </ul>
+ * Production failure mode: a shell command executor uses {@code posix_spawnp} to run utilities;
+ * leaked pipe fds from previous command captures accumulate; spawn returns EMFILE; the executor
+ * does not report the fd count, leaving operators unable to determine whether the failure is
+ * per-process or system-wide without inspecting /proc/pid/fd.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>{@code EMFILE} from {@code posix_spawnp} can originate from the {@code $PATH} directory
+ * traversal phase (opening directories consumes fd slots) or from the spawn's internal
+ * parent-child communication pipe allocation. The interposer fires at the API boundary, covering
+ * both cases. POSIX spawn returns the error code directly — checking {@code if (ret < 0)} misses
+ * EMFILE (24). Applications using {@code posix_spawnp} with pipe-based subprocess communication
+ * must close pipe read-ends after each child exits to prevent fd leak accumulation. Unlike
+ * {@code posix_spawn}, the PATH search in {@code posix_spawnp} adds fd consumption during the
+ * search itself, which means the effective EMFILE threshold may be slightly lower for spawnp.
  *
  * <h2>Example</h2>
  *
@@ -54,21 +71,23 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
  * @ChaosPosixSpawnpEmfile(probability = 0.001)
- * class FaultTest {
+ * class PosixSpawnpFdExhaustionTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void executorReportsFdCountOnEmfileAndDoesNotWaitOnUninitPid(ConnectionInfo info) {
+ *     // verify EMFILE reported with fd count; no waitpid on uninit pid; EMFILE vs ENFILE distinct
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
+ * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; fd exhaustion is a gradual process;
+ * any non-zero probability exercises the fd-leak detection path.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosPosixSpawnpEmfiles}) to bind different probabilities
- * to different containers simultaneously.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessErrnoBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#errno(ProcessSelector, ProcessErrno, double)
  */
 @Repeatable(ChaosPosixSpawnpEmfile.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

@@ -11,61 +11,93 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code ERRNO} on every libchaos-intercepted {@code poll} call inside the target
- * container, making the call fail as if the kernel returned {@code ERRNO}.
+ * Overrides the {@code timeout} argument of every intercepted {@code poll(2)} call with
+ * {@link #timeoutMs}, causing the call to return {@code 0} (no events ready) after at most
+ * {@link #timeoutMs} milliseconds even when the application passed a longer or infinite timeout.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ERRNO}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code ERRNO} is a valid POSIX result of {@code poll}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code poll} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #toxicity} is run. When it fires the
- * interceptor returns {@code -1} and sets {@code errno = ERRNO} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: a POSIX error condition.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code POLL}, effect = TIMEOUT
+ * OVERRIDE) tuple. Unlike errno variants, this primitive does not return {@code -1}; instead it
+ * replaces the caller-supplied timeout with {@link #timeoutMs} and delegates the modified call to
+ * the real kernel. A Bernoulli trial with probability {@link #toxicity} gates whether the timeout
+ * override fires on each call. When it does not fire, the original timeout value is passed
+ * unchanged to the kernel.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.NET)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-net.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes socket-layer libc wrappers (connect, accept,
- * socket, bind, listen, shutdown, send, recv, poll). This annotation installs a rule via {@code
- * AdvancedConnectionChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
+ *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
+ *       {@code poll} at the dynamic-linker level.
+ *   <li>On each intercepted {@code poll} call a Bernoulli trial with probability {@link #toxicity}
+ *       is conducted; when it fires the interposer replaces the {@code timeout} argument with
+ *       {@link #timeoutMs} before issuing the real kernel call.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.NET)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-connection} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>Servers that use infinite or very long poll timeouts (blocking {@code poll(-1)}) to wait
+ *       for the next client request will periodically return early with zero events; assert that
+ *       the server's main loop correctly handles the zero-event timeout return and re-enters the
+ *       poll without treating the early return as an error.
+ *   <li>Application-level heartbeat or keep-alive logic that relies on {@code poll} blocking for a
+ *       configured duration may send keep-alives more frequently than intended when poll returns
+ *       early; assert that the keep-alive logic is not driven solely by poll timeout expiry.
+ *   <li>Command pipelines and request-response protocols that use {@code poll} to implement
+ *       per-request timeouts will experience unexpectedly short effective timeouts; assert that
+ *       the protocol layer retries correctly on zero-event poll returns.
+ *   <li>Redis's blocking command implementation ({@code BLPOP}, {@code BRPOP}) uses {@code poll}
+ *       with the configured command timeout; this injection causes blocking commands to return
+ *       early without data, testing that clients handle the null response correctly.
  * </ul>
+ *
+ * <p>In production, spurious zero-return poll results occur when a signal is delivered to the
+ * polling thread (POSIX requires poll to return on signal delivery, which may return 0 if no
+ * readiness events occurred), when a real-time clock rollback causes the timeout to appear expired
+ * prematurely, and during kernel debugging where kprobes introduce delays that interact with
+ * timeout accounting.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>POSIX specifies that {@code poll} returns {@code 0} when the timeout expires before any of
+ * the monitored file descriptors become ready, and a positive value equal to the number of
+ * ready descriptors otherwise. A return of {@code 0} is not an error; it is a normal indication
+ * that the timeout elapsed. Applications must be prepared to receive {@code 0} from {@code poll}
+ * at any time, including when they pass a long timeout, because signals can interrupt the wait.
+ *
+ * <p>This injection tests a subtler contract than error injection: it verifies that application
+ * logic driven by {@code poll} is correct when the timeout fires unexpectedly early. Applications
+ * that assume poll will block for at least as long as the requested timeout may have bugs that only
+ * manifest when the system is under signal load or when the timeout is shorter than expected.
+ *
+ * <p>The injected {@link #timeoutMs} value replaces the application's timeout before the kernel
+ * call; from the kernel's perspective the poll was requested with a short timeout. The returned
+ * value may be {@code 0} (if no events occurred within {@link #timeoutMs}) or positive (if events
+ * occurred before the shortened timeout expired). In either case, the poll did not error and the
+ * application must handle the result correctly.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.NET)
- * @ChaosPollTimeout(toxicity = 0.001)
- * class FaultTest {
+ * @ChaosPollTimeout(timeoutMs = 10, toxicity = 0.1)
+ * class PollTimeoutTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void serverMainLoopHandlesSpuriousZeroPollReturns(ConnectionInfo info) {
+ *     // assert that the server re-enters poll on zero return and continues serving requests
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosPollTimeouts}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosPollLatency
+ * @see ChaosRecvEtimedout
  */
 @Repeatable(ChaosPollTimeout.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

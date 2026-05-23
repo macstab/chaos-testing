@@ -14,62 +14,98 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code every interposed
- * process syscall} calls succeed, then injects {@code EACCES} on every subsequent call until the
- * rule is removed.
+ * After {@link #successesBeforeFailure} successful process-management syscall invocations across
+ * all intercepted families, injects {@code EACCES} on every subsequent call, modelling a MAC
+ * security policy tightening scenario where a new SELinux/AppArmor profile blocks all
+ * process-management operations after N successful ones.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code WILDCARD}, errno = {@code EACCES}, effect = FAIL_AFTER) tuple. FAIL_AFTER is the process
- * module's counter-gated effect — distinct from ERRNO (probabilistic) and LATENCY (unconditional).
- * It models resource-exhaustion scenarios where the first N operations succeed and then the system
- * runs out of capacity.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code WILDCARD}, errno = {@code EACCES},
+ * effect = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N intercepted
+ * process-management calls (across all families — fork, execve, posix_spawn, pthread_create,
+ * waitpid) succeed, then the counter trips permanently and every subsequent call returns the error
+ * code until the rule is removed. Compile-time safety: invalid selector/errno/effect combinations
+ * have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
- * {@code every interposed process syscall} calls. After {@link #successesBeforeFailure} successes
- * the counter trips and every subsequent call returns {@code -1} with {@code errno = EACCES},
- * regardless of real kernel capacity. The counter resets every time the rule is re-applied (e.g.
- * across test methods if the annotation is at class scope).
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing every process-management libc wrapper at the dynamic-linker level.</li>
+ *   <li>The interposer maintains a per-rule success counter shared across all intercepted syscall
+ *       families; the counter does not reset automatically between test methods when the annotation
+ *       is at class scope.</li>
+ *   <li>Once the counter reaches zero it trips permanently: every subsequent process-management
+ *       call returns {@code -1} (or the errno value directly for pthread_create and posix_spawn)
+ *       with {@code errno = EACCES}.</li>
+ *   <li>The calling code receives: {@code fork()}/{@code execve()} return {@code -1} with
+ *       {@code errno = EACCES} (13); {@code posix_spawn}/{@code pthread_create} return
+ *       {@code EACCES} directly; {@code strerror(EACCES)}: "Permission denied".</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family. This annotation installs
- * a FAIL_AFTER rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at {@code
- *       beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>The first {@link #successesBeforeFailure} process-management calls proceed normally; all
+ *       subsequent calls return EACCES permanently; assert that the application treats EACCES as
+ *       a non-retryable security policy failure and escalates to operators rather than retrying
+ *       — MAC policy denials are permanent for the lifetime of the security context.</li>
+ *   <li>FAIL_AFTER models a MAC policy tightening event: N process-management calls succeed under
+ *       the old policy; a new SELinux/AppArmor profile is applied; all subsequent calls return
+ *       EACCES — assert that the application detects the onset of EACCES and sends a security
+ *       policy change alert rather than treating it as a transient error.</li>
+ *   <li>Assert that the application's generic process-management error handler correctly
+ *       propagates EACCES from all call sites — not just the specific one that was tested in
+ *       isolation — since the wildcard fires EACCES across all families simultaneously.</li>
  * </ul>
+ * Production failure mode: a Kubernetes operator applies a new SELinux policy that denies fork
+ * and clone for a running container; the application starts receiving EACCES from all process
+ * and thread creation attempts; it treats EACCES as EAGAIN and applies a retry loop with back-off;
+ * the retry loop consumes CPU and the security alert is never sent; operators are not notified
+ * that the security policy changed until the container stops serving requests.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>EACCES from process-management syscalls arises exclusively from MAC policy enforcement
+ * (SELinux type enforcement, AppArmor confinement, TOMOYO path rules). Unlike EPERM which can
+ * sometimes be resolved by dropping capabilities, EACCES from MAC cannot be resolved by the
+ * application — it requires a security policy change by an operator. The FAIL_AFTER variant
+ * models the hot policy change scenario: N calls succeed before the policy is applied, then
+ * all subsequent calls fail permanently until the container is restarted with a compatible policy.
+ *
+ * <p>The WILDCARD FAIL_AFTER counter is shared across all intercepted syscall families. The
+ * EACCES phase begins as soon as the counter is exhausted by the combined call traffic from
+ * all families. For sequenced testing, set {@link #successesBeforeFailure} to the expected total
+ * call count across all families during the pre-restriction phase.
+ *
+ * <p>The counter does not reset between test methods when the annotation is at class scope. The
+ * first test method exercises the pre-restriction phase (N calls succeed); subsequent test methods
+ * exercise the EACCES-restriction phase where all process management is blocked by policy.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosWildcardEaccesFailAfter(successesBeforeFailure = 128)
- * class ProcessExhaustionTest {
+ * @ChaosWildcardEaccesFailAfter(successesBeforeFailure = 30)
+ * class MacPolicyTighteningTest {
  *   @Test
- *   void handlesExhaustion(ConnectionInfo info) { ... }
+ *   void applicationEscalatesToOperatorsOnEaccesOnsetAndDoesNotRetry(ConnectionInfo info) {
+ *     // first 30 process calls succeed; subsequent calls return EACCES;
+ *     // verify EACCES not treated as EAGAIN; verify security alert sent; verify no retry loop;
+ *     // verify health check returns DEGRADED rather than HEALTHY
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of {@code every
- * interposed process syscall} calls the application is expected to make before hitting the limit.
- * Typically 5–200 for container-scoped tests. Zero means the very first call fails.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form
- * ({@code @ChaosWildcardEaccesFailAfter.Repeatable}) to apply different counters to different
- * containers.
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to the total number
+ * of process-management calls the application makes before the policy tightening scenario occurs;
+ * values 10–200 cover typical init + steady-state phases; 0 means the policy is applied before
+ * startup.
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessFailAfterBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#failAfter(ProcessSelector, ProcessErrno, long)
  */
 @Repeatable(ChaosWildcardEaccesFailAfter.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

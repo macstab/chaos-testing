@@ -14,47 +14,65 @@ import com.macstab.chaos.memory.model.MemorySelector;
 import com.macstab.chaos.memory.model.MmapErrno;
 
 /**
- * Injects {@code EMFILE} on every libchaos-memory-intercepted {@code mmap(MAP_ANONYMOUS)} call
- * inside the target container, making the call fail as if the kernel returned {@code EMFILE}.
+ * Injects {@code EMFILE} into {@code mmap(MAP_ANONYMOUS)} calls intercepted by libchaos-memory,
+ * causing the calling code to observe a per-process file-descriptor limit failure from anonymous
+ * memory allocation.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector = {@code MMAP_ANON}, errno = {@code EMFILE}) pair.
- * The combination is safe by construction: this annotation class exists only because {@code EMFILE}
- * is a valid POSIX result of {@code mmap(MAP_ANONYMOUS)}; the invalid combinations simply have no
- * annotation class, so the selector × errno matrix cannot be violated at compile time.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-memory primitive — one (selector = {@code MMAP_ANON}, errno = {@code EMFILE}) tuple.
+ * Compile-time safety: this annotation exists only because {@code EMFILE} is a defined POSIX result
+ * for {@code mmap}; invalid combinations have no annotation class and cannot be expressed.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code mmap(MAP_ANONYMOUS)} call that the
- * libchaos-memory interceptor sees, a Bernoulli trial with probability {@link #probability} is run.
- * When it fires the interceptor returns {@code -1} and sets {@code errno = EMFILE} before the
- * kernel call completes — from the application perspective this is indistinguishable from a real
- * kernel-level failure. Specifically this simulates: per-process file-descriptor limit reached —
- * typical of fd-leaks in connection pools.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code mmap(MAP_ANONYMOUS)} call the interposer runs a Bernoulli trial with
+ *       probability {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = EMFILE} and returns
+ *       {@code MAP_FAILED} without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 24,
+ *       {@code strerror}: "Too many open files".</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.MEMORY)} annotation on the container declaration causes
- * {@code ChaosTestingExtension} to upload {@code libchaos-memory.so} into the container and prepend
- * it to {@code LD_PRELOAD} before the container process starts. The shared library interposes the
- * libc wrappers for {@code mmap}, {@code munmap}, {@code mprotect}, and {@code madvise} at the
- * dynamic-linker level. This annotation then installs a rule via {@code
- * AdvancedMemoryChaos.apply(container, rule)} that configures the interposer with the selector and
- * probability you specify.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD} which does not apply on
- *       macOS or Windows containers; annotate the test class with {@code @DisabledOnOs(OS.WINDOWS)}
- *       and be aware of macOS Docker limitations.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.MEMORY)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — this installs the shared library before container start;
- *       omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) do not
- *       honour {@code LD_PRELOAD} for statically-linked binaries; use a glibc variant or the
- *       Debian-slim image instead.
- *   <li><strong>{@code macstab-chaos-memory} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and {@code ChaosTestingExtension} throws {@code
- *       ClassNotFoundException} wrapped in {@code ExtensionConfigurationException}.
+ *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = EMFILE} (24); the application
+ *       should report a resource-limit error rather than dereferencing the failed pointer.</li>
+ *   <li>glibc {@code malloc} propagates {@code NULL}; JVM allocators raise {@code OutOfMemoryError}.
+ *       Applications that close fds in response to {@code EMFILE} from other syscalls should
+ *       exercise the same logic here.</li>
+ *   <li>Assert that connection pools, file-descriptor trackers, or resource monitors surface the
+ *       per-process limit condition and that the application degrades gracefully.</li>
  * </ul>
+ * Production failure mode: long-lived processes with slow file-descriptor leaks (connections not
+ * closed, temporary files not unlinked) eventually hit {@code RLIMIT_NOFILE}; every subsequent
+ * {@code open}, {@code socket}, or internally {@code mmap} call fails with {@code EMFILE}.
+ * Applications that conflate {@code EMFILE} with {@code ENOMEM} may misdiagnose the incident as
+ * an OOM event rather than a descriptor leak.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>POSIX specifies {@code EMFILE} when the per-process limit on the number of open file
+ * descriptors ({@code RLIMIT_NOFILE}) would be exceeded by the {@code mmap} call. On Linux,
+ * anonymous {@code mmap} does not allocate a file descriptor (unlike file-backed mappings), so
+ * the kernel does not check {@code RLIMIT_NOFILE} for {@code MAP_ANONYMOUS} calls. In practice,
+ * {@code EMFILE} from a real anonymous {@code mmap} would indicate a kernel bug.
+ *
+ * <p>However, this annotation intentionally injects {@code EMFILE} to verify that application
+ * error-handling code handles it correctly when it appears. Because many allocator wrappers treat
+ * all {@code mmap} failure codes uniformly, applications that do not test this code path may
+ * crash, loop, or produce corrupt output when the real {@code EMFILE} condition arises from a
+ * concurrent {@code open} or {@code socket} call on a different thread, which races with the
+ * {@code malloc} call.
+ *
+ * <p>For file-backed mmaps ({@code MMAP} selector), {@code EMFILE} is a realistic kernel response
+ * when the file descriptor used in the {@code mmap} call was itself the last descriptor and the
+ * mapping internally creates an additional reference. For anonymous mappings it serves as a
+ * canary for the error-handling robustness of the allocation stack.
+ *
+ * <p>Compared with sibling {@code ENFILE}: {@code EMFILE} is per-process (one process hit its
+ * own limit); {@code ENFILE} is system-wide (the entire host has exhausted the global fd table).
+ * Both produce allocation failures but require different remediation in operations runbooks.
  *
  * <h2>Example</h2>
  *
@@ -62,19 +80,20 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.MEMORY)
  * @ChaosMmapAnonEmfile(probability = 0.001)
- * class MemoryFaultTest {
+ * class FdLimitTest {
  *   @Test
- *   void appHandlesEmfileOnAlloc(RedisConnectionInfo info) { ... }
+ *   void appHandlesEmfileOnAlloc(RedisConnectionInfo info) {
+ *     // drive allocations; verify the application reports a resource-limit error
+ *     // rather than a null-pointer crash
+ *   }
  * }
  * }</pre>
  *
  * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2 to simulate fd-limit pressure; combine
- * with low rlimit for realism.
- *
+ * with a reduced {@code RLIMIT_NOFILE} in the container for maximum realism.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
- * the test class. Use the repeatable form ({@code @ChaosMmapAnonEmfiles}) to bind different
- * probabilities to different containers simultaneously.
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see MemoryErrnoBinding

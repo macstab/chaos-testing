@@ -14,57 +14,91 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Throw the configured exception at the object_serialize call site.
+ * Throws a configurable exception at every {@code ObjectOutputStream.writeObject()} call site,
+ * simulating a broken serialisation stream such as a closed socket or a codec that rejects an
+ * un-serialisable object.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> throw the configured exception at the
- * OBJECT_SERIALIZE call site inside the JVM of the target container. The effect fires on every
- * matching call, subject to the probability configured via {@link #probability()} if applicable.
- * The rule is active from {@code beforeAll} until {@code afterAll} (class-scope) or from {@code
- * beforeEach} until {@code afterEach} (method-scope).
+ * <p>A JVM agent L1 chaos primitive targeting the {@code OBJECT_SERIALIZE} operation — one typed
+ * annotation per (selector family, operation type, effect) tuple. Declared on a test class or
+ * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until
+ * {@code afterAll}/{@code afterEach} respectively.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>The chaos agent intercepts every call to {@code ObjectOutputStream.writeObject(Object)} in
+ *       the target container's JVM.
+ *   <li>Before the real serialisation, the interceptor instantiates the exception class named by
+ *       {@link #exceptionClassName()} with {@link #message()} as its message and throws it.
+ *   <li>The calling thread unwinds from the throw site; the object is never written to the stream.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li><strong>Session replication fails.</strong> Servlet container session replication via Java
+ *       serialisation will fail on every replication attempt; assert that the local session
+ *       remains usable and the user is not logged out, even though replication is broken.
+ *   <li><strong>RMI call fails with IOException.</strong> Java RMI serialises arguments before
+ *       transmission; a thrown {@code IOException} surfaces as a {@code MarshalException} at the
+ *       RMI call site; assert that the remote interface's error contract is met.
+ *   <li><strong>Distributed cache write fails.</strong> Caches using Java serialisation for
+ *       remote storage will see every write fail; assert that the application falls back to the
+ *       local cache or returns stale data rather than propagating an error to the end user.
+ *   <li><strong>Production failure mode:</strong> a serialisation failure in a Kafka producer's
+ *       {@code Serializer} implementation causes the message to be dropped or the producer to
+ *       enter an error state, resulting in silent data loss or application shutdown.
  * </ul>
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The injected exception is thrown by the agent's advice method before the real
+ * {@code ObjectOutputStream.writeObject()} is invoked. The exception class is loaded by the
+ * thread's context class loader using the binary name supplied in {@link #exceptionClassName()};
+ * if the class cannot be found, the agent logs a warning and allows the call to proceed normally
+ * rather than failing silently with a different error.
+ *
+ * <p>For {@code ObjectOutputStream}, the natural exception type is {@code java.io.IOException}
+ * (or its subclass {@code java.io.NotSerializableException}). Using a custom application exception
+ * class is possible if that class is on the container's classpath; this allows tests to simulate
+ * application-layer serialisation failures (e.g. a codec that throws a proprietary exception) in
+ * addition to standard I/O failures.
+ *
+ * <p>Because the exception is thrown before the stream is written to, there is no partial write to
+ * clean up. However, the underlying {@code OutputStream} may be in a consistent state or not,
+ * depending on whether the caller wraps it in a buffered stream. Tests should verify that the
+ * application does not attempt to continue writing to the same stream after the exception.
+ *
+ * <p>This annotation tests the error-handling path. For testing slow-but-succeeding serialisation,
+ * use {@link ChaosObjectSerializeDelay} instead.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosObjectSerializeInjectException
- * class JvmChaosTest {
+ * @ChaosObjectSerializeInjectException(
+ *     exceptionClassName = "java.io.IOException",
+ *     message = "Serialization stream closed unexpectedly")
+ * class SerializeExceptionTest {
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void sessionRemainsUsableWhenReplicationFails(ConnectionInfo info) { ... }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosObjectSerializeInjectExceptions}) to apply different configurations to different
- * containers.
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
+ *       agent before the container JVM starts; omitting it causes an
+ *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
+ *       {@code @JvmAgentChaos}.
+ *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the
+ *       translator.
+ *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
+ *       intercept native executables.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
  */

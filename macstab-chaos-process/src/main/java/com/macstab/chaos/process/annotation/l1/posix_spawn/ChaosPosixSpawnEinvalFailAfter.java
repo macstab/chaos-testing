@@ -14,61 +14,78 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code posix_spawn} calls
- * succeed, then injects {@code EINVAL} on every subsequent call until the rule is removed.
+ * After {@link #successesBeforeFailure} successful {@code posix_spawn} calls, injects
+ * {@code EINVAL} on every subsequent call, causing the calling code to observe an invalid-argument
+ * failure that persists for the remainder of the test.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code POSIX_SPAWN}, errno = {@code EINVAL}, effect = FAIL_AFTER) tuple. FAIL_AFTER is the
- * process module's counter-gated effect — distinct from ERRNO (probabilistic) and LATENCY
- * (unconditional). It models resource-exhaustion scenarios where the first N operations succeed and
- * then the system runs out of capacity.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code POSIX_SPAWN}, errno = {@code EINVAL},
+ * effect = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N calls succeed,
+ * then the counter trips permanently and every subsequent call returns the error code until the
+ * rule is removed. Compile-time safety: invalid selector/errno/effect combinations have no
+ * annotation class.
  *
- * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
- * {@code posix_spawn} calls. After {@link #successesBeforeFailure} successes the counter trips and
- * every subsequent call returns {@code -1} with {@code errno = EINVAL}, regardless of real kernel
- * capacity. The counter resets every time the rule is re-applied (e.g. across test methods if the
- * annotation is at class scope).
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code posix_spawn} wrapper at the dynamic-linker level.</li>
+ *   <li>The interposer maintains a per-rule success counter; the counter does not reset
+ *       automatically between test methods when the annotation is at class scope.</li>
+ *   <li>Once the counter reaches zero it trips permanently: every subsequent {@code posix_spawn}
+ *       call returns {@code EINVAL} directly (POSIX spawn returns the error code, not -1).</li>
+ *   <li>The calling code receives: return value {@code EINVAL} (22); no child process is created;
+ *       the pid output parameter is not set to a valid value.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family. This annotation installs
- * a FAIL_AFTER rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at {@code
- *       beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>The first {@link #successesBeforeFailure} calls proceed normally; all subsequent calls
+ *       return {@code EINVAL}; assert that the application treats EINVAL as a permanent, non-
+ *       retryable programming error and escalates to a configuration alert rather than retrying.</li>
+ *   <li>FAIL_AFTER is useful for modelling spawn attribute changes that take effect after a number
+ *       of successful spawns — e.g. a dynamic attribute builder that introduces an invalid
+ *       scheduling parameter after N calls; assert that the application detects the configuration
+ *       regression at the threshold and does not mask it with silent retries.</li>
+ *   <li>Assert that the application does not call {@code waitpid} on an uninitialised pid after
+ *       post-threshold EINVAL — POSIX does not define the pid value when spawn fails.</li>
  * </ul>
+ * Production failure mode: a process manager uses dynamic spawn attributes; a library version
+ * upgrade changes the encoding of a scheduler flag, producing attributes that the kernel rejects
+ * with EINVAL after N successful spawns (where N is the number of spawns before the updated
+ * library code path is triggered); the manager retries EINVAL indefinitely, filling logs.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>FAIL_AFTER models a spawn attribute regression that manifests after N successful calls.
+ * Unlike EAGAIN or ENOMEM (transient resource failures), EINVAL is a permanent programming error.
+ * POSIX spawn returns the error code directly — checking {@code if (ret < 0)} misses EINVAL (22).
+ * The counter does not reset between test methods at class scope, allowing a test suite to verify
+ * correct attribute values in early methods and the EINVAL escalation path in later methods.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosPosixSpawnEinvalFailAfter(successesBeforeFailure = 128)
- * class ProcessExhaustionTest {
+ * @ChaosPosixSpawnEinvalFailAfter(successesBeforeFailure = 10)
+ * class PosixSpawnAttributeRegressionTest {
  *   @Test
- *   void handlesExhaustion(ConnectionInfo info) { ... }
+ *   void managerEscalatesOnEinvalAndDoesNotRetry(ConnectionInfo info) {
+ *     // first 10 spawns succeed; subsequent spawns return EINVAL;
+ *     // verify configuration alert raised; no retry loop; no waitpid on uninit pid
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of {@code
- * posix_spawn} calls the application is expected to make before hitting the limit. Typically 5–200
- * for container-scoped tests. Zero means the very first call fails.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form
- * ({@code @ChaosPosixSpawnEinvalFailAfter.Repeatable}) to apply different counters to different
- * containers.
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to the number of
+ * spawns before the attribute regression code path is triggered; values 1–50 cover most
+ * attribute-change scenarios; 0 means the first spawn receives EINVAL.
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessFailAfterBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#failAfter(ProcessSelector, ProcessErrno, long)
  */
 @Repeatable(ChaosPosixSpawnEinvalFailAfter.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

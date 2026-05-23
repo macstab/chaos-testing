@@ -13,58 +13,90 @@ import com.macstab.chaos.filesystem.annotation.l1.IoLatencyBinding;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Delays every libchaos-intercepted {@code truncate} call by {@link #delayMs} milliseconds before
- * delegating to the real kernel call, making the operation succeed but take longer than expected.
+ * Delays every {@code truncate(2)} call by an additional {@link #delayMs} milliseconds before
+ * delegating to the real kernel call, making file size modification slower than the application
+ * expects while still completing the operation normally.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one
- * (selector, effect = LATENCY) pair. Unlike errno variants, the latency primitive always delegates
- * to the kernel — it only adds wall-clock cost before doing so.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> every {@code truncate} call intercepted by libchaos
- * blocks for {@link #delayMs} ms before the kernel call is issued. This simulates the wall-clock
- * cost increase from resource pressure, kernel scheduling stalls, or slow hardware — none of which
- * return an errno but all of which can exhaust application-level timeouts, saturate connection-pool
- * wait budgets, and surface hidden latency assumptions.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code TRUNCATE}, effect = LATENCY)
+ * tuple. Unlike errno variants, the latency primitive always delegates to the real kernel call
+ * after the configured extra delay — the truncate completes successfully. No probability gate is
+ * applied; the delay fires on every intercepted {@code truncate} call. No runtime operation-effect
+ * validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.IO)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-io.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the filesystem libc wrappers (open, read,
- * write, close, fsync, etc.) at the dynamic-linker level. This annotation installs a rule via
- * {@code AdvancedFilesystemChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
+ *       extension to upload {@code libchaos-io.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
+ *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
+ *       {@code fallocate} at the dynamic-linker level.
+ *   <li>On each intercepted {@code truncate} call the interposer sleeps for {@link #delayMs} ms
+ *       before issuing the real kernel call.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.IO)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-filesystem} on the test classpath.</strong>
+ *   <li>File size modification operations take longer than normal; applications that use
+ *       {@code truncate} in the startup path (pre-sizing WAL files, sizing mmap files) will see
+ *       increased startup latency. Assert that the application's startup timeout accounts for the
+ *       injected delay.
+ *   <li>Log rotation implementations that use {@code truncate} to clear the current log file
+ *       after archiving will see increased rotation latency; assert that the rotation operation
+ *       does not time out and that the logging path continues to function during a slow rotation.
+ *   <li>Applications that use {@code truncate} on the critical path (e.g., truncating a temporary
+ *       file before writing a new version of a configuration) will see increased operation latency;
+ *       assert that the operation's timeout accounts for the truncate delay.
+ *   <li>Assert that a slow {@code truncate} on the WAL pre-allocation path does not block the
+ *       database from accepting connections — the pre-allocation should complete before the
+ *       connection listener is activated, and the startup timeout should be calibrated accordingly.
  * </ul>
+ *
+ * <p>In production, slow {@code truncate} calls occur on NFS mounts when the server must update
+ * the inode and release the blocks atomically while holding a lock, when the filesystem's free
+ * block bitmap must be updated and the bitmap blocks are not in the page cache, and when a shrink
+ * operation requires walking and freeing a large number of indirect blocks.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code truncate(2)} modifies the file's size by updating the inode's size field and
+ * optionally allocating or freeing data blocks. A shrink operation must free the blocks that
+ * back the truncated region, which requires walking the file's block map (direct blocks, indirect
+ * blocks, double-indirect blocks) and updating the free block bitmap. For very large files, this
+ * can require many disk accesses. An extend operation must update the inode's size field (and
+ * possibly allocate blocks for the extended region on non-sparse filesystems).
+ *
+ * <p>This injection adds the delay before the kernel call, simulating the scheduling stall and
+ * metadata I/O latency without requiring actual slow storage or large file structures. The delay
+ * fires on every truncate call regardless of whether the operation shrinks or extends the file.
+ *
+ * <p>Java's {@code FileChannel.truncate(long)} calls {@code ftruncate(2)} and is affected by
+ * this annotation when the underlying truncate call is intercepted. The delay applies before the
+ * kernel call, so the calling thread blocks for the duration of the delay plus the actual kernel
+ * operation time.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.IO)
- * @ChaosTruncateLatency(delayMs = 200)
- * class LatencyTest {
+ * @ChaosTruncateLatency(delayMs = 100)
+ * class TruncateLatencyTest {
  *   @Test
- *   void appHandlesSlowOperation(ConnectionInfo info) { ... }
+ *   void databaseStartupCompletesWithinDeadlineUnderSlowWalPreAllocation() {
+ *     // assert that startup finishes within its deadline even when WAL truncate is slow
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Delay guidance:</strong> {@code 10}–{@code 200} ms simulates realistic stall events;
- * values above application-level timeouts produce cascading failures rather than isolated latency
- * observations — intentional in some scenarios, noisy in others.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form ({@code @ChaosTruncateLatencys}) to
- * set different delays on different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosAllocateLatency
+ * @see ChaosOpenLatency
+ * @see com.macstab.chaos.filesystem.annotation.l1.IoLatencyBinding
  */
 @Repeatable(ChaosTruncateLatency.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

@@ -14,59 +14,109 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Throw the configured exception at the file_io_write call site.
+ * Intercepts {@code FileOutputStream.write()} and {@code RandomAccessFile.write()} and throws the
+ * configured exception before any bytes are written to the file, simulating a full filesystem,
+ * a read-only mount, or a storage I/O error that causes log appenders, audit writers, and
+ * file-based transactional logs to fail mid-write.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> throw the configured exception at the FILE_IO_WRITE
- * call site inside the JVM of the target container. The effect fires on every matching call,
- * subject to the probability configured via {@link #probability()} if applicable. The rule is
- * active from {@code beforeAll} until {@code afterAll} (class-scope) or from {@code beforeEach}
- * until {@code afterEach} (method-scope).
+ * A JVM agent L1 chaos primitive — one typed annotation per (selector family, operation type,
+ * effect) tuple. It is declared on a test class or method alongside a container annotation and
+ * activates for the lifetime of the test class ({@code beforeAll} / {@code afterAll}) or a single
+ * test method ({@code beforeEach} / {@code afterEach}).
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>Before every call to {@code java.io.FileOutputStream#write(byte[], int, int)} and
+ *       {@code java.io.RandomAccessFile#write(byte[], int, int)} inside the target container's
+ *       JVM, the chaos agent intercepts the calling thread.
+ *   <li>The agent reflectively instantiates the class named by {@link #exceptionClassName()} with
+ *       the message from {@link #message()} and throws it; no bytes are written to the file.
+ *   <li>The exception propagates to the caller — log appender, audit writer, WAL writer — which
+ *       must handle the write failure or propagate it to the application as a critical error.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>Log4j 2 and Logback file appenders catch {@code IOException} from the write, log an
+ *       internal error message (using the status listener), and depending on configuration either
+ *       drop the failed log event or enter a degraded state; assert that the application does not
+ *       crash when logging fails and that the status listener reports the write error.
+ *   <li>Inject {@code java.io.IOException: No space left on device} (ENOSPC) to simulate a full
+ *       filesystem; Spring Boot's embedded server writes access logs and temporary files to disk;
+ *       assert that the application transitions to a degraded health state and that the
+ *       {@code /actuator/health} endpoint reflects the disk-full condition.
+ *   <li>Applications that use {@code RandomAccessFile} for local state storage (e.g. offset
+ *       tracking files, local caches) will throw on write; assert that the application rolls back
+ *       to the last persisted state rather than silently losing the update.
+ *   <li><strong>Production failure mode:</strong> a Kafka broker's log directory disk fills due
+ *       to insufficient retention configuration; every log segment write throws
+ *       {@code IOException: No space left on device}; the broker is unable to accept new messages;
+ *       it marks itself as unclean and triggers leader election on all partitions; the cluster
+ *       becomes unavailable for producers; operators must manually clean the disk and restart the
+ *       broker to recover.
  * </ul>
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The interception targets {@code java.io.FileOutputStream#write(byte[], int, int)} and
+ * {@code java.io.RandomAccessFile#write(byte[], int, int)} via Byte Buddy. Both call JNI native
+ * methods; the chaos exception fires before the JNI boundary, so the OS file state is unmodified.
+ * The file remains at its pre-write size with its pre-write contents; no partial writes occur.
+ *
+ * <p>Log4j 2's {@code RollingFileManager} calls {@code channel.write(byteBuffer)} for the NIO
+ * path or {@code outputStream.write(bytes)}  for the classic path; both eventually reach
+ * {@code FileOutputStream.write()}. On write failure, Log4j's error handling depends on the
+ * configured {@code AbstractAppender#isIgnoreExceptions()} flag: if {@code true} (the default),
+ * the exception is silently swallowed and the event is dropped; if {@code false}, the exception
+ * propagates to the caller. Applications relying on the default silent-drop behaviour may not
+ * notice that they have lost log events until a post-incident analysis.
+ *
+ * <p>RocksDB (used by many JVM applications as an embedded store via JNI) writes its WAL and
+ * SSTable files via JNI; the Byte Buddy intercept at the Java level does not fire for JNI-based
+ * writes. Only Java-level file writes are intercepted. For RocksDB write fault injection, use
+ * OS-level fault injection (e.g. dm-flakey) instead.
+ *
+ * <p>The distinction from {@link ChaosFileIoWriteDelay} is severity: a delay allows the write to
+ * eventually succeed after a pause; an exception causes permanent write failure for every call
+ * during the fault window. The exception variant exercises the "disk is broken" code path; the
+ * delay variant exercises the "disk is slow" code path — distinct failure modes that trigger
+ * different application recovery strategies.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosFileIoWriteInjectException
- * class JvmChaosTest {
+ * @ChaosFileIoWriteInjectException(
+ *     exceptionClassName = "java.io.IOException",
+ *     message = "No space left on device")
+ * class DiskFullTest {
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void applicationHealthDegradesDuringDiskFull(ConnectionInfo info) {
+ *     // assert health endpoint shows DISK_FULL status
+ *     // assert log events are not silently dropped (if appender is configured to fail fast)
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosFileIoWriteInjectExceptions}) to apply different configurations to different
- * containers.
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation is required; omitting
+ *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
+ *       {@code @JvmAgentChaos}; it is attached before the container starts.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
+ *       translator class can be resolved.
+ *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
+ *       intercept native executables.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosFileIoWriteDelay
+ * @see ChaosFileIoReadInjectException
  */
 @Repeatable(ChaosFileIoWriteInjectException.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

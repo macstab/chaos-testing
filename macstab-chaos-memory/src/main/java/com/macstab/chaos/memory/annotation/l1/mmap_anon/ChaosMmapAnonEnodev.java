@@ -14,47 +14,63 @@ import com.macstab.chaos.memory.model.MemorySelector;
 import com.macstab.chaos.memory.model.MmapErrno;
 
 /**
- * Injects {@code ENODEV} on every libchaos-memory-intercepted {@code mmap(MAP_ANONYMOUS)} call
- * inside the target container, making the call fail as if the kernel returned {@code ENODEV}.
+ * Injects {@code ENODEV} into {@code mmap(MAP_ANONYMOUS)} calls intercepted by libchaos-memory,
+ * causing the calling code to observe a no-such-device failure from anonymous memory allocation.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector = {@code MMAP_ANON}, errno = {@code ENODEV}) pair.
- * The combination is safe by construction: this annotation class exists only because {@code ENODEV}
- * is a valid POSIX result of {@code mmap(MAP_ANONYMOUS)}; the invalid combinations simply have no
- * annotation class, so the selector × errno matrix cannot be violated at compile time.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-memory primitive — one (selector = {@code MMAP_ANON}, errno = {@code ENODEV}) tuple.
+ * Compile-time safety: this annotation exists only because {@code ENODEV} is a defined POSIX result
+ * for {@code mmap}; invalid combinations have no annotation class and cannot be expressed.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code mmap(MAP_ANONYMOUS)} call that the
- * libchaos-memory interceptor sees, a Bernoulli trial with probability {@link #probability} is run.
- * When it fires the interceptor returns {@code -1} and sets {@code errno = ENODEV} before the
- * kernel call completes — from the application perspective this is indistinguishable from a real
- * kernel-level failure. Specifically this simulates: no such device — typical of memory-backed
- * device removal or hot-unplug.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code mmap(MAP_ANONYMOUS)} call the interposer runs a Bernoulli trial with
+ *       probability {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = ENODEV} and returns
+ *       {@code MAP_FAILED} without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 19,
+ *       {@code strerror}: "No such device".</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.MEMORY)} annotation on the container declaration causes
- * {@code ChaosTestingExtension} to upload {@code libchaos-memory.so} into the container and prepend
- * it to {@code LD_PRELOAD} before the container process starts. The shared library interposes the
- * libc wrappers for {@code mmap}, {@code munmap}, {@code mprotect}, and {@code madvise} at the
- * dynamic-linker level. This annotation then installs a rule via {@code
- * AdvancedMemoryChaos.apply(container, rule)} that configures the interposer with the selector and
- * probability you specify.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD} which does not apply on
- *       macOS or Windows containers; annotate the test class with {@code @DisabledOnOs(OS.WINDOWS)}
- *       and be aware of macOS Docker limitations.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.MEMORY)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — this installs the shared library before container start;
- *       omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) do not
- *       honour {@code LD_PRELOAD} for statically-linked binaries; use a glibc variant or the
- *       Debian-slim image instead.
- *   <li><strong>{@code macstab-chaos-memory} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and {@code ChaosTestingExtension} throws {@code
- *       ClassNotFoundException} wrapped in {@code ExtensionConfigurationException}.
+ *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = ENODEV} (19); callers should
+ *       treat this as a non-transient infrastructure failure and escalate the error.</li>
+ *   <li>glibc {@code malloc} propagates {@code NULL}; JVM allocators raise {@code OutOfMemoryError}.
+ *       Error messages will typically not distinguish {@code ENODEV} from {@code ENOMEM} at the
+ *       Java level; native log lines and crash dumps are more informative.</li>
+ *   <li>Assert that the application does not silently corrupt state and that it surfaces a
+ *       hardware-level error diagnostic that distinguishes device failure from OOM.</li>
  * </ul>
+ * Production failure mode: NUMA nodes being hot-removed from a running system, persistent memory
+ * (PMEM/NVDIMM) devices being unplugged, or software RAID arrays going offline can cause the
+ * memory subsystem to return {@code ENODEV} for mappings that reference those devices.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>POSIX specifies {@code ENODEV} for {@code mmap} when the filesystem underlying the mapped
+ * file does not support memory mapping (the file system's {@code f_op->mmap} is {@code NULL}).
+ * For anonymous mappings, this error is produced by the kernel when a backing device (such as a
+ * {@code /dev/mem} region, a PMEM device, or a DAX-capable block device) becomes unavailable
+ * after the process started but before the mapping is established.
+ *
+ * <p>This scenario is most relevant for applications that map device memory directly
+ * (e.g. SPDK-based storage engines, DPDK packet buffers, or GPU memory via {@code /dev/nvidia})
+ * and for HPC applications that use PMEM-backed anonymous mappings through the
+ * {@code MEMKIND_DAX} allocator family. In container environments it can arise when a host-side
+ * device is hot-removed while a container that has volume-mounted the device is still running.
+ *
+ * <p>Standard glibc {@code malloc} uses {@code /dev/zero} (or {@code MAP_ANONYMOUS}) and never
+ * touches hardware-backed devices, so it never encounters {@code ENODEV} in practice. This errno
+ * is therefore relevant only for native code that maps device memory explicitly. The JVM is
+ * unaffected unless it is configured with off-heap allocators that target PMEM (e.g. Memkind or
+ * the JVM's own {@code -XX:AllocateHeapAt} option targeting a DAX filesystem).
+ *
+ * <p>Compared with siblings: {@code ENODEV} indicates a device-level infrastructure failure
+ * (hardware gone); {@code EACCES} indicates a permissions failure (device present but access
+ * denied); {@code ENOMEM} indicates a capacity limit. All three cause {@code MAP_FAILED} but
+ * require very different incident responses.
  *
  * <h2>Example</h2>
  *
@@ -62,19 +78,19 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.MEMORY)
  * @ChaosMmapAnonEnodev(probability = 0.001)
- * class MemoryFaultTest {
+ * class DeviceFailureTest {
  *   @Test
- *   void appHandlesEnodevOnAlloc(RedisConnectionInfo info) { ... }
+ *   void appHandlesEnodevOnAlloc(RedisConnectionInfo info) {
+ *     // verify the application surfaces a device-failure error rather than a generic OOM
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; device-removal faults are rare but
- * catastrophic when unhandled.
- *
+ * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; device-removal failures are rare but
+ * catastrophic — low probability is sufficient to exercise the error-handling branch.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
- * the test class. Use the repeatable form ({@code @ChaosMmapAnonEnodevs}) to bind different
- * probabilities to different containers simultaneously.
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see MemoryErrnoBinding

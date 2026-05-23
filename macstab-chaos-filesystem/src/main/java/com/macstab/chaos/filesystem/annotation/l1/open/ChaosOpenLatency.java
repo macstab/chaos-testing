@@ -13,36 +13,68 @@ import com.macstab.chaos.filesystem.annotation.l1.IoLatencyBinding;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Delays every libchaos-intercepted {@code open} call by {@link #delayMs} milliseconds before
- * delegating to the real kernel call, making the operation succeed but take longer than expected.
+ * Delays every {@code open(2)} call by an additional {@link #delayMs} milliseconds before
+ * delegating to the real kernel call, making file open slower than the application expects while
+ * still returning a valid file descriptor.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one
- * (selector, effect = LATENCY) pair. Unlike errno variants, the latency primitive always delegates
- * to the kernel — it only adds wall-clock cost before doing so.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> every {@code open} call intercepted by libchaos
- * blocks for {@link #delayMs} ms before the kernel call is issued. This simulates the wall-clock
- * cost increase from resource pressure, kernel scheduling stalls, or slow hardware — none of which
- * return an errno but all of which can exhaust application-level timeouts, saturate connection-pool
- * wait budgets, and surface hidden latency assumptions.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code OPEN}, effect = LATENCY) tuple.
+ * Unlike errno variants, the latency primitive always delegates to the real kernel call after the
+ * configured extra delay — the file is opened normally. No probability gate is applied; the delay
+ * fires on every intercepted {@code open} call. No runtime operation-effect validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.IO)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-io.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the filesystem libc wrappers (open, read,
- * write, close, fsync, etc.) at the dynamic-linker level. This annotation installs a rule via
- * {@code AdvancedFilesystemChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
+ *       extension to upload {@code libchaos-io.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
+ *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
+ *       {@code fallocate} at the dynamic-linker level.
+ *   <li>On each intercepted {@code open} call the interposer sleeps for {@link #delayMs} ms before
+ *       issuing the real kernel call.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.IO)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-filesystem} on the test classpath.</strong>
+ *   <li>File open operations take longer than normal; applications that open files on critical
+ *       paths (configuration reload, credential refresh, log file rotation) will see increased
+ *       latency on those paths. Assert that the application's timeout configuration accounts for
+ *       slow file opens.
+ *   <li>Applications that open and close files on every request (file-based session stores, per-request
+ *       logging to separate files) accumulate the injected delay on each request; assert that request
+ *       latency SLOs tolerate this additional overhead or that the application caches open file
+ *       descriptors.
+ *   <li>Startup sequences that open many files (configuration, certificates, shared libraries)
+ *       accumulate the delay across all opens; assert that the startup timeout is calibrated for
+ *       the worst-case number of open calls at startup.
+ *   <li>Assert that the application does not interpret slow file open as a failure — the open
+ *       succeeds, just slowly, and any retry-on-timeout logic must distinguish a timeout from
+ *       an actual open failure.
  * </ul>
+ *
+ * <p>In production, slow {@code open} calls occur when the filesystem's directory entry cache
+ * (dentry cache) is cold after a memory reclaim event, when network filesystems (NFS, Ceph) are
+ * under load and the metadata server is slow to respond to lookup and open requests, and when
+ * process scheduling stalls under cgroup CPU throttling cause the thread to wait before entering
+ * the kernel.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The {@code open(2)} syscall resolves the pathname using the kernel's VFS layer, which walks
+ * the dentry cache to find each path component's inode. Cache hits are fast (nanoseconds); cache
+ * misses require reading directory blocks from disk or from the network filesystem backend.
+ * For NFS mounts, each pathname component requires a separate RPC to the NFS server's metadata
+ * path; a path with N components requires N round trips. This injection simulates the aggregate
+ * cost of these operations without requiring an actual slow storage backend.
+ *
+ * <p>Applications that perform health checks by opening and immediately closing a file (a
+ * "canary file" pattern) will see increased health check latency under this injection; assert
+ * that the health check timeout is calibrated to accommodate slow filesystem opens in stressed
+ * environments.
  *
  * <h2>Example</h2>
  *
@@ -50,21 +82,18 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.IO)
  * @ChaosOpenLatency(delayMs = 200)
- * class LatencyTest {
+ * class OpenLatencyTest {
  *   @Test
- *   void appHandlesSlowOperation(ConnectionInfo info) { ... }
+ *   void configurationReloadToleratesSlowFileOpen() {
+ *     // assert that config reload completes within its deadline even when open is slow
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Delay guidance:</strong> {@code 10}–{@code 200} ms simulates realistic stall events;
- * values above application-level timeouts produce cascading failures rather than isolated latency
- * observations — intentional in some scenarios, noisy in others.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form ({@code @ChaosOpenLatencys}) to set
- * different delays on different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosReadLatency
+ * @see ChaosWriteLatency
+ * @see com.macstab.chaos.filesystem.annotation.l1.IoLatencyBinding
  */
 @Repeatable(ChaosOpenLatency.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

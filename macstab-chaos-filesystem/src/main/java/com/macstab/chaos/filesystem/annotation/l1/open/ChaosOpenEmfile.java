@@ -14,61 +14,93 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code EMFILE} on every libchaos-intercepted {@code open} call inside the target
- * container, making the call fail as if the kernel returned {@code EMFILE}.
+ * Injects {@code EMFILE} into {@code open(2)}, causing the call to return {@code -1} with
+ * {@code errno = EMFILE} as if the calling process has reached its per-process file descriptor
+ * limit ({@code RLIMIT_NOFILE}) and the kernel cannot assign a new file descriptor for the opened
+ * file.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EMFILE}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EMFILE} is a valid POSIX result of {@code open}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code open} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = EMFILE} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: per-process file-descriptor limit reached — typical of fd-leaks in connection pools.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code OPEN}, errno = {@code EMFILE})
+ * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
+ * {@code open} call; when it fires the interposer returns {@code -1} with {@code errno = EMFILE}
+ * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.IO)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-io.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the filesystem libc wrappers (open, read,
- * write, close, fsync, etc.) at the dynamic-linker level. This annotation installs a rule via
- * {@code AdvancedFilesystemChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
+ *       extension to upload {@code libchaos-io.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
+ *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
+ *       {@code fallocate} at the dynamic-linker level.
+ *   <li>On each intercepted {@code open} call a Bernoulli trial with probability {@link #probability}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = EMFILE}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.IO)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-filesystem} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code EMFILE} from {@code open} indicates the process's file descriptor table is exhausted;
+ *       no new files, sockets, pipes, or other resources can be opened until existing descriptors
+ *       are closed. Assert that the application does not spin retrying the open — each retry
+ *       consumes CPU without progress.
+ *   <li>File-based logging frameworks (Log4j, Logback) that open log files on first write must
+ *       handle {@code EMFILE} by falling back to stderr; assert that the logger does not throw an
+ *       uncaught exception that terminates the logging thread.
+ *   <li>Database or message-queue clients that open WAL files, socket files, or pipe-based IPC
+ *       channels must propagate {@code EMFILE} as a resource-exhaustion error to their callers;
+ *       assert that the error message indicates fd exhaustion rather than a generic IO failure.
+ *   <li>Assert that the application emits an "fd limit reached" alert with the current limit from
+ *       {@code /proc/self/limits}, enabling operators to increase the container's {@code ulimit -n}.
  * </ul>
+ *
+ * <p>In production, {@code EMFILE} from {@code open} occurs when an application leaks file
+ * descriptors (opening files without closing them on error paths), when a burst of concurrent
+ * requests causes concurrent file opens to exceed the process limit, and when a JVM process
+ * accumulates file descriptors through NIO selectors, JMX, and class loading without releasing
+ * them, gradually approaching the {@code RLIMIT_NOFILE} soft limit.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The kernel allocates file descriptors from the process's file descriptor table, which has a
+ * hard upper bound of {@code RLIMIT_NOFILE}. The soft limit (the enforced one) is typically 1024
+ * on unmodified Linux systems; it can be raised up to the hard limit with {@code setrlimit(2)}.
+ * When {@code open} is called and the lowest available file descriptor number exceeds the soft
+ * limit, the kernel returns {@code EMFILE}.
+ *
+ * <p>Java processes are particularly vulnerable to fd exhaustion because many JVM subsystems
+ * consume file descriptors without making it obvious to the application: each {@code Selector}
+ * created by NIO frameworks consumes at least two descriptors (epoll fd + wakeup pipe);
+ * class loading opens jar files; JMX uses sockets; GC logging and heap dump tools open files.
+ * The actual fd usage of a production JVM process is often 3-5x higher than the number of
+ * application-visible sockets and files.
+ *
+ * <p>Java maps {@code EMFILE} from {@code open} to a {@code FileNotFoundException} with the
+ * message "Too many open files". The same message is used by some file-not-found errors on
+ * certain JVM versions; application code that distinguishes fd exhaustion from genuine
+ * file-not-found conditions must inspect the cause chain rather than the message text.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.IO)
- * @ChaosOpenEmfile(probability = 0.001)
- * class FaultTest {
+ * @ChaosOpenEmfile(probability = 0.05)
+ * class OpenEmfileTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void fileDescriptorExhaustionIsReportedWithOperableError() {
+ *     // assert that the application emits a "fd limit reached" alert rather than an NPE
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosOpenEmfiles}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosOpenEnfile
+ * @see ChaosOpenEacces
+ * @see com.macstab.chaos.filesystem.annotation.l1.IoErrnoBinding
  */
 @Repeatable(ChaosOpenEmfile.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

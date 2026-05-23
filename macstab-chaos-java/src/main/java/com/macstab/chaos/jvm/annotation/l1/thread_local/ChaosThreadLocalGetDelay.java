@@ -14,58 +14,106 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Delay the thread_local_get operation by the configured number of milliseconds.
+ * Intercepts {@code ThreadLocal.get()} and holds the calling thread for {@link #delayMs()}
+ * milliseconds before the thread-local value is returned, simulating contention or latency in
+ * the thread-local access path used by Spring's {@code TransactionSynchronizationManager},
+ * Hibernate's session binding, SLF4J's MDC, and any framework that propagates per-request
+ * context via thread-local storage.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> delay the THREAD_LOCAL_GET operation by the
- * configured number of milliseconds inside the JVM of the target container. The effect fires on
- * every matching call, subject to the probability configured via {@link #probability()} if
- * applicable. The rule is active from {@code beforeAll} until {@code afterAll} (class-scope) or
- * from {@code beforeEach} until {@code afterEach} (method-scope).
+ * A JVM agent L1 chaos primitive — one typed annotation per (selector family, operation type,
+ * effect) tuple. It is declared on a test class or method alongside a container annotation and
+ * activates for the lifetime of the test class ({@code beforeAll} / {@code afterAll}) or a single
+ * test method ({@code beforeEach} / {@code afterEach}).
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>Before every call to {@code java.lang.ThreadLocal#get()} inside the target container's
+ *       JVM, the chaos agent intercepts the calling thread.
+ *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()},
+ *       {@link #maxDelayMs()}]; equal values produce a deterministic delay.
+ *   <li>Control returns and the underlying {@code get()} executes normally, performing the
+ *       {@code Thread.threadLocals} map lookup and returning the stored value (or invoking
+ *       {@code initialValue()} if not yet set).
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>{@code ThreadLocal.get()} is called many thousands of times per request in typical Spring
+ *       applications; the delay fires on every call and compounds rapidly; even a 1 ms delay
+ *       can add hundreds of milliseconds to a single request that accesses thread-local state
+ *       hundreds of times; assert that the application's latency is sensitive to thread-local
+ *       access overhead and that critical paths minimise repeated gets.
+ *   <li>Spring's {@code TransactionSynchronizationManager} stores the current transaction's
+ *       connection binding, synchronisation list, and transaction name all in separate
+ *       {@code ThreadLocal} fields; each {@code @Transactional} method accesses these fields
+ *       multiple times; the delay inflates every transactional operation proportionally.
+ *   <li>SLF4J's MDC ({@code MDC.get(key)}) uses a {@code ThreadLocal<Map>}; every log statement
+ *       that includes MDC keys calls {@code get()}; a write-heavy application logging many events
+ *       per request will see total latency increase significantly.
+ *   <li><strong>Production failure mode:</strong> a profiler or monitoring agent installed on the
+ *       JVM intercepts {@code ThreadLocal.get()} to capture context propagation; a buggy version
+ *       of the agent adds a millisecond of latency to every call; applications with tight SLOs
+ *       exceed their p99 latency budget; the root cause is invisible in application traces because
+ *       the delay fires below the tracing instrumentation layer.
  * </ul>
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The interception targets {@code java.lang.ThreadLocal#get()}. Internally, {@code get()} reads
+ * the current thread's {@code Thread.threadLocals} field (of type {@code ThreadLocal.ThreadLocalMap}),
+ * then performs a hash-based probe to find the entry for the given {@code ThreadLocal} instance.
+ * The map uses linear probing with open addressing; on collision, it scans forward. The chaos
+ * delay fires before this lookup, adding a predictable JVM-level delay.
+ *
+ * <p>Spring's {@code TransactionSynchronizationManager} uses the following thread-local fields,
+ * each accessed via {@code ThreadLocal.get()}: {@code resources} (connection binding map),
+ * {@code synchronizations} (synchronisation list), {@code currentTransactionName},
+ * {@code currentTransactionReadOnly}, {@code currentTransactionIsolationLevel}, and
+ * {@code actualTransactionActive}. A single {@code @Transactional} method that performs one
+ * database query accesses these fields approximately 6-10 times; with a 10 ms delay each,
+ * the transactional overhead becomes 60-100 ms, drowning out the actual query time.
+ *
+ * <p>Hibernate's {@code SessionImpl} accesses thread-local state via Spring's
+ * {@code TransactionSynchronizationManager} for session binding; the delay compounds with the
+ * Spring transaction overhead above. For every flush, Hibernate iterates its persistence context
+ * and calls {@code get()} multiple times for dirty-checking.
+ *
+ * <p>{@code InheritableThreadLocal} (a subclass of {@code ThreadLocal}) is also intercepted by
+ * the same mechanism, affecting frameworks that propagate context from parent to child threads
+ * (e.g. Hystrix's command isolation, CompletableFuture with custom executors).
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosThreadLocalGetDelay
- * class JvmChaosTest {
+ * @ChaosThreadLocalGetDelay(delayMs = 5)
+ * class ThreadLocalOverheadTest {
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void p99LatencyExceedsThresholdDueToThreadLocalAccessOverhead(ConnectionInfo info) {
+ *     // assert that transactional endpoints show disproportionate latency increase
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosThreadLocalGetDelays}) to apply different configurations to different containers.
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation is required; omitting
+ *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
+ *       {@code @JvmAgentChaos}; it is attached before the container starts.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
+ *       translator class can be resolved.
+ *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
+ *       intercept native executables.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosThreadLocalGetSuppress
+ * @see ChaosThreadLocalSetSuppress
  */
 @Repeatable(ChaosThreadLocalGetDelay.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

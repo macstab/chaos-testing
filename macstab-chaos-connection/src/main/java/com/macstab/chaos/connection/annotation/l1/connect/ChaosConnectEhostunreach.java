@@ -14,62 +14,95 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code EHOSTUNREACH} on every libchaos-intercepted {@code connect} call inside the target
- * container, making the call fail as if the kernel returned {@code EHOSTUNREACH}.
+ * Injects {@code EHOSTUNREACH} into {@code connect(2)}, causing the call to return {@code -1} with
+ * {@code errno = EHOSTUNREACH} as if a router on the path to the destination host returned an ICMP
+ * "Host Unreachable" message, indicating the host itself is not reachable at the network layer.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EHOSTUNREACH}) pair and has no
- * runtime selector-errno matrix to validate. The combination is safe by construction: this
- * annotation class exists only because {@code EHOSTUNREACH} is a valid POSIX result of {@code
- * connect}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code connect} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #toxicity} is run. When it fires the
- * interceptor returns {@code -1} and sets {@code errno = EHOSTUNREACH} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: host unreachable — ICMP unreachable; typical of route-table flaps.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code CONNECT}, errno =
+ * {@code EHOSTUNREACH}) tuple. A Bernoulli trial with probability {@link #toxicity} is run on each
+ * intercepted {@code connect} call; when it fires the interposer returns {@code -1} with
+ * {@code errno = EHOSTUNREACH} without performing any real kernel operation. No runtime
+ * operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.NET)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-net.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes socket-layer libc wrappers (connect, accept,
- * socket, bind, listen, shutdown, send, recv, poll). This annotation installs a rule via {@code
- * AdvancedConnectionChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
+ *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
+ *       {@code poll} at the dynamic-linker level.
+ *   <li>On each intercepted {@code connect} call a Bernoulli trial with probability {@link #toxicity}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = EHOSTUNREACH}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.NET)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-connection} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code EHOSTUNREACH} indicates that the target host is unreachable at the IP routing level;
+ *       this is a hard network failure that typically requires waiting for routing convergence to
+ *       resolve. Assert that the application does not retry aggressively but applies exponential
+ *       back-off with jitter.
+ *   <li>Distinguish {@code EHOSTUNREACH} (specific host unreachable via ICMP) from
+ *       {@code ENETUNREACH} (entire network unreachable — no route at all); both indicate routing
+ *       failures but at different scopes, and recovery strategies may differ (wait for host vs.
+ *       wait for network).
+ *   <li>Assert that health checks or dependency probes report the downstream service as unreachable
+ *       rather than erroring with a generic network exception, so that circuit breakers can isolate
+ *       the failing dependency.
+ *   <li>Multi-region services that fall back to a secondary region must trigger the fallback on
+ *       {@code EHOSTUNREACH}; assert that the fallback logic fires within its configured timeout.
  * </ul>
+ *
+ * <p>In production, {@code EHOSTUNREACH} from {@code connect} occurs during BGP route flaps that
+ * temporarily withdraw the host's IP prefix, during ECMP routing failures where one path in a
+ * multi-path route becomes unreachable, and when a host's ARP entry expires and the ARP request
+ * goes unanswered because the host has been shut down.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The kernel returns {@code EHOSTUNREACH} from a non-blocking {@code connect} or from a
+ * blocking {@code connect} when it receives an ICMP Type 3 (Destination Unreachable) Code 1 (Host
+ * Unreachable) packet in response to the SYN. This ICMP message is generated by a router whose ARP
+ * request for the destination's MAC address goes unanswered — the router knows the network route
+ * but cannot reach the specific host. The distinction from {@code ENETUNREACH} (ICMP Code 0) is
+ * that the router has a route for the destination network but not for the host within it.
+ *
+ * <p>In containerised environments, {@code EHOSTUNREACH} commonly appears during rolling updates
+ * when a pod's IP is removed from the routing table before all connections to it have been drained.
+ * Kubernetes terminates pods before removing their IP from endpoints, but there is a propagation
+ * delay of several seconds during which new connections to the pod's IP will fail with
+ * {@code EHOSTUNREACH} or {@code ETIMEDOUT} depending on whether the network layer sends ICMP
+ * unreachable messages.
+ *
+ * <p>Java maps {@code EHOSTUNREACH} to a {@code NoRouteToHostException} (a subclass of
+ * {@code SocketException}) with the message "No route to host". This is one of the few Java network
+ * exceptions that is semantically meaningful at the exception class level; application code that
+ * catches {@code NoRouteToHostException} specifically and applies a longer retry delay (to allow
+ * routing convergence) demonstrates correct error handling.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.NET)
- * @ChaosConnectEhostunreach(toxicity = 0.001)
- * class FaultTest {
+ * @ChaosConnectEhostunreach(toxicity = 0.01)
+ * class ConnectEhostunreachTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void serviceAppliesBackOffAndTriggersAlertOnHostUnreachable(ConnectionInfo info) {
+ *     // assert that back-off applies and monitoring alert fires on repeated EHOSTUNREACH
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosConnectEhostunreachs}) to bind different
- * probabilities to different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosConnectEnetunreach
+ * @see ChaosConnectEtimedout
+ * @see com.macstab.chaos.connection.annotation.l1.ConnectionErrnoBinding
  */
 @Repeatable(ChaosConnectEhostunreach.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

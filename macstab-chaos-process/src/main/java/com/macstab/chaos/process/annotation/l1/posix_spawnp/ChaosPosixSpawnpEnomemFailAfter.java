@@ -14,61 +14,104 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code posix_spawnp} calls
- * succeed, then injects {@code ENOMEM} on every subsequent call until the rule is removed.
+ * After {@link #successesBeforeFailure} successful {@code posix_spawnp} calls, injects
+ * {@code ENOMEM} on every subsequent call, causing the calling code to observe a persistent
+ * kernel out-of-memory failure that models progressive slab allocator exhaustion on a Kubernetes
+ * node under memory pressure.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code POSIX_SPAWNP}, errno = {@code ENOMEM}, effect = FAIL_AFTER) tuple. FAIL_AFTER is the
- * process module's counter-gated effect — distinct from ERRNO (probabilistic) and LATENCY
- * (unconditional). It models resource-exhaustion scenarios where the first N operations succeed and
- * then the system runs out of capacity.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code POSIX_SPAWNP}, errno = {@code ENOMEM},
+ * effect = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N calls succeed,
+ * then the counter trips permanently and every subsequent call returns the error code until the
+ * rule is removed. Compile-time safety: invalid selector/errno/effect combinations have no
+ * annotation class.
  *
- * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
- * {@code posix_spawnp} calls. After {@link #successesBeforeFailure} successes the counter trips and
- * every subsequent call returns {@code -1} with {@code errno = ENOMEM}, regardless of real kernel
- * capacity. The counter resets every time the rule is re-applied (e.g. across test methods if the
- * annotation is at class scope).
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code posix_spawnp} wrapper at the dynamic-linker level.</li>
+ *   <li>The interposer maintains a per-rule success counter; the counter does not reset
+ *       automatically between test methods when the annotation is at class scope.</li>
+ *   <li>Once the counter reaches zero it trips permanently: every subsequent {@code posix_spawnp}
+ *       call returns {@code ENOMEM} directly (POSIX spawn returns the error code, not -1).</li>
+ *   <li>The calling code receives: return value {@code ENOMEM} (12); no child process is created;
+ *       the calling process is in a clean state since no child resources were allocated.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family. This annotation installs
- * a FAIL_AFTER rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at {@code
- *       beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>The first {@link #successesBeforeFailure} calls proceed normally; all subsequent calls
+ *       return {@code ENOMEM}; assert that the application applies backoff with a longer interval
+ *       than for EAGAIN — ENOMEM may persist for the duration of a node memory pressure event,
+ *       whereas EAGAIN self-heals when children exit.</li>
+ *   <li>FAIL_AFTER models the progressive slab allocator exhaustion threshold: glibc's spawn helper
+ *       and the kernel have free memory for N spawn's internal structures; the (N+1)th spawn fails;
+ *       assert that the application detects this threshold and escalates to a memory-pressure alert.</li>
+ *   <li>Assert that the application does not call {@code waitpid} on an uninitialised pid after
+ *       post-threshold ENOMEM — POSIX does not define the pid value when spawn fails; the calling
+ *       process is in a clean state and no child resources need to be reaped.</li>
  * </ul>
+ * Production failure mode: a service uses {@code posix_spawnp} to invoke utilities by name during
+ * batch processing; the Kubernetes node is under memory pressure from OOM-protected workloads;
+ * after N successful spawns glibc's spawn helper cannot allocate the internal communication pipe;
+ * the service applies the same short retry interval as for EAGAIN, which is insufficient for the
+ * duration of the memory pressure event and worsens node OOM conditions.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>FAIL_AFTER models the kernel slab exhaustion threshold: the slab allocator's free lists drain
+ * as each spawn allocates task_struct, kernel stack, mm_struct, and glibc's internal pipe
+ * buffers; after N spawns the allocator is exhausted and all subsequent spawns fail with ENOMEM.
+ * POSIX spawn returns the error code directly — checking {@code if (ret < 0)} silently misses
+ * ENOMEM (12). ENOMEM (12) and EAGAIN (11) are adjacent integers; misclassification between them
+ * causes wrong retry behaviour — EAGAIN calls for short exponential backoff; ENOMEM calls for
+ * longer backoff with memory pressure alert.
+ *
+ * <p>The posix_spawnp PATH traversal adds a subtle memory pressure contribution not present in
+ * posix_spawn: each PATH directory is opened with {@code opendir}, which allocates a
+ * {@code DIR} structure and read buffer in the parent process's heap. Under extreme memory
+ * pressure, this PATH traversal allocation itself may fail with ENOMEM before the fork phase.
+ * The interposer fires at the spawn API boundary and covers both the traversal-allocation and
+ * the spawn-internal-structure-allocation failure cases.
+ *
+ * <p>The counter does not reset between test methods when the annotation is at class scope. This
+ * enables sequential testing: the first test method exercises the success path (calls 1 through N);
+ * subsequent test methods exercise the ENOMEM path automatically. ENOMEM from posix_spawnp leaves
+ * the calling process in a clean state — no child resources were allocated, no waitpid is needed.
+ * Retry strategy must be substantially longer than for EAGAIN: ENOMEM may persist for minutes
+ * during node-level OOM reclaim, whereas EAGAIN self-heals when children exit.
+ *
+ * <p>Under real node OOM conditions, the kernel OOM killer may terminate processes concurrently
+ * with the application's retries. Applications retrying posix_spawnp-ENOMEM should monitor for
+ * SIGCHLD from killed children and avoid accumulating zombie processes during the retry window.
+ * If the application itself is OOM-killed during the ENOMEM phase, the retry logic is moot —
+ * the memory alert must be raised before the OOM killer activates.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosPosixSpawnpEnomemFailAfter(successesBeforeFailure = 128)
- * class ProcessExhaustionTest {
+ * @ChaosPosixSpawnpEnomemFailAfter(successesBeforeFailure = 30)
+ * class PosixSpawnpMemoryExhaustionTest {
  *   @Test
- *   void handlesExhaustion(ConnectionInfo info) { ... }
+ *   void executorAppliesLongerBackoffOnEnomemThanEagainAndRaisesMemoryAlert(ConnectionInfo info) {
+ *     // first 30 spawns succeed; subsequent spawns return ENOMEM;
+ *     // verify longer backoff than EAGAIN; memory alert escalated; no waitpid on uninit pid;
+ *     // return value checked (not errno); ENOMEM vs EAGAIN distinguished
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of {@code
- * posix_spawnp} calls the application is expected to make before hitting the limit. Typically 5–200
- * for container-scoped tests. Zero means the very first call fails.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form
- * ({@code @ChaosPosixSpawnpEnomemFailAfter.Repeatable}) to apply different counters to different
- * containers.
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to the expected
+ * number of spawns before the node's slab memory is exhausted; values 10–100 cover most scenarios;
+ * 0 tests cold-start memory exhaustion (node already OOM at test start).
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessFailAfterBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#failAfter(ProcessSelector, ProcessErrno, long)
  */
 @Repeatable(ChaosPosixSpawnpEnomemFailAfter.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

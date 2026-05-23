@@ -14,59 +14,116 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Delay the executor_worker_run operation by the configured number of milliseconds.
+ * Parks every executor worker thread for {@link #delayMs} to {@link #maxDelayMs} milliseconds
+ * when it picks up a task to execute — slowing down task throughput without affecting task
+ * submission or preventing any task from eventually running.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> delay the EXECUTOR_WORKER_RUN operation by the
- * configured number of milliseconds inside the JVM of the target container. The effect fires on
- * every matching call, subject to the probability configured via {@link #probability()} if
- * applicable. The rule is active from {@code beforeAll} until {@code afterAll} (class-scope) or
- * from {@code beforeEach} until {@code afterEach} (method-scope).
+ * <p>An L1 JVM chaos primitive in the {@code EXECUTOR} selector family targeting the {@code
+ * EXECUTOR_WORKER_RUN} operation with the {@code delay} effect. It intercepts the moment a worker
+ * thread in a {@code ThreadPoolExecutor} or compatible executor dequeues a task and is about to
+ * call {@code task.run()} (or {@code task.call()} for callables). The worker thread is parked for
+ * the configured duration before the task body executes.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <p>This is the execution-side analogue of {@link ChaosExecutorSubmitDelay}, which delays the
+ * submission caller. Here, the delay is on the worker thread, invisible to the submitter — the
+ * submitter's {@code Future} is created immediately; it just takes longer to complete.
  *
- * <p><strong>What is required:</strong>
+ * <h2>What chaos this applies</h2>
+ *
+ * <p>The JVM agent installs a Byte Buddy interceptor on the worker thread's task-dispatch entry
+ * point inside {@code ThreadPoolExecutor} (specifically around the {@code runWorker} loop's call
+ * to {@code task.run()}). When the interceptor fires:
+ *
+ * <ol>
+ *   <li>The interceptor fires on the worker thread after the task has been dequeued.
+ *   <li>The delay effect calls {@code Thread.sleep(delayMs)} (or a random value in {@code
+ *       [delayMs, maxDelayMs]}), parking the worker thread for the configured duration.
+ *   <li>After the sleep, {@code task.run()} executes normally. The task completes and the worker
+ *       loops back to dequeue the next task.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>{@code future.get()} eventually returns the correct value — the task does run; it just
+ *       takes at least {@link #delayMs} ms longer to start.
+ *   <li>Task throughput (tasks completed per second) drops proportionally to the sleep duration
+ *       and the pool size — each worker sleeps before each task.
+ *   <li>{@code future.get(timeout, unit)} throws {@link java.util.concurrent.TimeoutException} if
+ *       {@link #delayMs} exceeds the caller's wait budget.
+ *   <li>Monitoring dashboards will show executor queue depth growing as tasks back up while workers
+ *       sleep, then draining when the delay annotation is removed.
  * </ul>
+ *
+ * <p><strong>Production failure mode:</strong> a GC pause or lock contention spike inside the
+ * thread pool causes every worker thread to stall for hundreds of milliseconds before picking up
+ * the next task; tasks accumulate in the queue faster than they are drained, eventually triggering
+ * rejection or memory pressure.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p><strong>Interception point.</strong> The agent targets the task-execution entry point inside
+ * {@code java.util.concurrent.ThreadPoolExecutor}'s {@code runWorker} loop — specifically the
+ * call site that invokes {@code task.run()} (where {@code task} is the {@code Runnable} or
+ * {@code FutureTask} dequeued from the work queue). This is a JDK internal method, intercepted via
+ * Byte Buddy retransformation of the bootstrap-loaded class.
+ *
+ * <p><strong>Worker thread semantics.</strong> During the sleep, the worker thread does not hold
+ * the executor's main lock; the lock was released when the task was dequeued. Other workers
+ * continue dequeuing and sleeping independently. With a pool of {@code N} workers and a sleep of
+ * {@code D} ms, the effective task completion rate drops to approximately {@code N / D} tasks per
+ * second (ignoring task run time).
+ *
+ * <p><strong>Interaction with ForkJoinPool.</strong> {@code ForkJoinPool} workers use
+ * {@code ForkJoinTask.doExec()} rather than a simple {@code Runnable.run()} call. The
+ * {@code FORK_JOIN_TASK_RUN} operation (covered by {@link ChaosForkJoinTaskRunDelay}) targets that
+ * path. Use {@code ChaosExecutorWorkerRunDelay} for traditional {@code ThreadPoolExecutor}-based
+ * pools; use {@link ChaosForkJoinTaskRunDelay} for {@code ForkJoinPool} tasks.
+ *
+ * <p><strong>Cascading effects.</strong> With all workers sleeping before every task, any
+ * component that waits on a pool-backed {@code Future} within a request deadline will time out.
+ * Retry logic that resubmits on timeout may cause queue runaway: each timed-out retry adds a new
+ * task that also sleeps, worsening the backlog.
+ *
+ * <p><strong>Distinguishing from siblings.</strong> {@link ChaosExecutorSubmitDelay} slows the
+ * submitter; this annotation slows the worker. {@link ChaosExecutorWorkerRunReject} throws an
+ * exception from the worker instead of delaying it. Combining both delay annotations stacks their
+ * effects: the submitter sleeps and then the worker sleeps again before execution.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosExecutorWorkerRunDelay
- * class JvmChaosTest {
+ * @ChaosExecutorWorkerRunDelay(delayMs = 300, maxDelayMs = 300)
+ * class WorkerRunSlowTest {
+ *
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void taskFutureTimesOutWhenWorkerIsSlow(AppConnectionInfo info) {
+ *     Future<String> result = client.submitBackgroundTask(info);
+ *     assertThatThrownBy(() -> result.get(100, TimeUnit.MILLISECONDS))
+ *         .isInstanceOf(TimeoutException.class);
+ *     // task does eventually complete after the delay
+ *     assertThat(result.get(2, TimeUnit.SECONDS)).isNotNull();
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosExecutorWorkerRunDelays}) to apply different configurations to different
- * containers.
+ * <ul>
+ *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
+ *   <li>A Java container image — the container must run a JVM process.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see com.macstab.chaos.jvm.api.OperationType#EXECUTOR_WORKER_RUN
+ * @see com.macstab.chaos.jvm.api.ChaosSelector#executor(java.util.Set)
+ * @see ChaosExecutorWorkerRunReject
+ * @see ChaosExecutorSubmitDelay
+ * @see ChaosForkJoinTaskRunDelay
  */
 @Repeatable(ChaosExecutorWorkerRunDelay.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

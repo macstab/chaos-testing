@@ -14,56 +14,97 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Skew the value returned from system_clock_nanos.
+ * Shifts the value returned by {@code System.nanoTime()} by a configurable nanosecond offset,
+ * distorting monotonic elapsed-time measurements inside the target container's JVM.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> skew the value returned from SYSTEM_CLOCK_NANOS
- * inside the JVM of the target container. The effect fires on every matching call, subject to the
- * probability configured via {@link #probability()} if applicable. The rule is active from {@code
- * beforeAll} until {@code afterAll} (class-scope) or from {@code beforeEach} until {@code
- * afterEach} (method-scope).
+ * <p>A JVM agent L1 chaos primitive targeting the {@code SYSTEM_CLOCK_NANOS} operation — one typed
+ * annotation per (selector family, operation type, effect) tuple. Declared on a test class or
+ * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until
+ * {@code afterAll}/{@code afterEach} respectively.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>The chaos agent intercepts every call to {@code System.nanoTime()} in the target
+ *       container's JVM.
+ *   <li>The interceptor adds the equivalent of {@link #skewMs()} milliseconds (expressed in
+ *       nanoseconds) to the raw monotonic counter before returning it to the caller.
+ *   <li>In {@code DRIFT} mode the offset grows linearly, simulating a clock that is running at a
+ *       different frequency than wall time; in {@code FREEZE} mode the value is pinned, making
+ *       elapsed-time measurements return zero.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li><strong>Timeout detection fires too early or too late.</strong> Connection pools, retry
+ *       schedulers, and circuit breakers that compute elapsed time with {@code nanoTime} will open
+ *       or close their breakers at the wrong moment; assert that timeouts still produce the correct
+ *       error type and that retries respect the backoff window.
+ *   <li><strong>SLA / latency metrics corrupted.</strong> Histogram-based latency tracking
+ *       (Micrometer, Dropwizard Metrics) uses {@code nanoTime} for sample recording; assert that
+ *       the application does not report negative latency or overflow counter buckets.
+ *   <li><strong>Throughput limiters break.</strong> Rate limiters using token-bucket algorithms
+ *       keyed to {@code nanoTime} may grant or deny requests at the wrong rate.
+ *   <li><strong>Production failure mode:</strong> a frozen {@code nanoTime} causes keep-alive
+ *       threads to believe no time has passed and skip scheduled work indefinitely; a large
+ *       positive skew causes aggressive timeouts that cascade into connection storms.
  * </ul>
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code System.nanoTime()} is a monotonic, high-resolution counter that is not tied to any
+ * calendar epoch. Its only guarantee is that successive calls on the same JVM instance are
+ * non-decreasing. Unlike {@code System.currentTimeMillis()}, it is not adjusted by NTP and cannot
+ * jump backward. This makes it the standard source for elapsed-time measurement, but also means
+ * that code using it is not normally expected to encounter clock anomalies.
+ *
+ * <p>Intercepting {@code System.nanoTime()} requires the same native-method delegation technique as
+ * {@code currentTimeMillis()}: the agent installs a Byte Buddy delegation stub in the bootstrap
+ * class loader so the JVM routes the call through Java-visible advice, then adds the skew before
+ * returning.
+ *
+ * <p>The key difference between skewing {@code nanoTime} and skewing {@code currentTimeMillis} is
+ * the semantic: {@code nanoTime} is used for <em>elapsed time</em> (how long did this operation
+ * take?) while {@code currentTimeMillis} is used for <em>absolute time</em> (what time is it?).
+ * Skewing {@code nanoTime} breaks duration-based reasoning — timeouts, rate limits, latency
+ * histograms — without affecting calendar-based reasoning. Combined, the two annotations can
+ * simulate a node whose wall clock has drifted while its monotonic clock has also been distorted,
+ * matching the conditions seen after hypervisor live-migration or container suspension.
+ *
+ * <p>In {@code FREEZE} mode successive calls to {@code nanoTime} return the same value, so any code
+ * that loops on {@code nanoTime} for a spin-wait or busy-poll will spin forever, giving the
+ * application an opportunity to demonstrate whether it has a hard CPU-spin ceiling.
+ *
+ * <p>Because the skew applies only inside the container JVM, the test side retains the true
+ * monotonic clock, enabling precise measurement of how long the container took to detect an
+ * anomaly such as a doubled timeout window.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosSystemClockNanosSkew
- * class JvmChaosTest {
+ * @ChaosSystemClockNanosSkew(skewMs = 5_000, mode = ClockSkewMode.FIXED)
+ * class NanoTimeSkewTest {
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void circuitBreakerTimeoutStillTrips(ConnectionInfo info) { ... }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosSystemClockNanosSkews}) to apply different configurations to different containers.
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
+ *       agent before the container JVM starts; omitting it causes an
+ *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
+ *       {@code @JvmAgentChaos}.
+ *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the
+ *       translator.
+ *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
+ *       intercept native executables.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
  */

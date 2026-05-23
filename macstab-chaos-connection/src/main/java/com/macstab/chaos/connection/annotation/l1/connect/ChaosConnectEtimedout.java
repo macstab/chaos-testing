@@ -14,61 +14,95 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code ETIMEDOUT} on every libchaos-intercepted {@code connect} call inside the target
- * container, making the call fail as if the kernel returned {@code ETIMEDOUT}.
+ * Injects {@code ETIMEDOUT} into {@code connect(2)}, causing the call to return {@code -1} with
+ * {@code errno = ETIMEDOUT} as if the TCP SYN retransmission limit was reached without receiving a
+ * SYN-ACK from the remote host, indicating the destination is silently dropping packets.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ETIMEDOUT}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code ETIMEDOUT} is a valid POSIX result of {@code connect}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code connect} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #toxicity} is run. When it fires the
- * interceptor returns {@code -1} and sets {@code errno = ETIMEDOUT} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: operation timeout — peer unresponsive or routing black-holed.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code CONNECT}, errno =
+ * {@code ETIMEDOUT}) tuple. A Bernoulli trial with probability {@link #toxicity} is run on each
+ * intercepted {@code connect} call; when it fires the interposer returns {@code -1} with
+ * {@code errno = ETIMEDOUT} without performing any real kernel operation. No runtime
+ * operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.NET)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-net.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes socket-layer libc wrappers (connect, accept,
- * socket, bind, listen, shutdown, send, recv, poll). This annotation installs a rule via {@code
- * AdvancedConnectionChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
+ *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
+ *       {@code poll} at the dynamic-linker level.
+ *   <li>On each intercepted {@code connect} call a Bernoulli trial with probability {@link #toxicity}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = ETIMEDOUT}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.NET)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-connection} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>Unlike {@code ECONNREFUSED} (immediate RST), real {@code ETIMEDOUT} from {@code connect}
+ *       requires waiting through multiple SYN retransmissions (typically 75–127 seconds with default
+ *       Linux settings); this injection delivers the error immediately, allowing tests to verify
+ *       timeout handling without waiting.
+ *   <li>Assert that application-level connection timeouts are configured below the kernel's default
+ *       TCP_SYN_RETRIES timeout; an application that relies on the kernel's SYN timeout will block
+ *       threads for over two minutes on each failed connection attempt.
+ *   <li>Connection pool timeout settings ({@code connectionTimeout} in HikariCP) must account for
+ *       the possibility of {@code ETIMEDOUT}; assert that pool acquisition timeouts are shorter than
+ *       the kernel's SYN retry period so that the pool fails fast and the thread is not blocked.
+ *   <li>Assert that the application treats {@code ETIMEDOUT} from {@code connect} as a "black hole"
+ *       indicator and applies longer retry back-off than for {@code ECONNREFUSED}, since black-hole
+ *       routes can persist for extended periods.
  * </ul>
+ *
+ * <p>In production, {@code ETIMEDOUT} from {@code connect} occurs when a firewall silently drops TCP
+ * SYN packets (rather than rejecting them with RST), when a host is partially available (accepting
+ * ICMP ping but not TCP connections), during asymmetric routing failures where SYN packets reach the
+ * destination but SYN-ACK packets are lost on the return path, and when a load balancer or NAT
+ * device fails and all packets to a destination are silently discarded.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>In real networking, the kernel's TCP stack sends the SYN and retransmits it with exponential
+ * back-off up to {@code tcp_syn_retries} times (default 6 on Linux, giving a total timeout of about
+ * 127 seconds). When all retransmissions are exhausted without a response, the kernel fails the
+ * {@code connect} with {@code ETIMEDOUT}. This is the longest possible connect failure time and is
+ * the "black hole" scenario: packets are sent but never acknowledged.
+ *
+ * <p>This injection bypasses the SYN retry mechanism entirely, delivering {@code ETIMEDOUT}
+ * immediately. This allows connect-timeout handling code to be tested without requiring actual
+ * black-hole routes or waiting for the kernel's SYN retry timeout to expire. For tests that need
+ * to verify that the application's connect timeout fires before the kernel's SYN timeout, use
+ * {@link ChaosConnectLatency} with a delay longer than the application's configured timeout instead.
+ *
+ * <p>Java maps {@code ETIMEDOUT} from {@code connect} to a {@code SocketTimeoutException} if a
+ * {@code SO_TIMEOUT} was set on the socket, or to a generic {@code SocketException} with the message
+ * "Connection timed out" if no timeout was set and the kernel's SYN retry limit was reached.
+ * Application code that uses {@code SO_TIMEOUT} to interrupt long connects will receive a
+ * {@code SocketTimeoutException}; code that relies on the kernel timeout will receive a
+ * {@code SocketException}. Both must be handled correctly.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.NET)
- * @ChaosConnectEtimedout(toxicity = 0.001)
- * class FaultTest {
+ * @ChaosConnectEtimedout(toxicity = 0.05)
+ * class ConnectEtimedoutTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void connectionPoolFailsFastOnBlackHoleDestination(ConnectionInfo info) {
+ *     // assert pool acquisition fails within configuredTimeout and does not block for 127 seconds
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-2 to 1e-1 for timeout testing; combine with
- * retry-budget exhaustion tests.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosConnectEtimedouts}) to bind different probabilities
- * to different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosConnectEconnrefused
+ * @see ChaosConnectLatency
+ * @see com.macstab.chaos.connection.annotation.l1.ConnectionErrnoBinding
  */
 @Repeatable(ChaosConnectEtimedout.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

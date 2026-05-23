@@ -14,61 +14,107 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code fork} calls succeed,
- * then injects {@code EAGAIN} on every subsequent call until the rule is removed.
+ * After {@link #successesBeforeFailure} successful {@code fork} calls, injects {@code EAGAIN} on
+ * every subsequent call, causing the calling code to observe a resource-temporarily-unavailable
+ * failure that persists for the remainder of the test.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code FORK}, errno = {@code EAGAIN}, effect = FAIL_AFTER) tuple. FAIL_AFTER is the process
- * module's counter-gated effect — distinct from ERRNO (probabilistic) and LATENCY (unconditional).
- * It models resource-exhaustion scenarios where the first N operations succeed and then the system
- * runs out of capacity.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code FORK}, errno = {@code EAGAIN}, effect
+ * = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N calls succeed, then
+ * the counter trips permanently and every subsequent call fails until the rule is removed. This
+ * is distinct from ERRNO (independent Bernoulli trial on each call) and LATENCY (unconditional
+ * delay). Compile-time safety: invalid selector/errno/effect combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
- * {@code fork} calls. After {@link #successesBeforeFailure} successes the counter trips and every
- * subsequent call returns {@code -1} with {@code errno = EAGAIN}, regardless of real kernel
- * capacity. The counter resets every time the rule is re-applied (e.g. across test methods if the
- * annotation is at class scope).
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code fork} wrapper at the dynamic-linker level.</li>
+ *   <li>The interposer maintains a per-rule success counter. Each {@code fork} call that passes
+ *       the counter check decrements the remaining budget; the counter does not reset automatically
+ *       between test methods when the annotation is at class scope.</li>
+ *   <li>Once the counter reaches zero it trips permanently: every subsequent {@code fork} call
+ *       sets {@code errno = EAGAIN} and returns {@code -1} without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 11,
+ *       {@code strerror}: "Resource temporarily unavailable"; no child process is created; the
+ *       calling process continues in its current state.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family. This annotation installs
- * a FAIL_AFTER rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at {@code
- *       beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>The first {@link #successesBeforeFailure} calls proceed normally; all subsequent calls
+ *       return {@code -1} with {@code errno = EAGAIN}; assert that the application implements
+ *       a bounded retry loop with backoff rather than an infinite retry or a hard failure, since
+ *       EAGAIN from fork is a transient resource condition in production.</li>
+ *   <li>FAIL_AFTER is more accurate than probabilistic ERRNO for modelling the {@code RLIMIT_NPROC}
+ *       exhaustion pattern: the first N forks succeed as the uid's process count rises; the N+1th
+ *       fork hits the limit and fails with EAGAIN; all subsequent forks continue to fail until
+ *       child processes exit — assert that the application's process pool has an upper bound
+ *       that is set below {@code RLIMIT_NPROC} to avoid hitting the limit in production.</li>
+ *   <li>Assert that the application does not treat post-threshold EAGAIN as a permanent failure
+ *       requiring operator escalation — EAGAIN from fork is self-healing once child processes
+ *       exit and the uid's process count falls below {@code RLIMIT_NPROC}.</li>
  * </ul>
+ * Production failure mode: a process-isolation service forks a child for each incoming request;
+ * the request rate exceeds the rate at which children exit; the uid's process count approaches
+ * {@code RLIMIT_NPROC}; after N successful forks, all subsequent forks return EAGAIN; the service
+ * has no upper bound on its process pool and no retry logic, so all requests during the exhaustion
+ * window fail and the service enters a degraded state that persists until the process count falls.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>FAIL_AFTER models the {@code RLIMIT_NPROC} exhaustion curve more accurately than probabilistic
+ * ERRNO. Real fork-EAGAIN from {@code RLIMIT_NPROC} follows a deterministic threshold: the uid's
+ * process count rises with each fork that has not yet been waited on; once it reaches the limit,
+ * all subsequent forks return EAGAIN until children are reaped. Setting
+ * {@link #successesBeforeFailure} to the uid's {@code RLIMIT_NPROC} minus the baseline process
+ * count reproduces this threshold exactly.
+ *
+ * <p>The EAGAIN semantics for fork are particularly important for daemon processes that use
+ * fork-per-request for isolation. Under the probabilistic ERRNO variant, each fork has an
+ * independent probability p of failing — this models transient kernel pressure where failures
+ * are scattered across the request stream. Under FAIL_AFTER, the first N forks succeed and then
+ * all subsequent forks fail until the rule is removed — this models the resource-ceiling scenario
+ * where the pid table fills deterministically as the service handles its Nth request. The two
+ * patterns require different application responses: transient failures call for retry; ceiling
+ * failures call for load-shedding and backpressure.
+ *
+ * <p>The counter scope matches the container lifetime, not the test method. When the annotation
+ * is at class scope, a test class can execute multiple test methods: early methods exercise the
+ * success phase (N forks succeed, demonstrating correct happy-path behaviour) and later methods
+ * exercise the failure phase (all forks return EAGAIN, testing the load-shedding logic). This
+ * requires careful ordering of test methods if the success/failure distinction matters.
+ *
+ * <p>Contrast with {@code ChaosForkEnomem} (ERRNO, ENOMEM): fork-ENOMEM indicates the kernel
+ * cannot allocate memory for the child process structures (task_struct, mm_struct, kernel stack),
+ * which is a different resource class from pid-table exhaustion. Applications should implement
+ * different retry strategies for each: EAGAIN is always self-healing (wait for children to exit);
+ * ENOMEM may persist longer under node-level memory pressure.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosForkEagainFailAfter(successesBeforeFailure = 128)
- * class ProcessExhaustionTest {
+ * @ChaosForkEagainFailAfter(successesBeforeFailure = 64)
+ * class ForkProcessLimitExhaustionTest {
  *   @Test
- *   void handlesExhaustion(ConnectionInfo info) { ... }
+ *   void serviceAppliesBackpressureWhenForkEagainAfterNSuccesses(ConnectionInfo info) {
+ *     // first 64 fork calls succeed; subsequent calls return EAGAIN;
+ *     // verify backpressure applied; retry bounded; no hard failure escalation
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of {@code fork}
- * calls the application is expected to make before hitting the limit. Typically 5–200 for
- * container-scoped tests. Zero means the very first call fails.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form
- * ({@code @ChaosForkEagainFailAfter.Repeatable}) to apply different counters to different
- * containers.
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to the expected
+ * number of concurrent child processes before the uid's {@code RLIMIT_NPROC} is reached; values
+ * in the range 20–200 cover most process-isolation service scenarios; 0 means the pid table is
+ * full from the first fork attempt.
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessFailAfterBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#failAfter(ProcessSelector, ProcessErrno, long)
  */
 @Repeatable(ChaosForkEagainFailAfter.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

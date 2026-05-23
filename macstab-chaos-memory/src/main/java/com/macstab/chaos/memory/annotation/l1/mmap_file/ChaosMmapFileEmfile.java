@@ -14,47 +14,75 @@ import com.macstab.chaos.memory.model.MemorySelector;
 import com.macstab.chaos.memory.model.MmapErrno;
 
 /**
- * Injects {@code EMFILE} on every libchaos-memory-intercepted {@code mmap (file-backed)} call
- * inside the target container, making the call fail as if the kernel returned {@code EMFILE}.
+ * Injects {@code EMFILE} into file-backed {@code mmap} calls intercepted by libchaos-memory,
+ * causing the calling code to observe a per-process file-descriptor-limit failure when attempting
+ * to establish a file-backed memory mapping.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector = {@code MMAP_FILE}, errno = {@code EMFILE}) pair.
- * The combination is safe by construction: this annotation class exists only because {@code EMFILE}
- * is a valid POSIX result of {@code mmap (file-backed)}; the invalid combinations simply have no
- * annotation class, so the selector × errno matrix cannot be violated at compile time.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-memory primitive — one (selector = {@code MMAP_FILE}, errno = {@code EMFILE})
+ * tuple. The {@code MMAP_FILE} selector intercepts only file-backed {@code mmap} calls (those
+ * without {@code MAP_ANONYMOUS}), leaving anonymous allocations unaffected. Compile-time
+ * safety: invalid selector/errno combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code mmap (file-backed)} call that the
- * libchaos-memory interceptor sees, a Bernoulli trial with probability {@link #probability} is run.
- * When it fires the interceptor returns {@code -1} and sets {@code errno = EMFILE} before the
- * kernel call completes — from the application perspective this is indistinguishable from a real
- * kernel-level failure. Specifically this simulates: per-process file-descriptor limit reached —
- * typical of fd-leaks in connection pools.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
+ *   <li>On each file-backed {@code mmap} call the interposer runs a Bernoulli trial with
+ *       probability {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = EMFILE} and returns
+ *       {@code MAP_FAILED} without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 24,
+ *       {@code strerror}: "Too many open files".</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.MEMORY)} annotation on the container declaration causes
- * {@code ChaosTestingExtension} to upload {@code libchaos-memory.so} into the container and prepend
- * it to {@code LD_PRELOAD} before the container process starts. The shared library interposes the
- * libc wrappers for {@code mmap}, {@code munmap}, {@code mprotect}, and {@code madvise} at the
- * dynamic-linker level. This annotation then installs a rule via {@code
- * AdvancedMemoryChaos.apply(container, rule)} that configures the interposer with the selector and
- * probability you specify.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD} which does not apply on
- *       macOS or Windows containers; annotate the test class with {@code @DisabledOnOs(OS.WINDOWS)}
- *       and be aware of macOS Docker limitations.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.MEMORY)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — this installs the shared library before container start;
- *       omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) do not
- *       honour {@code LD_PRELOAD} for statically-linked binaries; use a glibc variant or the
- *       Debian-slim image instead.
- *   <li><strong>{@code macstab-chaos-memory} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and {@code ChaosTestingExtension} throws {@code
- *       ClassNotFoundException} wrapped in {@code ExtensionConfigurationException}.
+ *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = EMFILE} (24); the application
+ *       must distinguish this from {@code ENFILE} — {@code EMFILE} is a per-process limit
+ *       (solvable by closing file descriptors or raising {@code RLIMIT_NOFILE}); {@code ENFILE}
+ *       is a system-wide limit (requires host-level intervention).</li>
+ *   <li>Database engines that accumulate many open SST file descriptors (RocksDB, Cassandra
+ *       SSTables, ClickHouse parts) must handle {@code EMFILE} by evicting cached fds from their
+ *       descriptor pools before retrying; assert that eviction is triggered and the retry
+ *       succeeds without data loss.</li>
+ *   <li>Assert that the application logs the per-process fd count and the current
+ *       {@code RLIMIT_NOFILE} soft limit alongside the error so that operators can tune
+ *       the limit without a code change.</li>
  * </ul>
+ * Production failure mode: a database engine or log-structured storage system accumulates open
+ * file descriptors across compaction and segment-rotation cycles without adequate eviction; as
+ * the per-process descriptor count approaches {@code RLIMIT_NOFILE}, subsequent file-backed
+ * {@code mmap} calls begin failing with {@code EMFILE}, preventing new segments from being
+ * memory-mapped and degrading read throughput to zero.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>POSIX specifies {@code EMFILE} when {@code mmap} internally needs to allocate a new file
+ * table entry and the per-process count would exceed {@code RLIMIT_NOFILE}. On Linux, the
+ * {@code alloc_empty_file} path in {@code do_mmap_pgoff} calls {@code get_unused_fd_flags} to
+ * allocate a slot in the file descriptor table; if the slot count is at the soft limit, the
+ * kernel returns {@code -EMFILE}.
+ *
+ * <p>This kernel mechanism differs from the anonymous-mmap case: anonymous mappings never
+ * allocate a file descriptor, so they cannot produce real {@code EMFILE} from the kernel.
+ * For file-backed mappings, the kernel does increment a reference count on the {@code struct file}
+ * but does not consume an additional fd slot from the process's descriptor table — the existing
+ * fd passed to {@code mmap} is sufficient. However, some kernel paths and certain filesystem
+ * drivers (particularly those implementing custom {@code mmap} file operations) may internally
+ * allocate auxiliary fds. This annotation exercises the error path for this scenario.
+ *
+ * <p>In practice, the most common source of {@code EMFILE} in database engines is not from
+ * {@code mmap} directly, but from the {@code open(2)} calls that precede the mapping. A high
+ * per-file-segment fd count combined with an inadequate {@code RLIMIT_NOFILE} configuration
+ * causes the {@code open} to fail first. This annotation targets the rarer but equally important
+ * case where the {@code open} succeeded but the subsequent {@code mmap} fails due to auxiliary
+ * resource exhaustion.
+ *
+ * <p>Compared with {@code ENFILE}: {@code EMFILE} is a per-process soft limit (solvable by
+ * {@code setrlimit(RLIMIT_NOFILE)}); {@code ENFILE} is the system-wide global file-table limit
+ * set by {@code fs.file-max} and requires host-level kernel parameter changes. Runbooks must
+ * distinguish the two: an {@code EMFILE} incident can be mitigated by the container without host
+ * access; an {@code ENFILE} incident requires escalation to the platform team.
  *
  * <h2>Example</h2>
  *
@@ -62,19 +90,19 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.MEMORY)
  * @ChaosMmapFileEmfile(probability = 0.001)
- * class MemoryFaultTest {
+ * class FdLimitTest {
  *   @Test
- *   void appHandlesEmfileOnAlloc(RedisConnectionInfo info) { ... }
+ *   void appHandlesEmfileOnFileMappings(RedisConnectionInfo info) {
+ *     // verify fd eviction fires and retry succeeds without data loss
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2 to simulate fd-limit pressure; combine
- * with low rlimit for realism.
- *
+ * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2 simulates near-limit conditions; rates
+ * above 0.1 will prevent shared-library loading and cause process abort.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
- * the test class. Use the repeatable form ({@code @ChaosMmapFileEmfiles}) to bind different
- * probabilities to different containers simultaneously.
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see MemoryErrnoBinding

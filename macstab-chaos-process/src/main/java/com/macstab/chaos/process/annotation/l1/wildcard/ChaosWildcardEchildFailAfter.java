@@ -14,62 +14,99 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code every interposed
- * process syscall} calls succeed, then injects {@code ECHILD} on every subsequent call until the
- * rule is removed.
+ * After {@link #successesBeforeFailure} successful process-management syscall invocations across
+ * all intercepted families, injects {@code ECHILD} on every subsequent call, modelling an
+ * all-children-reaped scenario where a process supervisor's child-tracking phase completes after
+ * N operations and all subsequent waits find no eligible children.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code WILDCARD}, errno = {@code ECHILD}, effect = FAIL_AFTER) tuple. FAIL_AFTER is the process
- * module's counter-gated effect — distinct from ERRNO (probabilistic) and LATENCY (unconditional).
- * It models resource-exhaustion scenarios where the first N operations succeed and then the system
- * runs out of capacity.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code WILDCARD}, errno = {@code ECHILD},
+ * effect = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N intercepted
+ * process-management calls (across all families — fork, execve, posix_spawn, pthread_create,
+ * waitpid) succeed, then the counter trips permanently and every subsequent call returns the error
+ * code until the rule is removed. Compile-time safety: invalid selector/errno/effect combinations
+ * have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
- * {@code every interposed process syscall} calls. After {@link #successesBeforeFailure} successes
- * the counter trips and every subsequent call returns {@code -1} with {@code errno = ECHILD},
- * regardless of real kernel capacity. The counter resets every time the rule is re-applied (e.g.
- * across test methods if the annotation is at class scope).
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing every process-management libc wrapper at the dynamic-linker level.</li>
+ *   <li>The interposer maintains a per-rule success counter shared across all intercepted syscall
+ *       families; the counter does not reset automatically between test methods when the annotation
+ *       is at class scope.</li>
+ *   <li>Once the counter reaches zero it trips permanently: every subsequent process-management
+ *       call returns {@code -1} (or the errno value directly for pthread_create and posix_spawn)
+ *       with {@code errno = ECHILD}.</li>
+ *   <li>The calling code receives: {@code waitpid()} returns {@code -1} with
+ *       {@code errno = ECHILD} (10); {@code posix_spawn}/{@code pthread_create} return
+ *       {@code ECHILD} directly; {@code strerror(ECHILD)}: "No child processes".</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family. This annotation installs
- * a FAIL_AFTER rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at {@code
- *       beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>The first {@link #successesBeforeFailure} process-management calls proceed normally; all
+ *       subsequent calls return ECHILD permanently; for waitpid, assert that the application
+ *       correctly terminates its child-reaping loop on ECHILD — ECHILD is the expected
+ *       loop-exit condition for {@code waitpid(-1, WNOHANG)} drain loops after all children
+ *       have been reaped.</li>
+ *   <li>FAIL_AFTER models the all-children-reaped threshold: N process-management operations
+ *       create and reap N children; the (N+1)th wait returns ECHILD because there are no more
+ *       children — assert that the application's reaping loop terminates correctly and that
+ *       the child-tracking registry is updated to reflect that all children have been collected.</li>
+ *   <li>Assert that ECHILD from non-waitpid call sites (via the wildcard) is logged with the
+ *       specific syscall name — ECHILD from fork or thread creation indicates a wildcard rule
+ *       is active and should be surfaced for diagnostic purposes rather than silently swallowed.</li>
  * </ul>
+ * Production failure mode: a batch job supervisor spawns N worker processes and uses a drain loop
+ * to collect their exit codes; the FAIL_AFTER threshold equals N; after all workers are reaped
+ * the supervisor's loop should terminate; if the loop does not check for ECHILD, it continues
+ * calling waitpid indefinitely, accumulating CPU cycles and preventing the supervisor from
+ * processing the next batch.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>ECHILD from waitpid is the normal and expected loop-exit condition for child-reaping drain
+ * loops, not an error. The FAIL_AFTER variant models the deterministic transition: N children are
+ * spawned and reaped; the reaping-complete ECHILD fires on the (N+1)th wait. The wildcard counter
+ * charges across all process-management families, so the threshold must account for all fork,
+ * posix_spawn, pthread_create, waitpid, and exec calls combined, not just waitpid calls.
+ *
+ * <p>The counter does not reset between test methods when the annotation is at class scope. First
+ * test method: N successful calls (spawning and reaping all children). Subsequent test methods:
+ * ECHILD phase (drain loop should terminate correctly). Set {@link #successesBeforeFailure} to
+ * the combined count of all process-management calls during the pre-ECHILD phase.
+ *
+ * <p>The distinction between expected ECHILD (all children reaped — FAIL_AFTER models this) and
+ * unexpected ECHILD (fewer children reaped than spawned — indicates a double-wait bug) must be
+ * tracked by the application. The application should count spawned vs reaped children; if ECHILD
+ * fires before the reaped count equals the spawned count, it should alert on the discrepancy.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosWildcardEchildFailAfter(successesBeforeFailure = 128)
- * class ProcessExhaustionTest {
+ * @ChaosWildcardEchildFailAfter(successesBeforeFailure = 60)
+ * class AllChildrenReapedTest {
  *   @Test
- *   void handlesExhaustion(ConnectionInfo info) { ... }
+ *   void batchSupervisorTerminatesReapLoopAndUpdatesRegistryOnEchild(ConnectionInfo info) {
+ *     // first 60 process calls succeed; subsequent calls return ECHILD;
+ *     // verify drain loop terminates on ECHILD; verify registry updated; verify ECHILD not logged
+ *     // as error when expected; verify ECHILD from non-waitpid paths logged with syscall name
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of {@code every
- * interposed process syscall} calls the application is expected to make before hitting the limit.
- * Typically 5–200 for container-scoped tests. Zero means the very first call fails.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form
- * ({@code @ChaosWildcardEchildFailAfter.Repeatable}) to apply different counters to different
- * containers.
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to the total number
+ * of process-management calls the application makes during its spawn-and-reap phase (spawning N
+ * children contributes N + N waitpid calls at minimum); values 10–500 cover typical batch workloads;
+ * 0 means ECHILD fires immediately on the first operation.
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessFailAfterBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#failAfter(ProcessSelector, ProcessErrno, long)
  */
 @Repeatable(ChaosWildcardEchildFailAfter.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

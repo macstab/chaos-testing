@@ -14,57 +14,92 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Throw the configured exception at the object_deserialize call site.
+ * Throws a configurable exception at every {@code ObjectInputStream.readObject()} call site,
+ * simulating a corrupted serialised stream, a class-version mismatch, or an incompatible payload
+ * received from a remote peer.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> throw the configured exception at the
- * OBJECT_DESERIALIZE call site inside the JVM of the target container. The effect fires on every
- * matching call, subject to the probability configured via {@link #probability()} if applicable.
- * The rule is active from {@code beforeAll} until {@code afterAll} (class-scope) or from {@code
- * beforeEach} until {@code afterEach} (method-scope).
+ * <p>A JVM agent L1 chaos primitive targeting the {@code OBJECT_DESERIALIZE} operation — one typed
+ * annotation per (selector family, operation type, effect) tuple. Declared on a test class or
+ * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until
+ * {@code afterAll}/{@code afterEach} respectively.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>The chaos agent intercepts every call to {@code ObjectInputStream.readObject()} in the
+ *       target container's JVM.
+ *   <li>Before the real deserialisation, the interceptor instantiates the exception class named by
+ *       {@link #exceptionClassName()} with {@link #message()} and throws it.
+ *   <li>The calling thread unwinds from the throw site; no object is reconstructed.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li><strong>Session restoration fails at failover.</strong> The servlet container will fail
+ *       to restore the session object; assert that the application redirects to login or creates a
+ *       new session rather than serving a 500 error.
+ *   <li><strong>Incoming RMI arguments rejected.</strong> The RMI dispatcher will receive an
+ *       exception during argument deserialisation; assert that the call fails with a
+ *       {@code MarshalException} on the client side and that the server does not enter an
+ *       inconsistent state.
+ *   <li><strong>Distributed cache read returns error.</strong> A cache miss due to deserialisation
+ *       failure should be treated the same as a cache miss due to TTL expiry; assert that the
+ *       application falls through to the database rather than propagating the exception.
+ *   <li><strong>Production failure mode:</strong> deserialisation failures from a rolling upgrade
+ *       (old serialisation format incompatible with new class definition) cause the receiving node
+ *       to drop all in-flight messages from the old node, potentially causing message loss in
+ *       Akka clusters or Hazelcast partitions.
  * </ul>
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The injected exception is thrown before the {@code ObjectInputStream} reads even the class
+ * descriptor, so the {@code InputStream} position is not advanced. Callers that wrap the input in
+ * a buffered stream may attempt to re-read the same bytes on retry, which would succeed if the
+ * chaos rule is probabilistic and the second attempt is not intercepted. Tests should decide
+ * whether this retry-succeeds behaviour is the expected production pattern.
+ *
+ * <p>The natural exception types for deserialisation failures are {@code java.io.IOException}
+ * (I/O-level errors), {@code java.io.InvalidClassException} (class incompatibility),
+ * {@code java.io.StreamCorruptedException} (bad magic number), and
+ * {@code java.lang.ClassNotFoundException} (class not on classpath). Each tests a different branch
+ * of the application's exception handler; configure {@link #exceptionClassName()} to match the
+ * scenario being tested.
+ *
+ * <p>Security note: a real attacker can craft malicious serialised payloads that trigger
+ * gadget-chain exploits during {@code readObject()}. This annotation does not simulate that —
+ * it prevents the payload from being processed at all. For testing defensive deserialisation
+ * hardening, the annotation is therefore most useful for validating that the application's error
+ * handler runs and that the exception is logged and reported, not for simulating an exploit.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosObjectDeserializeInjectException
- * class JvmChaosTest {
+ * @ChaosObjectDeserializeInjectException(
+ *     exceptionClassName = "java.io.InvalidClassException",
+ *     message = "serialVersionUID mismatch during rolling upgrade")
+ * class DeserializeExceptionTest {
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void cacheReadFallsBackToDatabaseOnDeserializationError(ConnectionInfo info) { ... }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosObjectDeserializeInjectExceptions}) to apply different configurations to different
- * containers.
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
+ *       agent before the container JVM starts; omitting it causes an
+ *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
+ *       {@code @JvmAgentChaos}.
+ *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the
+ *       translator.
+ *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
+ *       intercept native executables.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
  */

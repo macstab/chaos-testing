@@ -13,58 +13,94 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Delays every libchaos-intercepted {@code bind} call by {@link #delayMs} milliseconds before
- * delegating to the real kernel call, making the operation succeed but take longer than expected.
+ * Delays every {@code bind(2)} call by an additional {@link #delayMs} milliseconds before
+ * delegating to the real kernel call, making the address assignment slower than the application
+ * expects while still producing a successful bind result.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one
- * (selector, effect = LATENCY) pair. Unlike errno variants, the latency primitive always delegates
- * to the kernel — it only adds wall-clock cost before doing so.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> every {@code bind} call intercepted by libchaos
- * blocks for {@link #delayMs} ms before the kernel call is issued. This simulates the wall-clock
- * cost increase from resource pressure, kernel scheduling stalls, or slow hardware — none of which
- * return an errno but all of which can exhaust application-level timeouts, saturate connection-pool
- * wait budgets, and surface hidden latency assumptions.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code BIND}, effect = LATENCY) tuple.
+ * Unlike errno variants, the latency primitive always delegates to the real kernel call after the
+ * configured extra delay — the bind succeeds and the socket is assigned the requested local address.
+ * A Bernoulli trial with probability {@link #toxicity} gates whether the delay fires on each call.
+ * No runtime operation-effect validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.NET)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-net.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes socket-layer libc wrappers (connect, accept,
- * socket, bind, listen, shutdown, send, recv, poll). This annotation installs a rule via {@code
- * AdvancedConnectionChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
+ *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
+ *       {@code poll} at the dynamic-linker level.
+ *   <li>On each intercepted {@code bind} call a Bernoulli trial with probability {@link #toxicity}
+ *       is conducted; when it fires the interposer sleeps for {@link #delayMs} ms before issuing
+ *       the real kernel call.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.NET)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-connection} on the test classpath.</strong>
+ *   <li>Server startup takes longer when bind is delayed; assert that health-check or readiness-probe
+ *       timeouts are generous enough to accommodate slow bind calls during startup under load.
+ *   <li>Applications that pipeline socket setup (socket → bind → listen → accept) in a sequence
+ *       will see the delay propagate into the total startup time; assert that startup timeouts are
+ *       configured to accommodate this latency.
+ *   <li>Services that set up multiple listening sockets sequentially (e.g., binding to both HTTP and
+ *       HTTPS ports) will accumulate per-bind delays; assert that the total startup time budget
+ *       accounts for the number of sockets being bound.
+ *   <li>Assert that the delay does not affect the established connections already being served —
+ *       bind latency injected during a restart-in-place scenario should not cause in-flight requests
+ *       to timeout.
  * </ul>
+ *
+ * <p>In production, slow {@code bind} calls occur when the kernel's routing subsystem is under load
+ * (e.g., route cache invalidations from BGP convergence), when cgroup memory limits cause kernel
+ * slab allocations to stall, or when the system is recovering from a previous memory pressure event
+ * and reclaiming pages.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code bind(2)} is typically sub-millisecond because it performs only local kernel operations
+ * (hash table insertion, route lookup for the local address). The delay injected by this annotation
+ * is therefore larger than real-world bind latency in the vast majority of cases; its value is to
+ * expose startup timeout assumptions that are invisible when bind completes instantly.
+ *
+ * <p>Container orchestration readiness probes measure the time from container start until the first
+ * successful health-check response. If bind latency exceeds the probe's {@code initialDelaySeconds}
+ * minus the time for the JVM to start and load application classes, the probe fires before the
+ * service is ready to accept connections. This triggers a container restart loop. This injection
+ * reveals the margin between the actual startup time and the readiness probe timeout without
+ * requiring a production incident.
+ *
+ * <p>The delay fires before the kernel call, so the bind still succeeds after the delay and no
+ * socket resource is leaked. This distinguishes the latency injection from error injections, which
+ * leave the socket unbound and require the application to close it and create a new one.
+ *
+ * <p>When combined with {@link ChaosListenLatency}, the two injections simulate the full socket
+ * setup phase being slow: bind assigns the local address and listen creates the accept queue; both
+ * must complete before the service can accept connections. Injecting delay into both operations
+ * reveals whether the startup timeout covers the complete socket initialisation sequence.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.NET)
- * @ChaosBindLatency(delayMs = 200)
- * class LatencyTest {
+ * @ChaosBindLatency(delayMs = 200, toxicity = 0.5)
+ * class BindLatencyTest {
  *   @Test
- *   void appHandlesSlowOperation(ConnectionInfo info) { ... }
+ *   void readinessProbeToleratesSlowBindDuringStartup(ConnectionInfo info) {
+ *     // assert that readiness probe succeeds despite slow bind calls
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Delay guidance:</strong> {@code 10}–{@code 200} ms simulates realistic stall events;
- * values above application-level timeouts produce cascading failures rather than isolated latency
- * observations — intentional in some scenarios, noisy in others.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form ({@code @ChaosBindLatencys}) to set
- * different delays on different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosBindEaddrinuse
+ * @see ChaosListenLatency
+ * @see com.macstab.chaos.connection.annotation.l1.ConnectionLatencyBinding
  */
 @Repeatable(ChaosBindLatency.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

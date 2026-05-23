@@ -14,61 +14,95 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code execve} calls succeed,
- * then injects {@code E2BIG} on every subsequent call until the rule is removed.
+ * Allows the first {@link #successesBeforeFailure} {@code execve} calls to succeed, then injects
+ * {@code E2BIG} on every subsequent call, simulating argument-list exhaustion after a bounded
+ * number of successful process image replacements.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code EXECVE}, errno = {@code E2BIG}, effect = FAIL_AFTER) tuple. FAIL_AFTER is the process
- * module's counter-gated effect — distinct from ERRNO (probabilistic) and LATENCY (unconditional).
- * It models resource-exhaustion scenarios where the first N operations succeed and then the system
- * runs out of capacity.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code EXECVE}, errno = {@code E2BIG},
+ * effect = FAIL_AFTER) tuple. FAIL_AFTER is libchaos-process's counter-gated effect: the first
+ * {@link #successesBeforeFailure} matched calls succeed normally; every call after that returns
+ * {@code -1} with the encoded errno until the rule is removed. This models resource-exhaustion
+ * scenarios where capacity is finite and depletes deterministically rather than probabilistically.
  *
- * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
- * {@code execve} calls. After {@link #successesBeforeFailure} successes the counter trips and every
- * subsequent call returns {@code -1} with {@code errno = E2BIG}, regardless of real kernel
- * capacity. The counter resets every time the rule is re-applied (e.g. across test methods if the
- * annotation is at class scope).
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code execve} wrapper at the dynamic-linker level.</li>
+ *   <li>The interposer maintains a per-rule atomic counter of successful {@code execve} calls.</li>
+ *   <li>Once the counter reaches {@link #successesBeforeFailure}, it trips and every subsequent
+ *       intercepted call sets {@code errno = E2BIG} and returns {@code -1} without executing.</li>
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 7,
+ *       {@code strerror}: "Argument list too long"; the counter remains tripped until the rule is
+ *       removed or the container restarts.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family. This annotation installs
- * a FAIL_AFTER rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at {@code
- *       beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>The first {@link #successesBeforeFailure} {@code execve} calls succeed; subsequent calls
+ *       fail with {@code E2BIG} — the application must detect the transition and stop spawning
+ *       child processes until the underlying condition is resolved.</li>
+ *   <li>Process-pool managers and job schedulers that spawn worker processes via {@code execve}
+ *       must handle the fail-after threshold gracefully — assert that the manager stops accepting
+ *       new work items when child spawning fails rather than accumulating a backlog of unserviced
+ *       requests that eventually causes queue overflow.</li>
+ *   <li>Assert that the fail-after transition does not produce a visible discontinuity in
+ *       application behaviour from the perspective of upstream callers — requests submitted before
+ *       the threshold should complete normally; requests submitted after should be rejected with
+ *       a clear backpressure signal rather than timing out silently.</li>
  * </ul>
+ * Production failure mode: a container orchestrator's argument-accumulation bug gradually grows
+ * the environment size across successive re-deployments; after N successful starts the environment
+ * crosses {@code ARG_MAX} and every subsequent restart fails with {@code E2BIG} — the service
+ * enters a permanent crash-loop with no self-recovery path until the environment is manually
+ * trimmed.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>The FAIL_AFTER effect differs fundamentally from the probabilistic ERRNO effect: ERRNO fires
+ * on any call with probability {@code p}, so failures are scattered randomly throughout the
+ * call sequence; FAIL_AFTER fires deterministically after exactly {@code N} successes, so
+ * failures cluster at the end of the sequence. For {@code execve}, the deterministic model is
+ * more realistic than the probabilistic one for argument-limit scenarios: the environment size
+ * grows monotonically with each deployment and the limit is crossed at a predictable point.
+ *
+ * <p>The counter-trip semantic is permanent until rule removal — there is no auto-reset after
+ * the container makes additional calls. This means the failing state persists for the lifetime
+ * of the test unless the rule is explicitly removed via {@code AdvancedProcessChaos.remove}.
+ * Test methods that share a class-scoped annotation must account for this: if {@code test1}
+ * exhausts the counter, {@code test2} will also see failures from the first call. Use method-
+ * scoped annotations to isolate counter state between test methods.
+ *
+ * <p>Setting {@link #successesBeforeFailure} to zero makes the very first {@code execve} call
+ * fail, which is useful for testing startup-time argument validation — verifying that the
+ * application's own launch sequence handles exec failure gracefully before any worker process
+ * is started. Setting it to the expected number of worker spawns per test scenario exercises
+ * the exact saturation boundary that production environments cross during overload.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosExecveE2bigFailAfter(successesBeforeFailure = 128)
- * class ProcessExhaustionTest {
+ * @ChaosExecveE2bigFailAfter(successesBeforeFailure = 10)
+ * class ExecveExhaustionTest {
  *   @Test
- *   void handlesExhaustion(ConnectionInfo info) { ... }
+ *   void workerPoolStopsAcceptingWorkAfterExecveE2bigThreshold(ConnectionInfo info) {
+ *     // verify pool drains in-flight requests and rejects new ones when execve fails
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of {@code execve}
- * calls the application is expected to make before hitting the limit. Typically 5–200 for
- * container-scoped tests. Zero means the very first call fails.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form
- * ({@code @ChaosExecveE2bigFailAfter.Repeatable}) to apply different counters to different
- * containers.
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to the number of
+ * {@code execve} calls the application makes during normal test-scenario execution; zero triggers
+ * failure on the first exec (useful for startup-path testing); values above the expected spawn
+ * count make the annotation a no-op for that test.
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessFailAfterBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#failAfter(ProcessSelector, ProcessErrno, long)
  */
 @Repeatable(ChaosExecveE2bigFailAfter.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

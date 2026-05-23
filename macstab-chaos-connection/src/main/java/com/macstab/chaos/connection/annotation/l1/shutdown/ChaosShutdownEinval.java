@@ -14,61 +14,102 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code EINVAL} on every libchaos-intercepted {@code shutdown} call inside the target
- * container, making the call fail as if the kernel returned {@code EINVAL}.
+ * Injects {@code EINVAL} into {@code shutdown(2)}, causing the call to return {@code -1} with
+ * {@code errno = EINVAL} as if the {@code how} argument was not one of the valid shutdown
+ * directions ({@code SHUT_RD}, {@code SHUT_WR}, {@code SHUT_RDWR}) or the socket is not in a
+ * state that supports the requested shutdown direction.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EINVAL}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EINVAL} is a valid POSIX result of {@code shutdown}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code shutdown} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #toxicity} is run. When it fires the
- * interceptor returns {@code -1} and sets {@code errno = EINVAL} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: invalid argument — bad length, flags, or option; the universal canary errno.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code SHUTDOWN}, errno = {@code EINVAL})
+ * tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted
+ * {@code shutdown} call; when it fires the interposer returns {@code -1} with {@code errno = EINVAL}
+ * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.NET)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-net.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes socket-layer libc wrappers (connect, accept,
- * socket, bind, listen, shutdown, send, recv, poll). This annotation installs a rule via {@code
- * AdvancedConnectionChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
+ *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
+ *       {@code poll} at the dynamic-linker level.
+ *   <li>On each intercepted {@code shutdown} call a Bernoulli trial with probability {@link #toxicity}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = EINVAL}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.NET)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-connection} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code EINVAL} from {@code shutdown} is a non-retriable programming error in production:
+ *       it indicates an invalid shutdown direction argument. However, libraries that wrap
+ *       {@code shutdown} may receive it if a race condition causes the socket to be closed before
+ *       shutdown is called. Assert that the application does not propagate the error as a fatal
+ *       connection failure — the connection itself may still be valid.
+ *   <li>Cleanup code that calls {@code shutdown} before {@code close} must tolerate {@code EINVAL}
+ *       without aborting the close sequence; assert that {@code close} is still called on the
+ *       socket even when {@code shutdown} returns {@code EINVAL}.
+ *   <li>Connection pool teardown paths that call {@code shutdown(SHUT_RDWR)} to signal graceful
+ *       close should continue to call {@code close} on error; assert that pool shutdown completes
+ *       even when individual {@code shutdown} calls fail.
+ *   <li>Assert that the application logs the error at a diagnostic level rather than escalating
+ *       it as an unrecoverable failure, since {@code EINVAL} from {@code shutdown} during cleanup
+ *       is typically benign.
  * </ul>
+ *
+ * <p>In production, {@code EINVAL} from {@code shutdown} occurs when a shutdown direction value
+ * is corrupted by a bug, when a framework attempts to shut down a socket that is in the wrong
+ * state for the requested direction, or when a double-shutdown race condition occurs in a
+ * multi-threaded connection pool where two threads attempt to shut down the same socket
+ * concurrently.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The {@code shutdown(2)} syscall accepts three valid values for the {@code how} argument:
+ * {@code SHUT_RD} (0), {@code SHUT_WR} (1), and {@code SHUT_RDWR} (2). If any other value is
+ * passed, the kernel returns {@code EINVAL} immediately without modifying the socket state.
+ * On Linux, {@code EINVAL} from {@code shutdown} can also occur if the socket's protocol does not
+ * support the shutdown operation, though this is uncommon for TCP/IP sockets.
+ *
+ * <p>The relationship between {@code shutdown} and {@code close} is important: {@code shutdown}
+ * selectively disables communication directions on the socket (sending FIN for the write direction,
+ * discarding incoming data for the read direction), while {@code close} releases the file descriptor
+ * and decrements the socket's reference count. Many applications call {@code shutdown(SHUT_RDWR)}
+ * before {@code close} to ensure that the FIN is sent before the socket is freed; if
+ * {@code shutdown} returns {@code EINVAL}, the application must still call {@code close} to
+ * release the file descriptor.
+ *
+ * <p>Java's {@code Socket.close()} calls {@code shutdown(SHUT_RDWR)} internally before closing
+ * the file descriptor; if {@code shutdown} returns {@code EINVAL}, the JVM catches the error and
+ * proceeds to close the file descriptor without propagating the error to the caller. Application
+ * code that calls {@code Socket.shutdownInput()} or {@code Socket.shutdownOutput()} explicitly
+ * receives a {@code SocketException} with the message "Invalid argument" if the underlying
+ * {@code shutdown} syscall returns {@code EINVAL}.
+ *
+ * <p>Native code and C-based server processes (Redis, memcached, Nginx) call {@code shutdown}
+ * directly and must check the return value; robust implementations log the error and proceed with
+ * {@code close} rather than treating {@code EINVAL} from {@code shutdown} as fatal.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.NET)
- * @ChaosShutdownEinval(toxicity = 0.001)
- * class FaultTest {
+ * @ChaosShutdownEinval(toxicity = 0.1)
+ * class ShutdownEinvalTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void connectionPoolShutdownCompletesEvenWhenShutdownCallFails(ConnectionInfo info) {
+ *     // assert that pool teardown proceeds to close() even when shutdown() returns EINVAL
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosShutdownEinvals}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosShutdownEnotconn
+ * @see ChaosShutdownLatency
+ * @see com.macstab.chaos.connection.annotation.l1.ConnectionErrnoBinding
  */
 @Repeatable(ChaosShutdownEinval.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

@@ -14,67 +14,86 @@ import com.macstab.chaos.memory.model.MemorySelector;
 import com.macstab.chaos.memory.model.MmapErrno;
 
 /**
- * Injects {@code EFAULT} on every libchaos-memory-intercepted {@code mmap(MAP_ANONYMOUS)} call
- * inside the target container, making the call fail as if the kernel returned {@code EFAULT}.
+ * Injects {@code EFAULT} into {@code mmap(MAP_ANONYMOUS)} calls intercepted by libchaos-memory,
+ * causing the calling code to observe a bad-address failure from anonymous memory allocation.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector = {@code MMAP_ANON}, errno = {@code EFAULT}) pair.
- * The combination is safe by construction: this annotation class exists only because {@code EFAULT}
- * is a valid POSIX result of {@code mmap(MAP_ANONYMOUS)}; the invalid combinations simply have no
- * annotation class, so the selector × errno matrix cannot be violated at compile time.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-memory primitive — one (selector = {@code MMAP_ANON}, errno = {@code EFAULT}) tuple.
+ * Compile-time safety: this annotation exists only because {@code EFAULT} is a defined POSIX result
+ * for {@code mmap}; invalid combinations have no annotation class and cannot be expressed.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code mmap(MAP_ANONYMOUS)} call that the
- * libchaos-memory interceptor sees, a Bernoulli trial with probability {@link #probability} is run.
- * When it fires the interceptor returns {@code -1} and sets {@code errno = EFAULT} before the
- * kernel call completes — from the application perspective this is indistinguishable from a real
- * kernel-level failure. Specifically this simulates: bad address — typical of unhandled
- * SIGSEGV-adjacent edge cases in JIT or native code.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code mmap(MAP_ANONYMOUS)} call the interposer runs a Bernoulli trial with
+ *       probability {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = EFAULT} and returns
+ *       {@code MAP_FAILED} without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 14,
+ *       {@code strerror}: "Bad address".</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.MEMORY)} annotation on the container declaration causes
- * {@code ChaosTestingExtension} to upload {@code libchaos-memory.so} into the container and prepend
- * it to {@code LD_PRELOAD} before the container process starts. The shared library interposes the
- * libc wrappers for {@code mmap}, {@code munmap}, {@code mprotect}, and {@code madvise} at the
- * dynamic-linker level. This annotation then installs a rule via {@code
- * AdvancedMemoryChaos.apply(container, rule)} that configures the interposer with the selector and
- * probability you specify.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD} which does not apply on
- *       macOS or Windows containers; annotate the test class with {@code @DisabledOnOs(OS.WINDOWS)}
- *       and be aware of macOS Docker limitations.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.MEMORY)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — this installs the shared library before container start;
- *       omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) do not
- *       honour {@code LD_PRELOAD} for statically-linked binaries; use a glibc variant or the
- *       Debian-slim image instead.
- *   <li><strong>{@code macstab-chaos-memory} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and {@code ChaosTestingExtension} throws {@code
- *       ClassNotFoundException} wrapped in {@code ExtensionConfigurationException}.
+ *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = EFAULT} (14); callers that do not
+ *       check the return value will dereference {@code MAP_FAILED} and receive {@code SIGSEGV}.</li>
+ *   <li>glibc {@code malloc} and JVM allocators treat this identically to {@code ENOMEM} —
+ *       allocation fails, {@code NULL} or {@code OutOfMemoryError} is propagated.</li>
+ *   <li>Assert that the application does not segfault: verify a clean error log or error response
+ *       is produced rather than an unexpected process crash.</li>
  * </ul>
+ * Production failure mode: JIT-compiled code or native extensions passing a stale or
+ * garbage-collected pointer as the {@code addr} hint to {@code mmap} can trigger a real
+ * {@code EFAULT} from the kernel — a latent bug that is nearly impossible to reproduce without
+ * fault injection.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>POSIX specifies {@code EFAULT} for {@code mmap} when the {@code addr} argument references an
+ * address outside the process's accessible address space. For anonymous mappings with a {@code NULL}
+ * hint (the overwhelmingly common case), the kernel never raises {@code EFAULT} — the hint is
+ * simply ignored. Real {@code EFAULT} on anonymous mappings occurs only when caller-supplied hints
+ * point into kernel-space or into unmapped regions, which indicates a programmer error rather than
+ * a resource limit.
+ *
+ * <p>This annotation exercises the error-recovery path that would be triggered by such a bug in
+ * production. Because the path is unreachable under normal operation, it is rarely tested — dormant
+ * null-pointer dereferences or missing {@code EFAULT} handlers lurk in many native libraries.
+ * Injecting {@code EFAULT} stochastically at low probability reliably surfaces these latent bugs
+ * during integration testing without causing persistent test failures.
+ *
+ * <p>The JVM wraps its internal {@code mmap} calls inside native helper functions that translate
+ * all {@code MAP_FAILED} returns into a single {@code OutOfMemoryError} without distinguishing
+ * the specific errno. For JVM targets the observable difference from {@code ENOMEM} is therefore
+ * only in native/JVM-internal crash logs. For C/C++ targets the distinction is significant:
+ * POSIX-correct code should handle {@code EFAULT} as an unrecoverable programmer error, not as a
+ * transient resource shortage.
+ *
+ * <p>Compared with siblings: {@code EFAULT} signals an addressing error (process state is suspect);
+ * {@code ENOMEM} signals resource exhaustion (retry after freeing memory may help); {@code EINVAL}
+ * signals an argument error (a specific argument violates constraints). {@code EFAULT} is the
+ * most severe — if a real {@code EFAULT} occurs, the process may already be in a corrupt state.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.MEMORY)
- * @ChaosMmapAnonEfault(probability = 0.001)
- * class MemoryFaultTest {
+ * @ChaosMmapAnonEfault(probability = 0.0001)
+ * class NativeCodeResilienceTest {
  *   @Test
- *   void appHandlesEfaultOnAlloc(RedisConnectionInfo info) { ... }
+ *   void appHandlesEfaultOnAlloc(RedisConnectionInfo info) {
+ *     // verify no SIGSEGV and that the application produces a diagnostic error
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> very low rates (1e-5 to 1e-4); EFAULT at high rate
- * produces unmaskable crashes.
- *
+ * <p><strong>Probability guidance:</strong> very low rates (1e-5 to 1e-4); {@code EFAULT} at high
+ * probability will cause the container process to crash with {@code SIGSEGV} if any code path
+ * dereferences {@code MAP_FAILED}.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
- * the test class. Use the repeatable form ({@code @ChaosMmapAnonEfaults}) to bind different
- * probabilities to different containers simultaneously.
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see MemoryErrnoBinding

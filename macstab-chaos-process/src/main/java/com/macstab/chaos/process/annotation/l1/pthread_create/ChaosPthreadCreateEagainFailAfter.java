@@ -14,61 +14,90 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code pthread_create} calls
- * succeed, then injects {@code EAGAIN} on every subsequent call until the rule is removed.
+ * After {@link #successesBeforeFailure} successful {@code pthread_create} calls, injects
+ * {@code EAGAIN} on every subsequent call, causing the calling code to observe a persistent
+ * insufficient-resources failure that models the system thread-count ceiling being reached.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code PTHREAD_CREATE}, errno = {@code EAGAIN}, effect = FAIL_AFTER) tuple. FAIL_AFTER is the
- * process module's counter-gated effect — distinct from ERRNO (probabilistic) and LATENCY
- * (unconditional). It models resource-exhaustion scenarios where the first N operations succeed and
- * then the system runs out of capacity.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code PTHREAD_CREATE}, errno = {@code EAGAIN},
+ * effect = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N calls succeed,
+ * then the counter trips permanently and every subsequent call returns the error code until the
+ * rule is removed. Compile-time safety: invalid selector/errno/effect combinations have no
+ * annotation class.
  *
- * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
- * {@code pthread_create} calls. After {@link #successesBeforeFailure} successes the counter trips
- * and every subsequent call returns {@code -1} with {@code errno = EAGAIN}, regardless of real
- * kernel capacity. The counter resets every time the rule is re-applied (e.g. across test methods
- * if the annotation is at class scope).
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code pthread_create} wrapper at the dynamic-linker level.</li>
+ *   <li>The interposer maintains a per-rule success counter; the counter does not reset
+ *       automatically between test methods when the annotation is at class scope.</li>
+ *   <li>Once the counter reaches zero it trips permanently: every subsequent {@code pthread_create}
+ *       call returns {@code EAGAIN} directly (pthread_create returns the error code, not -1).</li>
+ *   <li>The calling code receives: return value {@code EAGAIN} (11); no thread is created.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family. This annotation installs
- * a FAIL_AFTER rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at {@code
- *       beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>The first {@link #successesBeforeFailure} calls proceed normally; all subsequent calls
+ *       return {@code EAGAIN}; assert that the application checks the return value (pthread_create
+ *       returns the error code directly, not -1; it does not set {@code errno}) and reduces the
+ *       thread pool size or applies load-shedding rather than treating EAGAIN as permanent.</li>
+ *   <li>FAIL_AFTER models the thread-count ceiling: the pool starts N threads successfully; the
+ *       (N+1)th create attempt exhausts the system thread limit (RLIMIT_NPROC or threads-max);
+ *       all subsequent creates fail — assert that the pool degrades gracefully to N-thread
+ *       capacity and queues work rather than dropping tasks.</li>
+ *   <li>Assert that the application does not retry pthread_create-EAGAIN in a tight loop without
+ *       waiting for an existing thread to exit; EAGAIN self-heals when threads terminate and the
+ *       kernel reclaims their task_struct entries.</li>
  * </ul>
+ * Production failure mode: a thread pool grows dynamically under load; after N successful creates
+ * the RLIMIT_NPROC ceiling is reached; the pool retries pthread_create-EAGAIN without waiting
+ * for threads to exit, consuming CPU in a tight retry loop; the pool appears stuck at the ceiling
+ * and logs EAGAIN thousands of times per second while not queuing any work.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>FAIL_AFTER models the thread-count ceiling: the system allows N concurrent threads before
+ * RLIMIT_NPROC or {@code /proc/sys/kernel/threads-max} is reached; subsequent creates fail with
+ * EAGAIN until existing threads exit and the task count drops below the limit. pthread_create
+ * returns the error code directly — checking {@code if (ret == -1)} silently misses EAGAIN (11).
+ *
+ * <p>The counter does not reset between test methods when the annotation is at class scope. This
+ * enables sequential testing: the first test method exercises the success path (thread pool
+ * growth up to N threads); subsequent test methods exercise the EAGAIN-with-degraded-capacity
+ * path. Set {@link #successesBeforeFailure} to the pool's maximum configured thread count to
+ * model the exact moment the system ceiling is hit.
+ *
+ * <p>pthread_create-EAGAIN shares RLIMIT_NPROC with fork; a burst of forked subprocesses in
+ * another part of the application can cause pthread_create to fail with EAGAIN even if the
+ * thread pool is well below its configured maximum. Applications that mix fork and pthread_create
+ * must account for this shared limit.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosPthreadCreateEagainFailAfter(successesBeforeFailure = 128)
- * class ProcessExhaustionTest {
+ * @ChaosPthreadCreateEagainFailAfter(successesBeforeFailure = 16)
+ * class PthreadCreateThreadCeilingTest {
  *   @Test
- *   void handlesExhaustion(ConnectionInfo info) { ... }
+ *   void threadPoolDegradesGracefullyAtCeilingAndQueuesWork(ConnectionInfo info) {
+ *     // first 16 creates succeed; subsequent creates return EAGAIN;
+ *     // verify pool degrades to 16 threads; work queued not dropped; no tight retry loop;
+ *     // EAGAIN return value checked (not errno)
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of {@code
- * pthread_create} calls the application is expected to make before hitting the limit. Typically
- * 5–200 for container-scoped tests. Zero means the very first call fails.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form
- * ({@code @ChaosPthreadCreateEagainFailAfter.Repeatable}) to apply different counters to different
- * containers.
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to the pool's
+ * configured maximum thread count; values 4–200 cover most thread pool configurations;
+ * 0 means no threads can be created (system already at ceiling at startup).
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessFailAfterBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#failAfter(ProcessSelector, ProcessErrno, long)
  */
 @Repeatable(ChaosPthreadCreateEagainFailAfter.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

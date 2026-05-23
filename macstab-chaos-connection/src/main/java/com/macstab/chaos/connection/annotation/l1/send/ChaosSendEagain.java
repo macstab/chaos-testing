@@ -14,62 +14,90 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code EAGAIN} on every libchaos-intercepted {@code send} call inside the target
- * container, making the call fail as if the kernel returned {@code EAGAIN}.
+ * Injects {@code EAGAIN} into {@code send(2)}, causing the call to return {@code -1} with
+ * {@code errno = EAGAIN} as if the socket's send buffer is full and the kernel cannot accept any
+ * more data for transmission without blocking.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EAGAIN}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EAGAIN} is a valid POSIX result of {@code send}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code send} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #toxicity} is run. When it fires the
- * interceptor returns {@code -1} and sets {@code errno = EAGAIN} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: temporary failure / resource temporarily unavailable — typical of RLIMIT exhaustion or
- * kernel pressure.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code SEND}, errno = {@code EAGAIN})
+ * tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted
+ * {@code send} call; when it fires the interposer returns {@code -1} with {@code errno = EAGAIN}
+ * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.NET)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-net.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes socket-layer libc wrappers (connect, accept,
- * socket, bind, listen, shutdown, send, recv, poll). This annotation installs a rule via {@code
- * AdvancedConnectionChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
+ *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
+ *       {@code poll} at the dynamic-linker level.
+ *   <li>On each intercepted {@code send} call a Bernoulli trial with probability {@link #toxicity}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = EAGAIN}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.NET)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-connection} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>Non-blocking senders must re-register for write readiness and retry when they receive
+ *       {@code EAGAIN} from {@code send}; assert that the event loop re-arms the writable
+ *       notification and continues sending once the buffer drains.
+ *   <li>Blocking senders on non-blocking sockets use {@code poll}/{@code select} before sending;
+ *       the injection tests that the poll-then-send loop handles the case where poll indicates
+ *       writable but send returns {@code EAGAIN} (a race condition that is valid per POSIX).
+ *   <li>Flow-control implementations that back off the sending rate on {@code EAGAIN} are correct;
+ *       assert that the back-off reduces the send rate and does not cause the sender to drop messages.
+ *   <li>Assert that {@code EAGAIN} from {@code send} does not cause the connection to be closed;
+ *       the connection is still valid and data can be sent once the buffer drains.
  * </ul>
+ *
+ * <p>In production, {@code EAGAIN} from {@code send} occurs when a slow receiver does not drain
+ * its receive buffer fast enough, causing TCP's flow control to reduce the sender's window until
+ * the send buffer fills. This is the normal TCP back-pressure mechanism and is a correct and
+ * expected operating condition for high-throughput data transfer.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The kernel's TCP stack maintains a per-socket send buffer (controlled by {@code SO_SNDBUF})
+ * that stores data waiting to be acknowledged by the remote peer. When the buffer is full (either
+ * because the peer's receive window is zero or because the buffer size limit is reached), a
+ * non-blocking {@code send} returns {@code EAGAIN}. A blocking {@code send} would block until
+ * space becomes available; the injection simulates the non-blocking case regardless of the actual
+ * socket mode.
+ *
+ * <p>Event-driven frameworks (Netty, Vert.x) use edge-triggered {@code epoll} (EPOLLET) for high
+ * performance; on edge-triggered sockets, {@code EAGAIN} is the signal to stop sending and wait
+ * for the next EPOLLOUT event. Frameworks that use level-triggered epoll receive EPOLLOUT
+ * continuously while the buffer has space, which requires a different handling strategy. This
+ * injection tests that the framework's write path correctly handles the non-blocking constraint
+ * regardless of the epoll mode.
+ *
+ * <p>Java's NIO {@code SocketChannel.write()} returns 0 when the kernel would return {@code EAGAIN},
+ * rather than throwing an exception. Application code that calls {@code write()} in a loop until
+ * the buffer is consumed must handle the 0-return case by registering for {@code OP_WRITE}
+ * readiness and waiting for the selector to indicate writeability again.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.NET)
- * @ChaosSendEagain(toxicity = 0.001)
- * class FaultTest {
+ * @ChaosSendEagain(toxicity = 0.05)
+ * class SendEagainTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void eventLoopReRegistersForWritabilityOnSendEagain(ConnectionInfo info) {
+ *     // assert that the event loop re-arms OP_WRITE and data is eventually delivered
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3 to simulate transient pressure; high rates
- * saturate retry budgets.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosSendEagains}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosSendEconnreset
+ * @see ChaosSendEpipe
+ * @see com.macstab.chaos.connection.annotation.l1.ConnectionErrnoBinding
  */
 @Repeatable(ChaosSendEagain.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

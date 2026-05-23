@@ -14,59 +14,110 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Throw the configured exception at the file_io_read call site.
+ * Intercepts {@code FileInputStream.read()} and {@code RandomAccessFile.read()} and throws the
+ * configured exception before any bytes are read from the file, simulating storage hardware
+ * errors, corrupt NFS mounts, or missing files that cause configuration loaders, keystore readers,
+ * and log appenders to fail at read time.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> throw the configured exception at the FILE_IO_READ
- * call site inside the JVM of the target container. The effect fires on every matching call,
- * subject to the probability configured via {@link #probability()} if applicable. The rule is
- * active from {@code beforeAll} until {@code afterAll} (class-scope) or from {@code beforeEach}
- * until {@code afterEach} (method-scope).
+ * A JVM agent L1 chaos primitive — one typed annotation per (selector family, operation type,
+ * effect) tuple. It is declared on a test class or method alongside a container annotation and
+ * activates for the lifetime of the test class ({@code beforeAll} / {@code afterAll}) or a single
+ * test method ({@code beforeEach} / {@code afterEach}).
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>Before every call to {@code java.io.FileInputStream#read(byte[], int, int)} and
+ *       {@code java.io.RandomAccessFile#read(byte[], int, int)} inside the target container's JVM,
+ *       the chaos agent intercepts the calling thread.
+ *   <li>The agent reflectively instantiates the class named by {@link #exceptionClassName()} with
+ *       the message from {@link #message()} and throws it; no bytes are read from the file.
+ *   <li>The exception propagates to the caller — configuration loader, properties reader, keystore
+ *       parser — which must handle the read failure gracefully or fail with a fatal startup error.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>Spring Boot's configuration loading path reads YAML/properties files via
+ *       {@code FileInputStream}; an exception here causes {@code ConfigDataException} to propagate
+ *       from {@code SpringApplication.run()} and the application fails to start; assert that the
+ *       application's health probe returns a failure state and that the container is restarted by
+ *       Kubernetes (rather than staying alive with no config).
+ *   <li>Java keystores ({@code KeyStore.load(InputStream, char[])}) read via {@code FileInputStream};
+ *       an exception here causes {@code KeyStoreException: failed to load keystore data}; TLS
+ *       handshake initialisation fails; assert that the application reports the keystore load
+ *       failure clearly and does not silently use an empty trust store.
+ *   <li>Inject {@code java.io.EOFException} to simulate a truncated file (e.g. the file was
+ *       partially written); assert that the application does not accept partial configuration
+ *       and fails fast with a clear error message rather than starting with inconsistent state.
+ *   <li><strong>Production failure mode:</strong> a cloud storage provider (AWS EFS, GCP
+ *       Filestore) returns I/O errors during a maintenance window; application pods that read
+ *       secrets or certificates from the mounted volume during startup or hot-reload fail with
+ *       {@code IOException: Input/output error}; pods cannot start; Kubernetes marks them as
+ *       CrashLoopBackOff; the root cause (storage maintenance) is not visible in the pod logs
+ *       without correlating with storage provider events.
  * </ul>
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The interception targets {@code java.io.FileInputStream#read(byte[], int, int)} and
+ * {@code java.io.RandomAccessFile#read(byte[], int, int)} via Byte Buddy. Both methods ultimately
+ * call JNI native methods ({@code FileInputStream.readBytes} and {@code RandomAccessFile.readBytes}
+ * respectively); the chaos intercept fires before the JNI call, so no syscall is issued and no
+ * page cache I/O occurs.
+ *
+ * <p>Spring's {@code PropertiesLoaderUtils.loadProperties(Resource)} reads properties files via
+ * {@code resource.getInputStream()}, which for file-backed resources returns a
+ * {@code FileInputStream}. An {@code IOException} thrown during the read propagates as
+ * {@code IOException} from {@code loadProperties()}, which Spring wraps in a
+ * {@code BeanDefinitionStoreException} during context refresh. The application context
+ * initialisation aborts and the JVM exits (for Spring Boot with an embedded server) or the WAR
+ * deployment fails (for standalone app servers).
+ *
+ * <p>Java's {@code KeyStore.load(InputStream, char[])} reads the keystore format (JKS, PKCS12)
+ * from the stream; an {@code IOException} during the read causes {@code KeyStoreException}.
+ * If the keystore is loaded at TLS context initialisation (inside {@code SSLContext.init()})
+ * via {@code KeyManagerFactory.init()}, the exception propagates as {@code KeyManagementException}
+ * and the entire TLS context fails to initialise.
+ *
+ * <p>The file read exception fires on every {@code read()} call, not just the first; if the
+ * caller handles partial reads and retries (e.g. by calling {@code read()} in a loop), every
+ * iteration throws. The caller's retry loop should be bounded; an unbounded loop retrying on
+ * every {@code IOException} will spin indefinitely, exhausting CPU.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosFileIoReadInjectException
- * class JvmChaosTest {
+ * @ChaosFileIoReadInjectException(
+ *     exceptionClassName = "java.io.IOException",
+ *     message = "Input/output error")
+ * class ConfigReadFailureTest {
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void applicationFailsFastWithClearErrorOnConfigReadFailure(ConnectionInfo info) {
+ *     // assert startup fails with ConfigDataException and pod enters CrashLoopBackOff
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosFileIoReadInjectExceptions}) to apply different configurations to different
- * containers.
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation is required; omitting
+ *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
+ *       {@code @JvmAgentChaos}; it is attached before the container starts.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
+ *       translator class can be resolved.
+ *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
+ *       intercept native executables.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosFileIoReadDelay
+ * @see ChaosFileIoWriteInjectException
  */
 @Repeatable(ChaosFileIoReadInjectException.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

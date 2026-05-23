@@ -14,61 +14,86 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code execve} calls succeed,
- * then injects {@code EPERM} on every subsequent call until the rule is removed.
+ * Allows the first {@link #successesBeforeFailure} {@code execve} calls to succeed, then injects
+ * {@code EPERM} on every subsequent call, simulating a capability or seccomp policy change that
+ * denies exec operations after a bounded number of successful process image replacements.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code EXECVE}, errno = {@code EPERM}, effect = FAIL_AFTER) tuple. FAIL_AFTER is the process
- * module's counter-gated effect — distinct from ERRNO (probabilistic) and LATENCY (unconditional).
- * It models resource-exhaustion scenarios where the first N operations succeed and then the system
- * runs out of capacity.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code EXECVE}, errno = {@code EPERM},
+ * effect = FAIL_AFTER) tuple. FAIL_AFTER is libchaos-process's counter-gated effect: the first
+ * {@link #successesBeforeFailure} matched calls succeed normally; every call after that returns
+ * {@code -1} with {@code errno = EPERM} until the rule is removed. This models scenarios where
+ * a security policy tightening (seccomp profile update, capability drop via {@code prctl},
+ * no-new-privs enforcement) takes effect after the container has already successfully executed
+ * some privileged binaries.
  *
- * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
- * {@code execve} calls. After {@link #successesBeforeFailure} successes the counter trips and every
- * subsequent call returns {@code -1} with {@code errno = EPERM}, regardless of real kernel
- * capacity. The counter resets every time the rule is re-applied (e.g. across test methods if the
- * annotation is at class scope).
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code execve} wrapper at the dynamic-linker level.</li>
+ *   <li>The interposer maintains a per-rule atomic counter of successful {@code execve} calls.</li>
+ *   <li>Once the counter reaches {@link #successesBeforeFailure}, it trips and every subsequent
+ *       intercepted call sets {@code errno = EPERM} and returns {@code -1} without executing.</li>
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 1,
+ *       {@code strerror}: "Operation not permitted"; the counter remains tripped until removal.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family. This annotation installs
- * a FAIL_AFTER rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at {@code
- *       beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>The first {@link #successesBeforeFailure} {@code execve} calls succeed; subsequent calls
+ *       fail with {@code EPERM} — the application must detect the privilege-revocation transition
+ *       and disable all features that require privileged exec rather than retrying indefinitely.</li>
+ *   <li>Process managers that invoke setuid helpers or setcap binaries must handle mid-run
+ *       privilege revocation: assert that the manager correctly transitions to a degraded state
+ *       when the helper binary starts returning {@code EPERM}, ceases to queue new spawn
+ *       requests that will fail, and surfaces a clear capability-denied alert.</li>
+ *   <li>Assert that the application does not cache a "privileged exec is permitted" assumption
+ *       from the early successful calls — each exec attempt must check the return value and
+ *       respond to {@code EPERM} even if previous exec calls to the same binary succeeded.</li>
  * </ul>
+ * Production failure mode: a Kubernetes operator applies a stricter security context mid-run
+ * (e.g. patching the pod's security policy to set {@code allowPrivilegeEscalation: false} via
+ * a MutatingWebhook); the running container receives the new {@code prctl(PR_SET_NO_NEW_PRIVS)}
+ * setting on its next exec call; any attempt to execute a setuid binary after this point returns
+ * {@code EPERM}; the application continues accepting requests that require the privileged helper
+ * but silently drops the helper invocation step.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>The FAIL_AFTER effect for exec-EPERM captures the policy-hardening mid-run scenario where
+ * a security constraint is applied to a running container after it has already successfully
+ * completed some privileged exec calls. This is distinct from the probabilistic ERRNO variant
+ * (which fires randomly, simulating intermittent policy enforcement) and from a startup-time
+ * configuration error (which the zero-threshold variant captures).
+ *
+ * <p>The POSIX {@code PR_SET_NO_NEW_PRIVS} prctl bit, once set, is inherited across fork and
+ * exec and cannot be cleared. This makes the FAIL_AFTER model accurate: once the no-new-privs
+ * bit is set, all subsequent exec calls that would escalate privileges fail with {@code EPERM} —
+ * exactly the permanent-failure-after-N-successes pattern that FAIL_AFTER encodes.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosExecveEpermFailAfter(successesBeforeFailure = 128)
- * class ProcessExhaustionTest {
+ * @ChaosExecveEpermFailAfter(successesBeforeFailure = 2)
+ * class PrivilegeRevocationTest {
  *   @Test
- *   void handlesExhaustion(ConnectionInfo info) { ... }
+ *   void applicationDisablesPrivilegedFeatureWhenExecEpermTriggers(ConnectionInfo info) {
+ *     // verify privileged feature disabled cleanly; no retry storm; capability alert raised
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of {@code execve}
- * calls the application is expected to make before hitting the limit. Typically 5–200 for
- * container-scoped tests. Zero means the very first call fails.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form
- * ({@code @ChaosExecveEpermFailAfter.Repeatable}) to apply different counters to different
- * containers.
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to the number of
+ * privileged exec calls that occur during the initial setup phase before the policy change takes
+ * effect; zero is useful for testing startup-time privilege validation.
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessFailAfterBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#failAfter(ProcessSelector, ProcessErrno, long)
  */
 @Repeatable(ChaosExecveEpermFailAfter.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

@@ -14,47 +14,60 @@ import com.macstab.chaos.memory.model.MemorySelector;
 import com.macstab.chaos.memory.model.MmapErrno;
 
 /**
- * Injects {@code EAGAIN} on every libchaos-memory-intercepted {@code mmap (file-backed)} call
- * inside the target container, making the call fail as if the kernel returned {@code EAGAIN}.
+ * Injects {@code EAGAIN} into file-backed {@code mmap} calls intercepted by libchaos-memory,
+ * causing the calling code to observe a transient resource-unavailable failure when attempting
+ * to establish a file-backed memory mapping.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector = {@code MMAP_FILE}, errno = {@code EAGAIN}) pair.
- * The combination is safe by construction: this annotation class exists only because {@code EAGAIN}
- * is a valid POSIX result of {@code mmap (file-backed)}; the invalid combinations simply have no
- * annotation class, so the selector × errno matrix cannot be violated at compile time.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-memory primitive — one (selector = {@code MMAP_FILE}, errno = {@code EAGAIN})
+ * tuple. The {@code MMAP_FILE} selector intercepts only file-backed {@code mmap} calls, leaving
+ * anonymous allocations unaffected. Compile-time safety: invalid combinations have no annotation
+ * class.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code mmap (file-backed)} call that the
- * libchaos-memory interceptor sees, a Bernoulli trial with probability {@link #probability} is run.
- * When it fires the interceptor returns {@code -1} and sets {@code errno = EAGAIN} before the
- * kernel call completes — from the application perspective this is indistinguishable from a real
- * kernel-level failure. Specifically this simulates: temporary failure (would block) — surfaces in
- * kernels under memory pressure or rlimit exhaustion.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
+ *   <li>On each file-backed {@code mmap} call the interposer runs a Bernoulli trial with
+ *       probability {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = EAGAIN} and returns
+ *       {@code MAP_FAILED} without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 11,
+ *       {@code strerror}: "Resource temporarily unavailable".</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.MEMORY)} annotation on the container declaration causes
- * {@code ChaosTestingExtension} to upload {@code libchaos-memory.so} into the container and prepend
- * it to {@code LD_PRELOAD} before the container process starts. The shared library interposes the
- * libc wrappers for {@code mmap}, {@code munmap}, {@code mprotect}, and {@code madvise} at the
- * dynamic-linker level. This annotation then installs a rule via {@code
- * AdvancedMemoryChaos.apply(container, rule)} that configures the interposer with the selector and
- * probability you specify.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD} which does not apply on
- *       macOS or Windows containers; annotate the test class with {@code @DisabledOnOs(OS.WINDOWS)}
- *       and be aware of macOS Docker limitations.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.MEMORY)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — this installs the shared library before container start;
- *       omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) do not
- *       honour {@code LD_PRELOAD} for statically-linked binaries; use a glibc variant or the
- *       Debian-slim image instead.
- *   <li><strong>{@code macstab-chaos-memory} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and {@code ChaosTestingExtension} throws {@code
- *       ClassNotFoundException} wrapped in {@code ExtensionConfigurationException}.
+ *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = EAGAIN} (11); file-mapping code
+ *       should retry with back-off or fall back to conventional read/write I/O.</li>
+ *   <li>Applications that use memory-mapped I/O without a fallback path will surface a
+ *       transient error — assert that a structured error is returned, not a silent crash.</li>
+ *   <li>Assert that retry logic (where present) is bounded and includes a back-off strategy.</li>
  * </ul>
+ * Production failure mode: network filesystems under pressure or distributed storage backends
+ * that implement {@code mmap} via a kernel module can transiently return {@code EAGAIN} when
+ * the backing cluster is temporarily unavailable — causing file-backed mapping operations to
+ * fail without an errno that indicates permanent failure.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>POSIX allows {@code mmap} to return {@code EAGAIN} for file-backed mappings when the
+ * mapping cannot be established at this moment but may succeed on retry. On Linux, this is
+ * unusual for local filesystems but can occur with network filesystems (NFS, CIFS) when the
+ * server is temporarily unreachable and the filesystem is mounted with {@code soft} or
+ * {@code intr} options.
+ *
+ * <p>For local filesystems (ext4, xfs, btrfs), real {@code EAGAIN} from file-backed {@code mmap}
+ * is extremely rare. This annotation exercises error-recovery code that is essentially untested
+ * in normal integration testing but that will fire in production when network storage degrades.
+ *
+ * <p>Applications that use memory-mapped files for database storage (RocksDB, LMDB, HaloDB)
+ * or for log-structured I/O (Kafka, Chronicle Queue) must handle this case gracefully. The
+ * typical fallback is to re-open the file and retry the mapping, or to fall back to
+ * {@code pread}/{@code pwrite} for the affected regions.
+ *
+ * <p>Compared with {@code ENOMEM}: {@code EAGAIN} is transient (retry may succeed);
+ * {@code ENOMEM} is structural (retry requires releasing resources). Both prevent the mapping
+ * from being established but require different recovery strategies.
  *
  * <h2>Example</h2>
  *
@@ -62,19 +75,19 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.MEMORY)
  * @ChaosMmapFileEagain(probability = 0.001)
- * class MemoryFaultTest {
+ * class TransientFileMappingTest {
  *   @Test
- *   void appHandlesEagainOnAlloc(RedisConnectionInfo info) { ... }
+ *   void appHandlesEagainOnFileMappings(RedisConnectionInfo info) {
+ *     // verify retry logic is bounded and the fallback I/O path works correctly
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3 to simulate transient pressure; high rates
- * quickly saturate retry budgets.
- *
+ * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3 simulates transient pressure; rates
+ * above 0.01 exhaust retry budgets and cause cascading failures in database engines.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
- * the test class. Use the repeatable form ({@code @ChaosMmapFileEagains}) to bind different
- * probabilities to different containers simultaneously.
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see MemoryErrnoBinding

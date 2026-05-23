@@ -14,62 +14,99 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code every interposed
- * process syscall} calls succeed, then injects {@code EPERM} on every subsequent call until the
- * rule is removed.
+ * After {@link #successesBeforeFailure} successful process-management syscall invocations across
+ * all intercepted families, injects {@code EPERM} on every subsequent call, modelling a Kubernetes
+ * security context tightening scenario where a pod security policy drops capabilities mid-runtime,
+ * causing all subsequent process-management operations to report "Operation not permitted".
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code WILDCARD}, errno = {@code EPERM}, effect = FAIL_AFTER) tuple. FAIL_AFTER is the process
- * module's counter-gated effect — distinct from ERRNO (probabilistic) and LATENCY (unconditional).
- * It models resource-exhaustion scenarios where the first N operations succeed and then the system
- * runs out of capacity.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code WILDCARD}, errno = {@code EPERM},
+ * effect = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N intercepted
+ * process-management calls (across all families — fork, execve, posix_spawn, pthread_create,
+ * waitpid) succeed, then the counter trips permanently and every subsequent call returns the error
+ * code until the rule is removed. Compile-time safety: invalid selector/errno/effect combinations
+ * have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
- * {@code every interposed process syscall} calls. After {@link #successesBeforeFailure} successes
- * the counter trips and every subsequent call returns {@code -1} with {@code errno = EPERM},
- * regardless of real kernel capacity. The counter resets every time the rule is re-applied (e.g.
- * across test methods if the annotation is at class scope).
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing every process-management libc wrapper at the dynamic-linker level.</li>
+ *   <li>The interposer maintains a per-rule success counter shared across all intercepted syscall
+ *       families; the counter does not reset automatically between test methods when the annotation
+ *       is at class scope.</li>
+ *   <li>Once the counter reaches zero it trips permanently: every subsequent process-management
+ *       call returns {@code -1} (or the errno value directly for pthread_create and posix_spawn)
+ *       with {@code errno = EPERM}.</li>
+ *   <li>The calling code receives: {@code fork()}/{@code execve()} return {@code -1} with
+ *       {@code errno = EPERM} (1); {@code pthread_create} returns {@code EPERM} directly;
+ *       {@code strerror(EPERM)}: "Operation not permitted".</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family. This annotation installs
- * a FAIL_AFTER rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at {@code
- *       beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>The first {@link #successesBeforeFailure} process-management calls proceed normally; all
+ *       subsequent calls return EPERM permanently; assert that the application detects the EPERM
+ *       onset as a security policy change event and escalates to operators — EPERM from process
+ *       management is non-retryable; no amount of capability management by the application will
+ *       restore the removed capability.</li>
+ *   <li>FAIL_AFTER models the capability revocation scenario: N process-management calls succeed
+ *       while CAP_SYS_NICE and related capabilities are held; a Kubernetes operator applies a
+ *       new pod security policy that drops these capabilities; all subsequent thread and process
+ *       creation calls return EPERM — assert that the application detects the capability change
+ *       and alerts operators rather than spinning in a retry loop.</li>
+ *   <li>Assert that EPERM from pthread_create triggers the SCHED_OTHER fallback (if the attribute
+ *       requested real-time scheduling) rather than treating it as a fatal error — the thread can
+ *       still be created without the elevated scheduling policy; only if the fallback also returns
+ *       EPERM should the application escalate.</li>
  * </ul>
+ * Production failure mode: a Kubernetes operator deploys a new pod security policy that drops
+ * CAP_SYS_NICE from containers already running; all thread creation attempts using real-time
+ * scheduling start returning EPERM; the application treats EPERM from pthread_create as a fatal
+ * error instead of falling back to SCHED_OTHER; the thread pool exhausts; the container stops
+ * serving requests while the operator is unaware that the security context changed.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>EPERM from process-management syscalls indicates a DAC capability check failure: the process
+ * attempted an operation that requires a Linux capability (CAP_SYS_NICE for real-time scheduling,
+ * CAP_SYS_ADMIN for some clone flags) that has been revoked. Unlike EACCES (MAC policy from
+ * SELinux/AppArmor), EPERM arises from the kernel's capability table check — more fundamental
+ * and faster to check, but equally permanent for the lifetime of the process.
+ *
+ * <p>The WILDCARD counter charges across all process-management families. The EPERM phase begins
+ * when the combined traffic exhausts the counter. Set {@link #successesBeforeFailure} to the
+ * expected total process-management call count during the pre-revocation phase.
+ *
+ * <p>The counter does not reset between test methods at class scope. First test method: N
+ * successful calls (capabilities held). Subsequent test methods: EPERM phase (capabilities
+ * dropped). The fallback path for EPERM from pthread_create (retry with SCHED_OTHER) must be
+ * tested in the subsequent test method to verify the degraded-mode behavior is correct.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosWildcardEpermFailAfter(successesBeforeFailure = 128)
- * class ProcessExhaustionTest {
+ * @ChaosWildcardEpermFailAfter(successesBeforeFailure = 45)
+ * class CapabilityRevocationTest {
  *   @Test
- *   void handlesExhaustion(ConnectionInfo info) { ... }
+ *   void threadPoolFallsBackToSchedOtherAndAlertsOperatorsOnEpermOnset(ConnectionInfo info) {
+ *     // first 45 process calls succeed; subsequent calls return EPERM;
+ *     // verify SCHED_OTHER fallback attempted before escalation; verify operator alert sent;
+ *     // verify EPERM vs EACCES classified correctly; verify no infinite retry loop
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of {@code every
- * interposed process syscall} calls the application is expected to make before hitting the limit.
- * Typically 5–200 for container-scoped tests. Zero means the very first call fails.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form
- * ({@code @ChaosWildcardEpermFailAfter.Repeatable}) to apply different counters to different
- * containers.
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to the total
+ * process-management call count during normal operation before the capability revocation event;
+ * values 10–200 cover typical workload phases; 0 means capabilities are absent from startup.
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessFailAfterBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#failAfter(ProcessSelector, ProcessErrno, long)
  */
 @Repeatable(ChaosWildcardEpermFailAfter.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

@@ -14,39 +14,69 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Injects {@code ENOENT} on every libchaos-intercepted {@code execve} call inside the target
- * container, making the call fail as if the kernel returned {@code ENOENT}.
+ * Injects {@code ENOENT} into {@code execve} calls intercepted by libchaos-process, causing the
+ * calling code to observe a no-such-file failure when attempting to replace the process image.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ENOENT}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code ENOENT} is a valid POSIX result of {@code execve}.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code EXECVE}, errno = {@code ENOENT}) tuple.
+ * The {@code EXECVE} selector intercepts {@code execve} calls only, leaving {@code fork},
+ * {@code pthread_create}, {@code posix_spawn}, {@code posix_spawnp}, {@code execveat}, and
+ * {@code waitpid} unaffected. Compile-time safety: invalid selector/errno combinations have no
+ * annotation class.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code execve} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = ENOENT} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: no such file or directory — binary path not found or file deleted.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code execve} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code execve} call the interposer runs a Bernoulli trial with probability
+ *       {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = ENOENT} and returns {@code -1}
+ *       without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 2,
+ *       {@code strerror}: "No such file or directory"; no new process image is loaded.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family at the dynamic-linker
- * level. This annotation installs a rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code execve} returns {@code -1}; {@code errno = ENOENT} (2); the binary path does not
+ *       exist or a component of the path prefix is missing — the application must handle the
+ *       failure with a clear diagnostic that includes the attempted path.</li>
+ *   <li>Applications that resolve binary paths via {@code $PATH} at runtime must handle
+ *       {@code ENOENT} from {@code execve} by trying the next entry in {@code $PATH} or reporting
+ *       that the binary is not installed, rather than propagating the kernel error code directly
+ *       to the user.</li>
+ *   <li>Assert that the application's error message for {@code ENOENT} from {@code execve} is
+ *       actionable for operators: it should name the binary that was not found, the full path
+ *       attempted, and whether a {@code $PATH} search was performed — this distinguishes a missing
+ *       installation from a misconfigured path.</li>
  * </ul>
+ * Production failure mode: a container image layer that provides a helper binary (e.g. a
+ * compression tool, a database client) is updated and the binary is renamed or relocated; the
+ * application's hardcoded path to the binary fails with {@code ENOENT} at runtime — a deployment
+ * that passes image scanning and health checks fails silently when the code path that invokes the
+ * binary is first exercised.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>POSIX specifies {@code ENOENT} for {@code execve} when the {@code pathname} argument does not
+ * name an existing file, or when a component of the path prefix is not a directory or does not
+ * exist. On Linux, the kernel returns {@code ENOENT} from {@code do_open_execat} when the VFS
+ * lookup fails. A second, less obvious case is script execution: when {@code execve} is invoked on
+ * a script with a {@code #!} interpreter line, the kernel parses the line and calls {@code execve}
+ * recursively on the interpreter path; if the interpreter path in the shebang line does not exist,
+ * the outer {@code execve} returns {@code ENOENT} even though the script file itself exists.
+ *
+ * <p>The shebang-interpreter case is particularly treacherous: a script that uses
+ * {@code #!/usr/bin/env python3} will return {@code ENOENT} from {@code execve} if {@code env}
+ * is not installed at {@code /usr/bin/env} (non-standard for some minimal base images) or if
+ * {@code python3} is not in {@code $PATH}. The application sees {@code ENOENT} but the script
+ * file is present and readable — the error message "No such file or directory" is misleading
+ * unless the diagnostic includes the attempted interpreter path.
+ *
+ * <p>Container image layer interoperability is a frequent production source of {@code ENOENT}:
+ * when a base image and an application layer are combined in a multi-stage build, the final image
+ * may be missing binaries that were present in an intermediate layer but were excluded from the
+ * final copy. The binary exists in development (where the full build environment is used) but not
+ * in production (where only the runtime layer is deployed).
  *
  * <h2>Example</h2>
  *
@@ -54,21 +84,24 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
  * @ChaosExecveEnoent(probability = 0.001)
- * class FaultTest {
+ * class ExecveMissingBinaryTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void applicationReportsMissingBinaryWithActionableDiagnostic(ConnectionInfo info) {
+ *     // verify error message names the missing binary and path; fallback or safe degradation
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
+ * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; binary-not-found is a deployment
+ * error rather than a runtime condition, so even very low rates will exercise the error path
+ * without masking normal execve operations.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosExecveEnoents}) to bind different probabilities to
- * different containers simultaneously.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessErrnoBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#errno(ProcessSelector, ProcessErrno, double)
  */
 @Repeatable(ChaosExecveEnoent.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

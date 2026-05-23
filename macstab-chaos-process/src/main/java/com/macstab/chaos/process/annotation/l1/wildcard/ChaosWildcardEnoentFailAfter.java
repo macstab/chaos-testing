@@ -14,62 +14,102 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code every interposed
- * process syscall} calls succeed, then injects {@code ENOENT} on every subsequent call until the
- * rule is removed.
+ * After {@link #successesBeforeFailure} successful process-management syscall invocations across
+ * all intercepted families, injects {@code ENOENT} on every subsequent call, modelling a binary
+ * disappearance scenario where a rolling deployment removes an executable after N successful
+ * process launches, causing all subsequent process-management operations to report "No such file
+ * or directory".
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code WILDCARD}, errno = {@code ENOENT}, effect = FAIL_AFTER) tuple. FAIL_AFTER is the process
- * module's counter-gated effect — distinct from ERRNO (probabilistic) and LATENCY (unconditional).
- * It models resource-exhaustion scenarios where the first N operations succeed and then the system
- * runs out of capacity.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code WILDCARD}, errno = {@code ENOENT},
+ * effect = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N intercepted
+ * process-management calls (across all families — fork, execve, posix_spawn, pthread_create,
+ * waitpid) succeed, then the counter trips permanently and every subsequent call returns the error
+ * code until the rule is removed. Compile-time safety: invalid selector/errno/effect combinations
+ * have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
- * {@code every interposed process syscall} calls. After {@link #successesBeforeFailure} successes
- * the counter trips and every subsequent call returns {@code -1} with {@code errno = ENOENT},
- * regardless of real kernel capacity. The counter resets every time the rule is re-applied (e.g.
- * across test methods if the annotation is at class scope).
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing every process-management libc wrapper at the dynamic-linker level.</li>
+ *   <li>The interposer maintains a per-rule success counter shared across all intercepted syscall
+ *       families; the counter does not reset automatically between test methods when the annotation
+ *       is at class scope.</li>
+ *   <li>Once the counter reaches zero it trips permanently: every subsequent process-management
+ *       call returns {@code -1} (or the errno value directly for pthread_create and posix_spawn)
+ *       with {@code errno = ENOENT}.</li>
+ *   <li>The calling code receives: {@code execve()}/{@code fork()} return {@code -1} with
+ *       {@code errno = ENOENT} (2); {@code posix_spawn}/{@code pthread_create} return
+ *       {@code ENOENT} directly; {@code strerror(ENOENT)}: "No such file or directory".</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family. This annotation installs
- * a FAIL_AFTER rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at {@code
- *       beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>The first {@link #successesBeforeFailure} process-management calls proceed normally; all
+ *       subsequent calls return ENOENT permanently; assert that the application does not retry
+ *       without verifying the binary path exists — ENOENT is non-retryable with the same path;
+ *       the application must alert the deployment system that the binary is missing.</li>
+ *   <li>FAIL_AFTER models the rolling deployment scenario: N spawn calls succeed while the old
+ *       binary is present; a deployment removes the old binary; all subsequent spawn calls return
+ *       ENOENT — assert that the application logs the binary path and PATH value at the time of
+ *       first ENOENT and sends a deployment alert to the CI/CD system.</li>
+ *   <li>Assert that the application does not call {@code waitpid} on an uninitialised pid after
+ *       ENOENT from a spawn call — the child was never created; assert that the child-tracking
+ *       registry is not updated when the spawn fails with ENOENT.</li>
  * </ul>
+ * Production failure mode: a supervisor runs N workers using posix_spawnp; a deployment removes
+ * the old binary and installs a new one; during the removal window all spawn calls return ENOENT;
+ * the supervisor retries immediately without checking if the binary exists, producing a tight
+ * loop; the deployment window extends due to spawner load; the supervisor fills the log with
+ * ENOENT errors without sending a deployment alert.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>ENOENT from process-management syscalls arises exclusively from the exec family and POSIX
+ * spawn: the executable binary was not found at the specified path ({@code execve}/{@code execveat})
+ * or in any PATH directory ({@code posix_spawnp}). The FAIL_AFTER variant models the deterministic
+ * transition: N launches succeed, then the binary disappears and all subsequent launches fail.
+ *
+ * <p>The WILDCARD counter charges across all process-management families. The ENOENT phase begins
+ * when the combined traffic exhausts the counter. Set {@link #successesBeforeFailure} to the total
+ * number of process-management calls during the pre-removal phase — this is the total across all
+ * families (fork + exec + spawn + pthread_create + waitpid), not just spawn calls.
+ *
+ * <p>The counter does not reset between test methods at class scope. First test method: N
+ * successful calls (normal operation with binary present). Subsequent test methods: ENOENT phase
+ * (binary removed, all spawn attempts fail). This enables sequential testing of the normal
+ * operating phase and the deployment-window failure phase.
+ *
+ * <p>Non-retryable constraint: applications must not retry ENOENT from spawn with the same
+ * binary path without first confirming the binary exists. A log-and-verify pattern is correct:
+ * log ENOENT with the binary path and PATH, send a deployment alert, poll for binary existence
+ * with a configurable interval, and resume spawning only after the binary reappears.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosWildcardEnoentFailAfter(successesBeforeFailure = 128)
- * class ProcessExhaustionTest {
+ * @ChaosWildcardEnoentFailAfter(successesBeforeFailure = 30)
+ * class BinaryDisappearanceTest {
  *   @Test
- *   void handlesExhaustion(ConnectionInfo info) { ... }
+ *   void supervisorLogsPathAndSendsDeploymentAlertOnEnoentAndPollsForBinaryReturn(ConnectionInfo info) {
+ *     // first 30 process calls succeed; subsequent calls return ENOENT;
+ *     // verify binary path logged; verify deployment alert sent; verify no immediate retry;
+ *     // verify poll-and-wait pattern implemented; verify no waitpid on uninit pid
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of {@code every
- * interposed process syscall} calls the application is expected to make before hitting the limit.
- * Typically 5–200 for container-scoped tests. Zero means the very first call fails.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form
- * ({@code @ChaosWildcardEnoentFailAfter.Repeatable}) to apply different counters to different
- * containers.
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to the total number
+ * of process-management calls during normal operation before the binary disappears; values 10–200
+ * cover typical workload phases; 0 means the binary is absent from the first call.
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessFailAfterBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#failAfter(ProcessSelector, ProcessErrno, long)
  */
 @Repeatable(ChaosWildcardEnoentFailAfter.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

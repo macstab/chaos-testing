@@ -14,39 +14,61 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Injects {@code ENOMEM} on every libchaos-intercepted {@code execveat} call inside the target
- * container, making the call fail as if the kernel returned {@code ENOMEM}.
+ * Injects {@code ENOMEM} into {@code execveat} calls intercepted by libchaos-process, causing the
+ * calling code to observe an out-of-memory failure when attempting to replace the process image
+ * relative to a directory file descriptor.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ENOMEM}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code ENOMEM} is a valid POSIX result of {@code execveat}.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code EXECVEAT}, errno = {@code ENOMEM}) tuple.
+ * The {@code EXECVEAT} selector intercepts {@code execveat} calls only (the Linux-specific
+ * directory-relative exec syscall), leaving {@code execve} and all other process syscalls
+ * unaffected. Compile-time safety: invalid selector/errno combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code execveat} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = ENOMEM} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: out of memory — kernel cannot allocate the requested structure or buffer.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code execveat} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code execveat} call the interposer runs a Bernoulli trial with probability
+ *       {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = ENOMEM} and returns {@code -1}
+ *       without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 12,
+ *       {@code strerror}: "Out of memory"; no new process image is loaded and the calling process
+ *       remains unchanged.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family at the dynamic-linker
- * level. This annotation installs a rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code execveat} returns {@code -1}; {@code errno = ENOMEM} (12); the kernel cannot
+ *       allocate the memory structures needed to set up the new process image — the calling process
+ *       remains in its current state and the {@code dirfd} must be closed to avoid an fd leak.</li>
+ *   <li>Container runtimes using {@code execveat} to launch the entrypoint binary must handle
+ *       {@code ENOMEM} as a transient memory-pressure condition — assert that the runtime closes
+ *       the {@code dirfd}, reports a memory-pressure diagnostic, and retries after backoff rather
+ *       than treating the failure as a permanent binary-unavailability error.</li>
+ *   <li>In fork+exec patterns using {@code execveat}, the child that receives {@code ENOMEM}
+ *       must exit cleanly ({@code _exit} with a specific error code) so the parent can detect
+ *       the exec failure via {@code waitpid} — assert that the runtime's fork+exec child exits
+ *       without leaving a zombie process when execveat fails with ENOMEM.</li>
  * </ul>
+ * Production failure mode: a container runtime opens the entrypoint binary fd ({@code dirfd}),
+ * then forks and calls {@code execveat(dirfd, "", argv, envp, AT_EMPTY_PATH)} in the child; the
+ * node is under memory pressure and the exec fails with {@code ENOMEM}; the child process
+ * continues in the parent's image if it does not check the exec return value, producing a
+ * zombie with the parent's code but no parent's state — a difficult-to-diagnose runtime defect.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>{@code execveat}'s {@code ENOMEM} failure semantics are identical to {@code execve}: the
+ * kernel fails before committing to the new image, so the calling process (or child in fork+exec)
+ * remains in its current state. The additional consideration for {@code execveat} is the open
+ * {@code dirfd}: since the exec did not proceed to the image-replacement phase, the fd is not
+ * transferred to the new image and remains in the caller's fd table. Applications must close
+ * it explicitly after an exec failure to avoid accumulating leaked fds over repeated exec
+ * attempts under memory pressure.
+ *
+ * <p>The {@code AT_EMPTY_PATH} pattern avoids TOCTOU races by opening the binary before exec;
+ * under memory pressure, the open succeeds but the exec fails — the application must handle
+ * this "open but not exec'd" state correctly by closing the fd after the failure.
  *
  * <h2>Example</h2>
  *
@@ -54,21 +76,23 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
  * @ChaosExecveatEnomem(probability = 0.001)
- * class FaultTest {
+ * class ExecveatMemoryPressureTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void runtimeClosesDirfdAndRetriesAfterExecveatEnomem(ConnectionInfo info) {
+ *     // verify dirfd closed on ENOMEM; child exits cleanly; no zombie process; backoff retry
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3 mirrors realistic OOM rates; 1.0 prevents
- * the container from starting.
- *
+ * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; exec-ENOMEM is rare in well-provisioned
+ * environments but the fork+exec zombie risk and dirfd leak make coverage valuable.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosExecveatEnomems}) to bind different probabilities to
- * different containers simultaneously.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessErrnoBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#errno(ProcessSelector, ProcessErrno, double)
  */
 @Repeatable(ChaosExecveatEnomem.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

@@ -14,61 +14,94 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code pthread_create} calls
- * succeed, then injects {@code EINVAL} on every subsequent call until the rule is removed.
+ * After {@link #successesBeforeFailure} successful {@code pthread_create} calls, injects
+ * {@code EINVAL} on every subsequent call, modelling a thread attribute configuration regression
+ * that makes all subsequent thread creation attempts invalid.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code PTHREAD_CREATE}, errno = {@code EINVAL}, effect = FAIL_AFTER) tuple. FAIL_AFTER is the
- * process module's counter-gated effect — distinct from ERRNO (probabilistic) and LATENCY
- * (unconditional). It models resource-exhaustion scenarios where the first N operations succeed and
- * then the system runs out of capacity.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code PTHREAD_CREATE}, errno = {@code EINVAL},
+ * effect = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N calls succeed,
+ * then the counter trips permanently and every subsequent call returns the error code until the
+ * rule is removed. Compile-time safety: invalid selector/errno/effect combinations have no
+ * annotation class.
  *
- * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
- * {@code pthread_create} calls. After {@link #successesBeforeFailure} successes the counter trips
- * and every subsequent call returns {@code -1} with {@code errno = EINVAL}, regardless of real
- * kernel capacity. The counter resets every time the rule is re-applied (e.g. across test methods
- * if the annotation is at class scope).
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code pthread_create} wrapper at the dynamic-linker level.</li>
+ *   <li>The interposer maintains a per-rule success counter; the counter does not reset
+ *       automatically between test methods when the annotation is at class scope.</li>
+ *   <li>Once the counter reaches zero it trips permanently: every subsequent {@code pthread_create}
+ *       call returns {@code EINVAL} directly (pthread_create returns the error code, not -1).</li>
+ *   <li>The calling code receives: return value {@code EINVAL} (22); no thread is created; the
+ *       {@code pthread_attr_t} attribute contains an invalid value.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family. This annotation installs
- * a FAIL_AFTER rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at {@code
- *       beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>The first {@link #successesBeforeFailure} calls proceed normally; all subsequent calls
+ *       return {@code EINVAL}; assert that the application treats EINVAL as a non-retryable
+ *       programming error — the attribute structure must be fixed in code, not retried — and logs
+ *       the attribute values (stack size, scheduling policy, guard size) for operator debugging.</li>
+ *   <li>FAIL_AFTER models the attribute configuration regression: N threads are created with a
+ *       valid attribute; a hot-reload or dynamic reconfiguration produces an invalid
+ *       {@code pthread_attr_t}; all subsequent creates fail with EINVAL — assert that the
+ *       application detects this transition and escalates with the invalid attribute values.</li>
+ *   <li>Assert that the application does not apply retry backoff to EINVAL; retry loops on
+ *       EINVAL are semantically wrong and will repeat indefinitely with the same invalid attribute.</li>
  * </ul>
+ * Production failure mode: a thread pool uses a configuration management system to update its
+ * thread attribute at runtime; a hot-reload applies a stack-size setting that is below
+ * PTHREAD_STACK_MIN; after N threads are created with the old (valid) attribute, all subsequent
+ * creates return EINVAL; the pool does not detect the configuration regression and surfaces
+ * a generic "thread creation failed" without logging the invalid stack size.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>FAIL_AFTER models the attribute configuration regression: N creates succeed with a valid
+ * attribute; after a configuration change the attribute becomes invalid; all subsequent creates
+ * fail with EINVAL. Real EINVAL from pthread_create is not probabilistic — it fires deterministically
+ * whenever an invalid attribute is used and persists until the attribute is corrected. pthread_create
+ * returns the error code directly — checking {@code if (ret == -1)} silently misses EINVAL (22).
+ *
+ * <p>The counter does not reset between test methods when the annotation is at class scope. This
+ * enables sequential testing: the first test method exercises the success path (N creates with
+ * the valid attribute, simulating normal operation before the hot-reload); subsequent test methods
+ * exercise the EINVAL path without requiring a container restart. Set
+ * {@link #successesBeforeFailure} to the number of thread creations expected to occur between
+ * configuration hot-reloads.
+ *
+ * <p>EINVAL from pthread_create after a hot-reload is a common source of thread pool silent
+ * failures in production: the configuration framework validates the stack size as a positive
+ * integer but does not enforce the PTHREAD_STACK_MIN constraint; a configuration change to a
+ * "small stack for efficiency" produces EINVAL on every subsequent create. The FAIL_AFTER effect
+ * forces this exact sequence in a repeatable test.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosPthreadCreateEinvalFailAfter(successesBeforeFailure = 128)
- * class ProcessExhaustionTest {
+ * @ChaosPthreadCreateEinvalFailAfter(successesBeforeFailure = 10)
+ * class PthreadCreateAttributeRegressionTest {
  *   @Test
- *   void handlesExhaustion(ConnectionInfo info) { ... }
+ *   void threadPoolLogsStackSizeOnEinvalAfterHotReloadAndDoesNotRetry(ConnectionInfo info) {
+ *     // first 10 creates succeed; subsequent creates return EINVAL;
+ *     // verify stack size logged; scheduling policy logged; no retry; alert escalated;
+ *     // return value checked (not errno)
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of {@code
- * pthread_create} calls the application is expected to make before hitting the limit. Typically
- * 5–200 for container-scoped tests. Zero means the very first call fails.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form
- * ({@code @ChaosPthreadCreateEinvalFailAfter.Repeatable}) to apply different counters to different
- * containers.
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to the number of
+ * thread creates expected before the hot-reload applies the invalid attribute; values 5–50 cover
+ * most pool configuration scenarios; 0 means every create is invalid from startup.
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessFailAfterBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#failAfter(ProcessSelector, ProcessErrno, long)
  */
 @Repeatable(ChaosPthreadCreateEinvalFailAfter.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

@@ -14,61 +14,102 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code posix_spawnp} calls
- * succeed, then injects {@code EMFILE} on every subsequent call until the rule is removed.
+ * After {@link #successesBeforeFailure} successful {@code posix_spawnp} calls, injects
+ * {@code EMFILE} on every subsequent call, causing the calling code to observe a persistent
+ * per-process fd-table exhaustion failure that models a fd leak accumulation threshold.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code POSIX_SPAWNP}, errno = {@code EMFILE}, effect = FAIL_AFTER) tuple. FAIL_AFTER is the
- * process module's counter-gated effect — distinct from ERRNO (probabilistic) and LATENCY
- * (unconditional). It models resource-exhaustion scenarios where the first N operations succeed and
- * then the system runs out of capacity.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code POSIX_SPAWNP}, errno = {@code EMFILE},
+ * effect = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N calls succeed,
+ * then the counter trips permanently and every subsequent call returns the error code until the
+ * rule is removed. Compile-time safety: invalid selector/errno/effect combinations have no
+ * annotation class.
  *
- * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
- * {@code posix_spawnp} calls. After {@link #successesBeforeFailure} successes the counter trips and
- * every subsequent call returns {@code -1} with {@code errno = EMFILE}, regardless of real kernel
- * capacity. The counter resets every time the rule is re-applied (e.g. across test methods if the
- * annotation is at class scope).
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code posix_spawnp} wrapper at the dynamic-linker level.</li>
+ *   <li>The interposer maintains a per-rule success counter; the counter does not reset
+ *       automatically between test methods when the annotation is at class scope.</li>
+ *   <li>Once the counter reaches zero it trips permanently: every subsequent {@code posix_spawnp}
+ *       call returns {@code EMFILE} directly (POSIX spawn returns the error code, not -1).</li>
+ *   <li>The calling code receives: return value {@code EMFILE} (24); no child process is created;
+ *       the process's fd table has reached {@code RLIMIT_NOFILE}.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family. This annotation installs
- * a FAIL_AFTER rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at {@code
- *       beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>The first {@link #successesBeforeFailure} calls proceed normally; all subsequent calls
+ *       return {@code EMFILE}; assert that the application includes the current fd count in the
+ *       error diagnostic and does not call {@code waitpid} on an uninitialised pid.</li>
+ *   <li>FAIL_AFTER models the fd-leak accumulation threshold: each successful spawnp opens and
+ *       should close pipe fds for subprocess communication; leaked pipe read-ends accumulate across
+ *       spawns; after N spawns the fd table is full; assert that the application's diagnostic
+ *       reports the open fd count and identifies the source of the leak.</li>
+ *   <li>Assert that the application distinguishes post-threshold EMFILE (24, per-process fd table
+ *       full, fixable by closing leaked fds) from ENFILE (23, system-wide, requires platform team
+ *       escalation) — in-process fd cleanup resolves EMFILE but not ENFILE.</li>
  * </ul>
+ * Production failure mode: a shell command executor uses {@code posix_spawnp} to run utilities;
+ * each command capture leaks a pipe read-end fd; after N spawns the fd table is full; spawnp
+ * returns EMFILE; the executor does not report the fd count, leaving operators unable to determine
+ * whether the failure is per-process (EMFILE, fixable in-process) or system-wide (ENFILE,
+ * requiring platform escalation) without inspecting {@code /proc/pid/fd}.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>FAIL_AFTER models the fd-leak accumulation threshold: glibc's posix_spawnp uses an internal
+ * parent-child error-reporting pipe, which requires two fd slots from the parent's fd table. Each
+ * successful spawn that captures output also allocates a capture pipe. If pipe read-ends are not
+ * closed after each child exits, the fd count rises by approximately two per spawn cycle. After N
+ * cycles the fd table (capped at RLIMIT_NOFILE) is full and the next spawn's internal pipe
+ * allocation fails with EMFILE. POSIX spawn returns the error code directly — checking
+ * {@code if (ret < 0)} silently misses EMFILE (24).
+ *
+ * <p>The {@code $PATH} search in posix_spawnp adds additional fd pressure: each PATH directory is
+ * opened with {@code opendir} during the search. Under a nearly-full fd table, the PATH search
+ * itself may consume the last remaining slots and cause EMFILE before the spawn's pipe allocation.
+ * This means the effective EMFILE threshold for posix_spawnp may be slightly lower than for
+ * posix_spawn under identical fd counts — an application that calibrates its fd headroom based on
+ * posix_spawn behaviour may hit EMFILE sooner with posix_spawnp.
+ *
+ * <p>The counter does not reset between test methods when the annotation is at class scope. This
+ * enables sequential testing: the first test method exercises the success path (calls 1 through N,
+ * simulating the leak accumulation phase); subsequent test methods exercise the EMFILE path
+ * automatically. Set {@link #successesBeforeFailure} based on the estimated RLIMIT_NOFILE divided
+ * by the per-spawn fd leak rate to model the exact threshold.
+ *
+ * <p>Post-threshold recovery: once EMFILE is hit, the application must close leaked fds before
+ * retrying spawns. In-process fd auditing (enumerate {@code /proc/self/fd}) can identify leaked
+ * pipe ends; the application should close fds that are no longer associated with live children and
+ * retry. Unlike ENFILE (system-wide) or EAGAIN (self-heals), EMFILE requires explicit in-process
+ * cleanup before spawns can succeed again.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosPosixSpawnpEmfileFailAfter(successesBeforeFailure = 128)
- * class ProcessExhaustionTest {
+ * @ChaosPosixSpawnpEmfileFailAfter(successesBeforeFailure = 40)
+ * class PosixSpawnpFdLeakThresholdTest {
  *   @Test
- *   void handlesExhaustion(ConnectionInfo info) { ... }
+ *   void executorReportsFdCountOnEmfileAndDoesNotWaitOnUninitPid(ConnectionInfo info) {
+ *     // first 40 spawns succeed (leak accumulation phase);
+ *     // subsequent spawns return EMFILE; verify fd count in diagnostic; EMFILE vs ENFILE
+ *     // distinguished; in-process fd audit triggered; no waitpid on uninit pid
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of {@code
- * posix_spawnp} calls the application is expected to make before hitting the limit. Typically 5–200
- * for container-scoped tests. Zero means the very first call fails.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form
- * ({@code @ChaosPosixSpawnpEmfileFailAfter.Repeatable}) to apply different counters to different
- * containers.
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to
+ * {@code RLIMIT_NOFILE / leakRatePerSpawn}; values 20–100 cover typical fd-leak scenarios;
+ * 0 means every spawn fails immediately (fd table pre-exhausted).
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessFailAfterBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#failAfter(ProcessSelector, ProcessErrno, long)
  */
 @Repeatable(ChaosPosixSpawnpEmfileFailAfter.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

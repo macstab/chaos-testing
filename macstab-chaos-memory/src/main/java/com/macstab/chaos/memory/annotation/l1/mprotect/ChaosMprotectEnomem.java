@@ -14,47 +14,73 @@ import com.macstab.chaos.memory.model.MemorySelector;
 import com.macstab.chaos.memory.model.MmapErrno;
 
 /**
- * Injects {@code ENOMEM} on every libchaos-memory-intercepted {@code mprotect} call inside the
- * target container, making the call fail as if the kernel returned {@code ENOMEM}.
+ * Injects {@code ENOMEM} into {@code mprotect} calls intercepted by libchaos-memory, causing
+ * the calling code to observe a virtual-memory exhaustion failure when attempting to change the
+ * protection attributes of a memory region.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector = {@code MPROTECT}, errno = {@code ENOMEM}) pair.
- * The combination is safe by construction: this annotation class exists only because {@code ENOMEM}
- * is a valid POSIX result of {@code mprotect}; the invalid combinations simply have no annotation
- * class, so the selector × errno matrix cannot be violated at compile time.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-memory primitive — one (selector = {@code MPROTECT}, errno = {@code ENOMEM})
+ * tuple. The {@code MPROTECT} selector intercepts {@code mprotect} calls only, leaving
+ * {@code mmap}, {@code munmap}, and {@code madvise} unaffected. Compile-time safety: invalid
+ * selector/errno combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code mprotect} call that the
- * libchaos-memory interceptor sees, a Bernoulli trial with probability {@link #probability} is run.
- * When it fires the interceptor returns {@code -1} and sets {@code errno = ENOMEM} before the
- * kernel call completes — from the application perspective this is indistinguishable from a real
- * kernel-level failure. Specifically this simulates: out of memory — the canonical libc
- * malloc()-allocation-failure code for sizes >= MMAP_THRESHOLD.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
+ *       interposing the libc {@code mprotect} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code mprotect} call the interposer runs a Bernoulli trial with probability
+ *       {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = ENOMEM} and returns {@code -1}
+ *       without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 12,
+ *       {@code strerror}: "Out of memory (cannot allocate memory)".</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.MEMORY)} annotation on the container declaration causes
- * {@code ChaosTestingExtension} to upload {@code libchaos-memory.so} into the container and prepend
- * it to {@code LD_PRELOAD} before the container process starts. The shared library interposes the
- * libc wrappers for {@code mmap}, {@code munmap}, {@code mprotect}, and {@code madvise} at the
- * dynamic-linker level. This annotation then installs a rule via {@code
- * AdvancedMemoryChaos.apply(container, rule)} that configures the interposer with the selector and
- * probability you specify.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD} which does not apply on
- *       macOS or Windows containers; annotate the test class with {@code @DisabledOnOs(OS.WINDOWS)}
- *       and be aware of macOS Docker limitations.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.MEMORY)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — this installs the shared library before container start;
- *       omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) do not
- *       honour {@code LD_PRELOAD} for statically-linked binaries; use a glibc variant or the
- *       Debian-slim image instead.
- *   <li><strong>{@code macstab-chaos-memory} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and {@code ChaosTestingExtension} throws {@code
- *       ClassNotFoundException} wrapped in {@code ExtensionConfigurationException}.
+ *   <li>{@code mprotect} returns {@code -1}; {@code errno = ENOMEM} (12); the protection change
+ *       did not take effect — the application must not assume the new protection is active and
+ *       must not access the region with the assumed permissions.</li>
+ *   <li>JIT compilers that split a code arena VMA to apply per-method protection granularity
+ *       will cause a VMA count increase; assert that the JIT handles {@code ENOMEM} from the
+ *       split operation and falls back to coarser-grained protection without crashing.</li>
+ *   <li>Assert that the application surfaces the error with enough context (address range,
+ *       protection bits, current VMA count if available) for an operator to determine whether
+ *       the {@code vm.max_map_count} limit needs to be raised.</li>
  * </ul>
+ * Production failure mode: a JIT or native memory manager applies fine-grained protection
+ * changes across many small memory regions, causing the VMA count to approach
+ * {@code vm.max_map_count}; subsequent {@code mprotect} calls that would split an existing
+ * VMA into two smaller VMAs fail with {@code ENOMEM} because the split creates a new VMA
+ * and exceeds the limit.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>POSIX specifies {@code ENOMEM} for {@code mprotect} when the kernel cannot allocate
+ * the internal kernel data structures needed to split or merge VMAs. On Linux, changing the
+ * protection of a sub-range of an existing VMA requires splitting the VMA into two or three
+ * pieces, each of which is a new {@code struct vm_area_struct}. The kernel allocates the new
+ * VMA from a slab cache; if the slab allocation fails (due to memory pressure or kernel memory
+ * accounting limits) the call returns {@code -ENOMEM}.
+ *
+ * <p>A second path to {@code ENOMEM} from {@code mprotect} involves the {@code vm.max_map_count}
+ * limit: when changing the protection of a range that spans the middle of an existing VMA,
+ * the kernel must create a new VMA for the changed range (increasing the VMA count by at least
+ * one). If the current VMA count is at {@code vm.max_map_count}, the split is rejected with
+ * {@code ENOMEM}. This failure is distinct from {@code mmap} {@code ENOMEM} (which occurs
+ * because no free address range exists) and is often confused with it in diagnostics.
+ *
+ * <p>JIT compilers that apply protection changes at the method granularity (one
+ * {@code mprotect} call per compiled method) can create hundreds of VMAs per second during
+ * warmup. The G1 garbage collector, Azul Zing, and GraalVM native images all use
+ * {@code mprotect} for read/write barriers and protection isolation. Each call that splits
+ * a VMA increases the VMA count; without periodic VMA consolidation (via adjacent same-protection
+ * VMA merging), the count grows without bound and eventually causes {@code ENOMEM}.
+ *
+ * <p>Compared with {@code mmap} {@code ENOMEM}: both indicate kernel data structure exhaustion,
+ * but they require different remediation. For {@code mmap} {@code ENOMEM}, releasing existing
+ * mappings reduces the VMA count. For {@code mprotect} {@code ENOMEM}, releasing mappings also
+ * helps, but the root cause is often a JIT or memory manager that applies protection changes
+ * at too fine a granularity — requiring an application-level policy change.
  *
  * <h2>Example</h2>
  *
@@ -62,19 +88,19 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.MEMORY)
  * @ChaosMprotectEnomem(probability = 0.001)
- * class MemoryFaultTest {
+ * class VmaLimitTest {
  *   @Test
- *   void appHandlesEnomemOnAlloc(RedisConnectionInfo info) { ... }
+ *   void appHandlesEnomemOnMprotect(RedisConnectionInfo info) {
+ *     // verify JIT or native manager handles VMA-split failure and logs vm.max_map_count context
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3 mirrors realistic OOM rates; 1.0 prevents
- * the container from starting.
- *
+ * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; rates above 0.01 will prevent JVM
+ * JIT code cache protection transitions, causing JVM startup failure.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
- * the test class. Use the repeatable form ({@code @ChaosMprotectEnomems}) to bind different
- * probabilities to different containers simultaneously.
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see MemoryErrnoBinding

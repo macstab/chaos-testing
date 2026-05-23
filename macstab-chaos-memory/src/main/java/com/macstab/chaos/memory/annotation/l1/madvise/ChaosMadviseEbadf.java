@@ -14,47 +14,68 @@ import com.macstab.chaos.memory.model.MemorySelector;
 import com.macstab.chaos.memory.model.MmapErrno;
 
 /**
- * Injects {@code EBADF} on every libchaos-memory-intercepted {@code madvise} call inside the target
- * container, making the call fail as if the kernel returned {@code EBADF}.
+ * Injects {@code EBADF} into {@code madvise} calls intercepted by libchaos-memory, causing the
+ * calling code to observe a bad-file-descriptor failure when providing a memory usage hint to
+ * the kernel.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector = {@code MADVISE}, errno = {@code EBADF}) pair. The
- * combination is safe by construction: this annotation class exists only because {@code EBADF} is a
- * valid POSIX result of {@code madvise}; the invalid combinations simply have no annotation class,
- * so the selector × errno matrix cannot be violated at compile time.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-memory primitive — one (selector = {@code MADVISE}, errno = {@code EBADF})
+ * tuple. The {@code MADVISE} selector intercepts {@code madvise} calls only, leaving
+ * {@code mmap}, {@code munmap}, and {@code mprotect} unaffected. Compile-time safety: invalid
+ * selector/errno combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code madvise} call that the
- * libchaos-memory interceptor sees, a Bernoulli trial with probability {@link #probability} is run.
- * When it fires the interceptor returns {@code -1} and sets {@code errno = EBADF} before the kernel
- * call completes — from the application perspective this is indistinguishable from a real
- * kernel-level failure. Specifically this simulates: bad file descriptor — typical of fd lifecycle
- * bugs and shared-fd races.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
+ *       interposing the libc {@code madvise} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code madvise} call the interposer runs a Bernoulli trial with probability
+ *       {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = EBADF} and returns {@code -1}
+ *       without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 9,
+ *       {@code strerror}: "Bad file descriptor"; the hint is not applied.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.MEMORY)} annotation on the container declaration causes
- * {@code ChaosTestingExtension} to upload {@code libchaos-memory.so} into the container and prepend
- * it to {@code LD_PRELOAD} before the container process starts. The shared library interposes the
- * libc wrappers for {@code mmap}, {@code munmap}, {@code mprotect}, and {@code madvise} at the
- * dynamic-linker level. This annotation then installs a rule via {@code
- * AdvancedMemoryChaos.apply(container, rule)} that configures the interposer with the selector and
- * probability you specify.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD} which does not apply on
- *       macOS or Windows containers; annotate the test class with {@code @DisabledOnOs(OS.WINDOWS)}
- *       and be aware of macOS Docker limitations.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.MEMORY)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — this installs the shared library before container start;
- *       omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) do not
- *       honour {@code LD_PRELOAD} for statically-linked binaries; use a glibc variant or the
- *       Debian-slim image instead.
- *   <li><strong>{@code macstab-chaos-memory} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and {@code ChaosTestingExtension} throws {@code
- *       ClassNotFoundException} wrapped in {@code ExtensionConfigurationException}.
+ *   <li>{@code madvise} returns {@code -1}; {@code errno = EBADF} (9); the hint is not applied
+ *       — the kernel will manage the region with default policies.</li>
+ *   <li>The standard POSIX {@code madvise} signature takes an address range, not a file descriptor;
+ *       real {@code EBADF} from {@code madvise} is effectively unreachable on standard Linux.
+ *       This annotation exercises the dormant error path for the case where an application
+ *       wraps {@code madvise} and checks the return value — assert that the wrapper propagates
+ *       the errno correctly and does not silently swallow it.</li>
+ *   <li>Assert that the application does not treat a failed {@code madvise} as fatal — assert that
+ *       it logs the errno and continues without the hint benefit.</li>
  * </ul>
+ * Production failure mode: some kernel patches and custom syscall wrappers extend
+ * {@code madvise} to accept a file descriptor parameter for file-range advice; on these
+ * non-standard kernels a stale or invalid fd returns {@code EBADF}, causing advisors that
+ * assume success to lose the performance benefit of the hint without logging a diagnostic.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>The standard Linux {@code madvise(2)} syscall takes {@code (void *addr, size_t length,
+ * int advice)} — there is no file descriptor parameter, so {@code EBADF} cannot arise from
+ * the kernel's standard argument validation. The {@code process_madvise(2)} syscall introduced
+ * in Linux 5.10 adds a PID file descriptor ({@code pidfd}) parameter; if the {@code pidfd}
+ * refers to a closed or invalid file description, the kernel returns {@code -EBADF}.
+ *
+ * <p>Applications that use {@code process_madvise} (cross-process memory hints, used by Android's
+ * LMKD and some memory-management daemons) must handle {@code EBADF} from the {@code pidfd}
+ * validation before the advice is applied. A {@code pidfd} that becomes invalid due to process
+ * exit or file-descriptor recycling between the hint call and the kernel validation produces
+ * {@code EBADF} atomically — the hint is not applied and no partial state is created.
+ *
+ * <p>For applications that use the standard single-process {@code madvise}, this annotation
+ * exercises the generic {@code madvise} error-handling code path that is typically only
+ * reachable for {@code EINVAL} and {@code EACCES}. Ensuring the error handler correctly
+ * processes {@code EBADF} (not just the errnos it was tested against) verifies defensive
+ * error handling.
+ *
+ * <p>Compared with {@code EINVAL}: {@code EBADF} indicates a descriptor validity failure
+ * (wrong fd, applicable to {@code process_madvise}); {@code EINVAL} indicates argument
+ * validity failure (wrong address, length, or advice flag). Both should be treated as
+ * non-fatal advisory failures; neither requires retrying with the same arguments.
  *
  * <h2>Example</h2>
  *
@@ -62,19 +83,20 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.MEMORY)
  * @ChaosMadviseEbadf(probability = 0.001)
- * class MemoryFaultTest {
+ * class MadviseErrnoHandlingTest {
  *   @Test
- *   void appHandlesEbadfOnAlloc(RedisConnectionInfo info) { ... }
+ *   void appHandlesEbadfOnMadviseWithoutFatalError(RedisConnectionInfo info) {
+ *     // verify EBADF is logged and the application continues without the hint
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> low rates (1e-4) to catch missing fd-lifecycle guards;
- * 1.0 breaks container startup.
- *
+ * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; madvise failures are non-fatal, so
+ * any probability is safe from a correctness standpoint — use a rate that exercises the error
+ * path without flooding logs.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
- * the test class. Use the repeatable form ({@code @ChaosMadviseEbadfs}) to bind different
- * probabilities to different containers simultaneously.
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see MemoryErrnoBinding

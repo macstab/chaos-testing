@@ -13,58 +13,88 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Delays every libchaos-intercepted {@code recv} call by {@link #delayMs} milliseconds before
- * delegating to the real kernel call, making the operation succeed but take longer than expected.
+ * Delays every {@code recv(2)} call by an additional {@link #delayMs} milliseconds before
+ * delegating to the real kernel call, making data reception slower than the application expects
+ * while still delivering the actual received data.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one
- * (selector, effect = LATENCY) pair. Unlike errno variants, the latency primitive always delegates
- * to the kernel — it only adds wall-clock cost before doing so.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> every {@code recv} call intercepted by libchaos
- * blocks for {@link #delayMs} ms before the kernel call is issued. This simulates the wall-clock
- * cost increase from resource pressure, kernel scheduling stalls, or slow hardware — none of which
- * return an errno but all of which can exhaust application-level timeouts, saturate connection-pool
- * wait budgets, and surface hidden latency assumptions.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code RECV}, effect = LATENCY) tuple.
+ * Unlike errno variants, the latency primitive always delegates to the real kernel call after the
+ * configured extra delay — the received data is authentic. A Bernoulli trial with probability
+ * {@link #toxicity} gates whether the delay fires on each call. No runtime operation-effect
+ * validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.NET)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-net.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes socket-layer libc wrappers (connect, accept,
- * socket, bind, listen, shutdown, send, recv, poll). This annotation installs a rule via {@code
- * AdvancedConnectionChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
+ *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
+ *       {@code poll} at the dynamic-linker level.
+ *   <li>On each intercepted {@code recv} call a Bernoulli trial with probability {@link #toxicity}
+ *       is conducted; when it fires the interposer sleeps for {@link #delayMs} ms before issuing
+ *       the real kernel call.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.NET)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-connection} on the test classpath.</strong>
+ *   <li>End-to-end request latency increases by the injected delay on each recv call; assert that
+ *       the application's read timeout is configured to accommodate the injected delay without
+ *       triggering a false timeout.
+ *   <li>Streaming protocols that perform many small reads (e.g., reading a byte at a time for
+ *       delimiter detection) accumulate the injected delay on every read call; assert that the
+ *       protocol implementation uses buffered reading to minimize the number of recv calls.
+ *   <li>The delay is injected before the kernel call, so if the socket has no data available, the
+ *       thread sleeps for {@link #delayMs} before entering the kernel's blocking wait; the actual
+ *       data arrival is not affected by the injection.
+ *   <li>Assert that the server's read timeout begins from the time the recv call is issued, not
+ *       from when data arrives at the kernel; this ensures that slow recv consumers are detected
+ *       by the timeout even when data is available in the kernel buffer.
  * </ul>
+ *
+ * <p>In production, slow {@code recv} calls occur when the process is CPU throttled by cgroups
+ * and spends extended time waiting to be scheduled after a system call, when NUMA topology causes
+ * the process to run on a CPU distant from the NIC's memory domain, and when the kernel's socket
+ * buffer is fragmented and the memcpy from kernel to user space is slower than normal.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The {@code recv} syscall typically returns in time proportional to the network round-trip
+ * time plus the server's processing time. The injected delay is added before the syscall, so the
+ * total receive time observed by the caller is {@link #delayMs} plus the time for data to arrive
+ * in the kernel's receive buffer. If data is already buffered when {@code recv} is called (common
+ * in pipelined protocols), the total time is approximately {@link #delayMs} — dominated by the
+ * injection.
+ *
+ * <p>This injection is particularly effective for testing request timeout configurations in
+ * pipelined or streaming protocols where multiple recv calls are needed per request: a delay on
+ * each recv call accumulates across the full request pipeline. For a protocol that requires N recv
+ * calls to complete one request, the effective per-request latency increase is N × {@link #delayMs}.
+ * This helps reveal whether timeout configurations are calibrated for the worst-case number of recv
+ * calls per request.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.NET)
- * @ChaosRecvLatency(delayMs = 200)
- * class LatencyTest {
+ * @ChaosRecvLatency(delayMs = 100, toxicity = 0.3)
+ * class RecvLatencyTest {
  *   @Test
- *   void appHandlesSlowOperation(ConnectionInfo info) { ... }
+ *   void readTimeoutFiresCorrectlyUnderSlowRecv(ConnectionInfo info) {
+ *     // assert that read timeout fires when recv delay exceeds the configured threshold
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Delay guidance:</strong> {@code 10}–{@code 200} ms simulates realistic stall events;
- * values above application-level timeouts produce cascading failures rather than isolated latency
- * observations — intentional in some scenarios, noisy in others.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form ({@code @ChaosRecvLatencys}) to set
- * different delays on different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosRecvEtimedout
+ * @see ChaosRecvEconnreset
+ * @see com.macstab.chaos.connection.annotation.l1.ConnectionLatencyBinding
  */
 @Repeatable(ChaosRecvLatency.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

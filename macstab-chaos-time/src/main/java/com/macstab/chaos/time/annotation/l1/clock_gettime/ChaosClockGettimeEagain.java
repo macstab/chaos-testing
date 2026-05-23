@@ -14,62 +14,82 @@ import com.macstab.chaos.time.model.TimeErrno;
 import com.macstab.chaos.time.model.TimeSelector;
 
 /**
- * Injects {@code EAGAIN} on every libchaos-intercepted {@code clock gettime} call inside the target
- * container, making the call fail as if the kernel returned {@code EAGAIN}.
+ * Injects {@code EAGAIN} into {@code clock_gettime(2)}, causing the call to return {@code -1} with
+ * {@code errno = EAGAIN} as if the kernel temporarily could not service the request.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EAGAIN}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EAGAIN} is a valid POSIX result of {@code clock gettime}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code clock gettime} call that the
- * libchaos interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When
- * it fires the interceptor returns {@code -1} and sets {@code errno = EAGAIN} — from the
- * application's perspective this is indistinguishable from a real kernel-level failure.
- * Specifically this simulates: temporary failure / resource temporarily unavailable — typical of
- * RLIMIT exhaustion or kernel pressure.
+ * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code CLOCK_GETTIME}, errno =
+ * {@code EAGAIN}) tuple. The tuple is safe by construction — {@code EAGAIN} is a valid transient
+ * POSIX result indicating resource temporarily unavailable. No runtime selector-errno validation is
+ * needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.TIME)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-time.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the libc wrappers for {@code clock_gettime},
- * {@code nanosleep}, and {@code usleep}. This annotation installs a rule via {@code
- * AdvancedTimeChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
+ *       at the dynamic-linker level.
+ *   <li>On every intercepted {@code clock_gettime} call a Bernoulli trial with probability
+ *       {@link #probability} is conducted.
+ *   <li>When the trial fires the interposer returns {@code -1} and sets {@code errno = EAGAIN}
+ *       without invoking the real kernel call — the application sees a transient kernel failure.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.TIME)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-time} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code clock_gettime} returns {@code -1}; well-written callers retry immediately; callers
+ *       without a retry loop permanently lose the timestamp sample.
+ *   <li>High rates will continuously exhaust retry budgets in timer-sensitive hot paths (event
+ *       loops, scheduled tasks, connection pool eviction).
+ *   <li>Metrics pipelines that record wall-clock timestamps on every sample will emit gaps or
+ *       double-count intervals if they suppress the error silently.
+ *   <li>Assert that the application implements bounded retry with backoff and emits a metric
+ *       counter for transient clock failures.
  * </ul>
+ *
+ * <p>In production, {@code EAGAIN} from {@code clock_gettime} is an extremely unusual signal
+ * primarily seen in severely resource-constrained kernels or exotic POSIX emulation layers;
+ * it is more common in {@code nanosleep} and {@code usleep} under signal pressure.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>Standard Linux kernels do not return {@code EAGAIN} from {@code clock_gettime} under normal
+ * conditions; the call is synchronous and does not queue work. Injecting it via
+ * {@code libchaos-time.so} therefore exercises defensive code paths that application developers
+ * write to handle any possible {@code -1} return — regardless of whether the specific errno is
+ * expected in this context.
+ *
+ * <p>This is particularly valuable for verifying that generated gRPC stubs, ORM layers, and
+ * framework internals do not hard-code the assumption that {@code clock_gettime} always succeeds.
+ * A surprising number of production bugs occur when an unconditionally assumed syscall fails for
+ * the first time on a degraded host.
+ *
+ * <p>Sibling annotations: {@link ChaosClockGettimeEinval} targets invalid clock ids;
+ * {@link ChaosClockGettimeEintr} (via wildcard) targets signal interruption;
+ * {@link ChaosClockGettimeLatency} injects delay without error, surfacing timeout violations.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.TIME)
- * @ChaosClockGettimeEagain(probability = 0.001)
- * class FaultTest {
+ * @ChaosClockGettimeEagain(probability = 1e-3)
+ * class ClockGettimeEagainTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void applicationRetriesTransientClockFailure(ConnectionInfo info) {
+ *     // assert that the transient failure is handled and the timestamp pipeline continues
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3 to simulate transient pressure; high rates
- * saturate retry budgets.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosClockGettimeEagains}) to bind different
- * probabilities to different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosClockGettimeEinval
+ * @see ChaosClockGettimeLatency
+ * @see com.macstab.chaos.time.annotation.l1.TimeErrnoBinding
  */
 @Repeatable(ChaosClockGettimeEagain.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

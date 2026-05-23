@@ -14,47 +14,65 @@ import com.macstab.chaos.memory.model.MemorySelector;
 import com.macstab.chaos.memory.model.MmapErrno;
 
 /**
- * Injects {@code EPERM} on every libchaos-memory-intercepted {@code mmap(MAP_ANONYMOUS)} call
- * inside the target container, making the call fail as if the kernel returned {@code EPERM}.
+ * Injects {@code EPERM} into {@code mmap(MAP_ANONYMOUS)} calls intercepted by libchaos-memory,
+ * causing the calling code to observe an operation-not-permitted failure from anonymous memory
+ * allocation.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector = {@code MMAP_ANON}, errno = {@code EPERM}) pair.
- * The combination is safe by construction: this annotation class exists only because {@code EPERM}
- * is a valid POSIX result of {@code mmap(MAP_ANONYMOUS)}; the invalid combinations simply have no
- * annotation class, so the selector × errno matrix cannot be violated at compile time.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-memory primitive — one (selector = {@code MMAP_ANON}, errno = {@code EPERM}) tuple.
+ * Compile-time safety: this annotation exists only because {@code EPERM} is a defined POSIX result
+ * for {@code mmap}; invalid combinations have no annotation class and cannot be expressed.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code mmap(MAP_ANONYMOUS)} call that the
- * libchaos-memory interceptor sees, a Bernoulli trial with probability {@link #probability} is run.
- * When it fires the interceptor returns {@code -1} and sets {@code errno = EPERM} before the kernel
- * call completes — from the application perspective this is indistinguishable from a real
- * kernel-level failure. Specifically this simulates: operation not permitted — typical of
- * capability-dropped containers performing privileged VM ops.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code mmap(MAP_ANONYMOUS)} call the interposer runs a Bernoulli trial with
+ *       probability {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = EPERM} and returns
+ *       {@code MAP_FAILED} without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 1,
+ *       {@code strerror}: "Operation not permitted".</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.MEMORY)} annotation on the container declaration causes
- * {@code ChaosTestingExtension} to upload {@code libchaos-memory.so} into the container and prepend
- * it to {@code LD_PRELOAD} before the container process starts. The shared library interposes the
- * libc wrappers for {@code mmap}, {@code munmap}, {@code mprotect}, and {@code madvise} at the
- * dynamic-linker level. This annotation then installs a rule via {@code
- * AdvancedMemoryChaos.apply(container, rule)} that configures the interposer with the selector and
- * probability you specify.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD} which does not apply on
- *       macOS or Windows containers; annotate the test class with {@code @DisabledOnOs(OS.WINDOWS)}
- *       and be aware of macOS Docker limitations.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.MEMORY)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — this installs the shared library before container start;
- *       omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) do not
- *       honour {@code LD_PRELOAD} for statically-linked binaries; use a glibc variant or the
- *       Debian-slim image instead.
- *   <li><strong>{@code macstab-chaos-memory} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and {@code ChaosTestingExtension} throws {@code
- *       ClassNotFoundException} wrapped in {@code ExtensionConfigurationException}.
+ *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = EPERM} (1); the application
+ *       should treat this as a non-transient privilege failure, not as a transient OOM.</li>
+ *   <li>glibc {@code malloc} propagates {@code NULL}; JVM allocators raise {@code OutOfMemoryError}.
+ *       The distinction from {@code EACCES} is lost at the Java level but is preserved in native
+ *       logs.</li>
+ *   <li>Assert that the application surfaces a privilege-related diagnostic and that it does not
+ *       retry indefinitely — {@code EPERM} is permanent without a privilege change.</li>
  * </ul>
+ * Production failure mode: Kubernetes Pod Security Admission or a seccomp profile applied to a
+ * newly deployed revision can block {@code mmap(PROT_EXEC)} for JIT-compiled runtimes (JVM,
+ * V8, LuaJIT), causing {@code EPERM} to appear in the allocator stack immediately on startup.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>POSIX specifies {@code EPERM} for {@code mmap} when the operation is not permitted regardless
+ * of the process's credentials. On Linux, the kernel returns {@code EPERM} for anonymous mappings
+ * in two scenarios: when {@code PROT_EXEC} is requested and {@code vm.mmap_min_addr} combined with
+ * a Yama LSM restriction blocks low-address executable mappings; and when the process is subject
+ * to a {@code RLIMIT_MEMLOCK} limit and attempts to create a locked anonymous mapping with
+ * {@code MAP_LOCKED | MAP_ANONYMOUS} without the {@code CAP_IPC_LOCK} capability.
+ *
+ * <p>In containerised environments {@code EPERM} on anonymous mappings most commonly arises when
+ * a JVM or other JIT runtime requests {@code PROT_EXEC} for its code cache on a host where
+ * {@code vm.mmap_min_addr} is set to a non-zero value and the container runs without
+ * {@code CAP_SYS_ADMIN}. This causes the JVM to fall back to interpreted mode, producing a
+ * severe performance regression rather than an outright failure.
+ *
+ * <p>The distinction between {@code EPERM} and {@code EACCES} is subtle: {@code EACCES} is a
+ * DAC/MAC check failure on a specific object (the fd or the backing file); {@code EPERM} is a
+ * structural capability check that the process can never satisfy without privilege elevation.
+ * Both surface as allocation failure at the libc level. Well-designed error handlers should
+ * log the specific errno rather than a generic "allocation failed" message.
+ *
+ * <p>glibc {@code malloc} never requests {@code MAP_LOCKED} and uses only {@code PROT_READ |
+ * PROT_WRITE} for anonymous allocations, so it never triggers {@code EPERM} from the kernel.
+ * JVM internal allocations for code cache ({@code PROT_EXEC}) are at risk; Netty's
+ * {@code PooledByteBufAllocator} is not ({@code PROT_READ | PROT_WRITE} only).
  *
  * <h2>Example</h2>
  *
@@ -62,19 +80,19 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.MEMORY)
  * @ChaosMmapAnonEperm(probability = 0.001)
- * class MemoryFaultTest {
+ * class PrivilegeFailureTest {
  *   @Test
- *   void appHandlesEpermOnAlloc(RedisConnectionInfo info) { ... }
+ *   void appHandlesEpermOnAlloc(RedisConnectionInfo info) {
+ *     // verify the application surfaces a privilege error and does not retry indefinitely
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2; privilege faults surface rarely in
- * production but are hard to test.
- *
+ * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2; privilege failures are rare in
+ * well-configured environments but extremely hard to reproduce without fault injection.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
- * the test class. Use the repeatable form ({@code @ChaosMmapAnonEperms}) to bind different
- * probabilities to different containers simultaneously.
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see MemoryErrnoBinding

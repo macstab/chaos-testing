@@ -13,58 +13,93 @@ import com.macstab.chaos.filesystem.annotation.l1.IoLatencyBinding;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Delays every libchaos-intercepted {@code fsync} call by {@link #delayMs} milliseconds before
- * delegating to the real kernel call, making the operation succeed but take longer than expected.
+ * Delays every {@code fsync(2)} call by an additional {@link #delayMs} milliseconds before
+ * delegating to the real kernel call, making the durability barrier slower than the application
+ * expects while still flushing all dirty pages to the storage device normally.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one
- * (selector, effect = LATENCY) pair. Unlike errno variants, the latency primitive always delegates
- * to the kernel — it only adds wall-clock cost before doing so.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> every {@code fsync} call intercepted by libchaos
- * blocks for {@link #delayMs} ms before the kernel call is issued. This simulates the wall-clock
- * cost increase from resource pressure, kernel scheduling stalls, or slow hardware — none of which
- * return an errno but all of which can exhaust application-level timeouts, saturate connection-pool
- * wait budgets, and surface hidden latency assumptions.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code FSYNC}, effect = LATENCY)
+ * tuple. Unlike errno variants, the latency primitive always delegates to the real kernel call
+ * after the configured extra delay — the fsync completes successfully. No probability gate is
+ * applied; the delay fires on every intercepted {@code fsync} call. No runtime operation-effect
+ * validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.IO)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-io.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the filesystem libc wrappers (open, read,
- * write, close, fsync, etc.) at the dynamic-linker level. This annotation installs a rule via
- * {@code AdvancedFilesystemChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
+ *       extension to upload {@code libchaos-io.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
+ *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
+ *       {@code fallocate} at the dynamic-linker level.
+ *   <li>On each intercepted {@code fsync} call the interposer sleeps for {@link #delayMs} ms
+ *       before issuing the real kernel call.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.IO)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-filesystem} on the test classpath.</strong>
+ *   <li>Durability barriers take longer than normal; applications that use {@code fsync} to make
+ *       writes durable before acknowledging a transaction will see increased transaction commit
+ *       latency. Assert that the application's transaction commit deadline accounts for the
+ *       injected delay.
+ *   <li>WAL implementations that fsync the WAL file on every commit to guarantee durability will
+ *       see each commit take at least {@link #delayMs} ms longer; assert that the transaction
+ *       throughput drops proportionally and that the application degrades gracefully rather than
+ *       timing out or queuing commits unboundedly.
+ *   <li>Applications that use group commit (batching multiple transactions' data into a single
+ *       fsync to amortise the disk flush cost) may see their batch window fill up before the
+ *       fsync completes; assert that the group commit logic correctly handles a slow fsync without
+ *       dropping pending transactions or sending commit acknowledgements before the fsync returns.
+ *   <li>Assert that slow fsync calls do not block the application's write path: if the WAL fsync
+ *       is on the critical path, a slow fsync stalls all new writes and exposes any unbounded
+ *       write queue that fills during the stall.
  * </ul>
+ *
+ * <p>In production, slow {@code fsync} calls occur when the storage device's write cache is full
+ * and the flush must wait for the device's internal buffer to drain, when the cgroup I/O bandwidth
+ * throttle limits the rate at which dirty pages can be written to the device, and on NFS mounts
+ * when the server must commit all pending writes before the client-side fsync can return.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code fsync(2)} waits until all dirty pages associated with the file descriptor's inode
+ * have been written to the storage device and the device has acknowledged the write. On HDDs,
+ * fsync latency is dominated by rotational latency and seek time (3–10 ms). On SSDs, fsync
+ * latency is dominated by the device's internal write commit cycle (0.05–1 ms). On NVMe SSDs
+ * with power-loss protection, fsync typically completes in under 100 µs.
+ *
+ * <p>This injection adds the delay before the kernel call, simulating the case where the device
+ * is under heavy load and the flush must wait for the I/O queue to drain. The delay fires before
+ * the kernel call, so the actual storage flush still happens at full speed after the delay; the
+ * total fsync latency is delay + actual flush time. This makes the injection additive with the
+ * real device latency, which is the correct model for queue-induced latency.
+ *
+ * <p>Java's {@code FileDescriptor.sync()} and {@code FileChannel.force(boolean)} both call
+ * {@code fsync(2)}. Applications that use {@code force(false)} (which calls {@code fdatasync})
+ * rather than {@code force(true)} (which calls {@code fsync}) will not be affected by this
+ * annotation but will be affected by {@link ChaosFdatasyncLatency}.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.IO)
- * @ChaosFsyncLatency(delayMs = 200)
- * class LatencyTest {
+ * @ChaosFsyncLatency(delayMs = 100)
+ * class FsyncLatencyTest {
  *   @Test
- *   void appHandlesSlowOperation(ConnectionInfo info) { ... }
+ *   void transactionCommitCompletesWithinDeadlineUnderSlowFsync() {
+ *     // assert that transaction commit finishes within its deadline even when fsync is slow
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Delay guidance:</strong> {@code 10}–{@code 200} ms simulates realistic stall events;
- * values above application-level timeouts produce cascading failures rather than isolated latency
- * observations — intentional in some scenarios, noisy in others.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form ({@code @ChaosFsyncLatencys}) to set
- * different delays on different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosFdatasyncLatency
+ * @see ChaosWriteLatency
+ * @see com.macstab.chaos.filesystem.annotation.l1.IoLatencyBinding
  */
 @Repeatable(ChaosFsyncLatency.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

@@ -14,47 +14,70 @@ import com.macstab.chaos.memory.model.MemorySelector;
 import com.macstab.chaos.memory.model.MmapErrno;
 
 /**
- * Injects {@code EINVAL} on every libchaos-memory-intercepted {@code mmap (file-backed)} call
- * inside the target container, making the call fail as if the kernel returned {@code EINVAL}.
+ * Injects {@code EINVAL} into file-backed {@code mmap} calls intercepted by libchaos-memory,
+ * causing the calling code to observe an invalid-argument failure when attempting to establish
+ * a file-backed memory mapping.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector = {@code MMAP_FILE}, errno = {@code EINVAL}) pair.
- * The combination is safe by construction: this annotation class exists only because {@code EINVAL}
- * is a valid POSIX result of {@code mmap (file-backed)}; the invalid combinations simply have no
- * annotation class, so the selector × errno matrix cannot be violated at compile time.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-memory primitive — one (selector = {@code MMAP_FILE}, errno = {@code EINVAL})
+ * tuple. The {@code MMAP_FILE} selector intercepts only file-backed {@code mmap} calls (those
+ * without {@code MAP_ANONYMOUS}), leaving anonymous allocations unaffected. Compile-time
+ * safety: invalid selector/errno combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code mmap (file-backed)} call that the
- * libchaos-memory interceptor sees, a Bernoulli trial with probability {@link #probability} is run.
- * When it fires the interceptor returns {@code -1} and sets {@code errno = EINVAL} before the
- * kernel call completes — from the application perspective this is indistinguishable from a real
- * kernel-level failure. Specifically this simulates: invalid argument — bad length, alignment, or
- * flags; the universal canary errno.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
+ *   <li>On each file-backed {@code mmap} call the interposer runs a Bernoulli trial with
+ *       probability {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = EINVAL} and returns
+ *       {@code MAP_FAILED} without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 22,
+ *       {@code strerror}: "Invalid argument".</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.MEMORY)} annotation on the container declaration causes
- * {@code ChaosTestingExtension} to upload {@code libchaos-memory.so} into the container and prepend
- * it to {@code LD_PRELOAD} before the container process starts. The shared library interposes the
- * libc wrappers for {@code mmap}, {@code munmap}, {@code mprotect}, and {@code madvise} at the
- * dynamic-linker level. This annotation then installs a rule via {@code
- * AdvancedMemoryChaos.apply(container, rule)} that configures the interposer with the selector and
- * probability you specify.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD} which does not apply on
- *       macOS or Windows containers; annotate the test class with {@code @DisabledOnOs(OS.WINDOWS)}
- *       and be aware of macOS Docker limitations.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.MEMORY)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — this installs the shared library before container start;
- *       omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) do not
- *       honour {@code LD_PRELOAD} for statically-linked binaries; use a glibc variant or the
- *       Debian-slim image instead.
- *   <li><strong>{@code macstab-chaos-memory} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and {@code ChaosTestingExtension} throws {@code
- *       ClassNotFoundException} wrapped in {@code ExtensionConfigurationException}.
+ *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = EINVAL} (22); file-mapping code
+ *       must treat the failure as a programming error in the mapping parameters and surface a
+ *       diagnostic rather than retrying.</li>
+ *   <li>Applications that compute the mapping offset from file metadata (size, block count) must
+ *       handle arithmetic errors that produce zero-length or non-page-aligned values — assert that
+ *       {@code EINVAL} is treated as fatal for the mapping attempt, not as a transient failure.</li>
+ *   <li>Assert that the file descriptor is closed and any partially allocated resources are
+ *       released before propagating the error — resource leaks after {@code EINVAL} are common.</li>
  * </ul>
+ * Production failure mode: a kernel upgrade tightens the {@code mmap} argument validation rules
+ * (for example, adding a stricter alignment check for hugepage-backed files), causing previously
+ * successful mapping calls from applications that computed offsets without page-alignment
+ * enforcement to begin returning {@code EINVAL} — a silent breaking change.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>POSIX specifies {@code EINVAL} for file-backed {@code mmap} when: {@code length} is zero;
+ * {@code flags} contains both {@code MAP_PRIVATE} and {@code MAP_SHARED} (or neither); {@code
+ * addr} is not a multiple of the page size (when non-zero); or {@code offset} is not a multiple
+ * of the page size. The kernel validates all four conditions in {@code do_mmap_pgoff} before
+ * allocating the VMA.
+ *
+ * <p>For file-backed mappings, the offset validation is particularly significant: the offset must
+ * be page-aligned because the kernel maps the file in page granularity. Applications that compute
+ * the offset from file size, record counts, or block numbers must explicitly align down to the
+ * page boundary with {@code offset & ~(PAGE_SIZE - 1)}. Arithmetic underflow or off-by-one in
+ * this computation can produce a non-page-aligned value, causing {@code EINVAL} on the first
+ * mapping that exercises the computed offset.
+ *
+ * <p>Kernel version differences in {@code EINVAL} triggering are significant: Linux 4.x added
+ * stricter flag validation for {@code MAP_HUGETLB} with file-backed mappings, requiring the
+ * file to have been opened with the hugepage filesystem flag. Applications that attempt to
+ * map regular files with {@code MAP_HUGETLB} will receive {@code EINVAL} on kernel 4.x and
+ * later but may have succeeded on earlier kernels. This class of regression is invisible in
+ * development environments running older kernels.
+ *
+ * <p>Compared with {@code EBADF}: {@code EINVAL} is an argument-validity failure (the parameters
+ * to the call are wrong); {@code EBADF} is a descriptor-validity failure (the fd itself is
+ * wrong). Both are non-transient for the given arguments; recovery requires correcting the
+ * mapping parameters rather than the fd. Unlike {@code EBADF}, {@code EINVAL} typically indicates
+ * a programming error in the calling code rather than a runtime race.
  *
  * <h2>Example</h2>
  *
@@ -62,19 +85,19 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.MEMORY)
  * @ChaosMmapFileEinval(probability = 0.001)
- * class MemoryFaultTest {
+ * class MappingParameterValidationTest {
  *   @Test
- *   void appHandlesEinvalOnAlloc(RedisConnectionInfo info) { ... }
+ *   void appHandlesEinvalOnFileMappings(RedisConnectionInfo info) {
+ *     // verify EINVAL is treated as fatal and resources are released cleanly
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2 as a canary; 1.0 will block all mapped I/O
- * and crash the JVM.
- *
+ * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2 to exercise the argument-validation
+ * error path; rates above 0.1 will prevent shared-library loading and cause process abort.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
- * the test class. Use the repeatable form ({@code @ChaosMmapFileEinvals}) to bind different
- * probabilities to different containers simultaneously.
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see MemoryErrnoBinding

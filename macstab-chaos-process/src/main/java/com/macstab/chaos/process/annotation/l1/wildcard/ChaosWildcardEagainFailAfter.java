@@ -14,62 +14,103 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code every interposed
- * process syscall} calls succeed, then injects {@code EAGAIN} on every subsequent call until the
- * rule is removed.
+ * After {@link #successesBeforeFailure} successful process-management syscall invocations across
+ * all intercepted families, injects {@code EAGAIN} on every subsequent call, modelling a uid
+ * process-count ceiling scenario where the uid process limit is hit after N successful process
+ * and thread creations, causing all subsequent process-management operations to return
+ * "Resource temporarily unavailable" permanently until load is shed.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code WILDCARD}, errno = {@code EAGAIN}, effect = FAIL_AFTER) tuple. FAIL_AFTER is the process
- * module's counter-gated effect — distinct from ERRNO (probabilistic) and LATENCY (unconditional).
- * It models resource-exhaustion scenarios where the first N operations succeed and then the system
- * runs out of capacity.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code WILDCARD}, errno = {@code EAGAIN},
+ * effect = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N intercepted
+ * process-management calls (across all families — fork, execve, posix_spawn, pthread_create,
+ * waitpid) succeed, then the counter trips permanently and every subsequent call returns the error
+ * code until the rule is removed. Compile-time safety: invalid selector/errno/effect combinations
+ * have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
- * {@code every interposed process syscall} calls. After {@link #successesBeforeFailure} successes
- * the counter trips and every subsequent call returns {@code -1} with {@code errno = EAGAIN},
- * regardless of real kernel capacity. The counter resets every time the rule is re-applied (e.g.
- * across test methods if the annotation is at class scope).
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing every process-management libc wrapper at the dynamic-linker level.</li>
+ *   <li>The interposer maintains a per-rule success counter shared across all intercepted syscall
+ *       families; the counter does not reset automatically between test methods when the annotation
+ *       is at class scope.</li>
+ *   <li>Once the counter reaches zero it trips permanently: every subsequent process-management
+ *       call returns {@code -1} (or the errno value directly for pthread_create and posix_spawn)
+ *       with {@code errno = EAGAIN}.</li>
+ *   <li>The calling code receives: {@code fork()} returns {@code -1} with {@code errno = EAGAIN}
+ *       (11); {@code pthread_create}/{@code posix_spawn} return {@code EAGAIN} directly;
+ *       {@code strerror(EAGAIN)}: "Resource temporarily unavailable".</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family. This annotation installs
- * a FAIL_AFTER rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at {@code
- *       beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>The first {@link #successesBeforeFailure} process-management calls proceed normally; all
+ *       subsequent calls return EAGAIN permanently; assert that the application's EAGAIN retry
+ *       logic is bounded — an unbounded retry loop receiving EAGAIN from every process-management
+ *       path simultaneously will spin indefinitely without recovering.</li>
+ *   <li>FAIL_AFTER models the RLIMIT_NPROC ceiling: N process and thread creations succeed;
+ *       the uid process count hits the kernel limit; all subsequent fork and pthread_create calls
+ *       return EAGAIN — assert that the application detects the ceiling, sheds load by rejecting
+ *       new requests, and alerts operators rather than continuing to spawn.</li>
+ *   <li>Assert that the application does not treat EAGAIN from WILDCARD FAIL_AFTER as identical
+ *       to transient EAGAIN (ERRNO variant) — FAIL_AFTER EAGAIN is sustained and will not resolve
+ *       without load reduction; the back-off strategy must be more aggressive than for transient
+ *       pressure.</li>
  * </ul>
+ * Production failure mode: a container under load continuously spawns worker threads and
+ * subprocesses; when the uid process count hits RLIMIT_NPROC all fork and pthread_create calls
+ * return EAGAIN simultaneously; the application's per-path retry loops each spin independently
+ * with short back-offs, each consuming scheduler cycles without releasing process slots; the
+ * retry loops prevent the container from serving requests while maintaining the pressure.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>The WILDCARD FAIL_AFTER counter is shared across all process-management families. A fork call,
+ * a pthread_create call, and a posix_spawn call each consume one counter unit. The EAGAIN phase
+ * begins when the combined process-management call traffic from all families exhausts the counter.
+ * Set {@link #successesBeforeFailure} to the expected total count across all families during the
+ * pre-ceiling phase — this is the number of threads and processes the application creates before
+ * hitting the uid limit.
+ *
+ * <p>The counter does not reset between test methods when the annotation is at class scope. The
+ * first test method exercises the pre-ceiling phase (the application creates processes and threads
+ * normally); subsequent test methods exercise the EAGAIN-ceiling phase (all process management
+ * is blocked until load is shed). This enables sequential testing of the ceiling-hit and
+ * load-shedding behaviors in separate test methods.
+ *
+ * <p>EAGAIN from WILDCARD FAIL_AFTER is semantically sustained: unlike transient EAGAIN (which
+ * resolves when another process exits and releases its process table slot), FAIL_AFTER EAGAIN
+ * persists until the rule is removed. Applications that implement EAGAIN back-off with a maximum
+ * retry count will correctly escalate after exhausting retries; applications that retry indefinitely
+ * will spin until the test timeout fires.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosWildcardEagainFailAfter(successesBeforeFailure = 128)
- * class ProcessExhaustionTest {
+ * @ChaosWildcardEagainFailAfter(successesBeforeFailure = 100)
+ * class ProcessCeilingTest {
  *   @Test
- *   void handlesExhaustion(ConnectionInfo info) { ... }
+ *   void applicationShedsLoadAndAlertsOperatorsOnSustainedEagain(ConnectionInfo info) {
+ *     // first 100 process calls succeed; subsequent calls return EAGAIN permanently;
+ *     // verify bounded retry; verify load shedding (request rejection); verify alert sent;
+ *     // verify no infinite spin; verify different back-off than transient EAGAIN
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of {@code every
- * interposed process syscall} calls the application is expected to make before hitting the limit.
- * Typically 5–200 for container-scoped tests. Zero means the very first call fails.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form
- * ({@code @ChaosWildcardEagainFailAfter.Repeatable}) to apply different counters to different
- * containers.
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to the total number
+ * of process-management calls (across all families) during the application's startup and
+ * steady-state phase before the ceiling; values 20–500 cover typical workload sizes; 0 means
+ * the ceiling is hit before the first process or thread can be created.
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessFailAfterBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#failAfter(ProcessSelector, ProcessErrno, long)
  */
 @Repeatable(ChaosWildcardEagainFailAfter.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

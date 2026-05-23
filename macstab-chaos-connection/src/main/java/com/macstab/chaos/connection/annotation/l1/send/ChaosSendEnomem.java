@@ -14,39 +14,80 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code ENOMEM} on every libchaos-intercepted {@code send} call inside the target
- * container, making the call fail as if the kernel returned {@code ENOMEM}.
+ * Injects {@code ENOMEM} into {@code send(2)}, causing the call to return {@code -1} with
+ * {@code errno = ENOMEM} as if the kernel's memory allocator failed to allocate the internal
+ * socket buffer structures needed to queue the outgoing data for transmission.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ENOMEM}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code ENOMEM} is a valid POSIX result of {@code send}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code send} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #toxicity} is run. When it fires the
- * interceptor returns {@code -1} and sets {@code errno = ENOMEM} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: out of memory — kernel cannot allocate the requested structure or buffer.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code SEND}, errno = {@code ENOMEM})
+ * tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted
+ * {@code send} call; when it fires the interposer returns {@code -1} with {@code errno = ENOMEM}
+ * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.NET)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-net.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes socket-layer libc wrappers (connect, accept,
- * socket, bind, listen, shutdown, send, recv, poll). This annotation installs a rule via {@code
- * AdvancedConnectionChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
+ *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
+ *       {@code poll} at the dynamic-linker level.
+ *   <li>On each intercepted {@code send} call a Bernoulli trial with probability {@link #toxicity}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = ENOMEM}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.NET)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-connection} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code ENOMEM} from {@code send} indicates global kernel memory exhaustion rather than a
+ *       per-socket buffer condition; unlike {@code ENOBUFS} (buffer pool exhausted) or
+ *       {@code EAGAIN} (send buffer full), {@code ENOMEM} signals that the kernel's slab allocator
+ *       could not satisfy an allocation request at the socket layer.
+ *   <li>The connection is not necessarily broken by {@code ENOMEM}: the socket remains valid and
+ *       a subsequent {@code send} may succeed if kernel memory pressure is relieved. Assert that
+ *       the application does not close the socket on receipt of {@code ENOMEM}.
+ *   <li>Assert that the application backs off and retries with exponential delay rather than
+ *       spinning in a tight retry loop, which would worsen kernel memory pressure.
+ *   <li>Assert that the application emits a kernel memory pressure event or metric, enabling
+ *       operators to correlate the failure with container memory limit settings and cgroup usage.
  * </ul>
+ *
+ * <p>In production, {@code ENOMEM} from {@code send} occurs during severe kernel memory pressure,
+ * typically when the container's cgroup memory limit is nearly exhausted and kernel slab caches
+ * cannot grow to satisfy new network buffer allocations. It is distinct from user-space
+ * {@code OutOfMemoryError}: the JVM heap may be healthy while the kernel's memory is exhausted.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The kernel's network stack calls {@code sock_wmalloc()} or {@code sk_stream_alloc_skb()} to
+ * allocate an {@code sk_buff} structure to hold the outgoing data. These allocators call
+ * {@code kmalloc()} or {@code alloc_skb()} internally; when the slab allocator returns NULL (due
+ * to memory pressure), the network stack propagates {@code ENOMEM} up to the {@code send} syscall.
+ * Unlike {@code ENOBUFS}, which is returned by the socket layer's per-protocol buffer accounting,
+ * {@code ENOMEM} is returned by the general-purpose kernel memory allocator.
+ *
+ * <p>The distinction between {@code ENOMEM} and {@code ENOBUFS} is subtle but important: both
+ * indicate kernel memory pressure, but {@code ENOBUFS} is returned by the socket's own buffer
+ * quota system (tracked per socket via {@code sk_wmem_alloc}), while {@code ENOMEM} is returned
+ * when the underlying slab allocator fails regardless of per-socket quotas. In practice,
+ * {@code ENOBUFS} is more common on send paths; {@code ENOMEM} appears only under severe
+ * system-wide memory pressure.
+ *
+ * <p>Java maps {@code ENOMEM} from {@code send} to a {@code SocketException} with the message
+ * "Cannot allocate memory". This message is generated by {@code strerror(ENOMEM)} in glibc;
+ * application code that inspects the exception message to identify the error should be aware that
+ * the message text varies across operating systems and glibc versions. The JVM heap remains
+ * unaffected — the error originates in kernel space and does not trigger a JVM
+ * {@code OutOfMemoryError}.
+ *
+ * <p>Containers running under strict cgroup memory limits are particularly susceptible to this
+ * condition during traffic spikes: when the JVM's GC pressure causes the operating system to
+ * reclaim page cache, kernel slab allocations for network buffers may start failing. Tuning
+ * {@code vm.min_free_kbytes} and the container memory limit to leave headroom for kernel slab
+ * caches is the standard mitigation.
  *
  * <h2>Example</h2>
  *
@@ -54,21 +95,18 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.NET)
  * @ChaosSendEnomem(toxicity = 0.001)
- * class FaultTest {
+ * class SendEnomemTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void applicationBacksOffOnKernelMemoryExhaustion(ConnectionInfo info) {
+ *     // assert that the sender retries with delay and does not spin on ENOMEM
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3 mirrors realistic OOM rates; 1.0 prevents
- * the container from starting.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosSendEnomems}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosSendEnobufs
+ * @see ChaosSendEagain
+ * @see com.macstab.chaos.connection.annotation.l1.ConnectionErrnoBinding
  */
 @Repeatable(ChaosSendEnomem.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

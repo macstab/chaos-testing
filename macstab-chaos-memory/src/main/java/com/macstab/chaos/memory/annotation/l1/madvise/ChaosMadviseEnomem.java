@@ -14,21 +14,97 @@ import com.macstab.chaos.memory.model.MemorySelector;
 import com.macstab.chaos.memory.model.MmapErrno;
 
 /**
- * Injects {@code ENOMEM} on every libchaos-memory-intercepted {@code madvise} call inside the
- * target container, making the call fail as if the kernel returned {@code ENOMEM}.
+ * Injects {@code ENOMEM} into {@code madvise} calls intercepted by libchaos-memory, causing the
+ * calling code to observe a memory-exhaustion failure when providing a memory usage hint to the
+ * kernel.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector = {@code MADVISE}, errno = {@code ENOMEM}) pair. The
- * combination is safe by construction: this annotation class exists only because {@code ENOMEM} is
- * a valid POSIX result of {@code madvise}; the invalid combinations simply have no annotation
- * class, so the selector × errno matrix cannot be violated at compile time.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-memory primitive — one (selector = {@code MADVISE}, errno = {@code ENOMEM})
+ * tuple. The {@code MADVISE} selector intercepts {@code madvise} calls only, leaving
+ * {@code mmap}, {@code munmap}, and {@code mprotect} unaffected. Compile-time safety: invalid
+ * selector/errno combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code madvise} call that the
- * libchaos-memory interceptor sees, a Bernoulli trial with probability {@link #probability} is run.
- * When it fires the interceptor returns {@code -1} and sets {@code errno = ENOMEM} before the
- * kernel call completes — from the application perspective this is indistinguishable from a real
- * kernel-level failure. Specifically this simulates: out of memory — the canonical libc
- * malloc()-allocation-failure code for sizes >= MMAP_THRESHOLD.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
+ *       interposing the libc {@code madvise} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code madvise} call the interposer runs a Bernoulli trial with probability
+ *       {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = ENOMEM} and returns {@code -1}
+ *       without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 12,
+ *       {@code strerror}: "Out of memory (cannot allocate memory)"; the hint is not applied.</li>
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
+ * <ul>
+ *   <li>{@code madvise} returns {@code -1}; {@code errno = ENOMEM} (12); the hint is not applied
+ *       — the kernel will manage the region with default policies.</li>
+ *   <li>Applications that use {@code madvise(MADV_WILLNEED)} to pre-load data before a
+ *       latency-sensitive operation must handle {@code ENOMEM} gracefully — assert that the
+ *       operation proceeds without the pre-fault benefit and surfaces a degraded-performance
+ *       warning rather than an error.</li>
+ *   <li>Assert that the application does not treat {@code ENOMEM} from {@code madvise} as fatal
+ *       — it is an advisory hint failure, not a resource allocation failure that prevents the
+ *       application from making progress.</li>
+ * </ul>
+ * Production failure mode: under severe memory pressure, the kernel cannot allocate the page
+ * table entries needed to service a {@code MADV_WILLNEED} pre-fault request; it returns
+ * {@code ENOMEM} from {@code madvise} rather than failing silently, but the application's
+ * subsequent access to the region triggers on-demand paging with cache misses, causing latency
+ * spikes that cascade to SLO violations.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>POSIX specifies {@code ENOMEM} for {@code madvise} when addresses in the range
+ * {@code [addr, addr+len)} are unmapped (not part of any existing VMA) or when the kernel
+ * cannot allocate the internal resources needed to service the advice. On Linux,
+ * {@code MADV_WILLNEED} causes the kernel to initiate readahead for file-backed mappings;
+ * if the page cache cannot accommodate the readahead allocation, the kernel may return
+ * {@code -ENOMEM}.
+ *
+ * <p>A more common source of {@code ENOMEM} from {@code madvise} on Linux is advising a range
+ * that contains an unmapped hole: if {@code [addr, addr+len)} partially overlaps with existing
+ * VMAs but includes regions that are not mapped, the kernel returns {@code -ENOMEM} for the
+ * advice rather than partially applying it. This behaviour differs from {@code MADV_DONTNEED},
+ * which ignores unmapped sub-ranges. Applications that advise large regions that may have gaps
+ * (e.g. sparse files or partially-mapped databases) must handle {@code ENOMEM} from
+ * {@code madvise} correctly.
+ *
+ * <p>The critical correctness requirement is the same as for all {@code madvise} errors:
+ * the failure is non-fatal. The data is still accessible via page faults; the application
+ * will observe higher latency but not data loss or incorrectness. Applications that conflate
+ * {@code ENOMEM} from {@code madvise} with {@code ENOMEM} from {@code mmap} and abort are
+ * over-reacting — assert that the error-handling code discriminates between the two.
+ *
+ * <p>Compared with {@code EFAULT}: {@code ENOMEM} indicates the range contains unmapped
+ * regions (partial VMA coverage failure) or the kernel lacks page-table resources; {@code EFAULT}
+ * indicates the entire range extends outside the accessible address space. Both are non-fatal
+ * for advisory hints.
+ *
+ * <h2>Example</h2>
+ *
+ * <pre>{@code
+ * @RedisStandalone
+ * @SyscallLevelChaos(LibchaosLib.MEMORY)
+ * @ChaosMadviseEnomem(probability = 0.001)
+ * class MadviseHoleTest {
+ *   @Test
+ *   void appHandlesEnomemOnMadviseWithoutFatalError(RedisConnectionInfo info) {
+ *     // verify sparse-range ENOMEM from madvise does not abort the application
+ *   }
+ * }
+ * }</pre>
+ *
+ * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; madvise failures are non-fatal so
+ * any probability is safe from a correctness standpoint.
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
+ * the test class.
+ *
+ * @author Christian Schnapka - Macstab GmbH
+ * @see MemoryErrnoBinding
+ * @see com.macstab.chaos.memory.model.MemoryRule#errno(MemorySelector, MmapErrno, double)
+ */
  *
  * <p><strong>How this occurs (mechanism):</strong> the
  * {@code @SyscallLevelChaos(LibchaosLib.MEMORY)} annotation on the container declaration causes

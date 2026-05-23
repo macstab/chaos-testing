@@ -13,36 +13,67 @@ import com.macstab.chaos.process.annotation.l1.ProcessLatencyBinding;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Delays every libchaos-intercepted {@code execve} call by {@link #delayMs} milliseconds before
- * delegating to the real kernel call, making the operation succeed but take longer than expected.
+ * Adds {@link #delayMs} milliseconds of latency before every {@code execve} call intercepted
+ * by libchaos-process, making all process-image replacement operations succeed but take longer
+ * than expected.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one
- * (selector, effect = LATENCY) pair. Unlike errno variants, the latency primitive always delegates
- * to the kernel — it only adds wall-clock cost before doing so.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code EXECVE}, effect = LATENCY) tuple.
+ * The {@code EXECVE} selector intercepts {@code execve} calls only, leaving {@code fork},
+ * {@code pthread_create}, {@code posix_spawn}, {@code posix_spawnp}, {@code execveat}, and
+ * {@code waitpid} unaffected. Unlike the errno variants, the latency primitive always delegates
+ * to the kernel and the operation succeeds; only wall-clock time is affected.
  *
- * <p><strong>What chaos this applies:</strong> every {@code execve} call intercepted by libchaos
- * blocks for {@link #delayMs} ms before the kernel call is issued. This simulates the wall-clock
- * cost increase from resource pressure, kernel scheduling stalls, or slow hardware — none of which
- * return an errno but all of which can exhaust application-level timeouts, saturate connection-pool
- * wait budgets, and surface hidden latency assumptions.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code execve} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code execve} call the interposer sleeps for {@link #delayMs} milliseconds before
+ *       issuing the real kernel call.</li>
+ *   <li>The kernel call is issued normally and its result is returned to the caller unchanged.</li>
+ *   <li>Every {@code execve} call succeeds but takes at least {@link #delayMs} ms longer than
+ *       without the rule; the spawned process starts correctly but with a delayed launch.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family at the dynamic-linker
- * level. This annotation installs a rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>All {@code execve} calls are delayed by at least {@link #delayMs} ms; no errors are
+ *       injected, so error-handling code is not exercised — only timing-dependent code paths
+ *       are stressed.</li>
+ *   <li>Applications that spawn helper subprocesses on the critical request path (e.g. invoking
+ *       a shell script, an external tool, or a sidecar binary synchronously) will observe request
+ *       latency increase by at least {@link #delayMs} ms for every exec on the hot path; assert
+ *       that request SLOs remain within bounds and that exec calls are not on the critical path.</li>
+ *   <li>Process-pool managers that pre-spawn worker processes must account for exec latency in
+ *       their worker-readiness timeout; assert that the manager does not mark a worker as failed
+ *       due to slow exec during pool warm-up under realistic spawn latency.</li>
  * </ul>
+ * Production failure mode: a container orchestrator uses exec to deliver secrets to a new process
+ * via a credential-provider binary; under node resource pressure, the exec stalls for seconds
+ * due to scheduler latency and VFS pressure; the orchestrator's credential-delivery timeout fires
+ * and the container fails to start, even though the exec would have eventually succeeded — a
+ * latency-induced startup failure with no errno to diagnose.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>The {@code execve} latency model simulates the wall-clock cost increase that occurs when the
+ * kernel's exec path stalls due to resource pressure: VFS path resolution slowdowns (network
+ * filesystem latency), binary loading I/O waits (cold page cache, slow storage), and scheduler
+ * delays (CPU contention) all add latency to exec without returning an errno. Applications that
+ * assume exec completes quickly and use tight timeouts for subprocess readiness will fail under
+ * these conditions.
+ *
+ * <p>The latency primitive is particularly valuable for testing subprocess-based credential
+ * and configuration injection patterns: many Kubernetes admission controllers and secret
+ * management systems use exec-based delivery (e.g. the AWS EKS token provider, GCP's workload
+ * identity credential helper, Vault agent injector). These delivery mechanisms are on the
+ * critical startup path and must tolerate exec latency spikes without causing container startup
+ * failures. A 200 ms exec latency can push a credential-delivery timeout if the timeout is set
+ * to 500 ms — revealing a misconfigured timeout before production deployment.
+ *
+ * <p>Unlike the fork latency (which stalls at the clone point) or the waitpid latency (which
+ * stalls at the harvest point), exec latency affects the interval between the fork and the
+ * child becoming runnable in its new image. Applications that use fork+exec+waitpid must budget
+ * for exec latency in their end-to-end spawn timeout, not just the fork and wait steps.
  *
  * <h2>Example</h2>
  *
@@ -50,21 +81,24 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
  * @ChaosExecveLatency(delayMs = 200)
- * class LatencyTest {
+ * class ExecveLatencyTest {
  *   @Test
- *   void appHandlesSlowOperation(ConnectionInfo info) { ... }
+ *   void workerSpawnTimeoutAccountsForExecLatencyUnderNodePressure(ConnectionInfo info) {
+ *     // verify pool warm-up timeout is above 200ms; exec not on request critical path
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Delay guidance:</strong> {@code 10}–{@code 200} ms simulates realistic stall events;
- * values above application-level timeouts produce cascading failures rather than isolated latency
- * observations — intentional in some scenarios, noisy in others.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form ({@code @ChaosExecveLatencys}) to set
- * different delays on different containers simultaneously.
+ * <p><strong>Delay guidance:</strong> 50–200 ms mirrors realistic VFS and scheduler stall events
+ * during node resource pressure; values above 1000 ms will exceed most subprocess-readiness
+ * timeouts and may prevent container startup if exec is on the init path.
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessLatencyBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#latency(ProcessSelector, java.time.Duration)
  */
 @Repeatable(ChaosExecveLatency.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

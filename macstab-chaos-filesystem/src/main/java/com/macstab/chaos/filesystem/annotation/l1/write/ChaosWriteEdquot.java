@@ -14,61 +14,92 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code EDQUOT} on every libchaos-intercepted {@code write} call inside the target
- * container, making the call fail as if the kernel returned {@code EDQUOT}.
+ * Injects {@code EDQUOT} into {@code write(2)}, causing the call to return {@code -1} with
+ * {@code errno = EDQUOT} as if the user's disk quota on this filesystem has been exceeded and the
+ * kernel cannot allocate additional blocks for the write operation.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EDQUOT}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EDQUOT} is a valid POSIX result of {@code write}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code write} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = EDQUOT} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: disk quota exceeded — typical of multi-tenant filesystem environments.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code WRITE}, errno = {@code EDQUOT})
+ * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
+ * {@code write} call; when it fires the interposer returns {@code -1} with {@code errno = EDQUOT}
+ * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.IO)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-io.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the filesystem libc wrappers (open, read,
- * write, close, fsync, etc.) at the dynamic-linker level. This annotation installs a rule via
- * {@code AdvancedFilesystemChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
+ *       extension to upload {@code libchaos-io.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
+ *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
+ *       {@code fallocate} at the dynamic-linker level.
+ *   <li>On each intercepted {@code write} call a Bernoulli trial with probability {@link #probability}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = EDQUOT}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.IO)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-filesystem} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code EDQUOT} from {@code write} is similar to {@code ENOSPC} from the application's
+ *       perspective: no additional data can be written. However, the remediation is different —
+ *       {@code EDQUOT} requires quota increase or data deletion, while {@code ENOSPC} requires
+ *       disk expansion or cleanup. Assert that the application's error message distinguishes
+ *       "quota exceeded" from "disk full" to help operators apply the correct fix.
+ *   <li>Applications that write user-generated content must handle {@code EDQUOT} gracefully by
+ *       rejecting the write and informing the user that their storage quota is exhausted; assert
+ *       that the rejection is user-visible rather than silently dropped.
+ *   <li>Log-writing paths must handle {@code EDQUOT} by falling back to stderr or a lower-priority
+ *       log destination; assert that the logger does not crash or enter an infinite retry loop.
+ *   <li>Assert that the application emits a "quota exceeded" metric or alert with the affected
+ *       user's identity, enabling operators to identify which tenant is consuming excessive storage.
  * </ul>
+ *
+ * <p>In production, {@code EDQUOT} from {@code write} occurs in multi-tenant environments where
+ * filesystem quotas are enforced per user or per group ({@code quota(1)}, {@code repquota(8)}),
+ * in Kubernetes environments that use project quotas on XFS or ext4 volumes to limit per-namespace
+ * storage consumption, and in shared NFS environments where the NFS server enforces per-user quotas.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>Disk quotas are enforced at two levels: block quotas (limits the total number of filesystem
+ * blocks a user can allocate) and inode quotas (limits the number of files a user can create).
+ * When {@code write} would cause the user's block usage to exceed the hard limit, the kernel
+ * returns {@code EDQUOT}. If the user is between the soft limit and the hard limit, the write
+ * succeeds but a grace timer starts; when the timer expires, writes return {@code EDQUOT}
+ * even if the hard limit has not been reached.
+ *
+ * <p>The distinction between {@code EDQUOT} and {@code ENOSPC}: {@code EDQUOT} is per-user or
+ * per-group, while {@code ENOSPC} is filesystem-wide. A user can receive {@code EDQUOT} even
+ * when the filesystem has free space (because the user's quota is exhausted), and a user can
+ * receive {@code ENOSPC} even when they have quota remaining (because the filesystem itself is
+ * full). Applications that treat both as equivalent "cannot write" errors should use the
+ * {@code strerror} message or the errno value to log the specific cause for operator diagnostics.
+ *
+ * <p>Java maps {@code EDQUOT} from {@code write} to an {@code IOException} with the message
+ * "Disk quota exceeded". The same {@code IOException} type is used for all write-side IO errors;
+ * application code that needs to distinguish quota exhaustion from disk exhaustion must inspect
+ * the exception message or use a platform-specific API to query the quota status.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.IO)
- * @ChaosWriteEdquot(probability = 0.001)
- * class FaultTest {
+ * @ChaosWriteEdquot(probability = 0.1)
+ * class WriteEdquotTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void quotaExceededIsReportedWithOperableErrorDistinctFromDiskFull() {
+ *     // assert that the error message says "quota exceeded" not "no space left on device"
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosWriteEdquots}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosWriteEnospc
+ * @see ChaosPwriteEdquot
+ * @see com.macstab.chaos.filesystem.annotation.l1.IoErrnoBinding
  */
 @Repeatable(ChaosWriteEdquot.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

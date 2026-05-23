@@ -14,39 +14,61 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Injects {@code ENFILE} on every libchaos-intercepted {@code execveat} call inside the target
- * container, making the call fail as if the kernel returned {@code ENFILE}.
+ * Injects {@code ENFILE} into {@code execveat} calls intercepted by libchaos-process, causing the
+ * calling code to observe a system-wide file-table exhaustion failure when attempting to replace
+ * the process image relative to a directory file descriptor.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ENFILE}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code ENFILE} is a valid POSIX result of {@code execveat}.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code EXECVEAT}, errno = {@code ENFILE}) tuple.
+ * The {@code EXECVEAT} selector intercepts {@code execveat} calls only (the Linux-specific
+ * directory-relative exec syscall), leaving {@code execve} and all other process syscalls
+ * unaffected. Compile-time safety: invalid selector/errno combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code execveat} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = ENFILE} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: system-wide file-descriptor limit reached — typical of host-side fd exhaustion.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code execveat} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code execveat} call the interposer runs a Bernoulli trial with probability
+ *       {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = ENFILE} and returns {@code -1}
+ *       without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 23,
+ *       {@code strerror}: "Too many open files in system"; no new process image is loaded.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family at the dynamic-linker
- * level. This annotation installs a rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code execveat} returns {@code -1}; {@code errno = ENFILE} (23); the kernel's global
+ *       file table ({@code fs.file-max}) is exhausted — no process on the system can open any
+ *       new file, including the binary file that exec needs to load the new image.</li>
+ *   <li>The application must close the {@code dirfd} it opened before the exec attempt even on
+ *       {@code ENFILE} failure — assert that the runtime's error path includes an explicit
+ *       {@code close(dirfd)} call to avoid contributing to the system-wide fd pressure.</li>
+ *   <li>Assert that the application surfaces a platform-capacity alert for {@code ENFILE} from
+ *       exec and does not attempt to resolve the condition in-process (closing the application's
+ *       own fds will not help when the system-wide limit is exhausted by other processes).</li>
  * </ul>
+ * Production failure mode: a high-density Kubernetes node runs container runtimes that each
+ * open a {@code dirfd} to the container's root filesystem for {@code execveat(AT_EMPTY_PATH)}
+ * exec; the cumulative fd usage across all runtimes on the node approaches {@code fs.file-max};
+ * a burst of container launches pushes the node over the limit; all subsequent exec calls fail
+ * with {@code ENFILE} and the runtimes leak their dirfds on error, creating a compounding
+ * failure where each failed launch makes the next one more likely to fail.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>The {@code ENFILE} risk is compounded in the {@code execveat(AT_EMPTY_PATH)} pattern because
+ * it requires the application to open the binary fd before exec — the application has already
+ * consumed one fd slot for the dirfd when it encounters the {@code ENFILE} from the exec's
+ * internal binary open. The application must close the dirfd in the error path; failing to do
+ * so makes the fd pressure on the system worse, potentially triggering {@code ENFILE} on
+ * subsequent open and exec calls.
+ *
+ * <p>The operational distinction from {@code EMFILE} is critical: {@code EMFILE} means the
+ * calling process's own fd table is full (fixable by closing that process's leaked fds);
+ * {@code ENFILE} means the system-wide kernel file table is exhausted (requires either the
+ * platform team to raise {@code fs.file-max} or a reduction of aggregate fd usage across
+ * all processes on the node). Applications must emit distinct diagnostics for each to enable
+ * correct operator response.
  *
  * <h2>Example</h2>
  *
@@ -54,21 +76,23 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
  * @ChaosExecveatEnfile(probability = 0.001)
- * class FaultTest {
+ * class ExecveatSystemFdExhaustionTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void runtimeClosesDirfdOnEnfileAndAlertsPlatformTeam(ConnectionInfo info) {
+ *     // verify dirfd closed on ENFILE; platform alert raised; no in-process fd-leak fix attempt
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
+ * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; system-wide fd exhaustion is a
+ * multi-tenant event; any non-zero probability exercises the dirfd-close-on-error path.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosExecveatEnfiles}) to bind different probabilities to
- * different containers simultaneously.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessErrnoBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#errno(ProcessSelector, ProcessErrno, double)
  */
 @Repeatable(ChaosExecveatEnfile.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

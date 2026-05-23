@@ -14,59 +14,105 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Throw the configured exception at the jdbc_statement_execute call site.
+ * Intercepts {@code Statement.execute()} / {@code executeQuery()} / {@code executeUpdate()} and
+ * throws the configured exception before SQL is sent to the database, enabling tests to verify that
+ * the application handles specific JDBC exception types raised during query execution.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> throw the configured exception at the
- * JDBC_STATEMENT_EXECUTE call site inside the JVM of the target container. The effect fires on
- * every matching call, subject to the probability configured via {@link #probability()} if
- * applicable. The rule is active from {@code beforeAll} until {@code afterAll} (class-scope) or
- * from {@code beforeEach} until {@code afterEach} (method-scope).
+ * A JVM agent L1 chaos primitive — one typed annotation per (selector family, operation type,
+ * effect) tuple. It is declared on a test class or method alongside a container annotation and
+ * activates for the lifetime of the test class ({@code beforeAll} / {@code afterAll}) or a single
+ * test method ({@code beforeEach} / {@code afterEach}).
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>Before every call to {@code java.sql.Statement#execute(String)},
+ *       {@code executeQuery(String)}, or {@code executeUpdate(String)} inside the target
+ *       container's JVM, the chaos agent intercepts the calling thread.
+ *   <li>The agent reflectively instantiates the class named by {@link #exceptionClassName()} with
+ *       the message from {@link #message()} and throws it immediately.
+ *   <li>No SQL is sent to the database; no JDBC network activity occurs; the connection remains
+ *       valid and is returned to the pool after the transaction manager handles the exception.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>Every statement execute throws the configured exception; Spring's {@code JdbcTemplate}
+ *       translates it via {@code SQLExceptionTranslator} — assert that the correct
+ *       {@code DataAccessException} subtype is produced.
+ *   <li>JPA/Hibernate: an exception during flush causes the persistence context to be marked
+ *       invalid; assert that the entity manager is closed and not reused.
+ *   <li>Inject {@code java.sql.SQLTimeoutException} to test query-timeout handling without
+ *       waiting for a real slow query; assert that the application increments a timeout counter.
+ *   <li><strong>Production failure mode:</strong> a database schema migration runs
+ *       {@code ALTER TABLE} acquiring an exclusive lock; concurrent application queries receive
+ *       {@code com.mysql.cj.jdbc.exceptions.MySQLTimeoutException}; the application must
+ *       return 503 and not leave open transactions that hold row locks themselves.
  * </ul>
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The exception injection translator targets the {@code java.sql.Statement} interface execute
+ * family of methods. The Byte Buddy matcher uses {@code ElementMatchers.namedOneOf("execute",
+ * "executeQuery", "executeUpdate")} on {@code Statement} implementors, catching all three variants
+ * with a single instrumentation point. This covers batch execute variants too if the batch execute
+ * internally delegates to single-statement execute (as most drivers do).
+ *
+ * <p>Spring's {@code SQLExceptionTranslator} uses the {@code SQLException}'s SQL state and error
+ * code to classify the exception. To test a specific classification path, inject a subclass whose
+ * SQL state matches the desired category: SQL state "08" for connection errors, "57" for
+ * database-resource errors on DB2, or vendor-specific codes. The injected message can carry a
+ * synthetic SQL state if the exception class exposes a {@code getSQLState()} method.
+ *
+ * <p>Hibernate's {@code SessionImpl#flush()} catches {@code HibernateException} but allows
+ * {@code SQLException} to propagate (wrapped in a {@code JDBCException}); the persistence context
+ * is then in an indeterminate state. Injecting {@code java.sql.SQLException} during flush
+ * exercises the code paths that handle dirty session state, including whether the application
+ * correctly evicts the session from the session factory's cache.
+ *
+ * <p>When combined with a probability modifier, sporadic statement failures simulate transient
+ * database errors. Frameworks using Spring Retry will retry {@code TransientDataAccessException}
+ * subtypes; ensure the retry does not reuse a connection that was left in a dirty state
+ * (partially-written transaction) by the previous attempt.
+ *
+ * <p>The connection is not closed by this annotation; the pool receives it back via the normal
+ * {@code close()} path in the transaction manager's finally block. If the application does not
+ * close the connection on exception, the pool will eventually time out the leak — combine with
+ * {@link ChaosJdbcConnectionAcquireDelay} to accelerate pool-leak detection.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosJdbcStatementExecuteInjectException
- * class JvmChaosTest {
+ * @ChaosJdbcStatementExecuteInjectException(
+ *     exceptionClassName = "java.sql.SQLTimeoutException",
+ *     message = "query timeout exceeded")
+ * class QueryTimeoutTest {
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void applicationCountsTimeoutAndReturns503(ConnectionInfo info) {
+ *     // assert query-timeout metric incremented and HTTP 503 returned
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosJdbcStatementExecuteInjectExceptions}) to apply different configurations to
- * different containers.
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation is required; omitting
+ *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
+ *       {@code @JvmAgentChaos}; it is attached before the container starts.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
+ *       translator class can be resolved.
+ *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
+ *       intercept native executables.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosJdbcStatementExecuteDelay
+ * @see ChaosJdbcPreparedStatementInjectException
  */
 @Repeatable(ChaosJdbcStatementExecuteInjectException.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

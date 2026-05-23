@@ -14,62 +14,92 @@ import com.macstab.chaos.time.model.TimeErrno;
 import com.macstab.chaos.time.model.TimeSelector;
 
 /**
- * Injects {@code EINVAL} on every libchaos-intercepted {@code clock gettime} call inside the target
- * container, making the call fail as if the kernel returned {@code EINVAL}.
+ * Injects {@code EINVAL} into {@code clock_gettime(2)}, causing the call to return {@code -1} with
+ * {@code errno = EINVAL} as if the kernel rejected an invalid or unsupported clock identifier.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EINVAL}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EINVAL} is a valid POSIX result of {@code clock gettime}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code clock gettime} call that the
- * libchaos interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When
- * it fires the interceptor returns {@code -1} and sets {@code errno = EINVAL} — from the
- * application's perspective this is indistinguishable from a real kernel-level failure.
- * Specifically this simulates: invalid argument — bad length, flags, or option; the universal
- * canary errno.
+ * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code CLOCK_GETTIME}, errno =
+ * {@code EINVAL}) tuple. The tuple is safe by construction — {@code EINVAL} is a documented POSIX
+ * result of {@code clock_gettime(2)} when the {@code clockid} argument is unknown, not supported by
+ * the kernel build, or the process lacks the capability required for that clock. No runtime
+ * selector-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.TIME)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-time.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the libc wrappers for {@code clock_gettime},
- * {@code nanosleep}, and {@code usleep}. This annotation installs a rule via {@code
- * AdvancedTimeChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
+ *       at the dynamic-linker level.
+ *   <li>On every intercepted {@code clock_gettime} call a Bernoulli trial with probability
+ *       {@link #probability} is conducted.
+ *   <li>When the trial fires the interposer returns {@code -1} and sets {@code errno = EINVAL}
+ *       without invoking the real kernel call — the application sees a genuine kernel failure.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.TIME)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-time} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code clock_gettime} returns {@code -1}; callers that omit a return-value check will
+ *       silently use an uninitialised {@code timespec} — a subtle correctness bug.
+ *   <li>Java's {@code System.currentTimeMillis()} and {@code System.nanoTime()} delegate to
+ *       {@code clock_gettime} via JNI and may throw or return stale values depending on the JVM.
+ *   <li>Distributed lease or election logic that derives timeouts from the monotonic clock may
+ *       miscalculate intervals and trigger spurious leader elections or lock expiries.
+ *   <li>Assert that the application emits a structured error, increments a fault metric, and does
+ *       not silently propagate a zero-valued or garbage timestamp downstream.
  * </ul>
+ *
+ * <p>In production, {@code EINVAL} from {@code clock_gettime} most commonly indicates a seccomp
+ * filter rejecting the specific clock variant, or a stripped container image in which a non-standard
+ * clock identifier is absent from the kernel configuration.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>POSIX (IEEE Std 1003.1-2017, {@code clock_gettime}) mandates {@code EINVAL} when the
+ * {@code clockid} argument does not refer to a known clock. The three clocks most relevant to
+ * distributed Java services are {@code CLOCK_REALTIME} (wall clock, subject to NTP steps),
+ * {@code CLOCK_MONOTONIC} (never steps backward, used for timeouts and heartbeats), and
+ * {@code CLOCK_PROCESS_CPUTIME_ID} (requires {@code CAP_SYS_PTRACE} in hardened kernels).
+ *
+ * <p>The glibc wrapper for {@code clock_gettime} uses the vDSO fast path when available, bypassing
+ * the kernel boundary entirely. {@code libchaos-time.so} interposes at the PLT / GOT level, which
+ * intercepts the call regardless of whether the vDSO or the real syscall path is taken — making the
+ * injected failure transparent to both paths.
+ *
+ * <p>Frameworks affected: Spring's {@code StopWatch}, Micrometer's {@code Clock}, Caffeine's
+ * expiry policy, Jedis / Lettuce socket timeout computation (via {@code getsockopt SO_RCVTIMEO}
+ * which reads the monotonic clock internally), Raft and Paxos implementations (etcd, Consul, Zab)
+ * that use monotonic time for heartbeat intervals, and Redis's internal {@code mstime()} helper
+ * which calls {@code clock_gettime(CLOCK_REALTIME)}.
+ *
+ * <p>Sibling annotations: {@link ChaosClockGettimeEfault} targets bad-pointer edge cases at the
+ * syscall boundary; {@link ChaosClockGettimeEperm} targets capability failures for privileged clock
+ * ids; {@link ChaosClockGettimeEnosys} targets kernels that do not expose the syscall at all;
+ * {@link ChaosClockGettimeOffset} shifts the returned time value instead of failing the call.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.TIME)
- * @ChaosClockGettimeEinval(probability = 0.001)
- * class FaultTest {
+ * @ChaosClockGettimeEinval(probability = 0.01)
+ * class ClockGettimeEinvalTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void applicationHandlesInvalidClockId(ConnectionInfo info) {
+ *     // assert that the application does not silently propagate a zero timestamp
+ *     // and that a structured error is emitted to the metrics or log pipeline
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosClockGettimeEinvals}) to bind different
- * probabilities to different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosClockGettimeEfault
+ * @see ChaosClockGettimeEperm
+ * @see ChaosClockGettimeEnosys
+ * @see com.macstab.chaos.time.annotation.l1.TimeErrnoBinding
  */
 @Repeatable(ChaosClockGettimeEinval.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

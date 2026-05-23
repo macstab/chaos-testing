@@ -14,47 +14,82 @@ import com.macstab.chaos.memory.model.MemorySelector;
 import com.macstab.chaos.memory.model.MmapErrno;
 
 /**
- * Injects {@code EINVAL} on every libchaos-memory-intercepted {@code every interposed VM syscall}
- * call inside the target container, making the call fail as if the kernel returned {@code EINVAL}.
+ * Injects {@code EINVAL} into every VM syscall ({@code mmap}, {@code munmap}, {@code mprotect},
+ * {@code madvise}) intercepted by libchaos-memory, causing the calling code to observe an
+ * invalid-argument failure across all memory-management operations simultaneously.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector = {@code WILDCARD}, errno = {@code EINVAL}) pair.
- * The combination is safe by construction: this annotation class exists only because {@code EINVAL}
- * is a valid POSIX result of {@code every interposed VM syscall}; the invalid combinations simply
- * have no annotation class, so the selector × errno matrix cannot be violated at compile time.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-memory primitive — one (selector = {@code WILDCARD}, errno = {@code EINVAL}) tuple.
+ * The {@code WILDCARD} selector is the broadest available: it matches every syscall interposed by
+ * libchaos-memory — {@code mmap} (anonymous and file-backed), {@code munmap}, {@code mprotect},
+ * and {@code madvise} — with a single rule. Use narrower selectors ({@code MMAP_ANON},
+ * {@code MMAP_FILE}, {@code MPROTECT}, {@code MUNMAP}, {@code MADVISE}) for targeted fault
+ * isolation; use {@code WILDCARD} when you need to verify that a process handles comprehensive,
+ * simultaneous VM argument validation failures across all memory-management paths.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code every interposed VM syscall} call
- * that the libchaos-memory interceptor sees, a Bernoulli trial with probability {@link
- * #probability} is run. When it fires the interceptor returns {@code -1} and sets {@code errno =
- * EINVAL} before the kernel call completes — from the application perspective this is
- * indistinguishable from a real kernel-level failure. Specifically this simulates: invalid argument
- * — bad length, alignment, or flags; the universal canary errno.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
+ *       interposing the libc wrappers for {@code mmap}, {@code munmap}, {@code mprotect}, and
+ *       {@code madvise} at the dynamic-linker level.</li>
+ *   <li>On each intercepted call the interposer runs a Bernoulli trial with probability
+ *       {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = EINVAL} and returns {@code -1}
+ *       (or {@code MAP_FAILED} for {@code mmap}) without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code -1} / {@code MAP_FAILED} return, {@code errno} 22,
+ *       {@code strerror}: "Invalid argument"; no memory operation is performed.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.MEMORY)} annotation on the container declaration causes
- * {@code ChaosTestingExtension} to upload {@code libchaos-memory.so} into the container and prepend
- * it to {@code LD_PRELOAD} before the container process starts. The shared library interposes the
- * libc wrappers for {@code mmap}, {@code munmap}, {@code mprotect}, and {@code madvise} at the
- * dynamic-linker level. This annotation then installs a rule via {@code
- * AdvancedMemoryChaos.apply(container, rule)} that configures the interposer with the selector and
- * probability you specify.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD} which does not apply on
- *       macOS or Windows containers; annotate the test class with {@code @DisabledOnOs(OS.WINDOWS)}
- *       and be aware of macOS Docker limitations.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.MEMORY)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — this installs the shared library before container start;
- *       omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) do not
- *       honour {@code LD_PRELOAD} for statically-linked binaries; use a glibc variant or the
- *       Debian-slim image instead.
- *   <li><strong>{@code macstab-chaos-memory} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and {@code ChaosTestingExtension} throws {@code
- *       ClassNotFoundException} wrapped in {@code ExtensionConfigurationException}.
+ *   <li>Every intercepted VM syscall returns {@code EINVAL} with the configured probability;
+ *       the application must handle the failure on every memory-management path simultaneously
+ *       rather than only the specific syscall under test.</li>
+ *   <li>Applications that perform heap allocation ({@code mmap}), segment rotation ({@code munmap}),
+ *       JIT code protection ({@code mprotect}), and readahead hints ({@code madvise}) in the same
+ *       code path will encounter cascading {@code EINVAL} failures; assert that no single-path
+ *       failure causes unhandled exceptions that mask failures on other paths.</li>
+ *   <li>Assert that the application's error-handling aggregation (structured logging, metrics,
+ *       error counters) correctly attributes each {@code EINVAL} to its originating call rather
+ *       than conflating all VM failures under a single error category — the wildcard selector
+ *       exercises all paths and exposes missing per-syscall error attribution.</li>
  * </ul>
+ * Production failure mode: a kernel upgrade tightens argument validation (e.g. Linux 4.17 made
+ * {@code mmap} reject negative {@code length} values explicitly; Linux 5.10 tightened
+ * {@code mprotect} flags validation) causing previously-accepted calls to return {@code EINVAL};
+ * this wildcard annotation simulates that environment-wide validation change for all VM syscalls
+ * simultaneously, revealing which application paths lack correct error handling before deployment.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>The {@code WILDCARD} selector is implemented by the libchaos-memory dispatcher as a catch-all
+ * rule that is evaluated for every intercepted function call before selector-specific rules.
+ * This means a wildcard rule with {@code probability = 0.001} has a 0.1% chance of firing on
+ * every {@code mmap}, {@code munmap}, {@code mprotect}, and {@code madvise} call independently.
+ * If the process makes 1000 VM syscalls per second — typical for a JVM during GC warmup — the
+ * expected fault rate is 1 per second distributed across all four syscall types.
+ *
+ * <p>The per-syscall semantics of {@code EINVAL} differ significantly: for {@code mmap}, it
+ * indicates bad flags, non-page-aligned offset, or invalid combination of {@code MAP_FIXED} and
+ * misaligned {@code addr}; for {@code munmap} and {@code mprotect}, it indicates non-page-aligned
+ * {@code addr} or arithmetic-overflowed range; for {@code madvise}, it indicates an unrecognised
+ * advice value or non-page-aligned address. The application's error-handling code must be correct
+ * for all four semantics simultaneously — wildcard injection reveals cases where only the most
+ * common path (e.g. {@code mmap} failure) is handled and the others silently swallow errors.
+ *
+ * <p>The cascading effect of wildcard injection is the primary value of this selector: a process
+ * that allocates memory with {@code mmap}, immediately calls {@code madvise(MADV_WILLNEED)} on
+ * the region, and then calls {@code mprotect} to set execute permissions will encounter all three
+ * failures in sequence. This exposes ordering dependencies in error handling: if the application
+ * checks only the final {@code mprotect} return value and skips the intermediate steps, wildcard
+ * injection will reveal the gap. JVM JIT compilers are particularly susceptible because they
+ * allocate, advise, and protect code regions in a tight sequence during compilation.
+ *
+ * <p>Compared with per-syscall selectors: {@code MMAP_ANON}, {@code MMAP_FILE}, {@code MPROTECT},
+ * {@code MUNMAP}, and {@code MADVISE} selectors inject faults only on their respective syscall,
+ * enabling surgical fault isolation for targeted resilience testing. {@code WILDCARD} is the
+ * broadest available scope — it is most useful for initial coverage sweeps (verifying that at
+ * least some error handling exists on all paths) before moving to targeted selectors for specific
+ * failure mode validation.
  *
  * <h2>Example</h2>
  *
@@ -62,19 +97,21 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.MEMORY)
  * @ChaosWildcardEinval(probability = 0.001)
- * class MemoryFaultTest {
+ * class VmArgumentValidationTest {
  *   @Test
- *   void appHandlesEinvalOnAlloc(RedisConnectionInfo info) { ... }
+ *   void allVmSyscallsHandleEinvalWithoutUnhandledExceptions(RedisConnectionInfo info) {
+ *     // verify no unhandled EINVAL from mmap, munmap, mprotect, or madvise during normal operation
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2 as a canary; 1.0 will block all mapped I/O
- * and crash the JVM.
- *
+ * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2 for initial coverage sweeps; values
+ * above 0.1 will cause cascading failures across all VM paths simultaneously and may prevent the
+ * process from starting (mmap during dynamic linking may fail). Values at 1.0 will crash the
+ * process immediately during the dynamic linker's own memory allocations.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
- * the test class. Use the repeatable form ({@code @ChaosWildcardEinvals}) to bind different
- * probabilities to different containers simultaneously.
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see MemoryErrnoBinding

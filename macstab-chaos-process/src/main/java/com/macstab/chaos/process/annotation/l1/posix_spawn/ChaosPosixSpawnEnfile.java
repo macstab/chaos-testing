@@ -14,39 +14,73 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Injects {@code ENFILE} on every libchaos-intercepted {@code posix spawn} call inside the target
- * container, making the call fail as if the kernel returned {@code ENFILE}.
+ * Injects {@code ENFILE} into {@code posix_spawn} calls intercepted by libchaos-process, causing
+ * the calling code to observe a system-wide file-table exhaustion failure when attempting to spawn
+ * a new process.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ENFILE}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code ENFILE} is a valid POSIX result of {@code posix spawn}.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code POSIX_SPAWN}, errno = {@code ENFILE})
+ * tuple. The {@code POSIX_SPAWN} selector intercepts {@code posix_spawn} calls only, leaving
+ * {@code posix_spawnp}, {@code fork}, {@code execve}, and all other process syscalls unaffected.
+ * Compile-time safety: invalid selector/errno combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code posix spawn} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = ENFILE} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: system-wide file-descriptor limit reached — typical of host-side fd exhaustion.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code posix_spawn} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code posix_spawn} call the interposer runs a Bernoulli trial with probability
+ *       {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer returns {@code ENFILE} directly (POSIX spawn returns
+ *       the error code, not -1) without issuing the real kernel call.</li>
+ *   <li>The calling code receives: return value {@code ENFILE} (23),
+ *       {@code strerror}: "Too many open files in system"; the kernel's global file table
+ *       ({@code fs.file-max}) is exhausted; no child process is created; closing this process's
+ *       fds will not resolve the condition.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family at the dynamic-linker
- * level. This annotation installs a rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code posix_spawn} returns {@code ENFILE}; no child process is created; assert that the
+ *       application surfaces a platform-capacity alert rather than attempting in-process remediation
+ *       — closing this process's fds will not restore capacity when the system-wide kernel file
+ *       table is exhausted by other processes.</li>
+ *   <li>Assert that the application distinguishes {@code posix_spawn}-ENFILE (23, system-wide
+ *       kernel file table exhausted, requires platform team to raise {@code fs.file-max} or reduce
+ *       aggregate fd usage) from EMFILE (24, per-process fd table full, fixable by closing leaked
+ *       fds in this process) — the diagnostic must route to the correct operator runbook.</li>
+ *   <li>Assert that the application does not call {@code waitpid} on the uninitialised pid output
+ *       parameter after an ENFILE failure — POSIX does not define the pid value on spawn failure.</li>
  * </ul>
+ * Production failure mode: a Kubernetes node runs multiple container runtimes that each use
+ * {@code posix_spawn} to launch sidecar processes; accumulated fd leaks across all runtimes push
+ * the node's aggregate fd usage towards {@code fs.file-max}; spawn intermittently returns ENFILE;
+ * the runtimes do not distinguish ENFILE from EMFILE and instruct operators to check per-process
+ * fd counts — operators close application fds but the system-wide count is unchanged.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>{@code ENFILE} from {@code posix_spawn} occurs when the kernel's system-wide open-file
+ * table ({@code fs.file-max}, visible in {@code /proc/sys/fs/file-max}) is full. Every open fd
+ * in every process on the node counts against this limit. The glibc {@code posix_spawn}
+ * implementation internally allocates fds for the parent-child communication pipe used to report
+ * exec errors from the child back to the parent; if the system-wide table is full, this pipe
+ * allocation fails with ENFILE before the fork even begins.
+ *
+ * <p>The return-value convention is important: {@code posix_spawn} returns the error code directly,
+ * not -1. Code that checks {@code if (errno == ENFILE)} without checking the return value is
+ * incorrect. The interposer returns ENFILE as the return value, matching the POSIX specification.
+ *
+ * <p>The operational distinction from EMFILE is critical for incident response: EMFILE (24) means
+ * this process's fd table is full and can potentially be fixed by closing leaked fds within the
+ * process; ENFILE (23) means the system-wide kernel file table is exhausted and requires either
+ * a platform-level increase in {@code fs.file-max} or a coordinated reduction in aggregate fd
+ * usage across all processes on the node. Applications that emit a single "too many files" error
+ * for both cases will receive incorrect remediation instructions from operators.
+ *
+ * <p>The diagnostic for ENFILE from spawn should include the node-level metric
+ * ({@code /proc/sys/fs/file-nr} shows used, free, and max) to help operators distinguish a
+ * single-process fd leak (EMFILE pattern) from a multi-process cumulative leak (ENFILE pattern).
+ * Including this metric in the spawn failure log entry enables operators to take the correct action
+ * without requiring kernel tracing tools.
  *
  * <h2>Example</h2>
  *
@@ -54,21 +88,23 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
  * @ChaosPosixSpawnEnfile(probability = 0.001)
- * class FaultTest {
+ * class PosixSpawnNodeFdSaturationTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void launcherEscalatesToPlatformAlertOnEnfileAndDoesNotWaitOnUninitPid(ConnectionInfo info) {
+ *     // verify ENFILE triggers platform alert; no waitpid on uninit pid; ENFILE vs EMFILE distinct
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
+ * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; system-wide fd exhaustion is a
+ * multi-tenant event; any non-zero probability exercises the platform-escalation path.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosPosixSpawnEnfiles}) to bind different probabilities
- * to different containers simultaneously.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessErrnoBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#errno(ProcessSelector, ProcessErrno, double)
  */
 @Repeatable(ChaosPosixSpawnEnfile.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

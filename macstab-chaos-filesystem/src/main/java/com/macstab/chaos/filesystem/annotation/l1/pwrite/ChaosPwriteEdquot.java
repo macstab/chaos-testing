@@ -14,61 +14,94 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code EDQUOT} on every libchaos-intercepted {@code pwrite} call inside the target
- * container, making the call fail as if the kernel returned {@code EDQUOT}.
+ * Injects {@code EDQUOT} into {@code pwrite(2)}, causing the call to return {@code -1} with
+ * {@code errno = EDQUOT} as if the user's disk quota on this filesystem has been exceeded and the
+ * kernel cannot allocate additional blocks for the positional write operation.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EDQUOT}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EDQUOT} is a valid POSIX result of {@code pwrite}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code pwrite} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = EDQUOT} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: disk quota exceeded — typical of multi-tenant filesystem environments.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code PWRITE}, errno = {@code EDQUOT})
+ * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
+ * {@code pwrite} call; when it fires the interposer returns {@code -1} with {@code errno = EDQUOT}
+ * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.IO)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-io.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the filesystem libc wrappers (open, read,
- * write, close, fsync, etc.) at the dynamic-linker level. This annotation installs a rule via
- * {@code AdvancedFilesystemChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
+ *       extension to upload {@code libchaos-io.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
+ *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
+ *       {@code fallocate} at the dynamic-linker level.
+ *   <li>On each intercepted {@code pwrite} call a Bernoulli trial with probability {@link #probability}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = EDQUOT}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.IO)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-filesystem} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code EDQUOT} from {@code pwrite} means the user's storage quota is exhausted; the write
+ *       at the requested offset was not performed. Assert that the application does not proceed as
+ *       if the write succeeded and reports the quota-exceeded condition rather than silently
+ *       dropping data.
+ *   <li>Database engines that use {@code pwrite} for page writes must handle {@code EDQUOT} by
+ *       aborting the in-progress transaction and refusing new write transactions until the quota
+ *       condition is resolved; assert that no transaction is marked committed when the page write
+ *       failed due to quota exhaustion.
+ *   <li>Applications that write user-generated content directly to a file at a specific offset
+ *       (resumable upload targets, append-only journals) must handle {@code EDQUOT} gracefully by
+ *       rejecting the write and informing the user that their storage quota is exhausted.
+ *   <li>Assert that the application's error message distinguishes "quota exceeded" from "disk full"
+ *       to help operators apply the correct remediation — quota increase versus disk expansion.
  * </ul>
+ *
+ * <p>In production, {@code EDQUOT} from {@code pwrite} occurs in multi-tenant environments where
+ * filesystem quotas are enforced per user or per group, in Kubernetes environments using XFS or
+ * ext4 project quotas to limit per-namespace storage, and when an NFS server enforces per-user
+ * quotas and the NFS client propagates the quota error as {@code EDQUOT}.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code pwrite(2)} writes {@code count} bytes from the caller's buffer to file descriptor
+ * {@code fd} at offset {@code offset} without modifying the file's current position. Like
+ * {@code write(2)}, it must allocate storage blocks when the write extends the file or fills a
+ * sparse region. The kernel's quota subsystem checks the user's block allocation before each new
+ * block is allocated; when the write would cause the user's block usage to exceed the hard limit,
+ * the kernel returns {@code EDQUOT} for the entire {@code pwrite} call.
+ *
+ * <p>Database storage engines prefer {@code pwrite} over {@code lseek} + {@code write} for page
+ * writes because {@code pwrite} is thread-safe: multiple threads can issue concurrent page writes
+ * to different offsets without locking the file position. An {@code EDQUOT} error on any of these
+ * concurrent writes must be propagated to the transaction layer, which must then abort the affected
+ * transaction and mark the storage as degraded. Engines that use a write-ahead log must also abort
+ * and re-checkpoint the log to avoid leaving the storage in an inconsistent state.
+ *
+ * <p>Java's {@code FileChannel.write(ByteBuffer, long)} maps to {@code pwrite(2)} on Linux. When
+ * the underlying call returns {@code EDQUOT}, the JVM throws an {@code IOException} with the
+ * message "Disk quota exceeded". Application code that catches {@code IOException} and retries
+ * indefinitely on quota exhaustion will loop forever; it should apply a retry budget or escalate
+ * to an operator alert.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.IO)
- * @ChaosPwriteEdquot(probability = 0.001)
- * class FaultTest {
+ * @ChaosPwriteEdquot(probability = 0.1)
+ * class PwriteEdquotTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void quotaExceededOnPageWriteAbortsTransactionNotCommits() {
+ *     // assert that EDQUOT on pwrite causes transaction abort rather than silent data loss
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosPwriteEdquots}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosWriteEdquot
+ * @see ChaosPwriteEnospc
+ * @see com.macstab.chaos.filesystem.annotation.l1.IoErrnoBinding
  */
 @Repeatable(ChaosPwriteEdquot.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

@@ -14,40 +14,79 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code EADDRNOTAVAIL} on every libchaos-intercepted {@code bind} call inside the target
- * container, making the call fail as if the kernel returned {@code EADDRNOTAVAIL}.
+ * Injects {@code EADDRNOTAVAIL} into {@code bind(2)}, causing the call to return {@code -1} with
+ * {@code errno = EADDRNOTAVAIL} as if the requested local address is not assigned to any network
+ * interface on the host and therefore cannot be used as a binding address.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EADDRNOTAVAIL}) pair and has no
- * runtime selector-errno matrix to validate. The combination is safe by construction: this
- * annotation class exists only because {@code EADDRNOTAVAIL} is a valid POSIX result of {@code
- * bind}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code bind} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #toxicity} is run. When it fires the
- * interceptor returns {@code -1} and sets {@code errno = EADDRNOTAVAIL} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: address not available — interface unconfigured; network-setup race.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code BIND}, errno =
+ * {@code EADDRNOTAVAIL}) tuple. A Bernoulli trial with probability {@link #toxicity} is run on each
+ * intercepted {@code bind} call; when it fires the interposer returns {@code -1} with
+ * {@code errno = EADDRNOTAVAIL} without performing any real kernel operation. No runtime
+ * operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.NET)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-net.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes socket-layer libc wrappers (connect, accept,
- * socket, bind, listen, shutdown, send, recv, poll). This annotation installs a rule via {@code
- * AdvancedConnectionChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
+ *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
+ *       {@code poll} at the dynamic-linker level.
+ *   <li>On each intercepted {@code bind} call a Bernoulli trial with probability {@link #toxicity}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = EADDRNOTAVAIL}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.NET)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-connection} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>Server startup fails if the service is configured to bind to a specific IP address that is
+ *       not present on any local interface; assert that the startup log identifies the missing
+ *       address rather than reporting a generic bind failure.
+ *   <li>Services configured to bind to a specific container IP address will fail after a container
+ *       restart if the IP address assignment changes; assert that the service detects this condition
+ *       and refreshes its address configuration rather than entering a crash loop.
+ *   <li>Distinguish {@code EADDRNOTAVAIL} (address not on any interface) from {@code EADDRINUSE}
+ *       (address exists but is already bound); assert that the application applies different
+ *       recovery strategies: waiting for a conflict to resolve versus reconfiguring the address.
+ *   <li>Assert that monitoring alerts fire when the service fails to bind to its configured address,
+ *       since this typically indicates a network provisioning problem rather than an application bug.
  * </ul>
+ *
+ * <p>In production, {@code EADDRNOTAVAIL} on {@code bind} occurs when a service is configured to
+ * bind to a specific IP address that has been removed from the interface (e.g., during floating-IP
+ * failover, network reconfiguration, or container re-scheduling to a host with a different IP range),
+ * or when the service configuration specifies an address on a VLAN that the container's network
+ * namespace does not include.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The kernel returns {@code EADDRNOTAVAIL} from {@code bind} when the {@code sin_addr} field of
+ * the address structure specifies an IP address that is not assigned to any network interface in the
+ * process's network namespace. Binding to {@code INADDR_ANY} (0.0.0.0) or {@code IN6ADDR_ANY_INIT}
+ * (::) always succeeds because the kernel selects the source address at connection time; only
+ * explicit IP addresses trigger this check.
+ *
+ * <p>Container orchestration systems assign IP addresses dynamically; a service that stores its bind
+ * address in a configuration file or environment variable will fail after re-scheduling to a host
+ * with a different subnet. This is particularly common in Kubernetes when a pod with
+ * {@code hostNetwork: true} is moved to a different node. The pod's configuration specifies the
+ * previous node's IP, which is not available on the new node.
+ *
+ * <p>Java's {@code ServerSocket} maps {@code EADDRNOTAVAIL} to a {@code BindException} with the
+ * message "Cannot assign requested address". Applications that catch {@code BindException} and
+ * retry without re-reading the configured address will retry indefinitely without resolving the
+ * underlying cause. This injection verifies that the application re-reads its address configuration
+ * on retry or escalates to a startup failure that triggers operator intervention.
+ *
+ * <p>The distinction from {@code EADDRINUSE} is significant for recovery: {@code EADDRINUSE} can
+ * sometimes be resolved by waiting for TIME_WAIT to expire or for the conflicting process to exit,
+ * while {@code EADDRNOTAVAIL} requires a network-level change (adding the address to an interface)
+ * that the application cannot perform. Applications that apply the same retry-and-wait strategy to
+ * both errors will hang indefinitely on {@code EADDRNOTAVAIL}.
  *
  * <h2>Example</h2>
  *
@@ -55,21 +94,18 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.NET)
  * @ChaosBindEaddrnotavail(toxicity = 0.001)
- * class FaultTest {
+ * class BindEaddrnotavailTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void serverDetectsMissingInterfaceAddressAndFailsFast(ConnectionInfo info) {
+ *     // assert that startup fails with a clear message identifying the missing address
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosBindEaddrnotavails}) to bind different probabilities
- * to different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosBindEaddrinuse
+ * @see ChaosBindEinval
+ * @see com.macstab.chaos.connection.annotation.l1.ConnectionErrnoBinding
  */
 @Repeatable(ChaosBindEaddrnotavail.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

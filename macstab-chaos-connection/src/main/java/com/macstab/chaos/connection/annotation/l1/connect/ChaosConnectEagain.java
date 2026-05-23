@@ -14,62 +14,102 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code EAGAIN} on every libchaos-intercepted {@code connect} call inside the target
- * container, making the call fail as if the kernel returned {@code EAGAIN}.
+ * Injects {@code EAGAIN} into {@code connect(2)}, causing the call to return {@code -1} with
+ * {@code errno = EAGAIN} as if the kernel's ephemeral port range is exhausted and no local port can
+ * be assigned for the outgoing connection.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EAGAIN}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EAGAIN} is a valid POSIX result of {@code connect}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code connect} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #toxicity} is run. When it fires the
- * interceptor returns {@code -1} and sets {@code errno = EAGAIN} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: temporary failure / resource temporarily unavailable — typical of RLIMIT exhaustion or
- * kernel pressure.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code CONNECT}, errno =
+ * {@code EAGAIN}) tuple. A Bernoulli trial with probability {@link #toxicity} is run on each
+ * intercepted {@code connect} call; when it fires the interposer returns {@code -1} with
+ * {@code errno = EAGAIN} without performing any real kernel operation. No runtime
+ * operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.NET)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-net.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes socket-layer libc wrappers (connect, accept,
- * socket, bind, listen, shutdown, send, recv, poll). This annotation installs a rule via {@code
- * AdvancedConnectionChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
+ *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
+ *       {@code poll} at the dynamic-linker level.
+ *   <li>On each intercepted {@code connect} call a Bernoulli trial with probability {@link #toxicity}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = EAGAIN}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.NET)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-connection} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>Connection pool acquisition fails transiently; assert that the pool client retries with
+ *       exponential back-off rather than propagating the failure immediately to the caller.
+ *   <li>Services that open many short-lived outgoing connections (e.g., HTTP/1.1 without keep-alive)
+ *       are the most vulnerable to ephemeral port exhaustion; assert that the service uses connection
+ *       pooling or HTTP/2 multiplexing to reduce port consumption.
+ *   <li>Assert that the application emits a port-exhaustion metric or alert when it receives
+ *       {@code EAGAIN} from {@code connect} repeatedly, so operators can tune
+ *       {@code net.ipv4.ip_local_port_range} or increase TIME_WAIT recycling.
+ *   <li>Distinguish {@code EAGAIN} (no port available) from {@code ECONNREFUSED} (server not
+ *       listening) in error handling: the former is a local resource limit, the latter is a remote
+ *       service failure requiring different circuit-breaker logic.
  * </ul>
+ *
+ * <p>In production, {@code EAGAIN} from {@code connect} occurs when the kernel cannot assign an
+ * ephemeral source port because the range defined by {@code net.ipv4.ip_local_port_range} (default
+ * 32768–60999) is fully consumed by TIME_WAIT sockets. Services that open and close many connections
+ * per second without allowing TIME_WAIT to expire exhaust the range within seconds on high-traffic
+ * hosts.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>For an unbound TCP socket, {@code connect} must first allocate an ephemeral source port from
+ * the kernel's local port range. The kernel scans the range looking for a port that is not in use by
+ * any existing socket; when the entire range is occupied by active or TIME_WAIT sockets, the scan
+ * fails and {@code connect} returns {@code EAGAIN}. The Linux kernel tunable
+ * {@code net.ipv4.ip_local_port_range} controls the range bounds; increasing it to 1024–65535
+ * approximately doubles the available ephemeral ports.
+ *
+ * <p>{@code SO_REUSEADDR} does not help with ephemeral port exhaustion from {@code connect}: that
+ * option allows reuse of local addresses in TIME_WAIT for the listening side (where the port is
+ * known and fixed), not for the connecting side (where the port is dynamically assigned). The
+ * correct mitigations are connection pooling (to reuse established connections), HTTP/2 or QUIC
+ * multiplexing (to share a single connection for multiple streams), and enabling
+ * {@code net.ipv4.tcp_tw_reuse} (which allows reuse of TIME_WAIT sockets for new outgoing
+ * connections if the timestamps option is enabled).
+ *
+ * <p>Java's NIO {@code SocketChannel.connect()} propagates the {@code EAGAIN} from the kernel as an
+ * {@code IOException} with the message "Cannot assign requested address" or "Resource temporarily
+ * unavailable" — the exact message depends on the JVM and glibc version. Neither message directly
+ * identifies port exhaustion; application code that logs the raw exception message without including
+ * the socket local address and errno value will produce diagnostics that are difficult to interpret
+ * during an incident.
+ *
+ * <p>Connection pools (HikariCP, commons-pool) catch {@code SQLException} or {@code IOException}
+ * from failed connection attempts and mark the connection as invalid, then try to create a
+ * replacement. On repeated {@code EAGAIN} the pool acquisition queue fills, and callers waiting for
+ * a connection will receive a pool timeout exception. This injection reveals the queue depth and
+ * timeout configuration required to survive a burst of port-exhaustion failures.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.NET)
- * @ChaosConnectEagain(toxicity = 0.001)
- * class FaultTest {
+ * @ChaosConnectEagain(toxicity = 0.01)
+ * class ConnectEagainTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void connectionPoolRetriesOnEphemeralPortExhaustion(ConnectionInfo info) {
+ *     // assert that pool retries with back-off and emits a port-exhaustion alert
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3 to simulate transient pressure; high rates
- * saturate retry budgets.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosConnectEagains}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosConnectEconnrefused
+ * @see ChaosConnectEtimedout
+ * @see com.macstab.chaos.connection.annotation.l1.ConnectionErrnoBinding
  */
 @Repeatable(ChaosConnectEagain.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

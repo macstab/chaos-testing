@@ -14,39 +14,75 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code EIO} on every libchaos-intercepted {@code read} call inside the target container,
- * making the call fail as if the kernel returned {@code EIO}.
+ * Injects {@code EIO} into {@code read(2)}, causing the call to return {@code -1} with
+ * {@code errno = EIO} as if the storage device returned a hardware I/O error while reading
+ * the requested file blocks — indicating a bad sector, storage controller failure, or network
+ * filesystem backend error.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EIO}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EIO} is a valid POSIX result of {@code read}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code read} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = EIO} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: I/O error — disk failure, bad sector, or storage backend error.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code READ}, errno = {@code EIO})
+ * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
+ * {@code read} call; when it fires the interposer returns {@code -1} with {@code errno = EIO}
+ * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.IO)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-io.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the filesystem libc wrappers (open, read,
- * write, close, fsync, etc.) at the dynamic-linker level. This annotation installs a rule via
- * {@code AdvancedFilesystemChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
+ *       extension to upload {@code libchaos-io.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
+ *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
+ *       {@code fallocate} at the dynamic-linker level.
+ *   <li>On each intercepted {@code read} call a Bernoulli trial with probability {@link #probability}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = EIO}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.IO)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-filesystem} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code EIO} from {@code read} indicates unrecoverable hardware-level failure; the data at
+ *       the failed block offset cannot be read. Assert that the application does not retry
+ *       indefinitely on {@code EIO} — unlike transient errors, a bad sector does not self-heal.
+ *   <li>Database engines that read data pages from storage files must handle {@code EIO} by marking
+ *       the affected page range as corrupt and alerting the operator; assert that the engine does
+ *       not proceed with partial or zero data silently.
+ *   <li>Applications that read from WAL (write-ahead log) files for crash recovery must handle
+ *       {@code EIO} in the WAL read path; assert that the recovery process fails with a clear
+ *       "WAL read error" rather than treating a partial WAL as complete.
+ *   <li>Assert that the application emits a storage hardware error alert on {@code EIO} from
+ *       {@code read}, enabling operators to check {@code dmesg} and SMART data for the affected
+ *       device.
  * </ul>
+ *
+ * <p>In production, {@code EIO} from {@code read} occurs when a hard disk sector becomes
+ * unreadable (pending sector reallocations visible in SMART data), when an SSD's flash memory
+ * cell fails to charge reliably (uncorrectable bit error rate exceeded), and when a network
+ * filesystem (NFS, Ceph) returns an error from the storage backend and the kernel propagates
+ * it to the application as {@code EIO}.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The kernel propagates {@code EIO} from storage to the application through several layers:
+ * the block device driver returns an error for the failed I/O request; the filesystem layer
+ * (ext4, XFS) receives the block-layer error and marks the associated page buffer as error-pending;
+ * when the application calls {@code read}, the VFS layer checks the page buffer's error flag and
+ * returns {@code EIO} if it is set. The error flag persists until the page is evicted from the
+ * page cache or explicitly cleared.
+ *
+ * <p>The kernel also marks the filesystem's block group containing the bad sector as having an
+ * error, which is recorded in the superblock and visible in {@code dumpe2fs} output. If multiple
+ * read errors occur, the filesystem may remount itself read-only to prevent further corruption —
+ * causing subsequent reads to return either data (for pages still in cache) or {@code EROFS}
+ * (for new reads on a read-only mounted filesystem).
+ *
+ * <p>Java maps {@code EIO} from {@code read} to an {@code IOException} with the message
+ * "Input/output error". Applications that catch {@code IOException} generically may not
+ * distinguish hardware I/O errors from other IO failures; critical data paths should check for
+ * "Input/output error" in the message or use OS-specific facilities to query the block device
+ * health.
  *
  * <h2>Example</h2>
  *
@@ -54,21 +90,18 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.IO)
  * @ChaosReadEio(probability = 0.001)
- * class FaultTest {
+ * class ReadEioTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void storageErrorOnDataFileReadTriggersAlertAndSafeShutdown() {
+ *     // assert that EIO on a data file read causes an alert and controlled shutdown
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> very low rates (1e-5 to 1e-4); EIO at high rate
- * produces unrecoverable data loss.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosReadEios}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosReadCorrupt
+ * @see ChaosWriteEio
+ * @see com.macstab.chaos.filesystem.annotation.l1.IoErrnoBinding
  */
 @Repeatable(ChaosReadEio.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

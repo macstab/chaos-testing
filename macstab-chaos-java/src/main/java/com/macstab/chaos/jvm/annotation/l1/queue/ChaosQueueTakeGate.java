@@ -14,58 +14,112 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Block the queue_take operation until released or the configured timeout elapses.
+ * Blocks every consuming thread on each {@link java.util.concurrent.BlockingQueue#take()
+ * BlockingQueue.take()} call until the test releases the gate or {@link #maxBlockMs} elapses,
+ * giving the test precise control over exactly when the consumer is allowed to dequeue the next item.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> block the QUEUE_TAKE operation until released or the
- * configured timeout elapses inside the JVM of the target container. The effect fires on every
- * matching call, subject to the probability configured via {@link #probability()} if applicable.
- * The rule is active from {@code beforeAll} until {@code afterAll} (class-scope) or from {@code
- * beforeEach} until {@code afterEach} (method-scope).
+ * <p>An L1 JVM chaos primitive in the {@code QUEUE} selector family targeting the {@code QUEUE_TAKE}
+ * operation with the {@code gate} effect. Unlike {@link ChaosQueueTakeDelay}, which parks the
+ * consumer thread for a fixed random duration and releases automatically, the gate blocks the
+ * consumer thread indefinitely on an internal barrier until the test explicitly releases it — or
+ * until the {@link #maxBlockMs} safety timeout fires.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <p>The gate is the correct primitive when the test needs to assert on the producer side's
+ * back-pressure state at the exact moment the consumer is frozen: for example, to verify that the
+ * queue depth metric reaches a specific value, that the producer applies back-pressure, or that
+ * a watchdog thread fires when the consumer stops draining.
  *
- * <p><strong>What is required:</strong>
+ * <h2>What chaos this applies</h2>
+ *
+ * <p>The JVM agent installs a Byte Buddy interceptor on {@code BlockingQueue.take()}. When the
+ * interceptor fires:
+ *
+ * <ol>
+ *   <li>The interceptor is entered on the consuming thread before the queue's lock is acquired.
+ *   <li>The gate effect acquires an internal latch and blocks with
+ *       {@code latch.await(maxBlockMs, MILLISECONDS)}.
+ *   <li>The test calls the agent's gate-release API; the latch counts down, unblocking the
+ *       consumer thread.
+ *   <li>If {@link #maxBlockMs} elapses before the gate is released, the latch times out and the
+ *       thread proceeds automatically.
+ *   <li>After the gate is released, the original {@code take()} body executes: the queue lock is
+ *       acquired and the head item is dequeued and returned.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>{@code queue.take()} does not return until the gate is released or {@link #maxBlockMs}
+ *       ms pass — the consumer thread is fully blocked.
+ *   <li>While the gate is held, the queue's size does not decrease from gated {@code take} calls;
+ *       the queue fills if producers continue to enqueue items.
+ *   <li>Producer threads that are blocked on a full-queue {@code put} call remain blocked while
+ *       the consumer gate is held, because no space is freed.
+ *   <li>Multiple consumer threads that hit the gate simultaneously are all held and released
+ *       together when the gate is opened.
  * </ul>
+ *
+ * <p><strong>Production failure mode:</strong> a downstream processing service is slow (GC pause,
+ * external call hang) and stops consuming from its input queue; the queue fills, producers are
+ * back-pressured or start dropping events, and upstream services begin timing out — the gate
+ * simulates this stall with a deterministic release point.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p><strong>Interception point.</strong> The agent targets {@code BlockingQueue#take()} on all
+ * concrete JDK implementations via Byte Buddy retransformation. The gate latch fires before the
+ * queue's own lock — the queue is not locked during the gate wait, so producers can continue
+ * enqueuing items into available capacity while the consumer is gated.
+ *
+ * <p><strong>Queue fill dynamics.</strong> While the consumer gate is held, items accumulate in
+ * the queue at the producer's rate. If the queue is bounded, it fills in {@code capacity /
+ * producer_rate} time; once full, producer {@code put} calls start blocking too. This creates a
+ * two-stage chain: consumer freeze → queue full → producer freeze — testing the full
+ * back-pressure propagation path.
+ *
+ * <p><strong>Gate release semantics.</strong> A single release signal unblocks all consumer
+ * threads currently parked at the gate. Newly arriving consumer threads after the release pass
+ * through immediately. To re-gate future {@code take} calls, reset the gate via the agent API.
+ *
+ * <p><strong>Distinguishing from siblings.</strong> {@link ChaosQueueTakeDelay} releases
+ * automatically after a fixed sleep — no test coordination needed. {@link ChaosQueuePollSuppress}
+ * makes the non-blocking {@code poll} return {@code null}. This annotation is the only one that
+ * freezes the consumer and requires an external release — enabling precise queue-depth assertions.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosQueueTakeGate
- * class JvmChaosTest {
+ * @ChaosQueueTakeGate(maxBlockMs = 10_000)
+ * class GatedConsumerTest {
+ *
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void queueDepthReachesCapacityWhileConsumerFrozen(
+ *       AppConnectionInfo info, ChaosGateControl gate) throws Exception {
+ *     client.startProducing(info, 100); // producer sends 100 items
+ *     // consumer is blocked at gate; assert queue fills
+ *     assertThat(metrics.queueDepth(info)).isEqualTo(metrics.queueCapacity(info));
+ *     // release consumer; queue drains
+ *     gate.release();
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosQueueTakeGates}) to apply different configurations to different containers.
+ * <ul>
+ *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
+ *   <li>A Java container image — the container must run a JVM process.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see com.macstab.chaos.jvm.api.OperationType#QUEUE_TAKE
+ * @see com.macstab.chaos.jvm.api.ChaosSelector#queue(java.util.Set)
+ * @see ChaosQueueTakeDelay
+ * @see ChaosQueuePollSuppress
  */
 @Repeatable(ChaosQueueTakeGate.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

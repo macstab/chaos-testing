@@ -14,59 +14,123 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Complete the completablefuture exceptionally before normal completion fires.
+ * Intercepts {@link java.util.concurrent.CompletableFuture#complete CompletableFuture.complete(value)}
+ * and completes the future exceptionally instead — the caller's value is discarded and every thread
+ * waiting on the future receives the configured exception through {@code ExecutionException}.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> complete the CompletableFuture exceptionally before
- * normal completion fires inside the JVM of the target container. The effect fires on every
- * matching call, subject to the probability configured via {@link #probability()} if applicable.
- * The rule is active from {@code beforeAll} until {@code afterAll} (class-scope) or from {@code
- * beforeEach} until {@code afterEach} (method-scope).
+ * <p>An L1 JVM chaos primitive in the {@code ASYNC} selector family targeting the {@code
+ * ASYNC_COMPLETE} operation with the {@code exceptionalCompletion} effect. Unlike
+ * {@link ChaosAsyncCompleteSuppress}, which leaves the future permanently pending, this annotation
+ * allows the future to transition to the done state — but done exceptionally rather than with the
+ * intended value. The exception type is selected via {@link #failureKind()} and the message via
+ * {@link #message()}.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <p>This is the primary primitive for simulating a computation that appears to finish but delivers
+ * an error instead of the expected result — a common pattern in downstream service failures where
+ * the response is received but indicates a fault.
  *
- * <p><strong>What is required:</strong>
+ * <h2>What chaos this applies</h2>
+ *
+ * <p>The JVM agent installs a Byte Buddy interceptor on {@code CompletableFuture.complete}. When
+ * the interceptor fires:
+ *
+ * <ol>
+ *   <li>The interceptor is entered before the future's normal CAS on its result field.
+ *   <li>The exceptionalCompletion effect discards the incoming value and calls
+ *       {@code completeExceptionally(new <FailureKind-exception>(message))} on the same future
+ *       instance, completing it with the configured exception.
+ *   <li>The original {@code complete(value)} body is skipped — only one completion signal is
+ *       delivered to the future.
+ *   <li>Waiting threads are unparked and receive the exception wrapped in {@code ExecutionException}
+ *       when they call {@code get()} or {@code join()}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>{@code cf.get()} throws {@link java.util.concurrent.ExecutionException} wrapping the
+ *       configured exception — the original value is never visible.
+ *   <li>{@code cf.isCompletedExceptionally()} returns {@code true}.
+ *   <li>{@code cf.isDone()} returns {@code true} — the future is done, just not normally.
+ *   <li>Callbacks registered via {@code thenApply} / {@code thenCompose} are never invoked;
+ *       {@code exceptionally} and {@code handle} callbacks fire with the injected exception.
+ *   <li>Reactive pipelines that propagate {@code onError} will receive the injected fault and
+ *       route to their error-handling stages.
  * </ul>
+ *
+ * <p><strong>Production failure mode:</strong> a downstream service returns an HTTP 200 response
+ * but the payload indicates a processing error; the deserialization layer calls {@code complete}
+ * with a domain error object rather than a valid result, but application error-handling code is
+ * never tested for this path — this annotation injects that exact transition to verify the error
+ * propagation chain.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p><strong>Interception point.</strong> The agent targets
+ * {@code java.util.concurrent.CompletableFuture#complete(Object)} via Byte Buddy retransformation
+ * of the bootstrap-loaded {@code CompletableFuture} class. The interceptor runs on the same thread
+ * that called {@code complete}, in the same call stack, before the future's result CAS.
+ *
+ * <p><strong>Exception type selection.</strong> {@link #failureKind()} maps to a specific
+ * {@code Throwable} subclass: {@code RUNTIME} produces a {@code RuntimeException}, while other
+ * kinds produce checked or specific error types as declared in
+ * {@link com.macstab.chaos.jvm.api.ChaosEffect.FailureKind}. The exception is wrapped in
+ * {@code ExecutionException} when retrieved via {@code get()} — callers that unwrap with
+ * {@code getCause()} will see the raw injected exception.
+ *
+ * <p><strong>Ordering guarantee.</strong> Because the interceptor calls {@code
+ * completeExceptionally} before the original {@code complete} body runs, the CAS in {@code
+ * completeExceptionally} wins first. A subsequent {@code complete} from another thread racing at
+ * exactly the same moment would find the future already done and return {@code false} — the
+ * injected exception is always the winning completion.
+ *
+ * <p><strong>Cascading effects on dependent stages.</strong> {@code CompletableFuture}'s completion
+ * stack is traversed immediately after the CAS. All dependent stages registered via {@code
+ * thenApply}, {@code thenCompose}, and similar methods receive the exceptional result and propagate
+ * it down the chain unless an {@code exceptionally} or {@code handle} stage absorbs it. A single
+ * injected fault can therefore cascade through an entire async pipeline.
+ *
+ * <p><strong>Virtual threads.</strong> Under Project Loom, virtual threads blocked on {@code
+ * get()} or {@code join()} are unmounted from their carrier as soon as they park; when the
+ * exceptional completion arrives they are rescheduled. The delay between interception and
+ * rescheduling is negligible, but the fault is always delivered.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosAsyncCompleteExceptionalCompletion
- * class JvmChaosTest {
+ * @ChaosAsyncCompleteExceptionalCompletion(
+ *     failureKind = ChaosEffect.FailureKind.RUNTIME,
+ *     message = "injected by chaos: downstream failure")
+ * class CompletionFaultedTest {
+ *
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void pipelineReceivesExceptionInsteadOfValue(AppConnectionInfo info) {
+ *     CompletableFuture<String> future = client.fetchAsync(info);
+ *     assertThatThrownBy(() -> future.get(2, TimeUnit.SECONDS))
+ *         .isInstanceOf(ExecutionException.class)
+ *         .hasCauseInstanceOf(RuntimeException.class)
+ *         .hasMessageContaining("downstream failure");
+ *     assertThat(future.isCompletedExceptionally()).isTrue();
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosAsyncCompleteExceptionalCompletions}) to apply different configurations to
- * different containers.
+ * <ul>
+ *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
+ *   <li>A Java container image — the container must run a JVM process.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see com.macstab.chaos.jvm.api.OperationType#ASYNC_COMPLETE
+ * @see com.macstab.chaos.jvm.api.ChaosSelector#async(java.util.Set)
+ * @see ChaosAsyncCompleteSuppress
+ * @see ChaosAsyncCompleteExceptionallySuppress
  */
 @Repeatable(ChaosAsyncCompleteExceptionalCompletion.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

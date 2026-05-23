@@ -14,60 +14,104 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Reject the http_client_send_async operation by throwing an appropriate exception for the
- * operation type.
+ * Intercepts {@code HttpClient.sendAsync()} and immediately throws {@code java.io.IOException}
+ * before returning the {@code CompletableFuture}, forcing the async HTTP call to fail
+ * synchronously at the call site rather than via an exceptionally-completed future.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> reject the HTTP_CLIENT_SEND_ASYNC operation by
- * throwing an appropriate exception for the operation type inside the JVM of the target container.
- * The effect fires on every matching call, subject to the probability configured via {@link
- * #probability()} if applicable. The rule is active from {@code beforeAll} until {@code afterAll}
- * (class-scope) or from {@code beforeEach} until {@code afterEach} (method-scope).
+ * A JVM agent L1 chaos primitive — one typed annotation per (selector family, operation type,
+ * effect) tuple. It is declared on a test class or method alongside a container annotation and
+ * activates for the lifetime of the test class ({@code beforeAll} / {@code afterAll}) or a single
+ * test method ({@code beforeEach} / {@code afterEach}).
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>Before every call to {@code java.net.http.HttpClient#sendAsync(HttpRequest,
+ *       HttpResponse.BodyHandler)} inside the target container's JVM, the chaos agent intercepts
+ *       the calling thread.
+ *   <li>The agent throws {@code java.io.IOException} immediately — no {@code CompletableFuture}
+ *       is returned, no network activity occurs, and no thread-pool task is submitted.
+ *   <li>The exception propagates synchronously to the caller; any chained {@code .thenApply} or
+ *       {@code .exceptionally} stages are never reached because the future was never created.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>Code that does not wrap {@code sendAsync()} in a try-catch (relying on the future for
+ *       error delivery) will receive an unexpected synchronous exception; assert that this
+ *       boundary is handled correctly.
+ *   <li>Reactive pipelines that call {@code sendAsync()} inside a {@code Mono.fromFuture()} block
+ *       must propagate the synchronous throw as an error signal; assert that the pipeline does not
+ *       swallow it silently.
+ *   <li>Application error-tracking (Sentry, Datadog APM) should capture the thrown exception;
+ *       assert that the error metric is incremented.
+ *   <li><strong>Production failure mode:</strong> a reactive fan-out service calls
+ *       {@code sendAsync()} for 10 downstream services; if the HTTP client is in a bad state
+ *       (e.g. shutdown), all 10 calls throw synchronously, and uncaught exceptions in a reactive
+ *       operator can terminate the reactive pipeline operator thread — causing an outage.
  * </ul>
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The JDK specification for {@code HttpClient.sendAsync()} does not declare a checked
+ * exception in its signature, but the implementation in {@code jdk.internal.net.http.HttpClientImpl}
+ * can throw {@code IllegalArgumentException} for invalid requests and wrap networking errors in
+ * unchecked exceptions during future completion. This annotation injects the fault at the
+ * synchronous entry point — before the method body executes — which is a distinct failure mode
+ * from a future that completes exceptionally after I/O.
+ *
+ * <p>Application code written defensively will wrap {@code sendAsync()} invocations:
+ * {@code CompletableFuture.supplyAsync(() -> client.sendAsync(req, handler))} converts the
+ * synchronous throw into an exceptionally-completed future. This annotation tests whether that
+ * defensive wrapping is present and correct; if it is absent the exception propagates to the
+ * executor's uncaught exception handler.
+ *
+ * <p>The difference between this annotation and {@link ChaosHttpClientSendAsyncInjectException}
+ * is that {@code Reject} always uses {@code IOException}, matching the network domain, while
+ * {@code InjectException} allows specifying any exception class including unchecked types that
+ * might be thrown by validation logic before network access.
+ *
+ * <p>Unlike {@link ChaosHttpClientSendReject}, which affects synchronous {@code send()}, this
+ * annotation specifically targets the async path. In applications that mix both call styles,
+ * combining both annotations with different probabilities allows testing the error-handling paths
+ * for each independently.
+ *
+ * <p>No JDK connection pool slots, file descriptors, or executor-thread resources are consumed
+ * because the throw happens before any resource acquisition. This makes the fault safe to inject
+ * at high frequency in load tests without accumulating leaked resources.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosHttpClientSendAsyncReject
- * class JvmChaosTest {
+ * @ChaosHttpClientSendAsyncReject(message = "async send rejected")
+ * class AsyncSendRejectedTest {
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void reactivePipelineSurfacesErrorCorrectly(ConnectionInfo info) {
+ *     // assert that the Mono/Flux emits an error signal and does not hang
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosHttpClientSendAsyncRejects}) to apply different configurations to different
- * containers.
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation is required; omitting
+ *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
+ *       {@code @JvmAgentChaos}; it is attached before the container starts.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
+ *       translator class can be resolved.
+ *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
+ *       intercept native executables.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosHttpClientSendReject
+ * @see ChaosHttpClientSendAsyncInjectException
+ * @see ChaosHttpClientSendAsyncDelay
  */
 @Repeatable(ChaosHttpClientSendAsyncReject.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

@@ -14,61 +14,106 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code execveat} calls
- * succeed, then injects {@code ENOENT} on every subsequent call until the rule is removed.
+ * After {@link #successesBeforeFailure} successful {@code execveat} calls, injects {@code ENOENT}
+ * on every subsequent call, causing the calling code to observe a no-such-file failure that
+ * persists for the remainder of the test.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code EXECVEAT}, errno = {@code ENOENT}, effect = FAIL_AFTER) tuple. FAIL_AFTER is the process
- * module's counter-gated effect — distinct from ERRNO (probabilistic) and LATENCY (unconditional).
- * It models resource-exhaustion scenarios where the first N operations succeed and then the system
- * runs out of capacity.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code EXECVEAT}, errno = {@code ENOENT}, effect
+ * = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N calls succeed, then the
+ * counter trips permanently and every subsequent call fails until the rule is removed. This is
+ * distinct from ERRNO (independent Bernoulli trial on each call) and LATENCY (unconditional delay).
+ * Compile-time safety: invalid selector/errno/effect combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
- * {@code execveat} calls. After {@link #successesBeforeFailure} successes the counter trips and
- * every subsequent call returns {@code -1} with {@code errno = ENOENT}, regardless of real kernel
- * capacity. The counter resets every time the rule is re-applied (e.g. across test methods if the
- * annotation is at class scope).
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code execveat} wrapper at the dynamic-linker level.</li>
+ *   <li>The interposer maintains a per-rule success counter. Each {@code execveat} call that
+ *       passes the counter check decrements the remaining budget; the counter does not reset
+ *       automatically between test methods when the annotation is at class scope.</li>
+ *   <li>Once the counter reaches zero it trips permanently: every subsequent {@code execveat} call
+ *       sets {@code errno = ENOENT} and returns {@code -1} without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 2,
+ *       {@code strerror}: "No such file or directory"; the {@code dirfd} must be closed by the
+ *       caller to avoid an fd leak since no close-on-exec processing occurs for failed execs.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family. This annotation installs
- * a FAIL_AFTER rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at {@code
- *       beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>The first {@link #successesBeforeFailure} calls proceed normally; all subsequent calls
+ *       return {@code -1} with {@code errno = ENOENT}; assert that the application closes the
+ *       {@code dirfd} on every failure and does not cache the "binary present" state that was
+ *       valid during the success phase.</li>
+ *   <li>Container runtimes that cache directory fds for repeated {@code execveat} calls must
+ *       handle the case where the directory's relative path no longer resolves — assert that
+ *       the runtime invalidates the cached dirfd on {@code ENOENT} and retries the full
+ *       path-open-then-exec sequence rather than reusing the stale dirfd.</li>
+ *   <li>Assert that the application's error message for post-threshold {@code ENOENT} includes
+ *       both the dirfd number and the relative pathname (if not using {@code AT_EMPTY_PATH})
+ *       so operators can identify which directory and binary path are affected without kernel
+ *       tracing tools.</li>
  * </ul>
+ * Production failure mode: a container runtime caches a directory fd pointing to the container's
+ * rootfs overlay; a rolling deployment updates the overlay layer during the exec sequence; after N
+ * successful launches the binary path no longer exists in the new overlay, and all subsequent
+ * {@code execveat} calls return {@code ENOENT}; the runtime leaks the cached dirfd and does not
+ * re-attempt a fresh path resolution, causing all subsequent container launches to fail.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>FAIL_AFTER is the correct model for volume-unmount and rolling-deployment scenarios where
+ * the binary disappears abruptly after a number of successful exec calls. Real {@code ENOENT}
+ * from {@code execveat} in these scenarios is not probabilistic — it occurs once and remains
+ * until the deployment stabilises or the volume is remounted. The ERRNO variant fires with
+ * probability p on each call independently, which cannot model the "succeed N times, then fail
+ * permanently" pattern that rolling deployments produce.
+ *
+ * <p>The {@code AT_EMPTY_PATH} flag changes the {@code ENOENT} semantics: when the flag is set
+ * and the pathname is empty, the {@code dirfd} itself is the executable and no path resolution
+ * occurs — {@code ENOENT} cannot come from path resolution in this mode. However, if the
+ * {@code dirfd} refers to an inode that was unlinked after being opened (the "deleted but open"
+ * pattern used by container runtimes for TOCTOU safety), some kernel versions may return
+ * {@code ENOENT} from the exec's internal checks even though the file descriptor is valid. FAIL_AFTER
+ * with threshold N tests whether the application handles this transition correctly.
+ *
+ * <p>Applications that cache directory fds for performance must implement cache invalidation on
+ * {@code ENOENT}: the dirfd that produced N successful exec calls may produce {@code ENOENT}
+ * on the (N+1)th call if the directory's content was updated or the inode was unlinked. Failing
+ * to invalidate the cache means the application enters a permanent failure loop with no recovery
+ * path, since retrying with the same stale dirfd will never succeed.
+ *
+ * <p>The dirfd fd leak risk is amplified under FAIL_AFTER: each of the first N successes closes
+ * the dirfd via {@code FD_CLOEXEC} (on exec success). After the counter trips, every subsequent
+ * call opens the dirfd, receives {@code ENOENT} from the interposer, and must explicitly close
+ * the dirfd in the error path. Applications that omit this close accumulate one leaked fd per
+ * failed exec attempt, which can exhaust {@code RLIMIT_NOFILE}.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosExecveatEnoentFailAfter(successesBeforeFailure = 128)
- * class ProcessExhaustionTest {
+ * @ChaosExecveatEnoentFailAfter(successesBeforeFailure = 20)
+ * class ExecveatBinaryDisappearsTest {
  *   @Test
- *   void handlesExhaustion(ConnectionInfo info) { ... }
+ *   void runtimeInvalidatesDirfdCacheAndClosesDirfdOnEnoentAfterThreshold(ConnectionInfo info) {
+ *     // first 20 execveat calls succeed; subsequent calls return ENOENT;
+ *     // verify dirfd closed on each failure; cache invalidated; full path re-resolution attempted
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of {@code
- * execveat} calls the application is expected to make before hitting the limit. Typically 5–200 for
- * container-scoped tests. Zero means the very first call fails.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form
- * ({@code @ChaosExecveatEnoentFailAfter.Repeatable}) to apply different counters to different
- * containers.
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to the observed
+ * number of successful launches before the deployment window opens; values in the range 5–100
+ * cover most rolling-deployment scenarios; 0 means the binary is missing from the first launch
+ * (cold deployment error), exercising the early-startup failure path.
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessFailAfterBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#failAfter(ProcessSelector, ProcessErrno, long)
  */
 @Repeatable(ChaosExecveatEnoentFailAfter.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

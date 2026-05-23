@@ -11,52 +11,107 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Activates a self-driving JVM stressor that load N synthetic classes to exhaust metaspace inside
- * the target container's JVM for the duration of the test class or test method.
+ * Exhausts the JVM's Metaspace by generating and loading large numbers of synthetic classes, each
+ * with configurable static fields, simulating class-loading leaks in frameworks that generate
+ * proxy classes or bytecode at runtime.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent stressor L1 primitive. Unlike
- * interceptor primitives, stressors don't intercept a specific JVM operation — they spawn a
- * self-driving background routine that runs from activation ({@code beforeAll} or {@code
- * beforeEach}) until cleanup ({@code afterAll} or {@code afterEach}).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> the stressor load N synthetic classes to exhaust
- * metaspace. The effect persists throughout the test and is not probabilistic — it runs
- * continuously at the configured intensity until the rule is removed.
+ * <p>A JVM agent stressor L1 primitive. Unlike interceptor primitives, stressors do not intercept
+ * a specific JVM operation — they spawn a self-driving background routine that runs from activation
+ * ({@code beforeAll} or {@code beforeEach}) until cleanup ({@code afterAll} or {@code afterEach}).
+ * The stressor generates {@link #generatedClassCount()} synthetic classes, each with
+ * {@link #fieldsPerClass()} static fields, and loads them via isolated class loaders so they
+ * cannot be unloaded, consuming Metaspace for the duration of the rule.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>The agent uses a bytecode generation library (Byte Buddy or ASM) to generate
+ *       {@link #generatedClassCount()} distinct synthetic class definitions in memory. Each class
+ *       has {@link #fieldsPerClass()} {@code static long} fields, increasing the per-class
+ *       Metaspace footprint.
+ *   <li>Each synthetic class is loaded via a fresh, isolated {@code ClassLoader} that has no
+ *       parent capable of unloading the class. Because the class loader is kept reachable (held by
+ *       the stressor), the JVM's class-unloading heuristic cannot reclaim the Metaspace occupied
+ *       by these classes.
+ *   <li>Metaspace usage grows monotonically from activation. If {@code -XX:MaxMetaspaceSize} is
+ *       set and the stressor's classes exceed it, the JVM throws {@code OutOfMemoryError: Metaspace}
+ *       before the stressor finishes loading all classes.
+ *   <li>If no Metaspace limit is set (the default), Metaspace expands into native memory. The
+ *       stressor then stresses the container's total memory limit (cgroup {@code memory.limit_in_bytes})
+ *       rather than a JVM-internal cap.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — attaches the chaos agent before container start.
- *   <li><strong>The chaos agent JAR</strong> accessible at the configured path.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath.</strong>
- *   <li><strong>Java container image</strong> — the target must run a JVM process.
+ *   <li><strong>Metaspace OOM.</strong> When Metaspace is exhausted, the JVM throws
+ *       {@code OutOfMemoryError: Metaspace} from the class-loading thread; assert that the
+ *       application's exception handler (e.g. an uncaught exception handler on the thread pool)
+ *       logs the OOM and does not silently swallow it.
+ *   <li><strong>GC overhead from class-unloading sweeps.</strong> The JVM periodically sweeps for
+ *       unloadable class loaders as part of full GC; with a large number of non-unloadable
+ *       synthetic classes, the sweep time increases; assert that full-GC pauses do not push
+ *       latency over SLA.
+ *   <li><strong>Container OOM killed.</strong> Without {@code MaxMetaspaceSize}, Metaspace grows
+ *       into native memory; when the container's total memory limit is reached, the OOM killer
+ *       sends SIGKILL; assert that the readiness probe detects the restart and that the load
+ *       balancer removes the instance before it starts rejecting requests.
+ *   <li><strong>Production failure mode:</strong> applications using Spring, Hibernate, or other
+ *       proxy-generating frameworks can leak class loaders when application contexts are repeatedly
+ *       created (e.g. in a multi-tenant setup or a hot-reload scenario), causing Metaspace to grow
+ *       without bound.
  * </ul>
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>Metaspace (introduced in Java 8, replacing PermGen) stores the JVM's internal representation
+ * of loaded classes: the bytecode, constant pool, method tables, vtables, and static field data.
+ * Unlike the Java heap, Metaspace is allocated directly from native memory using
+ * {@code mmap}/{@code VirtualAlloc}. It is bounded only by {@code -XX:MaxMetaspaceSize} (which
+ * defaults to unlimited on most JVM distributions).
+ *
+ * <p>A class can be unloaded only if its class loader becomes unreachable (in the GC sense) — no
+ * live references remain to the class loader or to any class it has loaded. The stressor defeats
+ * this by holding strong references to all class loaders in a stressor-owned collection. As long
+ * as the stressor is active, the JVM cannot unload the synthetic classes and cannot reclaim their
+ * Metaspace.
+ *
+ * <p>Each synthetic class with {@link #fieldsPerClass()} static {@code long} fields contributes
+ * roughly {@code 64 + fieldsPerClass * 8} bytes of static storage plus several kilobytes of class
+ * metadata (method tables, constant pool, bytecode). The {@link #generatedClassCount()} parameter
+ * therefore controls the total Metaspace consumption: 10,000 classes with 10 fields each consume
+ * roughly 200–500 MB of Metaspace, depending on JVM version and GC policy.
+ *
+ * <p>The interaction with {@link ChaosGcPressure} is significant: GC pressure triggers full
+ * collections which scan for unloadable class loaders; finding none (because the stressor holds
+ * them), the JVM must request more Metaspace. If both are active simultaneously, the test
+ * exercises the JVM's Metaspace expansion/GC co-ordination under combined pressure.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
- * @AppContainer
+ * @AppContainer(jvmArgs = "-XX:MaxMetaspaceSize=128m")
  * @JvmAgentChaos
- * @ChaosMetaspacePressure
- * class JvmStressorTest {
+ * @ChaosMetaspacePressure(generatedClassCount = 8_000, fieldsPerClass = 5)
+ * class MetaspaceExhaustionTest {
  *   @Test
- *   void appResilientUnderStress(ConnectionInfo info) { ... }
+ *   void applicationSurfacesMetaspaceOomRatherThanHanging(ConnectionInfo info) { ... }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosMetaspacePressures}) to apply different stressor intensities to different
- * containers.
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
+ *       agent before the container JVM starts; omitting it causes an
+ *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
+ *       {@code @JvmAgentChaos}.
+ *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the
+ *       translator.
+ *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
+ *       intercept native executables.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
  */

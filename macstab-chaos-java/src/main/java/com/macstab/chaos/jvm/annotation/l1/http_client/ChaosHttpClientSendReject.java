@@ -14,59 +14,100 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Reject the http_client_send operation by throwing an appropriate exception for the operation
- * type.
+ * Intercepts {@code HttpClient.send()} and immediately throws {@code java.io.IOException} before
+ * any network activity occurs, simulating a hard connection refusal on every synchronous HTTP
+ * request in the target JVM.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> reject the HTTP_CLIENT_SEND operation by throwing an
- * appropriate exception for the operation type inside the JVM of the target container. The effect
- * fires on every matching call, subject to the probability configured via {@link #probability()} if
- * applicable. The rule is active from {@code beforeAll} until {@code afterAll} (class-scope) or
- * from {@code beforeEach} until {@code afterEach} (method-scope).
+ * A JVM agent L1 chaos primitive — one typed annotation per (selector family, operation type,
+ * effect) tuple. It is declared on a test class or method alongside a container annotation and
+ * activates for the lifetime of the test class ({@code beforeAll} / {@code afterAll}) or a single
+ * test method ({@code beforeEach} / {@code afterEach}).
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>Before every call to {@code java.net.http.HttpClient#send(HttpRequest,
+ *       HttpResponse.BodyHandler)} inside the target container's JVM, the chaos agent intercepts
+ *       the thread.
+ *   <li>The agent throws {@code java.io.IOException} (wrapping the configured {@link #message()})
+ *       immediately — no TCP handshake, no DNS lookup, no bytes are exchanged.
+ *   <li>The exception propagates to the caller exactly as a real network refusal would; the
+ *       underlying {@code send()} never executes.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>Every {@code HttpClient.send()} call throws {@code IOException}; assert that the
+ *       application catches it and converts it to the appropriate HTTP error response (e.g. 503).
+ *   <li>Retry logic is exercised: frameworks that retry on {@code IOException} (Spring Retry,
+ *       Resilience4j) will fire retries; assert that retry count and back-off are bounded.
+ *   <li>Circuit breakers that open on {@code IOException} will trip; assert that the open state
+ *       is correctly propagated to callers (fallback response, metric increment).
+ *   <li><strong>Production failure mode:</strong> a downstream service refuses connections
+ *       (e.g. firewall rule tightened at 02:00); the application's circuit breaker opens, the
+ *       fallback path activates, but if the fallback also calls the same service the error
+ *       cascades — an incident begins.
  * </ul>
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The reject effect intercepts {@code jdk.internal.net.http.HttpClientImpl#send} via Byte
+ * Buddy before the method creates or acquires a connection. Because the throw happens before
+ * any socket work, the JDK's internal connection pool is untouched: no connections are borrowed,
+ * no half-open TCP sockets are left behind, and no file descriptors are leaked. This makes the
+ * fault perfectly idempotent and safe to fire repeatedly in the same JVM process.
+ *
+ * <p>The thrown exception type is fixed to {@code java.io.IOException} to match what the JDK
+ * HttpClient itself declares in its throws clause. Callers that catch {@code IOException} will
+ * handle the injected fault exactly as they would handle a real network error. If the application
+ * wraps the IOException in a framework-specific exception (e.g. Spring's
+ * {@code ResourceAccessException}), assert against that wrapper type in tests.
+ *
+ * <p>The difference between {@code Reject} and {@link ChaosHttpClientSendInjectException} is
+ * intent: reject uses the operation's canonical exception type (always {@code IOException} for
+ * HTTP send) while inject-exception lets the test author specify an arbitrary class, useful for
+ * testing handlers that distinguish between timeout exceptions and connection-refused exceptions.
+ *
+ * <p>When combined with a probability modifier the fault fires on a fraction of calls, which is
+ * effective for testing partial-failure scenarios: some requests succeed, some fail, and the
+ * application must produce consistent user-visible behaviour across both outcomes.
+ *
+ * <p>Unlike network-level faults (iptables drop), this fault is immediate — the kernel never sees
+ * the connection attempt. This means connect-timeout logic in the application is not exercised;
+ * use {@link ChaosHttpClientSendDelay} with a very long delay to test that path.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosHttpClientSendReject
- * class JvmChaosTest {
+ * @ChaosHttpClientSendReject(message = "downstream refused")
+ * class DownstreamRefusedTest {
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void applicationReturnsFallback(ConnectionInfo info) {
+ *     // assert HTTP 503 with a fallback body is returned
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosHttpClientSendRejects}) to apply different configurations to different containers.
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation is required; omitting
+ *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
+ *       {@code @JvmAgentChaos}; it is attached before the container starts.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
+ *       translator class can be resolved.
+ *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
+ *       intercept native executables.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosHttpClientSendInjectException
+ * @see ChaosHttpClientSendDelay
+ * @see ChaosHttpClientSendAsyncReject
  */
 @Repeatable(ChaosHttpClientSendReject.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

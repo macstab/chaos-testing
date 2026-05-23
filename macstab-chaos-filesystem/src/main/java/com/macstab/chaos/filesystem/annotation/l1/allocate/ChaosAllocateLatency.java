@@ -13,36 +13,75 @@ import com.macstab.chaos.filesystem.annotation.l1.IoLatencyBinding;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Delays every libchaos-intercepted {@code allocate} call by {@link #delayMs} milliseconds before
- * delegating to the real kernel call, making the operation succeed but take longer than expected.
+ * Delays every {@code fallocate(2)} call by an additional {@link #delayMs} milliseconds before
+ * delegating to the real kernel call, making disk pre-allocation slower than the application
+ * expects while still successfully reserving the requested disk blocks.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one
- * (selector, effect = LATENCY) pair. Unlike errno variants, the latency primitive always delegates
- * to the kernel — it only adds wall-clock cost before doing so.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> every {@code allocate} call intercepted by libchaos
- * blocks for {@link #delayMs} ms before the kernel call is issued. This simulates the wall-clock
- * cost increase from resource pressure, kernel scheduling stalls, or slow hardware — none of which
- * return an errno but all of which can exhaust application-level timeouts, saturate connection-pool
- * wait budgets, and surface hidden latency assumptions.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code ALLOCATE}, effect = LATENCY)
+ * tuple. Unlike errno variants, the latency primitive always delegates to the real kernel call after
+ * the configured extra delay — the pre-allocation completes normally. No probability gate is applied;
+ * the delay fires on every intercepted {@code fallocate} call. No runtime operation-effect validation
+ * is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.IO)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-io.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the filesystem libc wrappers (open, read,
- * write, close, fsync, etc.) at the dynamic-linker level. This annotation installs a rule via
- * {@code AdvancedFilesystemChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
+ *       extension to upload {@code libchaos-io.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
+ *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
+ *       {@code fallocate} at the dynamic-linker level.
+ *   <li>On each intercepted {@code fallocate} call the interposer sleeps for {@link #delayMs} ms
+ *       before issuing the real kernel call.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.IO)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-filesystem} on the test classpath.</strong>
+ *   <li>Applications that pre-allocate large WAL segment files at startup will see the startup time
+ *       increase by the injected delay; assert that the application's startup deadline accounts for
+ *       slow pre-allocation on congested storage rather than assuming it completes within a fixed
+ *       budget.
+ *   <li>Database engines that roll over WAL segments and pre-allocate the next segment while
+ *       writing to the current segment will see the background pre-allocation thread delayed; assert
+ *       that a slow pre-allocation does not block the foreground write path or cause transaction
+ *       commits to stall waiting for the next segment to be ready.
+ *   <li>Applications that pre-allocate temporary files before processing large batches will see the
+ *       batch start time increase; assert that the batch processing timeout is measured from after
+ *       the pre-allocation rather than from before it.
+ *   <li>Assert that a slow {@code fallocate} on a background thread does not cause the main request
+ *       path to time out; pre-allocation should always be performed asynchronously or with a timeout
+ *       that falls back to writing without pre-allocation.
  * </ul>
+ *
+ * <p>In production, slow {@code fallocate} calls occur on storage systems under heavy write load
+ * where the filesystem's block allocation bitmap is not cached and must be read from disk, on SAN
+ * or NFS-backed filesystems where the allocation requires a round-trip to the storage server, and
+ * on HDD-backed filesystems where the block allocation table is stored on a cold platter area
+ * requiring a head seek before the allocation can be recorded.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code fallocate(2)} modifies the file's on-disk block allocation by writing to the filesystem's
+ * block allocation bitmap and the file's inode extent list, then commits these changes to the
+ * journal. On a warm cache with low storage pressure, the journal commit completes in microseconds.
+ * Under write pressure — many concurrent processes issuing metadata-heavy operations — the journal
+ * commit queue can grow long, making even simple metadata operations like {@code fallocate} take
+ * tens or hundreds of milliseconds.
+ *
+ * <p>The latency is proportional to the size of the requested allocation only when the block
+ * allocator must initialise the allocated blocks (with {@code FALLOC_FL_ZERO_RANGE}) — for a
+ * plain {@code fallocate} the kernel only records the block extents in the inode without touching
+ * the data blocks, making the operation metadata-only and fast regardless of allocation size.
+ * Slow plain {@code fallocate} indicates journal commit pressure, not a data write latency issue.
+ *
+ * <p>Java's NIO {@code FileChannel} does not expose {@code fallocate} directly. Applications
+ * using JNI-wrapped native libraries (SQLite, RocksDB, LMDB via JNI) that internally call
+ * {@code fallocate} will see the injected delay surface as blocking time in the JNI call. The JVM's
+ * own file I/O path does not call {@code fallocate}.
  *
  * <h2>Example</h2>
  *
@@ -50,21 +89,18 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.IO)
  * @ChaosAllocateLatency(delayMs = 200)
- * class LatencyTest {
+ * class AllocateLatencyTest {
  *   @Test
- *   void appHandlesSlowOperation(ConnectionInfo info) { ... }
+ *   void walSegmentPreallocationDoesNotBlockForegroundWriteUnderStoragePressure() {
+ *     // assert that a slow fallocate on the segment-roller thread does not stall commits
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Delay guidance:</strong> {@code 10}–{@code 200} ms simulates realistic stall events;
- * values above application-level timeouts produce cascading failures rather than isolated latency
- * observations — intentional in some scenarios, noisy in others.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form ({@code @ChaosAllocateLatencys}) to
- * set different delays on different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosAllocateEnospc
+ * @see ChaosTruncateLatency
+ * @see com.macstab.chaos.filesystem.annotation.l1.IoLatencyBinding
  */
 @Repeatable(ChaosAllocateLatency.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

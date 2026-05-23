@@ -13,58 +13,89 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Delays every libchaos-intercepted {@code poll} call by {@link #delayMs} milliseconds before
- * delegating to the real kernel call, making the operation succeed but take longer than expected.
+ * Delays every {@code poll(2)} call by an additional {@link #delayMs} milliseconds before
+ * delegating to the real kernel call, making readiness detection slower than the application
+ * expects while still reporting the correct socket readiness state.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one
- * (selector, effect = LATENCY) pair. Unlike errno variants, the latency primitive always delegates
- * to the kernel — it only adds wall-clock cost before doing so.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> every {@code poll} call intercepted by libchaos
- * blocks for {@link #delayMs} ms before the kernel call is issued. This simulates the wall-clock
- * cost increase from resource pressure, kernel scheduling stalls, or slow hardware — none of which
- * return an errno but all of which can exhaust application-level timeouts, saturate connection-pool
- * wait budgets, and surface hidden latency assumptions.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code POLL}, effect = LATENCY) tuple.
+ * Unlike errno variants, the latency primitive always delegates to the real kernel call after the
+ * configured extra delay — the poll result is authentic (it reflects actual socket readiness). A
+ * Bernoulli trial with probability {@link #toxicity} gates whether the delay fires on each call.
+ * No runtime operation-effect validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.NET)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-net.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes socket-layer libc wrappers (connect, accept,
- * socket, bind, listen, shutdown, send, recv, poll). This annotation installs a rule via {@code
- * AdvancedConnectionChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
+ *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
+ *       {@code poll} at the dynamic-linker level.
+ *   <li>On each intercepted {@code poll} call a Bernoulli trial with probability {@link #toxicity}
+ *       is conducted; when it fires the interposer sleeps for {@link #delayMs} ms before issuing
+ *       the real kernel call.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.NET)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-connection} on the test classpath.</strong>
+ *   <li>Event loops that use {@code poll} to wait for socket readiness will see increased latency
+ *       between a socket becoming ready and the application processing the event; assert that
+ *       end-to-end request latency increases proportionally to the injected delay.
+ *   <li>Blocking I/O implementations that use {@code poll} to implement {@code SO_TIMEOUT} will
+ *       consume part of their timeout budget in the injected delay before the kernel even starts
+ *       waiting for the socket; assert that timeouts are configured with enough headroom.
+ *   <li>Multiplexing servers that use {@code poll} to monitor many file descriptors simultaneously
+ *       will see the delay applied to every polling cycle, multiplying the effective delay impact
+ *       under high-connection-count scenarios.
+ *   <li>Assert that the application's request timeout begins from when the request is dispatched,
+ *       not from when poll returns, so that poll latency does not silently consume request budget.
  * </ul>
+ *
+ * <p>In production, slow {@code poll} calls occur when the process has many open file descriptors
+ * and the kernel must scan the entire pollfd array (an O(n) operation), when the process is CPU
+ * throttled by cgroups and spends extended periods waiting to be scheduled back after the poll
+ * syscall, and during NIC driver overload when interrupt coalescing introduces additional delay
+ * before the kernel processes the readiness event.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code poll(2)} and its variants ({@code ppoll}, {@code epoll_wait}) are the mechanism by
+ * which event-driven servers detect when sockets are ready for reading or writing without blocking
+ * on the socket itself. The delay is injected before the kernel call, so the kernel begins waiting
+ * for readiness only after the injected sleep. This means that if a socket is already ready when
+ * {@code poll} is called, the poll result is still delayed by {@link #delayMs} — simulating a
+ * scheduling stall where the kernel's readiness notification was queued but the application thread
+ * was not scheduled to consume it.
+ *
+ * <p>Netty, Vert.x, and other NIO-based frameworks use {@code epoll_wait} rather than {@code poll}
+ * on Linux; this injection targets the POSIX {@code poll} wrapper, which may be called by
+ * non-NIO code paths within the container (e.g., Redis's blocking command implementation). For
+ * event-driven Java servers, {@link ChaosRecvLatency} and {@link ChaosConnectLatency} are more
+ * relevant; {@code ChaosPollLatency} is most useful for testing C/C++ or Python servers that use
+ * blocking {@code poll} calls.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.NET)
- * @ChaosPollLatency(delayMs = 200)
- * class LatencyTest {
+ * @ChaosPollLatency(delayMs = 50, toxicity = 0.5)
+ * class PollLatencyTest {
  *   @Test
- *   void appHandlesSlowOperation(ConnectionInfo info) { ... }
+ *   void serverRequestLatencyIncreasesUnderSlowPoll(ConnectionInfo info) {
+ *     // assert that end-to-end latency increases by approximately delayMs per poll cycle
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Delay guidance:</strong> {@code 10}–{@code 200} ms simulates realistic stall events;
- * values above application-level timeouts produce cascading failures rather than isolated latency
- * observations — intentional in some scenarios, noisy in others.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form ({@code @ChaosPollLatencys}) to set
- * different delays on different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosPollTimeout
+ * @see ChaosRecvLatency
+ * @see com.macstab.chaos.connection.annotation.l1.ConnectionLatencyBinding
  */
 @Repeatable(ChaosPollLatency.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

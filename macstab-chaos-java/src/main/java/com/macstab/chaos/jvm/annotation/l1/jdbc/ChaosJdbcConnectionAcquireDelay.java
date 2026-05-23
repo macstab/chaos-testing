@@ -14,59 +14,104 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Delay the jdbc_connection_acquire operation by the configured number of milliseconds.
+ * Intercepts {@code DataSource.getConnection()} and delays the calling thread for
+ * {@link #delayMs()} milliseconds before returning a connection, simulating a slow or
+ * saturated JDBC connection pool and the associated request-queuing latency.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> delay the JDBC_CONNECTION_ACQUIRE operation by the
- * configured number of milliseconds inside the JVM of the target container. The effect fires on
- * every matching call, subject to the probability configured via {@link #probability()} if
- * applicable. The rule is active from {@code beforeAll} until {@code afterAll} (class-scope) or
- * from {@code beforeEach} until {@code afterEach} (method-scope).
+ * A JVM agent L1 chaos primitive — one typed annotation per (selector family, operation type,
+ * effect) tuple. It is declared on a test class or method alongside a container annotation and
+ * activates for the lifetime of the test class ({@code beforeAll} / {@code afterAll}) or a single
+ * test method ({@code beforeEach} / {@code afterEach}).
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>Before every call to {@code javax.sql.DataSource#getConnection()} inside the target
+ *       container's JVM, the chaos agent intercepts the calling thread.
+ *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()},
+ *       {@link #maxDelayMs()}]; equal values produce a deterministic delay.
+ *   <li>Control returns to the caller and the underlying {@code getConnection()} executes
+ *       normally, returning a real connection from the pool.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>Every database operation takes at least {@link #delayMs()} ms longer at the connection
+ *       acquisition step; assert that request response times include this overhead.
+ *   <li>Connection pool timeouts (HikariCP's {@code connectionTimeout}, C3P0's
+ *       {@code checkoutTimeout}) configured shorter than the injected delay will now fire;
+ *       assert that the application converts pool timeout exceptions to HTTP 503.
+ *   <li>Spring's {@code @Transactional} methods acquire a connection at transaction begin; a
+ *       delay here pushes the total transaction time over ORM-level statement timeouts.
+ *   <li><strong>Production failure mode:</strong> a connection leak in one service causes the
+ *       pool to fill; {@code getConnection()} blocks for {@code connectionTimeout} (30 s) on
+ *       every request, the thread pool saturates, health-checks fail, and the instance is removed
+ *       from the load balancer while the root cause (the leak) goes undetected.
  * </ul>
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The interception targets {@code javax.sql.DataSource#getConnection()} at the interface
+ * method level. Byte Buddy matches any class implementing {@code DataSource} whose
+ * {@code getConnection()} is called, which covers HikariCP's {@code HikariDataSource},
+ * Apache DBCP2's {@code BasicDataSource}, and Spring's {@code DriverManagerDataSource}.
+ * Because the intercept fires before the pool's own wait logic, the injected delay compounds with
+ * any real pool-wait time: if the pool is already under pressure, the observed delay is the sum
+ * of both.
+ *
+ * <p>HikariCP's pool implementation parks the acquiring thread on a
+ * {@code java.util.concurrent.SynchronousQueue} or {@code LinkedBlockingDeque} when no
+ * connections are immediately available. The chaos delay fires before this park, so even when a
+ * connection is immediately available the delay is observable. This makes the fault
+ * deterministic regardless of pool utilisation level.
+ *
+ * <p>When multiple threads simultaneously acquire connections with a delay, the pool's
+ * {@code maximumPoolSize} acts as a ceiling on concurrency. The injected threads still hold their
+ * application threads in sleep, inflating thread-pool utilisation without adding pressure to the
+ * database itself. This is the correct model for testing "pool wait" scenarios without actually
+ * starving the database.
+ *
+ * <p>In Spring applications using JPA, {@code LocalContainerEntityManagerFactoryBean} wraps the
+ * {@code DataSource}; connection acquisition occurs inside {@code EntityManager.getTransaction()
+ * .begin()} when the transaction isolation level requires an exclusive connection. The delay
+ * therefore inflates transaction begin latency, which is a common hidden cost in high-throughput
+ * OLTP systems.
+ *
+ * <p>Combining this annotation with {@link ChaosJdbcTransactionCommitDelay} simulates a database
+ * under memory pressure where both acquiring a connection and flushing dirty pages are slow,
+ * producing compounding latency that mirrors real GC-pause-induced database stalls.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosJdbcConnectionAcquireDelay
- * class JvmChaosTest {
+ * @ChaosJdbcConnectionAcquireDelay(delayMs = 5000)
+ * class PoolTimeoutTest {
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void applicationReturns503WhenPoolTimesOut(ConnectionInfo info) {
+ *     // assert HTTP 503 and pool-timeout metric incremented
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosJdbcConnectionAcquireDelays}) to apply different configurations to different
- * containers.
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation is required; omitting
+ *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
+ *       {@code @JvmAgentChaos}; it is attached before the container starts.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
+ *       translator class can be resolved.
+ *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
+ *       intercept native executables.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosJdbcConnectionAcquireInjectException
+ * @see ChaosJdbcStatementExecuteDelay
  */
 @Repeatable(ChaosJdbcConnectionAcquireDelay.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

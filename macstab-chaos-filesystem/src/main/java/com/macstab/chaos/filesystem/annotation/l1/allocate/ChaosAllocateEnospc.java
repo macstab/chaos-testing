@@ -14,40 +14,78 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code ENOSPC} on every libchaos-intercepted {@code allocate} call inside the target
- * container, making the call fail as if the kernel returned {@code ENOSPC}.
+ * Injects {@code ENOSPC} into {@code fallocate(2)}, causing the call to return {@code -1} with
+ * {@code errno = ENOSPC} as if the filesystem has no free disk blocks to satisfy the requested
+ * pre-allocation and cannot guarantee space for future writes to the allocated region.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ENOSPC}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code ENOSPC} is a valid POSIX result of {@code allocate}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code allocate} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = ENOSPC} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: no space left on device — disk-full; canary for cleanup / log-rotation / disk-pressure
- * bugs.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code ALLOCATE}, errno = {@code ENOSPC})
+ * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
+ * {@code fallocate} call; when it fires the interposer returns {@code -1} with {@code errno = ENOSPC}
+ * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.IO)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-io.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the filesystem libc wrappers (open, read,
- * write, close, fsync, etc.) at the dynamic-linker level. This annotation installs a rule via
- * {@code AdvancedFilesystemChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
+ *       extension to upload {@code libchaos-io.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
+ *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
+ *       {@code fallocate} at the dynamic-linker level.
+ *   <li>On each intercepted {@code fallocate} call a Bernoulli trial with probability {@link #probability}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = ENOSPC}, simulating a disk-full condition at pre-allocation time.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.IO)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-filesystem} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code ENOSPC} from {@code fallocate} means the filesystem could not reserve the requested
+ *       disk blocks; no space has been allocated and the file is unchanged. Assert that the
+ *       application does not proceed to write to the file as if the pre-allocation succeeded —
+ *       subsequent writes may still fail with {@code ENOSPC} at an unpredictable point.
+ *   <li>Database engines that use {@code fallocate} to pre-allocate WAL segment files must handle
+ *       {@code ENOSPC} at segment creation time; assert that the database either falls back to
+ *       writing without pre-allocation (accepting fragmentation and the risk of mid-write ENOSPC)
+ *       or stops accepting new transactions until space is reclaimed.
+ *   <li>Applications that pre-allocate large output files before writing must treat {@code ENOSPC}
+ *       from {@code fallocate} as an early-warning disk-pressure signal; assert that the application
+ *       triggers its disk-space alert path rather than silently falling back to writing without
+ *       pre-allocation.
+ *   <li>Assert that the application's error path on {@code ENOSPC} from {@code fallocate} produces
+ *       the same user-visible message as {@code ENOSPC} from a write — both indicate disk full,
+ *       regardless of the operation that surfaced it.
  * </ul>
+ *
+ * <p>In production, {@code ENOSPC} from {@code fallocate} is the canonical disk-full signal for
+ * applications that use pre-allocation: it surfaces the space problem before any data has been
+ * written, allowing the application to fail fast rather than discovering the disk is full after
+ * partially writing a file. It occurs when the filesystem has fewer free blocks than the requested
+ * allocation, including when the ext4 reserved-block pool prevents unprivileged processes from
+ * using the last 5% of disk space.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code fallocate(2)} allocates disk blocks for a file without writing any data. The key
+ * benefit over writing zeroes is that the kernel reserves the blocks in the filesystem's allocation
+ * bitmap before the application performs any I/O, guaranteeing that subsequent writes to the
+ * pre-allocated region will succeed (barring hardware failure). When the filesystem has insufficient
+ * free blocks, the kernel returns {@code ENOSPC} immediately without modifying the file.
+ *
+ * <p>On ext4, the block allocator checks the number of free blocks against the requested allocation
+ * and the filesystem's reserved-blocks threshold (controlled by {@code tune2fs -m}). If the
+ * requested allocation would leave fewer than the reserved threshold, the kernel returns {@code ENOSPC}
+ * even when there are technically some free blocks — those blocks are reserved for root-owned
+ * processes. An unprivileged service process will see {@code ENOSPC} when the disk is at 95%
+ * capacity even though the filesystem reports 5% free.
+ *
+ * <p>Java's NIO {@code FileChannel} does not directly expose {@code fallocate}. Applications that
+ * use native libraries (SQLite via JDBC, RocksDB via JNI, custom file management code) may call
+ * {@code fallocate} internally; their JNI bridge typically surfaces {@code ENOSPC} as an
+ * {@code IOException} with the message "No space left on device". The JVM itself does not use
+ * {@code fallocate} in its standard file I/O implementation.
  *
  * <h2>Example</h2>
  *
@@ -55,21 +93,19 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.IO)
  * @ChaosAllocateEnospc(probability = 0.001)
- * class FaultTest {
+ * class AllocateEnospcTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void walSegmentPreallocationEnospcStopsAcceptingTransactions() {
+ *     // assert that ENOSPC on fallocate triggers disk-pressure alert and halts new transactions
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2 to simulate disk-pressure; ensure the app
- * has disk-full handling.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosAllocateEnospcs}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosAllocateEdquot
+ * @see ChaosWriteEnospc
+ * @see ChaosFsyncEnospc
+ * @see com.macstab.chaos.filesystem.annotation.l1.IoErrnoBinding
  */
 @Repeatable(ChaosAllocateEnospc.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

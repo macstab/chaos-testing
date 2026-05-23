@@ -14,61 +14,80 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Injects {@code EINVAL} on every libchaos-intercepted {@code posix spawnp} call inside the target
- * container, making the call fail as if the kernel returned {@code EINVAL}.
+ * Injects {@code EINVAL} into {@code posix_spawnp} calls intercepted by libchaos-process, causing
+ * the calling code to observe an invalid-argument failure when attempting to spawn a new process
+ * via {@code $PATH} lookup.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EINVAL}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EINVAL} is a valid POSIX result of {@code posix spawnp}.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code POSIX_SPAWNP}, errno = {@code EINVAL})
+ * tuple. The {@code POSIX_SPAWNP} selector intercepts {@code posix_spawnp} calls only, leaving
+ * {@code posix_spawn}, {@code fork}, and all other process syscalls unaffected. Compile-time safety:
+ * invalid selector/errno combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code posix spawnp} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = EINVAL} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: invalid argument — bad length, flags, or option; the universal canary errno.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code posix_spawnp} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code posix_spawnp} call the interposer runs a Bernoulli trial with probability
+ *       {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer returns {@code EINVAL} directly (POSIX spawn returns
+ *       the error code, not -1) without issuing the real kernel call.</li>
+ *   <li>The calling code receives: return value {@code EINVAL} (22),
+ *       {@code strerror}: "Invalid argument"; no child process is created; the pid output
+ *       parameter is not set to a valid value.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family at the dynamic-linker
- * level. This annotation installs a rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code posix_spawnp} returns {@code EINVAL}; no child process is created; assert that
+ *       the application treats EINVAL as a non-retryable programming error — the spawn attribute
+ *       structure or file-actions structure contains an invalid value that must be fixed in code.</li>
+ *   <li>Applications building spawn attribute structures ({@code posix_spawnattr_t}) and file
+ *       action sequences ({@code posix_spawn_file_actions_t}) dynamically must validate their
+ *       structures before calling spawnp — assert that EINVAL from spawnp triggers a diagnostic
+ *       that includes the attribute values for operator debugging.</li>
+ *   <li>Assert that the application does not call {@code waitpid} on an uninitialised pid after
+ *       an EINVAL failure — POSIX does not define the pid output parameter value when spawn fails.</li>
  * </ul>
+ * Production failure mode: a command executor builds spawn attribute structures using a generic
+ * serialisation framework; a version upgrade changes the encoding of a scheduling policy flag,
+ * producing an attribute structure that the kernel rejects with EINVAL; the executor does not
+ * validate attributes before spawning and surfaces a generic "spawn failed" error without the
+ * invalid attribute value, making root cause analysis difficult.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>{@code EINVAL} from {@code posix_spawnp} originates from the same sources as {@code posix_spawn}:
+ * invalid {@code posix_spawnattr_t} (invalid scheduling policy, parameter out of range, invalid
+ * signal number in signal mask) or invalid {@code posix_spawn_file_actions_t} (invalid fd number,
+ * invalid flags). The {@code $PATH} search that distinguishes spawnp from spawn occurs before the
+ * fork/exec sequence — if the PATH search succeeds (binary found) but the attributes are invalid,
+ * EINVAL is returned from the spawn's internal exec or attribute-application step. The interposer
+ * fires at the API boundary. POSIX spawn returns the error code directly; checking
+ * {@code if (ret == -1)} silently misses EINVAL (22).
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosPosixSpawnpEinval(probability = 0.001)
- * class FaultTest {
+ * @ChaosPosixSpawnpEinval(probability = 0.01)
+ * class PosixSpawnpInvalidAttributeTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void executorReportsInvalidAttributeValuesOnEinvalAndDoesNotRetry(ConnectionInfo info) {
+ *     // verify EINVAL treated as programming error; attribute values logged; no retry loop
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
+ * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2; EINVAL represents a configuration
+ * error; any non-zero probability exercises the non-retryable error path.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosPosixSpawnpEinvals}) to bind different probabilities
- * to different containers simultaneously.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessErrnoBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#errno(ProcessSelector, ProcessErrno, double)
  */
 @Repeatable(ChaosPosixSpawnpEinval.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

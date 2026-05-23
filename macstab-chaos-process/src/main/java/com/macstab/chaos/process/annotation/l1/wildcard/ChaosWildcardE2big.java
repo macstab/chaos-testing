@@ -14,61 +14,105 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Injects {@code E2BIG} on every libchaos-intercepted {@code wildcard} call inside the target
- * container, making the call fail as if the kernel returned {@code E2BIG}.
+ * Injects {@code E2BIG} ("Argument list too long") into every process-management syscall
+ * intercepted by libchaos-process — {@code execve}, {@code execveat}, {@code posix_spawn},
+ * {@code posix_spawnp}, and their variants — simultaneously, gated by {@link #probability},
+ * causing any process-launch call to fail as if the kernel rejected an oversized argument vector.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code E2BIG}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code E2BIG} is a valid POSIX result of {@code wildcard}.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code WILDCARD}, errno = {@code E2BIG}) tuple.
+ * The {@code WILDCARD} selector intercepts every process-management syscall family simultaneously:
+ * fork, execve, execveat, posix_spawn, posix_spawnp, pthread_create, and waitpid. Compile-time
+ * safety: invalid selector/errno combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code wildcard} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = E2BIG} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: argument list too long — argv/envp exceeds ARG_MAX.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing every process-management libc wrapper at the dynamic-linker level.</li>
+ *   <li>On each intercepted syscall, a Bernoulli trial with probability {@link #probability}
+ *       runs.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = E2BIG} and returns {@code -1}
+ *       (or the errno value directly for {@code pthread_create} and POSIX spawn functions) before
+ *       the real kernel call executes.</li>
+ *   <li>The calling code receives: {@code execve}/{@code fork} return {@code -1} with
+ *       {@code errno = E2BIG} (7); {@code pthread_create} and {@code posix_spawn} return {@code E2BIG}
+ *       directly; {@code strerror(E2BIG)}: "Argument list too long".</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family at the dynamic-linker
- * level. This annotation installs a rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code execve}/{@code execveat} return {@code -1} with {@code errno = E2BIG}; the new
+ *       executable is never loaded; assert that the application reports the argument count and
+ *       total byte size in the diagnostic log — identifying which call site produced the oversized
+ *       argv/envp is essential for fixing an ARG_MAX regression.</li>
+ *   <li>{@code posix_spawn}/{@code posix_spawnp} return {@code E2BIG} directly (not {@code -1});
+ *       assert that the calling code checks {@code if (ret != 0)} and does not call
+ *       {@code waitpid} on an uninitialised pid — the child was never created.</li>
+ *   <li>{@code pthread_create} returns {@code E2BIG} directly; assert that the application
+ *       does not treat {@code E2BIG} from thread creation as an argument-too-long error — this
+ *       would indicate a misconfigured stack attribute, not an oversized argument vector.</li>
+ *   <li>Assert that the application does not retry on {@code E2BIG} with the same argument
+ *       vector — the kernel limit will not change between calls; the argument vector must be
+ *       trimmed or the environment cleaned before retrying.</li>
  * </ul>
+ * Production failure mode: a deployment script constructs an {@code execve} argument vector from
+ * environment variables accumulated by a long-running supervisor; over time the environment grows
+ * beyond ARG_MAX (128 kB on Linux); all subprocess launches return E2BIG; the supervisor logs a
+ * generic spawn error and retries without trimming the environment; the retry loop saturates the
+ * process table and the supervisor cannot recover.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>{@code E2BIG} from process-management syscalls exclusively concerns the {@code execve}/exec
+ * family and POSIX spawn: the total size of the argument vector (argv) plus environment (envp) in
+ * bytes must not exceed {@code ARG_MAX} (typically 131072 bytes on Linux, queryable via
+ * {@code getconf ARG_MAX}). The check is: {@code sum(strlen(argv[i])+1) + sum(strlen(envp[j])+1)}
+ * plus pointer overhead must be below the kernel limit. Environment variables from the parent
+ * process accumulate silently over long-running processes, and each new {@code exec} carries the
+ * full environment; this is the primary source of unexpected {@code E2BIG} in production.
+ *
+ * <p>The wildcard selector applies {@code E2BIG} across all process-management syscalls, which
+ * means it also fires on {@code fork} and {@code pthread_create} where {@code E2BIG} does not
+ * normally occur. This is intentional for wildcard coverage: it tests whether the application's
+ * catch-all error handler correctly propagates the error rather than silently ignoring it, even
+ * when the errno is unexpected for the specific call. Single-selector variants (e.g.,
+ * {@code ChaosExecveE2big}) are preferable when testing specific exec paths precisely.
+ *
+ * <p>The ARG_MAX limit is per-exec, not per-process: repeated {@code fork} calls without exec are
+ * not affected by ARG_MAX. Only the transition to a new executable (via exec or spawn) triggers
+ * the check. Applications that use large environment passthrough to child processes — common in
+ * CI/CD pipelines, container entrypoints, and cloud-function runtimes — are most at risk.
+ *
+ * <p>Return-value conventions vary by function: {@code execve}/{@code fork} return {@code -1} and
+ * set {@code errno}; {@code posix_spawn}/{@code posix_spawnp} return the error code directly
+ * without setting {@code errno}; {@code pthread_create} also returns the error code directly.
+ * Code that checks {@code if (ret == -1 && errno == E2BIG)} silently misses errors from spawn
+ * and pthread_create — the correct check is {@code if (ret != 0)} for the latter two families.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosWildcardE2big(probability = 0.001)
- * class FaultTest {
+ * @ChaosWildcardE2big(probability = 0.005)
+ * class ArgMaxExhaustionTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void spawnHandlerLogsArgCountAndDoesNotRetryOnE2big(ConnectionInfo info) {
+ *     // drive requests that trigger subprocess spawn; assert E2BIG logged with arg byte count;
+ *     // assert no retry loop; assert child pid not waited on after E2BIG
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
+ * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2 exercises the error path without
+ * blocking startup; values above 0.1 will prevent the container init sequence from spawning any
+ * subprocesses; start with 1e-3 and confirm the container starts successfully before increasing.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosWildcardE2bigs}) to bind different probabilities to
- * different containers simultaneously.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessErrnoBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#errno(ProcessSelector, ProcessErrno, double)
  */
 @Repeatable(ChaosWildcardE2big.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

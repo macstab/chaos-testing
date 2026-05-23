@@ -14,60 +14,118 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Reject the virtual_thread_start operation by throwing an appropriate exception for the operation
- * type.
+ * Throws the configured exception inside the virtual-thread start path before the
+ * {@code Continuation} is submitted to the carrier fork-join pool — the virtual thread never
+ * mounts, its {@code Runnable} is never executed, and the caller receives an exception.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> reject the VIRTUAL_THREAD_START operation by
- * throwing an appropriate exception for the operation type inside the JVM of the target container.
- * The effect fires on every matching call, subject to the probability configured via {@link
- * #probability()} if applicable. The rule is active from {@code beforeAll} until {@code afterAll}
- * (class-scope) or from {@code beforeEach} until {@code afterEach} (method-scope).
+ * <p>An L1 JVM chaos primitive targeting the {@code THREAD} selector family with the {@code reject}
+ * effect applied to the {@code VIRTUAL_THREAD_START} operation (Project Loom, JDK 21+). It aborts
+ * the virtual thread creation before the carrier-pool submission step, exercising error-handling
+ * paths in Loom-based concurrency code that are never triggered under normal operation. The
+ * annotation is declared on the test class or method alongside a container annotation and is active
+ * for the lifetime of the annotated scope.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <p>This annotation fires only for virtual threads. Platform (OS-backed) threads are not affected.
+ * Use {@code @ChaosThreadStartReject} to target platform threads, or both together to reject all
+ * thread creation.
  *
- * <p><strong>What is required:</strong>
+ * <h2>What chaos this applies</h2>
+ *
+ * <p>The JVM agent installs a Byte Buddy interceptor on the internal virtual-thread start path.
+ * When the interceptor fires:
+ *
+ * <ol>
+ *   <li>Execution is captured before the virtual thread's {@code Continuation} is handed to the
+ *       carrier fork-join pool.
+ *   <li>The reject effect constructs and throws the configured exception (default message:
+ *       {@code "rejected by chaos L1"}) from within the interceptor body.
+ *   <li>The exception propagates to the caller of {@code Thread.ofVirtual().start(runnable)} or
+ *       {@code StructuredTaskScope.fork(callable)} — the virtual thread is never created at the
+ *       JVM level and no carrier slot is consumed.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>The caller of the virtual-thread start receives the configured exception; assert that the
+ *       application propagates or wraps it correctly (e.g. as a {@code RejectedExecutionException}
+ *       from the framework layer).
+ *   <li>{@code Thread.activeCount()} does not increase — the rejected virtual thread is not
+ *       registered in the JVM's thread table.
+ *   <li>{@code StructuredTaskScope.fork()} propagates the exception to the scope's exception
+ *       handler; assert that the scope cancels remaining subtasks and re-throws on {@code join()}.
+ *   <li>HTTP servers that serve each request on a new virtual thread return a 503 or connection
+ *       reset to the client; assert the client receives an appropriate HTTP error code rather than
+ *       a timeout.
  * </ul>
+ *
+ * <p><strong>Production failure mode this simulates:</strong> a JVM-level resource guard (e.g. a
+ * custom {@code ThreadFactory} that enforces a cap on concurrent virtual threads) throws when the
+ * cap is exceeded — a high-traffic Loom-based HTTP server rejects new requests by failing to fork
+ * virtual threads, causing HTTP 503 responses until the in-flight count drops below the cap.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p><strong>Interception point.</strong> Virtual thread creation in JDK 21+ calls the
+ * package-private {@code VirtualThread#start()} method, which differs from the platform-thread
+ * {@code Thread#start()} at the bytecode level. The agent targets this internal override via the
+ * bootstrap instrumentation channel. Rejecting here means the {@code Continuation} object is
+ * allocated but never enqueued in the fork-join work queue, so the carrier pool sees no evidence
+ * of the attempted thread.
+ *
+ * <p><strong>Structured concurrency interaction.</strong> {@code StructuredTaskScope} wraps each
+ * {@code fork()} call in a try-catch for {@code RejectedExecutionException}; the scope's
+ * completion handler records the failure and triggers scope cancellation. This annotation's
+ * exception will surface through that path — verify that the scope's {@code Throwable} collector
+ * holds the injected exception so that diagnostics are preserved.
+ *
+ * <p><strong>Carrier-pool isolation.</strong> Because the rejection fires before the
+ * {@code Continuation} enters the fork-join queue, the carrier pool's worker threads are
+ * completely unaffected. This makes the reject effect invisible to JVM flight-recorder carrier
+ * utilisation metrics — the only observable signal is the exception in the calling thread's stack.
+ *
+ * <p><strong>Distinction from {@code ChaosVirtualThreadStartDelay}.</strong> The delay effect
+ * lets the virtual thread start eventually (after a park on the calling thread). The reject effect
+ * is terminal: the thread is never created. Use reject to test fallback logic such as circuit
+ * breakers or graceful degradation under thread-creation failure.
+ *
+ * <p><strong>Exception type note.</strong> The default exception message is passed as a
+ * {@code RuntimeException} wrapper by the {@code RejectTranslator}. Configure
+ * {@code exceptionClassName} if the application code catches a specific type such as
+ * {@code java.util.concurrent.RejectedExecutionException}.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosVirtualThreadStartReject
- * class JvmChaosTest {
+ * @ChaosVirtualThreadStartReject(message = "virtual thread cap exceeded")
+ * class VirtualThreadRejectTest {
+ *
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void serverResponds503WhenVirtualThreadCreationFails(AppConnectionInfo info) {
+ *     int status = client.getStatus(info, "/api/resource");
+ *     assertThat(status).isEqualTo(503);
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosVirtualThreadStartRejects}) to apply different configurations to different
- * containers.
+ * <p><strong>Required:</strong>
+ *
+ * <ul>
+ *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
+ *   <li>A Java 21+ container image — virtual threads require JDK 21 or later.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see com.macstab.chaos.jvm.api.OperationType#VIRTUAL_THREAD_START
+ * @see com.macstab.chaos.jvm.api.ChaosSelector#thread(java.util.Set)
+ * @see ChaosVirtualThreadStartDelay
+ * @see ChaosThreadStartReject
  */
 @Repeatable(ChaosVirtualThreadStartReject.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

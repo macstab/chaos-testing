@@ -14,58 +14,118 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Delay the schedule_submit operation by the configured number of milliseconds.
+ * Parks the calling thread inside {@link java.util.concurrent.ScheduledExecutorService#schedule
+ * ScheduledExecutorService.schedule()} for the configured number of milliseconds before the task
+ * is registered with the scheduler's delay queue — every scheduled task is submitted later than
+ * intended and its first execution is correspondingly delayed.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> delay the SCHEDULE_SUBMIT operation by the
- * configured number of milliseconds inside the JVM of the target container. The effect fires on
- * every matching call, subject to the probability configured via {@link #probability()} if
- * applicable. The rule is active from {@code beforeAll} until {@code afterAll} (class-scope) or
- * from {@code beforeEach} until {@code afterEach} (method-scope).
+ * <p>An L1 JVM chaos primitive targeting the {@code SCHEDULING} selector family with the
+ * {@code delay} effect applied to the {@code SCHEDULE_SUBMIT} operation. It intercepts the
+ * submission path of {@link java.util.concurrent.ScheduledExecutorService} — before the
+ * {@code Delayed} task entry is added to the executor's internal delay queue — and parks the
+ * submitting thread for {@code delayMs}. The annotation is declared on the test class or method
+ * alongside a container annotation and is active for the lifetime of the annotated scope
+ * (class-scope: {@code beforeAll} to {@code afterAll}; method-scope: {@code beforeEach} to
+ * {@code afterEach}).
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <p>The JVM agent installs a Byte Buddy interceptor on
+ * {@code ScheduledThreadPoolExecutor#schedule(Runnable, long, TimeUnit)} and the
+ * {@code Callable} overload. When the interceptor fires:
+ *
+ * <ol>
+ *   <li>Execution is captured before the task's {@code ScheduledFutureTask} wrapper is
+ *       constructed and enqueued into the executor's {@code DelayedWorkQueue}.
+ *   <li>The delay effect calls {@code LockSupport.parkNanos} on the calling (submitting) thread
+ *       for the configured duration in milliseconds.
+ *   <li>After the park returns, the task is submitted to the scheduler normally and enters the
+ *       delay queue at the current wall-clock time plus the original requested delay.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>The {@code ScheduledFuture} returned by {@code schedule()} does not exist in the executor
+ *       during the delay window — assert that {@code executor.getQueue().size()} is zero while the
+ *       submitting thread is parked.
+ *   <li>The task's first execution occurs at {@code (submissionTime + delayMs + requestedDelay)}
+ *       rather than {@code (submissionTime + requestedDelay)} — assert via a timestamp captured
+ *       inside the task's {@code Runnable}.
+ *   <li>Frameworks that submit heartbeat tasks at startup and check for the first heartbeat within
+ *       a deadline fail that check — assert that the framework logs a missed-heartbeat warning.
+ *   <li>The submitting thread returns from {@code schedule()} at least {@code delayMs} later than
+ *       the non-chaos case — assert with a {@code StopWatch} around the submission call.
  * </ul>
+ *
+ * <p><strong>Production failure mode this simulates:</strong> a GC pause on the submitting thread
+ * just as it enters the scheduler — a Spring {@code @Scheduled} task whose registration is delayed
+ * by a 2-second stop-the-world GC causes the application's cache-refresh heartbeat to miss its
+ * first window, serving stale data until the next tick fires.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p><strong>Interception point.</strong> {@code ScheduledThreadPoolExecutor} is a subclass of
+ * {@code ThreadPoolExecutor} that stores tasks in a {@code DelayedWorkQueue} — a binary heap
+ * ordered by {@code ScheduledFutureTask#compareTo}. The agent intercepts the public
+ * {@code schedule} methods; the internal {@code delayedExecute} helper is not targeted directly.
+ * The interceptor fires on the submitting thread, not on a pool worker.
+ *
+ * <p><strong>Delay-queue timing.</strong> The task's trigger time is computed as
+ * {@code System.nanoTime() + delay} inside {@code ScheduledFutureTask}'s constructor. Because the
+ * pre-submit park fires before the constructor call, the trigger time is computed after the park —
+ * the full delay is preserved relative to when submission actually completes, not relative to when
+ * the caller invoked {@code schedule()}.
+ *
+ * <p><strong>Distinction from {@code ChaosScheduleSubmitSuppress}.</strong> The delay effect
+ * eventually registers the task; the task will fire at its intended relative delay after the
+ * inflated submission time. The suppress effect prevents registration entirely — the task never
+ * enters the queue and never executes. Use delay to test temporal sensitivity; use suppress to
+ * test missing-task handling.
+ *
+ * <p><strong>Distinction from {@code ChaosScheduleTickDelay}.</strong> The submit delay fires at
+ * submission time and affects when the task is registered. The tick delay fires when the scheduler
+ * dequeues a ready task and affects when execution starts. Use submit delay to fault the
+ * registration path; use tick delay to fault the execution path.
+ *
+ * <p><strong>Cascading effects on periodic tasks.</strong> {@code scheduleAtFixedRate} and
+ * {@code scheduleWithFixedDelay} submit an initial task and rely on the pool re-submitting
+ * subsequent tasks from within the completed task's code. Only the initial submission is delayed;
+ * subsequent periodic re-submissions are not affected unless they themselves go through
+ * {@code schedule()} again.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosScheduleSubmitDelay
- * class JvmChaosTest {
+ * @ChaosScheduleSubmitDelay(delayMs = 1_000)
+ * class ScheduleSubmitDelayTest {
+ *
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void heartbeatMissesWindowWhenSubmissionIsDelayed(AppConnectionInfo info) {
+ *     assertThatThrownBy(() -> client.awaitHeartbeat(info, Duration.ofMillis(500)))
+ *         .isInstanceOf(TimeoutException.class);
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosScheduleSubmitDelays}) to apply different configurations to different containers.
+ * <p><strong>Required:</strong>
+ *
+ * <ul>
+ *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
+ *   <li>A Java container image — the container must run a JVM process.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see com.macstab.chaos.jvm.api.OperationType#SCHEDULE_SUBMIT
+ * @see com.macstab.chaos.jvm.api.ChaosSelector#scheduling(java.util.Set)
+ * @see ChaosScheduleSubmitSuppress
+ * @see ChaosScheduleTickDelay
  */
 @Repeatable(ChaosScheduleSubmitDelay.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

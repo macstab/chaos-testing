@@ -14,61 +14,97 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code pthread_create} calls
- * succeed, then injects {@code EPERM} on every subsequent call until the rule is removed.
+ * After {@link #successesBeforeFailure} successful {@code pthread_create} calls, injects
+ * {@code EPERM} on every subsequent call, modelling a security policy tightening that removes
+ * the real-time scheduling privilege mid-runtime after N threads have been created.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code PTHREAD_CREATE}, errno = {@code EPERM}, effect = FAIL_AFTER) tuple. FAIL_AFTER is the
- * process module's counter-gated effect — distinct from ERRNO (probabilistic) and LATENCY
- * (unconditional). It models resource-exhaustion scenarios where the first N operations succeed and
- * then the system runs out of capacity.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code PTHREAD_CREATE}, errno = {@code EPERM},
+ * effect = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N calls succeed,
+ * then the counter trips permanently and every subsequent call returns the error code until the
+ * rule is removed. Compile-time safety: invalid selector/errno/effect combinations have no
+ * annotation class.
  *
- * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
- * {@code pthread_create} calls. After {@link #successesBeforeFailure} successes the counter trips
- * and every subsequent call returns {@code -1} with {@code errno = EPERM}, regardless of real
- * kernel capacity. The counter resets every time the rule is re-applied (e.g. across test methods
- * if the annotation is at class scope).
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code pthread_create} wrapper at the dynamic-linker level.</li>
+ *   <li>The interposer maintains a per-rule success counter; the counter does not reset
+ *       automatically between test methods when the annotation is at class scope.</li>
+ *   <li>Once the counter reaches zero it trips permanently: every subsequent {@code pthread_create}
+ *       call returns {@code EPERM} directly (pthread_create returns the error code, not -1).</li>
+ *   <li>The calling code receives: return value {@code EPERM} (1); no thread is created; the
+ *       process no longer has the privilege ({@code CAP_SYS_NICE}) required for real-time
+ *       scheduling threads.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family. This annotation installs
- * a FAIL_AFTER rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at {@code
- *       beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>The first {@link #successesBeforeFailure} calls proceed normally with the real-time
+ *       scheduling policy; all subsequent calls return {@code EPERM}; assert that the application
+ *       detects the privilege change and falls back to SCHED_OTHER rather than retrying with the
+ *       same privileged attribute.</li>
+ *   <li>FAIL_AFTER models a Kubernetes operator applying a more restrictive pod security policy
+ *       mid-lifetime that drops {@code CAP_SYS_NICE}: N threads are created under the original
+ *       policy; the policy tightens; subsequent creates return EPERM — assert that the application
+ *       detects this transition and emits an alert identifying the dropped capability.</li>
+ *   <li>Assert that the application does not retry pthread_create-EPERM with the same real-time
+ *       attribute; EPERM is non-retryable with the same attribute; assert that the application
+ *       falls back to SCHED_OTHER and logs the scheduling degradation at WARN level.</li>
  * </ul>
+ * Production failure mode: a latency-sensitive component creates real-time (SCHED_FIFO) I/O
+ * threads; a Kubernetes operator tightens the pod security policy and removes CAP_SYS_NICE; N
+ * existing threads continue running (the policy change does not kill existing threads); subsequent
+ * thread creates return EPERM; the component does not detect the capability change and applies the
+ * same tight retry loop used for EAGAIN, consuming CPU while failing to create new threads.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>FAIL_AFTER models a security policy tightening scenario: N thread creates succeed while
+ * CAP_SYS_NICE is in the effective capability set; a Kubernetes operator applies a new
+ * PodSecurityPolicy or SecurityContext that removes the capability; subsequent creates with a
+ * real-time scheduling attribute return EPERM. Real EPERM from this source is permanent until the
+ * security policy is reverted or the attribute is changed to SCHED_OTHER. pthread_create returns
+ * the error code directly — checking {@code if (ret == -1)} silently misses EPERM (1).
+ *
+ * <p>The counter does not reset between test methods when the annotation is at class scope. This
+ * enables sequential testing: the first test method exercises the normal operation phase (N creates
+ * with real-time scheduling); subsequent test methods exercise the EPERM-with-fallback phase.
+ * Set {@link #successesBeforeFailure} to the number of thread creates expected before the security
+ * policy tightens.
+ *
+ * <p>An important subtlety: EPERM from pthread_create fires only when the thread attribute requests
+ * a real-time scheduling policy AND the process lacks CAP_SYS_NICE. If the attribute uses
+ * SCHED_OTHER (the default), pthread_create never returns EPERM regardless of capability state.
+ * Applications that dynamically select between real-time and best-effort scheduling based on
+ * runtime detection of capabilities (via {@code prctl(PR_GET_DUMPABLE)} or similar) can avoid
+ * EPERM by probing the capability at startup and configuring the attribute accordingly.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosPthreadCreateEpermFailAfter(successesBeforeFailure = 128)
- * class ProcessExhaustionTest {
+ * @ChaosPthreadCreateEpermFailAfter(successesBeforeFailure = 4)
+ * class PthreadCreatePrivilegeTighteningTest {
  *   @Test
- *   void handlesExhaustion(ConnectionInfo info) { ... }
+ *   void ioThreadFallsBackToSchedOtherOnEpermAfterPolicyChangeAndLogsCapabilityDrop(ConnectionInfo info) {
+ *     // first 4 creates succeed with SCHED_FIFO; subsequent creates return EPERM;
+ *     // verify fallback to SCHED_OTHER applied; CAP_SYS_NICE loss logged at WARN;
+ *     // no retry with real-time attribute; return value checked (not errno)
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of {@code
- * pthread_create} calls the application is expected to make before hitting the limit. Typically
- * 5–200 for container-scoped tests. Zero means the very first call fails.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form
- * ({@code @ChaosPthreadCreateEpermFailAfter.Repeatable}) to apply different counters to different
- * containers.
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to the number of
+ * real-time threads the application creates before the security policy changes; values 2–32 cover
+ * most I/O thread pool sizes; 0 means no real-time threads can be created from startup.
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessFailAfterBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#failAfter(ProcessSelector, ProcessErrno, long)
  */
 @Repeatable(ChaosPthreadCreateEpermFailAfter.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

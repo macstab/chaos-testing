@@ -14,62 +14,77 @@ import com.macstab.chaos.time.model.TimeErrno;
 import com.macstab.chaos.time.model.TimeSelector;
 
 /**
- * Injects {@code EAGAIN} on every libchaos-intercepted {@code usleep} call inside the target
- * container, making the call fail as if the kernel returned {@code EAGAIN}.
+ * Injects {@code EAGAIN} into {@code usleep(3)}, causing the call to return {@code -1} with
+ * {@code errno = EAGAIN} as if a temporary resource constraint prevented the sleep.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EAGAIN}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EAGAIN} is a valid POSIX result of {@code usleep}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code usleep} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = EAGAIN} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: temporary failure / resource temporarily unavailable — typical of RLIMIT exhaustion or
- * kernel pressure.
+ * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code USLEEP}, errno = {@code EAGAIN})
+ * tuple. The tuple is safe by construction — {@code EAGAIN} is a valid transient POSIX error
+ * indicating resource temporarily unavailable; injecting it exercises defensive retry paths in
+ * C-level sleep loops. No runtime selector-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.TIME)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-time.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the libc wrappers for {@code clock_gettime},
- * {@code nanosleep}, and {@code usleep}. This annotation installs a rule via {@code
- * AdvancedTimeChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
+ *       at the dynamic-linker level.
+ *   <li>On every intercepted {@code usleep} call a Bernoulli trial with probability
+ *       {@link #probability} is conducted.
+ *   <li>When the trial fires the interposer returns {@code -1} and sets {@code errno = EAGAIN}
+ *       without sleeping — the sleep is skipped.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.TIME)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-time} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>Back-pressure loops using {@code usleep} as a pacing primitive will spin faster than
+ *       intended when {@code EAGAIN} is returned, potentially overwhelming downstream services.
+ *   <li>C libraries that treat any non-zero return from {@code usleep} as a signal to retry
+ *       immediately will busy-spin when the injection rate is high.
+ *   <li>Assert that the application distinguishes retryable errors from permanent failures and
+ *       applies a bounded delay before re-attempting the sleep.
  * </ul>
+ *
+ * <p>In production, {@code EAGAIN} from {@code usleep} does not occur on standard Linux kernels.
+ * This injection exercises the general error-handling posture of callers that check the return
+ * value but do not validate the specific errno before deciding to retry.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>Standard Linux kernels do not return {@code EAGAIN} from {@code nanosleep} (the underlying
+ * implementation of {@code usleep}); the sleep always either completes or is interrupted by a
+ * signal. The injection via {@code libchaos-time.so} creates a synthetic transient error to
+ * test code paths that use a generic {@code errno != EINVAL} guard before retrying.
+ *
+ * <p>Such patterns are common in legacy C libraries: {@code while (usleep(n) != 0 && errno != EINVAL) usleep(n);}
+ * This loop retries on any non-EINVAL error, including {@code EAGAIN}, potentially leading to
+ * a busy-loop if the injection rate is high enough.
+ *
+ * <p>Sibling annotations: {@link ChaosUsleepEintr} is the far more realistic signal-interruption
+ * case; {@link ChaosNanosleepEagain} applies the equivalent injection to the modern interface.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.TIME)
- * @ChaosUsleepEagain(probability = 0.001)
- * class FaultTest {
+ * @ChaosUsleepEagain(probability = 1e-3)
+ * class UsleepEagainTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void paceLoopDoesNotBusySpinOnTransientUsleepFailure(ConnectionInfo info) {
+ *     // assert that CPU usage remains bounded and the pace is approximately correct
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3 to simulate transient pressure; high rates
- * saturate retry budgets.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosUsleepEagains}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosUsleepEintr
+ * @see ChaosNanosleepEagain
+ * @see com.macstab.chaos.time.annotation.l1.TimeErrnoBinding
  */
 @Repeatable(ChaosUsleepEagain.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

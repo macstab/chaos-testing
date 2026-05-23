@@ -14,58 +14,112 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Reject the executor_submit operation by throwing an appropriate exception for the operation type.
+ * Makes every {@link java.util.concurrent.ExecutorService#submit ExecutorService.submit} and
+ * {@link java.util.concurrent.ForkJoinPool#submit ForkJoinPool.submit} call throw
+ * {@link java.util.concurrent.RejectedExecutionException} before the task enters the queue — the
+ * task is never scheduled and the caller's submission attempt fails immediately.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> reject the EXECUTOR_SUBMIT operation by throwing an
- * appropriate exception for the operation type inside the JVM of the target container. The effect
- * fires on every matching call, subject to the probability configured via {@link #probability()} if
- * applicable. The rule is active from {@code beforeAll} until {@code afterAll} (class-scope) or
- * from {@code beforeEach} until {@code afterEach} (method-scope).
+ * <p>An L1 JVM chaos primitive in the {@code EXECUTOR} selector family targeting the {@code
+ * EXECUTOR_SUBMIT} operation with the {@code reject} effect. It intercepts every task submission in
+ * the container JVM and throws {@code RejectedExecutionException} with the configured
+ * {@link #message()} before the task is placed on any work queue. No task object is enqueued, no
+ * {@code Future} is returned, and no worker thread is notified.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <p>This directly replicates the exception thrown by {@code ThreadPoolExecutor}'s
+ * {@code AbortPolicy} when the queue is full and all threads are busy, or when the executor has
+ * been shut down — the most common production failure mode for executor saturation.
  *
- * <p><strong>What is required:</strong>
+ * <h2>What chaos this applies</h2>
+ *
+ * <p>The JVM agent installs a Byte Buddy interceptor on the {@code submit} methods of
+ * {@code ExecutorService} and {@code ForkJoinPool}. When the interceptor fires:
+ *
+ * <ol>
+ *   <li>The interceptor is entered on the submitting thread before the task touches the queue.
+ *   <li>The reject effect throws {@code new RejectedExecutionException(message)} immediately.
+ *   <li>The original {@code submit} body never runs; the task object is discarded.
+ *   <li>The exception propagates up the call stack of the submitting thread.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>{@code executor.submit(task)} throws {@link java.util.concurrent.RejectedExecutionException}
+ *       — every call, every time the rule is active.
+ *   <li>No {@code Future} is returned; no task runs.
+ *   <li>Application code that catches {@code RejectedExecutionException} and applies a retry or
+ *       fallback will exercise that path on every submission.
+ *   <li>Application code that does not catch {@code RejectedExecutionException} will propagate
+ *       an unhandled exception up through the calling layer, potentially aborting a request or
+ *       crashing a background thread.
  * </ul>
+ *
+ * <p><strong>Production failure mode:</strong> a bounded {@code ThreadPoolExecutor} configured with
+ * {@code AbortPolicy} becomes saturated under load — all threads are busy and the queue is full;
+ * any new submission receives {@code RejectedExecutionException}; services that do not implement
+ * back-pressure or retry logic drop tasks silently or crash request handlers.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p><strong>Interception point.</strong> The agent targets the {@code submit(Callable)},
+ * {@code submit(Runnable)}, and {@code submit(Runnable, T)} overloads on
+ * {@code java.util.concurrent.ExecutorService} and the equivalent on
+ * {@code java.util.concurrent.ForkJoinPool} via Byte Buddy retransformation of bootstrap-loaded
+ * JDK classes. The exception is thrown before any internal state in the executor is modified.
+ *
+ * <p><strong>Exception identity.</strong> The thrown exception is a plain
+ * {@code RejectedExecutionException} — the same type that {@code ThreadPoolExecutor}'s
+ * {@code AbortPolicy} produces. Application code that catches this specific type will behave
+ * identically to the production saturation scenario. The {@link #message()} attribute allows the
+ * test to embed a marker string to distinguish injected rejections from real ones in logs.
+ *
+ * <p><strong>Interaction with {@code execute} vs {@code submit}.</strong> This annotation targets
+ * {@code submit} only. If the application uses {@code executor.execute(runnable)} directly, that
+ * path is covered by a different interceptor binding. Use {@code ChaosExecutorSubmitReject}
+ * together with an appropriate {@code execute}-level annotation if both paths need coverage.
+ *
+ * <p><strong>Cascading effects.</strong> Any {@code Future} chained on the expected submission
+ * result will never receive a value or exception from the rejected task — it stays pending unless
+ * the application has defensive null checks or timeouts after catching the rejection. Reactive
+ * frameworks that use executor-backed schedulers may log the rejection and schedule a retry, or
+ * may drop the work item entirely depending on their error strategy.
+ *
+ * <p><strong>Distinguishing from siblings.</strong> {@link ChaosExecutorSubmitDelay} allows the
+ * task to be submitted, just slowly. {@link ChaosExecutorSubmitGate} holds the submitting thread
+ * until the test releases it. This annotation is the only one that prevents the task from ever
+ * reaching the queue.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosExecutorSubmitReject
- * class JvmChaosTest {
+ * @ChaosExecutorSubmitReject(message = "chaos: executor saturated")
+ * class RejectedSubmitTest {
+ *
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void serviceAppliesFallbackOnRejection(AppConnectionInfo info) {
+ *     // the application should catch RejectedExecutionException and return a default response
+ *     String response = client.fetchWithFallback(info);
+ *     assertThat(response).isEqualTo("default");
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosExecutorSubmitRejects}) to apply different configurations to different containers.
+ * <ul>
+ *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
+ *   <li>A Java container image — the container must run a JVM process.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see com.macstab.chaos.jvm.api.OperationType#EXECUTOR_SUBMIT
+ * @see com.macstab.chaos.jvm.api.ChaosSelector#executor(java.util.Set)
+ * @see ChaosExecutorSubmitDelay
+ * @see ChaosExecutorSubmitGate
  */
 @Repeatable(ChaosExecutorSubmitReject.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

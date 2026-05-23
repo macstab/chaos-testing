@@ -14,47 +14,64 @@ import com.macstab.chaos.memory.model.MemorySelector;
 import com.macstab.chaos.memory.model.MmapErrno;
 
 /**
- * Injects {@code EINVAL} on every libchaos-memory-intercepted {@code mmap} call inside the target
- * container, making the call fail as if the kernel returned {@code EINVAL}.
+ * Injects {@code EINVAL} into all {@code mmap} calls (anonymous and file-backed) intercepted by
+ * libchaos-memory, causing the calling code to observe an invalid-argument failure from any
+ * memory-mapping operation.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector = {@code MMAP}, errno = {@code EINVAL}) pair. The
- * combination is safe by construction: this annotation class exists only because {@code EINVAL} is
- * a valid POSIX result of {@code mmap}; the invalid combinations simply have no annotation class,
- * so the selector × errno matrix cannot be violated at compile time.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-memory primitive — one (selector = {@code MMAP}, errno = {@code EINVAL}) tuple.
+ * The {@code MMAP} selector covers both anonymous and file-backed {@code mmap} calls; use
+ * {@code ChaosMmapAnonEinval} or {@code ChaosMmapFileEinval} for narrower fault isolation.
+ * Compile-time safety: invalid selector/errno combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code mmap} call that the libchaos-memory
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = EINVAL} before the kernel call
- * completes — from the application perspective this is indistinguishable from a real kernel-level
- * failure. Specifically this simulates: invalid argument — bad length, alignment, or flags; the
- * universal canary errno.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code mmap} call the interposer runs a Bernoulli trial with probability
+ *       {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = EINVAL} and returns
+ *       {@code MAP_FAILED} without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 22,
+ *       {@code strerror}: "Invalid argument".</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.MEMORY)} annotation on the container declaration causes
- * {@code ChaosTestingExtension} to upload {@code libchaos-memory.so} into the container and prepend
- * it to {@code LD_PRELOAD} before the container process starts. The shared library interposes the
- * libc wrappers for {@code mmap}, {@code munmap}, {@code mprotect}, and {@code madvise} at the
- * dynamic-linker level. This annotation then installs a rule via {@code
- * AdvancedMemoryChaos.apply(container, rule)} that configures the interposer with the selector and
- * probability you specify.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD} which does not apply on
- *       macOS or Windows containers; annotate the test class with {@code @DisabledOnOs(OS.WINDOWS)}
- *       and be aware of macOS Docker limitations.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.MEMORY)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — this installs the shared library before container start;
- *       omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) do not
- *       honour {@code LD_PRELOAD} for statically-linked binaries; use a glibc variant or the
- *       Debian-slim image instead.
- *   <li><strong>{@code macstab-chaos-memory} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and {@code ChaosTestingExtension} throws {@code
- *       ClassNotFoundException} wrapped in {@code ExtensionConfigurationException}.
+ *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = EINVAL} (22); both the anonymous
+ *       allocator path and the file-backed mapping path observe invalid-argument failures.</li>
+ *   <li>glibc {@code malloc} propagates {@code NULL}; file-mapping code should surface a
+ *       diagnostic naming the invalid parameter — assert this is logged rather than silently
+ *       swallowed.</li>
+ *   <li>Assert that the application does not retry indefinitely — {@code EINVAL} is a permanent
+ *       argument error, not a transient condition.</li>
  * </ul>
+ * Production failure mode: kernel upgrades occasionally tighten argument validation in
+ * {@code do_mmap}; a flag combination accepted on kernel 4.x may return {@code EINVAL} on
+ * kernel 6.x, silently breaking applications that never exercised this code path in CI.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>POSIX specifies {@code EINVAL} for {@code mmap} when any argument is invalid: zero length,
+ * non-page-aligned offset or length, invalid flag combination ({@code MAP_PRIVATE | MAP_SHARED}),
+ * or invalid protection flags. For file-backed mappings, additional validation (offset must be
+ * non-negative and page-aligned) applies.
+ *
+ * <p>The broad {@code MMAP} selector simultaneously injects {@code EINVAL} on both call paths.
+ * This is more aggressive than the anonymous-only or file-only selectors and stresses the
+ * application's argument-validation error-handling on all {@code mmap} call sites simultaneously.
+ * Applications that use {@code mmap} for both heap allocations and file I/O (e.g. database
+ * engines) must handle {@code EINVAL} gracefully in both subsystems.
+ *
+ * <p>The Linux kernel validates {@code mmap} arguments in {@code do_mmap_pgoff} before any
+ * resource allocation. Returning {@code EINVAL} leaves no partial state to clean up. However,
+ * if the application has already allocated resources in preparation for the mapping (e.g.
+ * opened a file, computed an address range), those resources must be released in the
+ * error-handling path — a common source of resource leaks.
+ *
+ * <p>glibc's {@code malloc} never generates invalid {@code mmap} arguments, so the anonymous
+ * path will never produce real {@code EINVAL} under normal operation. File-mapping code that
+ * computes offsets or lengths dynamically is at risk when input validation is insufficient —
+ * a common pattern in codecs, serialisation libraries, and database storage engines.
  *
  * <h2>Example</h2>
  *
@@ -62,19 +79,20 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.MEMORY)
  * @ChaosMmapEinval(probability = 0.001)
- * class MemoryFaultTest {
+ * class ArgumentValidationTest {
  *   @Test
- *   void appHandlesEinvalOnAlloc(RedisConnectionInfo info) { ... }
+ *   void appHandlesEinvalOnAllMmaps(RedisConnectionInfo info) {
+ *     // verify that both allocator and file-mapping paths produce diagnostics, not crashes
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2 as a canary; 1.0 will block all mapped I/O
- * and crash the JVM.
- *
+ * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2; high probability will block all
+ * mapped I/O and crash the JVM or any process that relies on {@code mmap} for shared-library
+ * loading.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
- * the test class. Use the repeatable form ({@code @ChaosMmapEinvals}) to bind different
- * probabilities to different containers simultaneously.
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see MemoryErrnoBinding

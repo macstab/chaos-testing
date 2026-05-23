@@ -14,62 +14,79 @@ import com.macstab.chaos.time.model.TimeErrno;
 import com.macstab.chaos.time.model.TimeSelector;
 
 /**
- * Injects {@code EPERM} on every libchaos-intercepted {@code nanosleep} call inside the target
- * container, making the call fail as if the kernel returned {@code EPERM}.
+ * Injects {@code EPERM} into {@code nanosleep(2)}, causing the call to return {@code -1} with
+ * {@code errno = EPERM} as if the process lacked permission to use a real-time sleep mechanism.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EPERM}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EPERM} is a valid POSIX result of {@code nanosleep}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code nanosleep} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = EPERM} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: operation not permitted — capability-dropped containers performing privileged
- * operations.
+ * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code NANOSLEEP}, errno = {@code EPERM})
+ * tuple. The tuple is safe by construction — {@code EPERM} is a documented POSIX result of
+ * {@code nanosleep(2)} when the process attempts to use a high-resolution sleep that requires
+ * elevated privilege on certain POSIX platforms. No runtime selector-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.TIME)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-time.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the libc wrappers for {@code clock_gettime},
- * {@code nanosleep}, and {@code usleep}. This annotation installs a rule via {@code
- * AdvancedTimeChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
+ *       at the dynamic-linker level.
+ *   <li>On every intercepted {@code nanosleep} call a Bernoulli trial with probability
+ *       {@link #probability} is conducted.
+ *   <li>When the trial fires the interposer returns {@code -1} and sets {@code errno = EPERM}
+ *       without sleeping — the sleep is aborted immediately.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.TIME)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-time} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>The sleep returns immediately; retry loops that do not check for {@code EPERM} as a hard
+ *       error will busy-spin indefinitely.
+ *   <li>Real-time threads that rely on {@code nanosleep} for high-precision pacing may degrade to
+ *       unscheduled busy-wait, violating their latency SLA.
+ *   <li>Assert that the application treats {@code EPERM} as a non-retriable error, logs the
+ *       capability failure, and falls back to a lower-precision sleep mechanism.
  * </ul>
+ *
+ * <p>In production, {@code EPERM} from {@code nanosleep} appears on POSIX systems (not standard
+ * Linux) where high-resolution clocks require a privilege, and in seccomp-filtered environments
+ * where the {@code clock_nanosleep} syscall is blocked but the application falls back to
+ * {@code nanosleep} which is similarly blocked.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>Standard Linux does not return {@code EPERM} from {@code nanosleep} for unprivileged processes.
+ * The injection via {@code libchaos-time.so} simulates the behaviour of stricter POSIX systems
+ * (e.g. some BSD variants with mandatory access control frameworks) or of seccomp profiles that
+ * deny the {@code nanosleep} syscall. The return value mimics what those systems would deliver.
+ *
+ * <p>Code that uses {@code nanosleep} as a rate-limiting primitive and handles only {@code EINTR}
+ * will treat {@code EPERM} as an unexpected error. If the only response to an unexpected error is
+ * to retry immediately, the result is a CPU-bound busy-loop that can saturate a core and trigger
+ * OOMKiller intervention or eviction by the container orchestrator.
+ *
+ * <p>Sibling annotations: {@link ChaosNanosleepEinval} targets invalid sleep durations;
+ * {@link ChaosNanosleepEintr} targets the far more common signal-interruption case.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.TIME)
- * @ChaosNanosleepEperm(probability = 0.001)
- * class FaultTest {
+ * @ChaosNanosleepEperm(probability = 0.01)
+ * class NanosleepEpermTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void schedulerFallsBackToLowerPrecisionSleepOnPermissionDenied(ConnectionInfo info) {
+ *     // assert that the scheduler does not busy-spin and degrades gracefully
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosNanosleepEperms}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosNanosleepEinval
+ * @see ChaosNanosleepEintr
+ * @see com.macstab.chaos.time.annotation.l1.TimeErrnoBinding
  */
 @Repeatable(ChaosNanosleepEperm.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

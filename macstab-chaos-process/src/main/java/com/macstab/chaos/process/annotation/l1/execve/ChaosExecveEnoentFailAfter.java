@@ -14,61 +14,86 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code execve} calls succeed,
- * then injects {@code ENOENT} on every subsequent call until the rule is removed.
+ * Allows the first {@link #successesBeforeFailure} {@code execve} calls to succeed, then injects
+ * {@code ENOENT} on every subsequent call, simulating a binary-disappearance event that takes
+ * effect after a bounded number of successful process image replacements.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code EXECVE}, errno = {@code ENOENT}, effect = FAIL_AFTER) tuple. FAIL_AFTER is the process
- * module's counter-gated effect — distinct from ERRNO (probabilistic) and LATENCY (unconditional).
- * It models resource-exhaustion scenarios where the first N operations succeed and then the system
- * runs out of capacity.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code EXECVE}, errno = {@code ENOENT},
+ * effect = FAIL_AFTER) tuple. FAIL_AFTER is libchaos-process's counter-gated effect: the first
+ * {@link #successesBeforeFailure} matched calls succeed normally; every call after that returns
+ * {@code -1} with {@code errno = ENOENT} until the rule is removed. This models scenarios where
+ * a binary is deleted, a volume is unmounted, or a symlink target is removed mid-run after the
+ * helper binary has already been successfully invoked a number of times.
  *
- * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
- * {@code execve} calls. After {@link #successesBeforeFailure} successes the counter trips and every
- * subsequent call returns {@code -1} with {@code errno = ENOENT}, regardless of real kernel
- * capacity. The counter resets every time the rule is re-applied (e.g. across test methods if the
- * annotation is at class scope).
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code execve} wrapper at the dynamic-linker level.</li>
+ *   <li>The interposer maintains a per-rule atomic counter of successful {@code execve} calls.</li>
+ *   <li>Once the counter reaches {@link #successesBeforeFailure}, it trips and every subsequent
+ *       intercepted call sets {@code errno = ENOENT} and returns {@code -1} without executing.</li>
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 2,
+ *       {@code strerror}: "No such file or directory"; the counter remains tripped until removal.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family. This annotation installs
- * a FAIL_AFTER rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at {@code
- *       beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>The first {@link #successesBeforeFailure} {@code execve} calls succeed; subsequent calls
+ *       fail with {@code ENOENT} — the application must detect the binary-gone transition and
+ *       fail gracefully rather than assuming the binary was never installed.</li>
+ *   <li>Applications that use helper binaries for optional features must handle mid-run binary
+ *       disappearance: assert that the feature is disabled cleanly when the binary path returns
+ *       {@code ENOENT} after previously succeeding, rather than logging a confusing "binary
+ *       not found" error that suggests a deployment problem on a running system.</li>
+ *   <li>Assert that the application does not use the initial exec success as permanent proof that
+ *       the binary exists — subsequent exec calls must not skip the return-value check based on
+ *       a cached "binary is present" assumption established during startup.</li>
  * </ul>
+ * Production failure mode: a shared volume providing a helper binary is unmounted during a
+ * rolling deployment; existing containers that previously exec'd the binary from the volume
+ * successfully now see {@code ENOENT}; the application continues accepting requests that require
+ * the helper but silently fails to invoke it, producing incorrect output without surfacing the
+ * binary-gone condition as an operational alert.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>The FAIL_AFTER effect for {@code ENOENT} captures the binary-disappearance failure mode
+ * that cannot be tested with the probabilistic ERRNO effect alone: if the binary is truly gone
+ * from the path, every exec call will fail — not just a random fraction. The N-success-then-fail
+ * pattern simulates the transition point where the binary becomes unavailable mid-run, with N
+ * representing the number of successful invocations before the volume unmount or file deletion.
+ *
+ * <p>The distinction from the probabilistic variant is operationally significant: random ENOENT
+ * (from the ERRNO effect) tests error handling for transient VFS lookup failures; permanent
+ * ENOENT (from the FAIL_AFTER effect after threshold) tests graceful degradation when a
+ * dependency becomes permanently unavailable. Applications must implement both: transient
+ * handling (retry or fallback for random failures) and permanent degradation (disable the
+ * feature when the binary is persistently absent).
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosExecveEnoentFailAfter(successesBeforeFailure = 128)
- * class ProcessExhaustionTest {
+ * @ChaosExecveEnoentFailAfter(successesBeforeFailure = 3)
+ * class BinaryDisappearanceTest {
  *   @Test
- *   void handlesExhaustion(ConnectionInfo info) { ... }
+ *   void applicationDegradesToInternalFallbackWhenHelperBinaryDisappears(ConnectionInfo info) {
+ *     // verify feature disabled cleanly after ENOENT; no "binary not found" false alarm
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of {@code execve}
- * calls the application is expected to make before hitting the limit. Typically 5–200 for
- * container-scoped tests. Zero means the very first call fails.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form
- * ({@code @ChaosExecveEnoentFailAfter.Repeatable}) to apply different counters to different
- * containers.
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to the number of
+ * times the application invokes the helper binary during the healthy phase of the test scenario;
+ * zero is useful for testing startup-time binary validation.
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessFailAfterBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#failAfter(ProcessSelector, ProcessErrno, long)
  */
 @Repeatable(ChaosExecveEnoentFailAfter.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

@@ -14,39 +14,80 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code EIO} on every libchaos-intercepted {@code pwrite} call inside the target
- * container, making the call fail as if the kernel returned {@code EIO}.
+ * Injects {@code EIO} into {@code pwrite(2)}, causing the call to return {@code -1} with
+ * {@code errno = EIO} as if the storage device returned a hardware I/O error while writing
+ * the data blocks at the requested file offset — indicating a bad sector, storage controller
+ * failure, or network filesystem backend write error.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EIO}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EIO} is a valid POSIX result of {@code pwrite}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code pwrite} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = EIO} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: I/O error — disk failure, bad sector, or storage backend error.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code PWRITE}, errno = {@code EIO})
+ * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
+ * {@code pwrite} call; when it fires the interposer returns {@code -1} with {@code errno = EIO}
+ * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.IO)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-io.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the filesystem libc wrappers (open, read,
- * write, close, fsync, etc.) at the dynamic-linker level. This annotation installs a rule via
- * {@code AdvancedFilesystemChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
+ *       extension to upload {@code libchaos-io.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
+ *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
+ *       {@code fallocate} at the dynamic-linker level.
+ *   <li>On each intercepted {@code pwrite} call a Bernoulli trial with probability {@link #probability}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = EIO}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.IO)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-filesystem} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code EIO} from {@code pwrite} means data at the requested file offset was not written
+ *       to storage; the file's contents at that offset are undefined. Assert that the application
+ *       does not proceed as if the write succeeded and aborts the current operation rather than
+ *       continuing with a partially-written file.
+ *   <li>Database engines that use {@code pwrite} for B-tree page writes must treat {@code EIO}
+ *       as a fatal page write failure; the engine must abort all in-progress transactions that
+ *       touched the affected page and must not mark them as committed. Assert that the WAL records
+ *       for the aborted transactions are not replayed on recovery.
+ *   <li>Applications that implement write-retry logic for transient I/O errors must distinguish a
+ *       permanently-failing bad sector from a transient controller hiccup. Assert that the retry
+ *       budget is applied and that the application escalates to a storage-level health alert when
+ *       the budget is exhausted.
+ *   <li>Assert that {@code EIO} on a write at a critical file offset (header, directory block,
+ *       bitmap block) triggers the application's corruption-detection path and causes it to
+ *       transition to a read-only or error state rather than continuing to accept new writes to
+ *       adjacent regions.
  * </ul>
+ *
+ * <p>In production, {@code EIO} from {@code pwrite} occurs when a disk sector is reallocated and
+ * the spare sector pool is exhausted, when a RAID degraded-mode write fails on the remaining member
+ * disk, and when a network filesystem's storage backend encounters a write error and the
+ * client-side kernel propagates it as {@code EIO} synchronously (because {@code pwrite} on NFS
+ * uses the synchronous I/O path when {@code O_DIRECT} is set or when the NFS mount uses
+ * {@code sync} option).
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code pwrite(2)} is the positional variant of {@code write(2)}: it writes to a caller-supplied
+ * offset without modifying the file's current position, making it thread-safe for concurrent page
+ * writes. Database storage engines use it exclusively for page I/O to allow multiple writer threads
+ * to write to different pages concurrently. For direct I/O ({@code O_DIRECT}), the write goes
+ * directly to the block device and {@code EIO} is returned synchronously when the block device
+ * fails. For buffered I/O, the kernel accepts data into the page cache and may deliver the error
+ * asynchronously during writeback.
+ *
+ * <p>This injection simulates the synchronous error path regardless of the file's open flags,
+ * which is the more demanding case for application error handling: the application knows
+ * immediately that the write failed and must handle the error before issuing further writes.
+ * The deferred writeback error path (where {@code EIO} is delivered on the next write or
+ * {@code fsync}) is modelled by {@link ChaosWriteEio} and {@link ChaosFsyncEio}.
+ *
+ * <p>Java's {@code FileChannel.write(ByteBuffer, long)} maps to {@code pwrite(2)} on Linux.
+ * When the underlying call returns {@code EIO}, the JVM throws an {@code IOException} with the
+ * message "Input/output error". Application code must catch this exception and treat it as a
+ * fatal write error, not a transient condition to be retried without limit.
  *
  * <h2>Example</h2>
  *
@@ -54,21 +95,18 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.IO)
  * @ChaosPwriteEio(probability = 0.001)
- * class FaultTest {
+ * class PwriteEioTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void pageWriteFailureCausesTransactionAbortNotCommit() {
+ *     // assert that EIO on pwrite aborts the transaction rather than committing partial page data
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> very low rates (1e-5 to 1e-4); EIO at high rate
- * produces unrecoverable data loss.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosPwriteEios}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosWriteEio
+ * @see ChaosFsyncEio
+ * @see com.macstab.chaos.filesystem.annotation.l1.IoErrnoBinding
  */
 @Repeatable(ChaosPwriteEio.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

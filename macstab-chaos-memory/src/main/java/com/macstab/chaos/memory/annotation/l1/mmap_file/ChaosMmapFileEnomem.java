@@ -14,47 +14,75 @@ import com.macstab.chaos.memory.model.MemorySelector;
 import com.macstab.chaos.memory.model.MmapErrno;
 
 /**
- * Injects {@code ENOMEM} on every libchaos-memory-intercepted {@code mmap (file-backed)} call
- * inside the target container, making the call fail as if the kernel returned {@code ENOMEM}.
+ * Injects {@code ENOMEM} into file-backed {@code mmap} calls intercepted by libchaos-memory,
+ * causing the calling code to observe a virtual-memory or page-table exhaustion failure when
+ * attempting to establish a file-backed memory mapping.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector = {@code MMAP_FILE}, errno = {@code ENOMEM}) pair.
- * The combination is safe by construction: this annotation class exists only because {@code ENOMEM}
- * is a valid POSIX result of {@code mmap (file-backed)}; the invalid combinations simply have no
- * annotation class, so the selector × errno matrix cannot be violated at compile time.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-memory primitive — one (selector = {@code MMAP_FILE}, errno = {@code ENOMEM})
+ * tuple. The {@code MMAP_FILE} selector intercepts only file-backed {@code mmap} calls (those
+ * without {@code MAP_ANONYMOUS}), leaving anonymous allocations unaffected. Compile-time
+ * safety: invalid selector/errno combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code mmap (file-backed)} call that the
- * libchaos-memory interceptor sees, a Bernoulli trial with probability {@link #probability} is run.
- * When it fires the interceptor returns {@code -1} and sets {@code errno = ENOMEM} before the
- * kernel call completes — from the application perspective this is indistinguishable from a real
- * kernel-level failure. Specifically this simulates: out of memory — the canonical libc
- * malloc()-allocation-failure code for sizes >= MMAP_THRESHOLD.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
+ *   <li>On each file-backed {@code mmap} call the interposer runs a Bernoulli trial with
+ *       probability {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = ENOMEM} and returns
+ *       {@code MAP_FAILED} without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 12,
+ *       {@code strerror}: "Out of memory (cannot allocate memory)".</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.MEMORY)} annotation on the container declaration causes
- * {@code ChaosTestingExtension} to upload {@code libchaos-memory.so} into the container and prepend
- * it to {@code LD_PRELOAD} before the container process starts. The shared library interposes the
- * libc wrappers for {@code mmap}, {@code munmap}, {@code mprotect}, and {@code madvise} at the
- * dynamic-linker level. This annotation then installs a rule via {@code
- * AdvancedMemoryChaos.apply(container, rule)} that configures the interposer with the selector and
- * probability you specify.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD} which does not apply on
- *       macOS or Windows containers; annotate the test class with {@code @DisabledOnOs(OS.WINDOWS)}
- *       and be aware of macOS Docker limitations.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.MEMORY)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — this installs the shared library before container start;
- *       omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) do not
- *       honour {@code LD_PRELOAD} for statically-linked binaries; use a glibc variant or the
- *       Debian-slim image instead.
- *   <li><strong>{@code macstab-chaos-memory} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and {@code ChaosTestingExtension} throws {@code
- *       ClassNotFoundException} wrapped in {@code ExtensionConfigurationException}.
+ *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = ENOMEM} (12); file-mapping code
+ *       must fall back to conventional read/write I/O or reject the operation with a structured
+ *       error — retrying is unlikely to succeed without releasing memory.</li>
+ *   <li>Database engines that use memory-mapped files as their primary I/O mechanism (RocksDB,
+ *       LMDB, HaloDB, MapDB) must either fall back to {@code pread}/{@code pwrite} or close
+ *       existing mappings before retrying; assert that the fallback path produces correct query
+ *       results, not just absence of an exception.</li>
+ *   <li>Assert that applications which manage a memory-mapped cache (e.g. Kafka log segments,
+ *       Chronicle Map) evict the oldest segment mapping and retry — verify that the eviction
+ *       reduces the VMA count before the retry is issued.</li>
  * </ul>
+ * Production failure mode: a long-running process accumulates file-backed VMAs across segment
+ * rotation and compaction cycles without adequately releasing old mappings; as the VMA count
+ * approaches {@code vm.max_map_count} (default 65536), new file-backed {@code mmap} calls begin
+ * failing with {@code ENOMEM} — a failure that does not resolve until sufficient mappings are
+ * released.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>POSIX specifies {@code ENOMEM} for file-backed {@code mmap} in two distinct cases: (1) the
+ * process has reached the limit imposed by {@code RLIMIT_AS} (address space) or the process's
+ * virtual address space is exhausted; (2) the number of VMAs in the process would exceed
+ * {@code vm.max_map_count} (default 65536), which limits the number of distinct memory regions
+ * per process to prevent unbounded kernel metadata growth.
+ *
+ * <p>For file-backed mappings, the {@code vm.max_map_count} limit is particularly important for
+ * applications that create one mapping per file segment. Kafka brokers that manage thousands of
+ * log segment files with per-segment {@code mmap} calls, RocksDB instances with large L0 and L1
+ * layers of SST files, and Chronicle Map databases with many regions can all approach this limit
+ * during heavy write workloads. The kernel allocates a new VMA struct for each mapping; when the
+ * total count across all anonymous and file-backed mappings reaches the limit, the next
+ * {@code mmap} call returns {@code ENOMEM} regardless of available physical memory.
+ *
+ * <p>The page-table allocation failure is a separate code path: when the kernel successfully
+ * allocates the VMA but fails to allocate a page table entry (PTE) for the mapping, it also
+ * returns {@code ENOMEM} from {@code mmap}. This occurs when physical memory or swap is
+ * exhausted, or when a cgroup memory controller rejects the page-table charge. The two sources
+ * of {@code ENOMEM} — VMA limit and PTE allocation failure — require different remediation:
+ * VMA limit requires releasing mappings; PTE failure requires adding memory or raising cgroup
+ * limits.
+ *
+ * <p>Compared with {@code EAGAIN}: {@code ENOMEM} from file-backed {@code mmap} is typically
+ * structural — the process cannot establish the mapping without releasing existing resources or
+ * changing system configuration. {@code EAGAIN} is transient — a retry after a brief pause may
+ * succeed. Applications must implement different recovery strategies for the two errnos; treating
+ * {@code ENOMEM} as transient leads to tight retry loops that exhaust CPU without making progress.
  *
  * <h2>Example</h2>
  *
@@ -62,19 +90,19 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.MEMORY)
  * @ChaosMmapFileEnomem(probability = 0.001)
- * class MemoryFaultTest {
+ * class FileMappingOomTest {
  *   @Test
- *   void appHandlesEnomemOnAlloc(RedisConnectionInfo info) { ... }
+ *   void appHandlesEnomemOnFileMappings(RedisConnectionInfo info) {
+ *     // verify fallback to pread/pwrite produces correct results and no data loss
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3 mirrors realistic OOM rates; 1.0 prevents
- * the container from starting.
- *
+ * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3 mirrors realistic VMA-limit exhaustion
+ * rates; rates above 0.01 will prevent shared-library loading at process startup.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
- * the test class. Use the repeatable form ({@code @ChaosMmapFileEnomems}) to bind different
- * probabilities to different containers simultaneously.
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see MemoryErrnoBinding

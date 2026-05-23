@@ -14,62 +14,101 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code ECONNREFUSED} on every libchaos-intercepted {@code connect} call inside the target
- * container, making the call fail as if the kernel returned {@code ECONNREFUSED}.
+ * Injects {@code ECONNREFUSED} into {@code connect(2)}, causing the call to return {@code -1} with
+ * {@code errno = ECONNREFUSED} as if the remote host received the SYN packet and responded with a
+ * TCP RST because no process is listening on the target port.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ECONNREFUSED}) pair and has no
- * runtime selector-errno matrix to validate. The combination is safe by construction: this
- * annotation class exists only because {@code ECONNREFUSED} is a valid POSIX result of {@code
- * connect}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code connect} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #toxicity} is run. When it fires the
- * interceptor returns {@code -1} and sets {@code errno = ECONNREFUSED} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: connection refused — peer is up but not listening.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code CONNECT}, errno =
+ * {@code ECONNREFUSED}) tuple. A Bernoulli trial with probability {@link #toxicity} is run on each
+ * intercepted {@code connect} call; when it fires the interposer returns {@code -1} with
+ * {@code errno = ECONNREFUSED} without performing any real kernel operation. No runtime
+ * operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.NET)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-net.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes socket-layer libc wrappers (connect, accept,
- * socket, bind, listen, shutdown, send, recv, poll). This annotation installs a rule via {@code
- * AdvancedConnectionChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
+ *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
+ *       {@code poll} at the dynamic-linker level.
+ *   <li>On each intercepted {@code connect} call a Bernoulli trial with probability {@link #toxicity}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = ECONNREFUSED}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.NET)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-connection} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code ECONNREFUSED} is the canonical "server is down" signal; assert that connection pools
+ *       immediately evict failed connections and open replacements rather than returning the failed
+ *       connection to the pool for reuse.
+ *   <li>Circuit breakers must open after a configurable number of consecutive {@code ECONNREFUSED}
+ *       failures; assert that the circuit breaker opens and that the half-open probe eventually
+ *       allows traffic through when the injection is removed.
+ *   <li>Services that use synchronous connection establishment in the request path will return errors
+ *       to callers immediately; assert that the error response includes enough information for the
+ *       caller to distinguish a downstream service outage from an application bug.
+ *   <li>Assert that the service correctly distinguishes {@code ECONNREFUSED} (immediate RST — server
+ *       is reachable but not listening) from {@code ETIMEDOUT} (no response — server is unreachable
+ *       or black-holed); the former should trigger immediate retry or circuit-break, the latter
+ *       should respect connection timeout settings before failing.
  * </ul>
+ *
+ * <p>In production, {@code ECONNREFUSED} from {@code connect} occurs when the target service has
+ * crashed but the host is still reachable, during rolling deployments when a pod is killed before
+ * the load balancer has updated its routing tables, and during firewall rule changes that drop
+ * incoming connections with RST rather than silently discarding them.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The kernel returns {@code ECONNREFUSED} when it receives a TCP RST segment in response to a
+ * SYN it sent. The RST is generated by the remote kernel when the SYN arrives at a port with no
+ * listening socket. Unlike {@code ETIMEDOUT} (where no response is received), {@code ECONNREFUSED}
+ * is an immediate negative acknowledgement — the three-way handshake fails in the first round-trip.
+ * The failure is therefore as fast as a successful connection's first round-trip and does not depend
+ * on any timeout.
+ *
+ * <p>Load balancers and proxies introduce a subtlety: if the load balancer accepts the TCP
+ * connection on behalf of a backend and then fails to connect to the backend, the client may receive
+ * a properly established TCP connection followed by an application-level error response (HTTP 502),
+ * rather than an {@code ECONNREFUSED} at the TCP level. This injection produces a raw TCP-level
+ * refusal, which tests the application's handling of failures that occur before any application data
+ * is exchanged — a different code path from HTTP 5xx error handling.
+ *
+ * <p>Java maps {@code ECONNREFUSED} to a {@code ConnectException} with the message "Connection
+ * refused". JDBC drivers, Jedis, Lettuce, and other connection pool libraries catch this and mark
+ * the connection attempt as failed. Most pools have a configurable maximum number of connection
+ * attempts before giving up and a configurable wait between attempts. This injection exercises
+ * those retry and give-up code paths without requiring the downstream service to actually stop.
+ *
+ * <p>Resilience4j and Hystrix circuit breakers count {@code ConnectException} as a failure for
+ * circuit-breaker state transitions. This injection verifies that the circuit-breaker threshold,
+ * sliding-window size, and wait-duration-in-open-state are configured correctly to avoid both
+ * premature circuit opening (false positive) and failure to open (false negative) under realistic
+ * refusal rates.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.NET)
- * @ChaosConnectEconnrefused(toxicity = 0.001)
- * class FaultTest {
+ * @ChaosConnectEconnrefused(toxicity = 0.1)
+ * class ConnectEconnrefusedTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void circuitBreakerOpensAfterConsecutiveRefusals(ConnectionInfo info) {
+ *     // assert that the circuit breaker opens and half-open probe succeeds after injection ends
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-2 to 1e-1 for connection-refused testing; 1.0
- * prevents all connections.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosConnectEconnrefuseds}) to bind different
- * probabilities to different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosConnectEtimedout
+ * @see ChaosConnectEhostunreach
+ * @see com.macstab.chaos.connection.annotation.l1.ConnectionErrnoBinding
  */
 @Repeatable(ChaosConnectEconnrefused.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

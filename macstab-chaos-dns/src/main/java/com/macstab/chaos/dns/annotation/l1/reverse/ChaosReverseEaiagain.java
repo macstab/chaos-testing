@@ -14,61 +14,88 @@ import com.macstab.chaos.dns.annotation.l1.DnsSelectorKind;
 import com.macstab.chaos.dns.model.EaiErrno;
 
 /**
- * Injects {@code EAI_AGAIN} on every libchaos-intercepted {@code reverse} call inside the target
- * container, making the call fail as if the kernel returned {@code EAI_AGAIN}.
+ * Injects {@code EAI_AGAIN} into every {@code getnameinfo(3)} call (reverse DNS lookup), causing
+ * the call to return {@code EAI_AGAIN} as if the resolver reported a temporary failure while
+ * resolving an IP address to a hostname.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EAI_AGAIN}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EAI_AGAIN} is a valid POSIX result of {@code reverse}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code reverse} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = EAI_AGAIN} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: temporary DNS resolution failure — resolver timeout or transient network issue.
+ * <p>L1 libchaos primitive. Encodes exactly one (selectorKind = {@code REVERSE}, errno =
+ * {@code EAI_AGAIN}) tuple. This annotation always fires on every intercepted reverse lookup —
+ * there is no per-call probability field. Use it when you need every reverse resolution attempt to
+ * fail transiently so that the application's PTR-record retry logic is exercised. No runtime
+ * selector-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.DNS)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-dns.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the libc resolver wrappers {@code
- * getaddrinfo} and {@code getnameinfo}. This annotation installs a rule via {@code
- * AdvancedDnsChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.DNS)} on the container definition causes the
+ *       extension to upload {@code libchaos-dns.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code getaddrinfo(3)} and {@code getnameinfo(3)} at the
+ *       dynamic-linker level.
+ *   <li>On every intercepted {@code getnameinfo} call the interposer immediately returns
+ *       {@code EAI_AGAIN} without performing any real resolver query.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.DNS)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-dns} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>Every attempt to resolve an IP address to a hostname fails transiently; application code
+ *       that logs peer hostnames for auditing or access control must fall back to logging the
+ *       raw IP address when reverse resolution fails.
+ *   <li>Security components that enforce hostname-based allowlists will not be able to verify
+ *       the peer's hostname; assert that the application either rejects the connection or applies
+ *       a secure default rather than permitting access unconditionally.
+ *   <li>Access logs that normally record hostnames will contain raw IP addresses instead; assert
+ *       that downstream log-processing pipelines handle this format variation gracefully.
+ *   <li>Assert that the application does not block indefinitely waiting for a successful reverse
+ *       lookup that will never arrive.
  * </ul>
+ *
+ * <p>In production, {@code EAI_AGAIN} from {@code getnameinfo} occurs when the PTR record's
+ * authoritative nameserver is temporarily unreachable, when the reverse DNS zone
+ * ({@code in-addr.arpa} or {@code ip6.arpa}) is delegated to a resolver that is under load, or
+ * during periods of high DNS query volume that cause resolver timeouts.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>Reverse DNS lookup ({@code getnameinfo} with {@code NI_NAMEREQD} or without it) queries a
+ * PTR record in the {@code in-addr.arpa} or {@code ip6.arpa} zone. This query is sent to a
+ * different authoritative nameserver than forward lookups — the one that manages the reverse zone
+ * for the IP block. In cloud environments, the reverse zone is often managed by the cloud provider
+ * and may have slower or less reliable resolution than the forward zone.
+ *
+ * <p>Applications that call {@code getnameinfo} in a request-handling thread and treat the
+ * reverse lookup as mandatory (e.g. for access logging) will block that thread for the full
+ * resolver timeout on each {@code EAI_AGAIN}. Injecting this error forces those calls to return
+ * immediately with a failure, revealing whether the application correctly handles the fast-fail
+ * case without blocking.
+ *
+ * <p>The glibc flag {@code NI_NAMEREQD} causes {@code getnameinfo} to return an error if the
+ * hostname is not available, rather than falling back to a numeric representation. Applications
+ * that use this flag with {@code EAI_AGAIN} must handle the case where reverse resolution is
+ * transiently unavailable — which this injection exercises directly.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.DNS)
- * @ChaosReverseEaiagain(probability = 0.001)
- * class FaultTest {
+ * @ChaosReverseEaiagain
+ * class ReverseEaiagainTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void accessLogFallsBackToIpWhenReverseLookupFails(ConnectionInfo info) {
+ *     // assert that the access log contains the raw IP address, not a hostname
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-2 to 1e-1 for DNS retry testing; 1.0 blocks all
- * forward resolution.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosReverseEaiagains}) to bind different probabilities
- * to different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosReverseEaifail
+ * @see ChaosForwardEaiagain
+ * @see ChaosWildcardEaiagain
+ * @see com.macstab.chaos.dns.annotation.l1.DnsEaiBinding
  */
 @Repeatable(ChaosReverseEaiagain.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

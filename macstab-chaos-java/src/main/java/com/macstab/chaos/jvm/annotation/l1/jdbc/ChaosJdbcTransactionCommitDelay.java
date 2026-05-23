@@ -14,59 +14,104 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Delay the jdbc_transaction_commit operation by the configured number of milliseconds.
+ * Intercepts {@code Connection.commit()} and holds the calling thread for {@link #delayMs()}
+ * milliseconds before the transaction is flushed to the database, simulating a slow database
+ * commit caused by heavy WAL/redo-log I/O, lock contention, or fsync pressure.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> delay the JDBC_TRANSACTION_COMMIT operation by the
- * configured number of milliseconds inside the JVM of the target container. The effect fires on
- * every matching call, subject to the probability configured via {@link #probability()} if
- * applicable. The rule is active from {@code beforeAll} until {@code afterAll} (class-scope) or
- * from {@code beforeEach} until {@code afterEach} (method-scope).
+ * A JVM agent L1 chaos primitive — one typed annotation per (selector family, operation type,
+ * effect) tuple. It is declared on a test class or method alongside a container annotation and
+ * activates for the lifetime of the test class ({@code beforeAll} / {@code afterAll}) or a single
+ * test method ({@code beforeEach} / {@code afterEach}).
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>Before every call to {@code java.sql.Connection#commit()} inside the target container's
+ *       JVM, the chaos agent intercepts the calling thread.
+ *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()},
+ *       {@link #maxDelayMs()}]; equal values produce a deterministic delay.
+ *   <li>Control returns and the underlying {@code commit()} executes normally; the database
+ *       durably writes the transaction.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>Every committed transaction takes at least {@link #delayMs()} ms longer; rows remain
+ *       locked at the SERIALIZABLE or REPEATABLE READ isolation level for the duration, blocking
+ *       other transactions that request the same rows.
+ *   <li>Spring's {@code @Transactional(timeout)} counts from the transaction's begin; commit
+ *       delay adds to that total. If the sum exceeds the timeout, the commit throws
+ *       {@code TransactionTimedOutException} — assert the rollback path handles this.
+ *   <li>Distributed systems using two-phase commit (XA transactions) hold the prepare lock
+ *       during the commit; a delayed commit keeps the XA resource locked, potentially causing
+ *       other participants' transactions to fail with lock-wait timeout.
+ *   <li><strong>Production failure mode:</strong> a database storage node's disk subsystem
+ *       stalls during fsync; every {@code commit()} takes 5–10 s; database connections are held
+ *       in the commit phase, the pool fills, and no new requests can acquire connections while
+ *       existing transactions hang mid-commit — an incident that looks like "no database
+ *       connections available" but is actually "commit stalled".
  * </ul>
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The interception targets {@code java.sql.Connection#commit()} at the interface level,
+ * covering all JDBC drivers and pool-wrapped connections. The chaos delay fires before the
+ * JDBC driver's network write of the commit command to the database. During the sleep, the
+ * transaction's row-level locks remain held at the database (the database does not know the
+ * commit is coming yet), so the delay compounds lock-wait time for other transactions.
+ *
+ * <p>PostgreSQL uses the simple query protocol for {@code COMMIT}; the commit round-trip is
+ * typically sub-millisecond on a local database but can take seconds under write-heavy load when
+ * the WAL writer queue is full. Injecting commit delay simulates this without needing to generate
+ * the actual I/O load, which is useful for isolated unit testing of lock-contention scenarios.
+ *
+ * <p>Spring's {@code DataSourceTransactionManager} calls {@code Connection.commit()} inside a
+ * {@code finally} block after {@code @Transactional} method execution. If the commit throws (due
+ * to the application's own transaction timeout), the manager calls {@code rollback()} as a
+ * fallback. The chaos delay may cause this sequence — commit delay → timeout → rollback attempt —
+ * which is a realistic scenario for testing the exception message and log output that accompanies
+ * a timed-out commit.
+ *
+ * <p>HikariCP wraps {@code commit()} via {@code ProxyConnection}; the chaos intercept fires on
+ * the wrapper's method, so HikariCP's pool statistics (in-use time, transaction duration
+ * histograms) will accurately reflect the injected delay in their recorded values.
+ *
+ * <p>Combining with {@link ChaosJdbcTransactionRollbackDelay} allows testing the scenario where
+ * both commit and rollback are slow — the worst-case for a database under storage pressure where
+ * even undoing work requires writing to the undo log, which is also backed by the stalled disk.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosJdbcTransactionCommitDelay
- * class JvmChaosTest {
+ * @ChaosJdbcTransactionCommitDelay(delayMs = 8000)
+ * class CommitStallTest {
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void requestsBlockDuringCommitAndPoolExhausts(ConnectionInfo info) {
+ *     // assert pool exhaustion metric and eventual HTTP 503
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosJdbcTransactionCommitDelays}) to apply different configurations to different
- * containers.
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation is required; omitting
+ *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
+ *       {@code @JvmAgentChaos}; it is attached before the container starts.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
+ *       translator class can be resolved.
+ *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
+ *       intercept native executables.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosJdbcTransactionCommitInjectException
+ * @see ChaosJdbcTransactionRollbackDelay
+ * @see ChaosJdbcStatementExecuteDelay
  */
 @Repeatable(ChaosJdbcTransactionCommitDelay.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

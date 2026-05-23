@@ -14,40 +14,77 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code ENOSPC} on every libchaos-intercepted {@code pwrite} call inside the target
- * container, making the call fail as if the kernel returned {@code ENOSPC}.
+ * Injects {@code ENOSPC} into {@code pwrite(2)}, causing the call to return {@code -1} with
+ * {@code errno = ENOSPC} as if the kernel could not allocate additional data blocks for the
+ * positional write because the filesystem has no free blocks remaining.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ENOSPC}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code ENOSPC} is a valid POSIX result of {@code pwrite}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code pwrite} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = ENOSPC} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: no space left on device — disk-full; canary for cleanup / log-rotation / disk-pressure
- * bugs.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code PWRITE}, errno = {@code ENOSPC})
+ * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
+ * {@code pwrite} call; when it fires the interposer returns {@code -1} with {@code errno = ENOSPC}
+ * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.IO)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-io.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the filesystem libc wrappers (open, read,
- * write, close, fsync, etc.) at the dynamic-linker level. This annotation installs a rule via
- * {@code AdvancedFilesystemChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
+ *       extension to upload {@code libchaos-io.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
+ *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
+ *       {@code fallocate} at the dynamic-linker level.
+ *   <li>On each intercepted {@code pwrite} call a Bernoulli trial with probability {@link #probability}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = ENOSPC}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.IO)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-filesystem} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code ENOSPC} from {@code pwrite} means no additional blocks could be allocated for the
+ *       write at the requested offset; the file's contents at that offset were not modified. Assert
+ *       that the application does not proceed as if the write succeeded and reports the disk-full
+ *       condition before attempting further writes.
+ *   <li>Database engines that use {@code pwrite} for page writes must treat {@code ENOSPC} as a
+ *       fatal write error; the engine must abort all in-progress transactions and refuse new write
+ *       transactions until disk space is recovered. Assert that the database's health check
+ *       transitions to a "disk full" state that prevents new write transactions from starting.
+ *   <li>Applications that pre-allocate file space via {@code fallocate} to avoid {@code ENOSPC}
+ *       during writes should be tested with this annotation to verify the pre-allocation is always
+ *       performed before the first write; assert that {@code pwrite} never encounters {@code ENOSPC}
+ *       when writing within the pre-allocated region.
+ *   <li>Assert that the application emits a "disk full" alert with the affected mount point,
+ *       enabling operators to take corrective action before the database becomes completely
+ *       unavailable.
  * </ul>
+ *
+ * <p>In production, {@code ENOSPC} from {@code pwrite} occurs when a filesystem reaches 100% block
+ * utilisation while a database engine is writing a page that extends the data file, when a
+ * thin-provisioned volume runs out of backing store while the file's reported size still shows
+ * available space, and when a concurrent process consumes the last available blocks between a
+ * successful {@code fallocate} check and the subsequent {@code pwrite}.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code pwrite(2)} writes to a caller-specified offset without modifying the file's current
+ * position. When the write extends the file beyond its current size, the kernel must allocate new
+ * data blocks. When the write falls within the file's current size but targets a sparse (unallocated)
+ * region, the kernel must also allocate data blocks to back the sparse region. In both cases,
+ * block exhaustion causes {@code ENOSPC}. Overwriting existing allocated blocks never causes
+ * {@code ENOSPC} because no new allocation is needed.
+ *
+ * <p>Database storage engines use {@code pwrite} for in-place page updates (updating an existing
+ * B-tree page at its known file offset). These writes overwrite existing blocks and should not
+ * normally encounter {@code ENOSPC}. However, engines that use shadow-paging (writing new pages
+ * to new offsets and updating a page table) do require block allocation and can encounter
+ * {@code ENOSPC}. This annotation exercises the disk-full handling in both patterns.
+ *
+ * <p>Java's {@code FileChannel.write(ByteBuffer, long)} maps to {@code pwrite(2)} on Linux. When
+ * the underlying call returns {@code ENOSPC}, the JVM throws an {@code IOException} with the
+ * message "No space left on device". Application code that catches this exception should distinguish
+ * it from {@code EDQUOT} ("Disk quota exceeded") and {@code EIO} ("Input/output error") to apply
+ * the correct remediation.
  *
  * <h2>Example</h2>
  *
@@ -55,21 +92,18 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.IO)
  * @ChaosPwriteEnospc(probability = 0.001)
- * class FaultTest {
+ * class PwriteEnospcTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void diskFullOnPageWriteTransitionsDatabaseToReadOnlyMode() {
+ *     // assert that ENOSPC on pwrite causes the database to refuse new write transactions
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2 to simulate disk-pressure; ensure the app
- * has disk-full handling.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosPwriteEnospcs}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosWriteEnospc
+ * @see ChaosPwriteEdquot
+ * @see com.macstab.chaos.filesystem.annotation.l1.IoErrnoBinding
  */
 @Repeatable(ChaosPwriteEnospc.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

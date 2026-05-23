@@ -14,60 +14,92 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code ECONNRESET} on every libchaos-intercepted {@code recv} call inside the target
- * container, making the call fail as if the kernel returned {@code ECONNRESET}.
+ * Injects {@code ECONNRESET} into {@code recv(2)}, causing the call to return {@code -1} with
+ * {@code errno = ECONNRESET} as if the remote peer sent a TCP RST segment while the connection was
+ * established and data exchange was in progress.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ECONNRESET}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code ECONNRESET} is a valid POSIX result of {@code recv}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code recv} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #toxicity} is run. When it fires the
- * interceptor returns {@code -1} and sets {@code errno = ECONNRESET} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: connection reset by peer — protocol error, RST-on-close, or load-balancer failover.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code RECV}, errno =
+ * {@code ECONNRESET}) tuple. A Bernoulli trial with probability {@link #toxicity} is run on each
+ * intercepted {@code recv} call; when it fires the interposer returns {@code -1} with
+ * {@code errno = ECONNRESET} without performing any real kernel operation. No runtime
+ * operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.NET)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-net.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes socket-layer libc wrappers (connect, accept,
- * socket, bind, listen, shutdown, send, recv, poll). This annotation installs a rule via {@code
- * AdvancedConnectionChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
+ *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
+ *       {@code poll} at the dynamic-linker level.
+ *   <li>On each intercepted {@code recv} call a Bernoulli trial with probability {@link #toxicity}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = ECONNRESET}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.NET)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-connection} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>The connection is permanently terminated; the socket file descriptor is still valid and
+ *       must be closed by the application — failing to close it leaks a file descriptor.
+ *   <li>Assert that the application closes the socket after receiving {@code ECONNRESET} from
+ *       {@code recv} and either creates a new connection or returns an error to the caller,
+ *       depending on the protocol's retry semantics.
+ *   <li>Connection pools must evict the connection from the pool on reset and create a replacement;
+ *       assert that the pool does not return a reset connection to a caller.
+ *   <li>In-flight requests that were sent but whose responses were not yet received are lost on
+ *       reset; assert that the application correctly identifies which requests are outstanding and
+ *       either retries idempotent ones or returns errors for non-idempotent ones.
  * </ul>
+ *
+ * <p>In production, {@code ECONNRESET} from {@code recv} occurs when a load balancer terminates an
+ * idle connection (sending RST instead of FIN), when a firewall's connection tracking entry expires
+ * and subsequent packets trigger a RST, when a server process crashes while the client has an
+ * established connection and is waiting for a response, and during network failover events where
+ * stateful network devices reset active connections.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>When the kernel receives a TCP RST segment on an established connection, it immediately
+ * terminates the connection and marks the socket as error-pending. The next {@code recv} call on
+ * that socket returns {@code -1} with {@code errno = ECONNRESET}. Unlike a clean close (FIN
+ * sequence), a reset does not allow pending data to be flushed: any data that was in flight or in
+ * the send/receive buffers is discarded. The connection cannot be recovered by re-reading; the fd
+ * must be closed and a new connection established.
+ *
+ * <p>Java maps {@code ECONNRESET} from {@code recv} to a {@code SocketException} with the message
+ * "Connection reset". This is one of the most common exceptions in Java networking code; application
+ * code that catches it generically without distinguishing the phase (in-request vs. between-request)
+ * may apply an incorrect recovery strategy. A reset between requests (while the socket is idle in
+ * the pool) is safe to silently replace; a reset during an active request requires either retry or
+ * error propagation depending on whether the request was idempotent.
+ *
+ * <p>Lettuce (Redis client) distinguishes between reset on idle connections (replaced transparently)
+ * and reset during command execution (propagated as a {@code RedisCommandExecutionException}).
+ * HikariCP marks the connection as dead and removes it from the pool. This injection exercises both
+ * code paths depending on when during the connection lifecycle the reset fires.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.NET)
- * @ChaosRecvEconnreset(toxicity = 0.001)
- * class FaultTest {
+ * @ChaosRecvEconnreset(toxicity = 0.05)
+ * class RecvEconnresetTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void connectionPoolEvictsAndReplacesResetConnection(ConnectionInfo info) {
+ *     // assert that pool replaces reset connection and subsequent requests succeed
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-2 to 1e-1 for mid-stream reset testing.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosRecvEconnresets}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosRecvEtimedout
+ * @see ChaosRecvEagain
+ * @see com.macstab.chaos.connection.annotation.l1.ConnectionErrnoBinding
  */
 @Repeatable(ChaosRecvEconnreset.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

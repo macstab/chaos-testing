@@ -14,62 +14,92 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code ENOSPC} on every libchaos-intercepted {@code open} call inside the target
- * container, making the call fail as if the kernel returned {@code ENOSPC}.
+ * Injects {@code ENOSPC} into {@code open(2)} with {@code O_CREAT}, causing the call to return
+ * {@code -1} with {@code errno = ENOSPC} as if the filesystem has no free blocks or inodes to
+ * allocate a new directory entry and inode for the file being created.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ENOSPC}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code ENOSPC} is a valid POSIX result of {@code open}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code open} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = ENOSPC} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: no space left on device — disk-full; canary for cleanup / log-rotation / disk-pressure
- * bugs.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code OPEN}, errno = {@code ENOSPC})
+ * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
+ * {@code open} call; when it fires the interposer returns {@code -1} with {@code errno = ENOSPC}
+ * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.IO)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-io.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the filesystem libc wrappers (open, read,
- * write, close, fsync, etc.) at the dynamic-linker level. This annotation installs a rule via
- * {@code AdvancedFilesystemChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
+ *       extension to upload {@code libchaos-io.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
+ *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
+ *       {@code fallocate} at the dynamic-linker level.
+ *   <li>On each intercepted {@code open} call a Bernoulli trial with probability {@link #probability}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = ENOSPC}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.IO)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-filesystem} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code ENOSPC} from {@code open} occurs when creating a new file ({@code O_CREAT}) on a
+ *       full filesystem; opening an existing file for reading or writing does not allocate blocks
+ *       and typically succeeds even on a full filesystem. Assert that the application treats open
+ *       ENOSPC as a disk-full condition and triggers disk-pressure cleanup or log rotation.
+ *   <li>Applications that create temporary files for atomic writes (write to temp, then rename)
+ *       must handle {@code ENOSPC} on the temp-file creation path and propagate the disk-full
+ *       error to the caller rather than leaving partial data behind.
+ *   <li>Log rotation scripts that create new log files on a full disk will receive {@code ENOSPC};
+ *       assert that the application's logger falls back to stderr or drops logs with a rate-limited
+ *       warning rather than entering an infinite retry loop that fills the inode table.
+ *   <li>Assert that the application emits a disk-pressure alert when it first encounters
+ *       {@code ENOSPC} from {@code open}, enabling operators to trigger cleanup before data loss
+ *       occurs.
  * </ul>
+ *
+ * <p>In production, {@code ENOSPC} from {@code open} on file creation occurs when the application's
+ * log volume fills up (unbounded log growth, failed log rotation), when a database's data volume
+ * has no room for new table or index files, and when a containerized process creates many small
+ * temporary files that collectively exhaust the overlay filesystem's inode table.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code ENOSPC} can be returned from {@code open(O_CREAT)} for two distinct reasons: block
+ * exhaustion (no free data blocks to store the file's contents) and inode exhaustion (no free
+ * inodes to represent the file's metadata). Both conditions are reported as {@code ENOSPC} with no
+ * way to distinguish them from the errno alone; {@code df -i} (inode usage) and {@code df -h}
+ * (block usage) are needed to identify the cause.
+ *
+ * <p>Ext4 reserves 5% of blocks for the root user by default (tunable with {@code tune2fs -m});
+ * this reservation means that unprivileged processes receive {@code ENOSPC} when the filesystem
+ * is 95% full, while root processes can still write. Containerized processes typically run as
+ * non-root, so they will encounter the 95% threshold even though the filesystem is not completely
+ * full. This injection simulates the condition without waiting for the disk to fill.
+ *
+ * <p>Java maps {@code ENOSPC} from {@code open} to a {@code FileNotFoundException} or
+ * {@code IOException} with the message "No space left on device". The exception class depends on
+ * whether the Java API being used maps all open failures to {@code FileNotFoundException} or
+ * distinguishes creation failures from access failures. {@code Files.createFile(path)} throws
+ * {@code IOException("No space left on device")} rather than {@code FileNotFoundException}.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.IO)
- * @ChaosOpenEnospc(probability = 0.001)
- * class FaultTest {
+ * @ChaosOpenEnospc(probability = 0.1)
+ * class OpenEnospcTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void diskFullOnTempFileCreationPropagatesToCallerWithClearError() {
+ *     // assert that the caller receives a disk-full error rather than a data loss silently
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2 to simulate disk-pressure; ensure the app
- * has disk-full handling.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosOpenEnospcs}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosWriteEnospc
+ * @see ChaosOpenErofs
+ * @see com.macstab.chaos.filesystem.annotation.l1.IoErrnoBinding
  */
 @Repeatable(ChaosOpenEnospc.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

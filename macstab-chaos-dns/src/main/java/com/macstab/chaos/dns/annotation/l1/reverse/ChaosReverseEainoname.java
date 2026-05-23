@@ -14,61 +14,88 @@ import com.macstab.chaos.dns.annotation.l1.DnsSelectorKind;
 import com.macstab.chaos.dns.model.EaiErrno;
 
 /**
- * Injects {@code EAI_NONAME} on every libchaos-intercepted {@code reverse} call inside the target
- * container, making the call fail as if the kernel returned {@code EAI_NONAME}.
+ * Injects {@code EAI_NONAME} into every {@code getnameinfo(3)} call (reverse DNS lookup), causing
+ * the call to return {@code EAI_NONAME} as if no PTR record exists for the queried IP address.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EAI_NONAME}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EAI_NONAME} is a valid POSIX result of {@code reverse}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code reverse} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = EAI_NONAME} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: hostname not found — NXDOMAIN; simulates service deletion or misconfiguration.
+ * <p>L1 libchaos primitive. Encodes exactly one (selectorKind = {@code REVERSE}, errno =
+ * {@code EAI_NONAME}) tuple. This annotation always fires on every intercepted reverse lookup —
+ * there is no per-call probability field. Use it when you need every reverse resolution attempt to
+ * produce a "no PTR record" failure — the most common production scenario for cloud IP addresses —
+ * so that all fallback paths are exercised. No runtime selector-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.DNS)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-dns.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the libc resolver wrappers {@code
- * getaddrinfo} and {@code getnameinfo}. This annotation installs a rule via {@code
- * AdvancedDnsChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.DNS)} on the container definition causes the
+ *       extension to upload {@code libchaos-dns.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code getaddrinfo(3)} and {@code getnameinfo(3)} at the
+ *       dynamic-linker level.
+ *   <li>On every intercepted {@code getnameinfo} call the interposer immediately returns
+ *       {@code EAI_NONAME} without performing any real resolver query.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.DNS)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-dns} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>Every reverse lookup returns "no hostname found"; this is the most realistic failure mode
+ *       for cloud environments where most IPs do not have PTR records.
+ *   <li>Applications that log peer hostnames for access auditing will record raw IP addresses;
+ *       assert that the log format remains valid and parseable when the hostname field is absent.
+ *   <li>When {@code getnameinfo} is called with {@code NI_NAMEREQD}, the caller explicitly
+ *       requires a hostname and treats absence as an error; assert that the application applies
+ *       the correct access policy (permit or deny) when the hostname requirement cannot be met.
+ *   <li>Assert that the application does not cache a null hostname indefinitely and re-attempts
+ *       the lookup when the TTL expires.
  * </ul>
+ *
+ * <p>In production, {@code EAI_NONAME} from {@code getnameinfo} occurs when no PTR record has
+ * been configured for the IP address — the standard situation for cloud compute instances,
+ * container overlay networks, and most private-range IPs. This is the default failure mode for
+ * reverse DNS, not an exceptional one.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>For reverse lookups, {@code EAI_NONAME} signals that the authoritative nameserver for the
+ * reverse zone responded with {@code NXDOMAIN}, meaning the PTR record does not exist. This is
+ * equivalent to the forward {@code EAI_NONAME} case, but the semantic implication is different:
+ * a missing forward record means the service does not exist; a missing PTR record means the IP
+ * address has not been registered in the reverse DNS zone, which is normal for most IPs.
+ *
+ * <p>glibc's {@code getnameinfo} without {@code NI_NAMEREQD} falls back to a numeric
+ * representation of the address when the lookup fails, effectively converting the error into a
+ * no-op from the caller's perspective. With {@code NI_NAMEREQD} set, the function returns an
+ * error code instead. This injection exercises the {@code NI_NAMEREQD} path by returning
+ * {@code EAI_NONAME} regardless of the flags, making it useful for testing code that handles
+ * both cases explicitly.
+ *
+ * <p>In Kubernetes environments, the overlay network's IP addresses typically have no PTR records
+ * in the cluster DNS ({@code .svc.cluster.local} forward records exist, but there is usually no
+ * corresponding {@code in-addr.arpa} delegation). Applications that rely on {@code getnameinfo}
+ * for peer authentication or logging must handle {@code EAI_NONAME} as a first-class result.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.DNS)
- * @ChaosReverseEainoname(probability = 0.001)
- * class FaultTest {
+ * @ChaosReverseEainoname
+ * class ReverseEainонameTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void accessLogRecordsRawIpWhenNoPtrRecordExists(ConnectionInfo info) {
+ *     // assert that the access log uses the raw IP address and not null or empty
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-2 to 1e-1; 1.0 simulates a full DNS outage for the
- * container.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosReverseEainonames}) to bind different probabilities
- * to different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosReverseEaiagain
+ * @see ChaosReverseEaifail
+ * @see ChaosForwardEainoname
+ * @see ChaosWildcardEainoname
+ * @see com.macstab.chaos.dns.annotation.l1.DnsEaiBinding
  */
 @Repeatable(ChaosReverseEainoname.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

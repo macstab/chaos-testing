@@ -14,39 +14,66 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code EINVAL} on every libchaos-intercepted {@code accept} call inside the target
- * container, making the call fail as if the kernel returned {@code EINVAL}.
+ * Injects {@code EINVAL} into {@code accept(2)}, causing the call to return {@code -1} with
+ * {@code errno = EINVAL} as if the socket is not listening or an invalid address-length argument
+ * was provided.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EINVAL}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EINVAL} is a valid POSIX result of {@code accept}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code accept} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #toxicity} is run. When it fires the
- * interceptor returns {@code -1} and sets {@code errno = EINVAL} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: invalid argument — bad length, flags, or option; the universal canary errno.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code ACCEPT}, errno = {@code EINVAL})
+ * tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted
+ * {@code accept} call; when it fires the interposer returns {@code -1} with {@code errno = EINVAL}
+ * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.NET)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-net.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes socket-layer libc wrappers (connect, accept,
- * socket, bind, listen, shutdown, send, recv, poll). This annotation installs a rule via {@code
- * AdvancedConnectionChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
+ *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
+ *       {@code poll} at the dynamic-linker level.
+ *   <li>On every intercepted {@code accept} call a Bernoulli trial with probability
+ *       {@link #toxicity} is conducted; when it fires the interposer returns {@code -1} and
+ *       sets {@code errno = EINVAL}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.NET)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-connection} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code EINVAL} from {@code accept} indicates a programming error — the socket is not
+ *       in listening state or the address buffer length is incorrect; servers must not retry on
+ *       this error and must surface it as a fatal configuration failure.
+ *   <li>Server frameworks that recover from {@code EINVAL} by restarting the accept loop will
+ *       enter an infinite error cycle; assert that the framework recognises {@code EINVAL} as
+ *       non-retriable and terminates the accept loop.
+ *   <li>Assert that the application logs the {@code EINVAL} at ERROR or FATAL level and does not
+ *       silently swallow it, since it indicates a socket that is not in the expected state.
  * </ul>
+ *
+ * <p>In production, {@code EINVAL} from {@code accept} occurs when a socket that has not been
+ * put into the listening state (via {@code listen(2)}) is passed to {@code accept}, or when the
+ * {@code addrlen} argument is initialised to zero. Both are programming errors rather than
+ * transient runtime conditions.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The Linux kernel returns {@code EINVAL} from {@code accept} in two main cases: the socket
+ * was not put into the listening state before {@code accept} was called, or the {@code addrlen}
+ * argument is negative. Both conditions indicate that the calling code has a logic error — the
+ * socket lifecycle invariant (bind → listen → accept) was not followed, or the address buffer
+ * was not correctly initialised.
+ *
+ * <p>Application frameworks that wrap {@code accept} in a retry loop with exponential back-off
+ * will retry indefinitely on {@code EINVAL} because the underlying condition (socket not listening)
+ * cannot resolve itself without intervention. This injection reveals whether the retry loop
+ * correctly distinguishes non-retriable errors from transient ones.
+ *
+ * <p>Java's {@code ServerSocket.accept()} maps {@code EINVAL} to an {@code IOException} with the
+ * message "Invalid argument". Application code that catches all {@code IOException} subtypes and
+ * retries will retry on this error; assert that the application applies a max-retry guard or
+ * escalates to a fatal error after a fixed number of consecutive failures.
  *
  * <h2>Example</h2>
  *
@@ -54,21 +81,18 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.NET)
  * @ChaosAcceptEinval(toxicity = 0.001)
- * class FaultTest {
+ * class AcceptEinvalTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void serverRecognisesEinvalAsNonRetriableAndTerminatesAcceptLoop(ConnectionInfo info) {
+ *     // assert that the server does not retry and logs the error at FATAL level
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosAcceptEinvals}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosAcceptEconnreset
+ * @see ChaosAcceptEmfile
+ * @see com.macstab.chaos.connection.annotation.l1.ConnectionErrnoBinding
  */
 @Repeatable(ChaosAcceptEinval.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

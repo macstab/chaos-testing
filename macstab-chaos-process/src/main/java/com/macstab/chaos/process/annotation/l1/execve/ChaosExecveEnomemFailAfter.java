@@ -14,61 +14,89 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code execve} calls succeed,
- * then injects {@code ENOMEM} on every subsequent call until the rule is removed.
+ * Allows the first {@link #successesBeforeFailure} {@code execve} calls to succeed, then injects
+ * {@code ENOMEM} on every subsequent call, simulating memory exhaustion at the exec path that
+ * takes effect after a bounded number of successful process image replacements.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code EXECVE}, errno = {@code ENOMEM}, effect = FAIL_AFTER) tuple. FAIL_AFTER is the process
- * module's counter-gated effect — distinct from ERRNO (probabilistic) and LATENCY (unconditional).
- * It models resource-exhaustion scenarios where the first N operations succeed and then the system
- * runs out of capacity.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code EXECVE}, errno = {@code ENOMEM},
+ * effect = FAIL_AFTER) tuple. FAIL_AFTER is libchaos-process's counter-gated effect: the first
+ * {@link #successesBeforeFailure} matched calls succeed normally; every call after that returns
+ * {@code -1} with {@code errno = ENOMEM} until the rule is removed. This models progressive
+ * memory exhaustion scenarios where each exec consumes memory that is not released, and the
+ * system eventually runs out of capacity to allocate the argument pages or stack for new images.
  *
- * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
- * {@code execve} calls. After {@link #successesBeforeFailure} successes the counter trips and every
- * subsequent call returns {@code -1} with {@code errno = ENOMEM}, regardless of real kernel
- * capacity. The counter resets every time the rule is re-applied (e.g. across test methods if the
- * annotation is at class scope).
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code execve} wrapper at the dynamic-linker level.</li>
+ *   <li>The interposer maintains a per-rule atomic counter of successful {@code execve} calls.</li>
+ *   <li>Once the counter reaches {@link #successesBeforeFailure}, it trips and every subsequent
+ *       intercepted call sets {@code errno = ENOMEM} and returns {@code -1} without executing.</li>
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 12,
+ *       {@code strerror}: "Out of memory"; the calling process remains unchanged.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family. This annotation installs
- * a FAIL_AFTER rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at {@code
- *       beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>The first {@link #successesBeforeFailure} {@code execve} calls succeed; subsequent calls
+ *       fail with {@code ENOMEM} — the application must treat this as a transient resource
+ *       exhaustion and implement a backoff/retry strategy rather than marking the binary as
+ *       permanently absent.</li>
+ *   <li>Fork+exec patterns must handle the ENOMEM case in the child process: the child that
+ *       fails {@code execve} with {@code ENOMEM} must exit cleanly with a specific exit code
+ *       so that the parent can detect the exec failure via {@code waitpid} and distinguish
+ *       it from a successful process that exited with a non-zero code.</li>
+ *   <li>Assert that the application's process-pool manager stops accepting new spawn requests
+ *       when exec-ENOMEM persists across retries, surfaces a memory-pressure alert, and begins
+ *       backpressure rather than accumulating a queue of unserviced spawn requests.</li>
  * </ul>
+ * Production failure mode: a node approaches its cgroup memory limit during a burst of request
+ * processing; each new request requires spawning a helper subprocess via exec; as the node
+ * fills up, exec calls for new helpers fail with {@code ENOMEM}; the application retries in
+ * a tight loop, which itself increases memory pressure by keeping the calling thread alive
+ * and consuming stack, creating a memory-pressure spiral that prevents recovery.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>The FAIL_AFTER effect for exec-ENOMEM captures the progressive memory exhaustion scenario
+ * that the probabilistic ERRNO effect cannot: real ENOMEM from exec follows an availability
+ * curve where initially execs succeed and later ones fail as memory is consumed — never randomly
+ * scattered throughout a sequence. The N-success-then-fail pattern directly models this temporal
+ * profile, with N representing the number of successful exec calls before the node's memory
+ * is exhausted.
+ *
+ * <p>The critical fork+exec zombie risk is amplified under FAIL_AFTER: in the fork+exec pattern,
+ * the child process attempts {@code execve}; when it fails with {@code ENOMEM}, the child is
+ * still running in the parent's image. If the child does not check the exec return value and
+ * call {@code _exit}, it will continue executing the parent's code as a zombie copy, potentially
+ * holding locks, consuming resources, and producing incorrect state. The FAIL_AFTER threshold
+ * makes this failure deterministic and reproducible, which aids in verifying the exit-on-exec-
+ * failure code path.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosExecveEnomemFailAfter(successesBeforeFailure = 128)
- * class ProcessExhaustionTest {
+ * @ChaosExecveEnomemFailAfter(successesBeforeFailure = 20)
+ * class ExecMemoryExhaustionTest {
  *   @Test
- *   void handlesExhaustion(ConnectionInfo info) { ... }
+ *   void processPoolBackpressuresWhenExecEnomemPersists(ConnectionInfo info) {
+ *     // verify pool stops spawning, surfaces alert, and backpressures upstream after threshold
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of {@code execve}
- * calls the application is expected to make before hitting the limit. Typically 5–200 for
- * container-scoped tests. Zero means the very first call fails.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form
- * ({@code @ChaosExecveEnomemFailAfter.Repeatable}) to apply different counters to different
- * containers.
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to the number of
+ * exec calls that occur during normal request processing before memory pressure is reached; use
+ * the observed spawn rate multiplied by expected-time-to-exhaustion in seconds.
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessFailAfterBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#failAfter(ProcessSelector, ProcessErrno, long)
  */
 @Repeatable(ChaosExecveEnomemFailAfter.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

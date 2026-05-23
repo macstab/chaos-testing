@@ -14,14 +14,76 @@ import com.macstab.chaos.time.model.TimeErrno;
 import com.macstab.chaos.time.model.TimeSelector;
 
 /**
- * L1 chaos primitive: inject {@code ENOSYS} on every libchaos-time-intercepted {@code nanosleep}
- * call, gated by {@link #probability}.
+ * Injects {@code ENOSYS} into {@code nanosleep(2)}, causing the call to return {@code -1} with
+ * {@code errno = ENOSYS} as if the kernel did not implement the syscall.
  *
- * <p><strong>What this simulates:</strong> function not implemented — kernel lacks the time syscall
- * variant.
+ * <h2>What this annotation is</h2>
+ *
+ * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code NANOSLEEP}, errno = {@code ENOSYS})
+ * tuple. The tuple is safe by construction — {@code ENOSYS} is a valid POSIX result on minimal
+ * kernels that do not implement {@code nanosleep}. No runtime selector-errno validation is needed.
+ *
+ * <h2>What chaos this applies</h2>
+ *
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
+ *       at the dynamic-linker level.
+ *   <li>On every intercepted {@code nanosleep} call a Bernoulli trial with probability
+ *       {@link #probability} is conducted.
+ *   <li>When the trial fires the interposer returns {@code -1} and sets {@code errno = ENOSYS}
+ *       without sleeping — the call appears to be unsupported by the kernel.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
+ *
+ * <ul>
+ *   <li>The sleep returns immediately; callers that fall back to {@code usleep} or {@code select}
+ *       will continue with lower precision; callers without a fallback will abort.
+ *   <li>Startup probes that detect clock capabilities at boot time should detect the absence of
+ *       {@code nanosleep} and select an alternative sleep primitive.
+ *   <li>Assert that the application selects an appropriate fallback and emits a warning rather
+ *       than crashing or busy-spinning.
+ * </ul>
+ *
+ * <p>In production, {@code ENOSYS} from {@code nanosleep} appears on uClinux embedded kernels
+ * compiled without {@code nanosleep} support, on old kernel versions (&lt;2.0), and in some POSIX
+ * emulation layers on non-Linux systems.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code nanosleep(2)} has been present in the Linux kernel since version 2.0; encountering
+ * {@code ENOSYS} on a modern Linux host indicates a heavily stripped kernel or a missing syscall
+ * table entry. The glibc fallback path for {@code ENOSYS} uses {@code select(2)} with a timeout
+ * to approximate the sleep duration; however, the precision is much lower.
+ *
+ * <p>Applications that statically detect the availability of {@code nanosleep} at compile time
+ * (via feature-test macros) and do not check the runtime return value will silently fail to sleep
+ * when the syscall is absent, resulting in CPU-bound busy behavior.
+ *
+ * <p>Sibling annotations: {@link ChaosNanosleepEintr} targets the common signal-interruption case;
+ * {@link ChaosUsleepEnosys} applies the same injection to the legacy {@code usleep(3)} wrapper.
+ *
+ * <h2>Example</h2>
+ *
+ * <pre>{@code
+ * @RedisStandalone
+ * @SyscallLevelChaos(LibchaosLib.TIME)
+ * @ChaosNanosleepEnosys(probability = 1.0)
+ * class NanosleepEnosysTest {
+ *   @Test
+ *   void applicationSelectsFallbackSleepWhenNanosleepAbsent(ConnectionInfo info) {
+ *     // assert that the application selects an alternative sleep mechanism and continues
+ *   }
+ * }
+ * }</pre>
  *
  * @author Christian Schnapka - Macstab GmbH
- * @see com.macstab.chaos.time.model.TimeRule#errno(TimeSelector, TimeErrno, double)
+ * @see ChaosNanosleepEintr
+ * @see ChaosUsleepEnosys
+ * @see com.macstab.chaos.time.annotation.l1.TimeErrnoBinding
  */
 @Repeatable(ChaosNanosleepEnosys.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

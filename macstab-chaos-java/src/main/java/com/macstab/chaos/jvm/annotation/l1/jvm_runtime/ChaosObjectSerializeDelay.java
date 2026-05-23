@@ -14,56 +14,91 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Delay the object_serialize operation by the configured number of milliseconds.
+ * Delays every Java object serialisation call ({@code ObjectOutputStream.writeObject()}) by a
+ * configurable number of milliseconds, simulating a slow serde pipeline or an overloaded
+ * serialisation codec.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> delay the OBJECT_SERIALIZE operation by the
- * configured number of milliseconds inside the JVM of the target container. The effect fires on
- * every matching call, subject to the probability configured via {@link #probability()} if
- * applicable. The rule is active from {@code beforeAll} until {@code afterAll} (class-scope) or
- * from {@code beforeEach} until {@code afterEach} (method-scope).
+ * <p>A JVM agent L1 chaos primitive targeting the {@code OBJECT_SERIALIZE} operation — one typed
+ * annotation per (selector family, operation type, effect) tuple. Declared on a test class or
+ * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until
+ * {@code afterAll}/{@code afterEach} respectively.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>The chaos agent intercepts every call to {@code ObjectOutputStream.writeObject(Object)} in
+ *       the target container's JVM.
+ *   <li>Before forwarding the call, the interceptor parks the calling thread for a duration sampled
+ *       uniformly between {@link #delayMs()} and {@link #maxDelayMs()} milliseconds.
+ *   <li>After the delay, the real serialisation executes and the result is written to the
+ *       underlying stream normally.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li><strong>Session replication slow.</strong> Servlet containers that replicate HTTP sessions
+ *       via Java serialisation will propagate session state to peers more slowly; assert that
+ *       failover during replication does not expose stale or missing session data.
+ *   <li><strong>RMI call latency increases.</strong> Java RMI serialises arguments before
+ *       transmission; a delay per serialise call adds to the end-to-end RMI latency; assert
+ *       that the remote call timeout is sufficient.
+ *   <li><strong>Cached object storage slow.</strong> Caches that serialise objects to a remote
+ *       store (e.g. Redis via Java serialisation) will be slower; assert that the application
+ *       falls back to its local cache or degrades gracefully.
+ *   <li><strong>Production failure mode:</strong> slow serialisation on a hot path (e.g. per-
+ *       request session serialisation) can saturate the I/O thread pool, causing request queuing
+ *       and eventually thread-pool exhaustion under load.
  * </ul>
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>Java's built-in serialisation is invoked through {@code ObjectOutputStream.writeObject()},
+ * which walks the object graph recursively, calling {@code writeObject()} on each reachable
+ * object. The agent intercepts the top-level call; nested calls made during graph traversal are
+ * also intercepted, so a large object graph with many serialisable sub-objects will accumulate
+ * multiple delays. For deeply nested graphs this can produce unexpectedly large total delays;
+ * configure the delay accordingly.
+ *
+ * <p>The intercept point is the public API method, not the native serialisation machinery inside
+ * the JVM. This means the delay applies to all caller-initiated serialisations, including those
+ * performed by third-party libraries that use Java serialisation internally (e.g. some JMS
+ * providers, distributed cache clients, and legacy ORM frameworks).
+ *
+ * <p>Combining this annotation with {@link ChaosObjectDeserializeDelay} allows a test to simulate
+ * a slow round-trip through a serialise/transmit/deserialise pipeline — for example, to validate
+ * that a cluster-state synchronisation protocol handles slow members without stalling the quorum.
+ *
+ * <p>Note that Jackson, Gson, and Protobuf do not use {@code ObjectOutputStream} and are therefore
+ * not affected by this annotation. Use the method-selector annotations (see
+ * {@code ChaosMethodEnterInjectException}) to inject chaos into custom serialisation implementations
+ * that bypass the standard serialisation API.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosObjectSerializeDelay
- * class JvmChaosTest {
+ * @ChaosObjectSerializeDelay(delayMs = 300, maxDelayMs = 1_000)
+ * class SerializeDelayTest {
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void sessionReplicationToleratesSlowSerde(ConnectionInfo info) { ... }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosObjectSerializeDelays}) to apply different configurations to different containers.
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
+ *       agent before the container JVM starts; omitting it causes an
+ *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
+ *       {@code @JvmAgentChaos}.
+ *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the
+ *       translator.
+ *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
+ *       intercept native executables.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
  */

@@ -14,62 +14,83 @@ import com.macstab.chaos.time.model.TimeErrno;
 import com.macstab.chaos.time.model.TimeSelector;
 
 /**
- * Injects {@code EPERM} on every libchaos-intercepted {@code wildcard} call inside the target
- * container, making the call fail as if the kernel returned {@code EPERM}.
+ * Injects {@code EPERM} into every interposed time syscall ({@code clock_gettime}, {@code nanosleep},
+ * {@code usleep}), causing each to return {@code -1} with {@code errno = EPERM} as if the process
+ * lacked permission to perform the time operation.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EPERM}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EPERM} is a valid POSIX result of {@code wildcard}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code wildcard} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = EPERM} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: operation not permitted — capability-dropped containers performing privileged
- * operations.
+ * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code WILDCARD}, errno = {@code EPERM})
+ * tuple. The {@code WILDCARD} selector matches all three interposed time syscalls simultaneously —
+ * equivalent to applying {@link ChaosClockGettimeEperm}, {@link ChaosNanosleepEperm}, and
+ * {@link ChaosUsleepEperm} in a single annotation. No runtime selector-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.TIME)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-time.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the libc wrappers for {@code clock_gettime},
- * {@code nanosleep}, and {@code usleep}. This annotation installs a rule via {@code
- * AdvancedTimeChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
+ *       at the dynamic-linker level.
+ *   <li>On every intercepted call to any of the three syscalls a Bernoulli trial with probability
+ *       {@link #probability} is conducted independently.
+ *   <li>When the trial fires the interposer returns {@code -1} and sets {@code errno = EPERM}
+ *       without performing any real work.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.TIME)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-time} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>Every time-related call may return {@code EPERM}; the application must treat it as a
+ *       non-retriable capability failure and degrade gracefully.
+ *   <li>Profiling agents, metrics collectors, and APM tracers that rely on high-resolution time
+ *       may disable themselves when all time syscalls fail with permission denied.
+ *   <li>Assert that the application detects the capability failure at startup or on first use,
+ *       selects a fallback behavior, and does not crash or busy-spin.
  * </ul>
+ *
+ * <p>In production, simultaneous {@code EPERM} across all time syscalls signals a severely
+ * hardened seccomp profile that blocks all time-related operations — unusual but possible in
+ * ultra-locked-down container environments.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The {@code EPERM} wildcard simulates the scenario of a container that has had all time
+ * syscalls removed from its seccomp allowlist. This is an extreme hardening posture that some
+ * security-sensitive workloads apply (e.g. cryptographic operations that must not rely on system
+ * time to avoid timing side channels). In this environment, any time-dependent logic must either
+ * be removed or receive time from a privileged sidecar process.
+ *
+ * <p>Injecting {@code EPERM} across all three time calls exercises the capability-detection paths
+ * of all time-using libraries simultaneously. A JVM that cannot read the clock will typically
+ * fall back to a lower-resolution OS interface; profilers that cannot sleep will either stop or
+ * busy-poll. Testing this scenario prevents production regressions when the seccomp profile is
+ * tightened.
+ *
+ * <p>Sibling per-syscall annotations ({@link ChaosClockGettimeEperm}, {@link ChaosNanosleepEperm},
+ * {@link ChaosUsleepEperm}) allow targeted injection. Use the wildcard form for system-wide
+ * capability-failure testing.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.TIME)
- * @ChaosWildcardEperm(probability = 0.001)
- * class FaultTest {
+ * @ChaosWildcardEperm(probability = 0.01)
+ * class WildcardEpermTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void applicationDegradesGracefullyWhenAllTimeSyscallsDenied(ConnectionInfo info) {
+ *     // assert that the application selects fallbacks and does not crash
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosWildcardEperms}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosClockGettimeEperm
+ * @see ChaosNanosleepEperm
+ * @see ChaosUsleepEperm
+ * @see com.macstab.chaos.time.annotation.l1.TimeErrnoBinding
  */
 @Repeatable(ChaosWildcardEperm.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

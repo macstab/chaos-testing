@@ -14,47 +14,65 @@ import com.macstab.chaos.memory.model.MemorySelector;
 import com.macstab.chaos.memory.model.MmapErrno;
 
 /**
- * Injects {@code EPERM} on every libchaos-memory-intercepted {@code mmap} call inside the target
- * container, making the call fail as if the kernel returned {@code EPERM}.
+ * Injects {@code EPERM} into all {@code mmap} calls (anonymous and file-backed) intercepted by
+ * libchaos-memory, causing the calling code to observe an operation-not-permitted failure from
+ * any memory-mapping operation.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector = {@code MMAP}, errno = {@code EPERM}) pair. The
- * combination is safe by construction: this annotation class exists only because {@code EPERM} is a
- * valid POSIX result of {@code mmap}; the invalid combinations simply have no annotation class, so
- * the selector × errno matrix cannot be violated at compile time.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-memory primitive — one (selector = {@code MMAP}, errno = {@code EPERM}) tuple.
+ * The {@code MMAP} selector covers both anonymous and file-backed {@code mmap} calls; use
+ * {@code ChaosMmapAnonEperm} or {@code ChaosMmapFileEperm} for narrower fault isolation.
+ * Compile-time safety: invalid selector/errno combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code mmap} call that the libchaos-memory
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = EPERM} before the kernel call
- * completes — from the application perspective this is indistinguishable from a real kernel-level
- * failure. Specifically this simulates: operation not permitted — typical of capability-dropped
- * containers performing privileged VM ops.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code mmap} call the interposer runs a Bernoulli trial with probability
+ *       {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = EPERM} and returns
+ *       {@code MAP_FAILED} without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 1,
+ *       {@code strerror}: "Operation not permitted".</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.MEMORY)} annotation on the container declaration causes
- * {@code ChaosTestingExtension} to upload {@code libchaos-memory.so} into the container and prepend
- * it to {@code LD_PRELOAD} before the container process starts. The shared library interposes the
- * libc wrappers for {@code mmap}, {@code munmap}, {@code mprotect}, and {@code madvise} at the
- * dynamic-linker level. This annotation then installs a rule via {@code
- * AdvancedMemoryChaos.apply(container, rule)} that configures the interposer with the selector and
- * probability you specify.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD} which does not apply on
- *       macOS or Windows containers; annotate the test class with {@code @DisabledOnOs(OS.WINDOWS)}
- *       and be aware of macOS Docker limitations.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.MEMORY)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — this installs the shared library before container start;
- *       omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) do not
- *       honour {@code LD_PRELOAD} for statically-linked binaries; use a glibc variant or the
- *       Debian-slim image instead.
- *   <li><strong>{@code macstab-chaos-memory} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and {@code ChaosTestingExtension} throws {@code
- *       ClassNotFoundException} wrapped in {@code ExtensionConfigurationException}.
+ *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = EPERM} (1); both the anonymous
+ *       allocator path and the file-backed mapping path are affected simultaneously.</li>
+ *   <li>JVM code-cache expansion (which requires {@code PROT_EXEC}) is particularly at risk;
+ *       the JVM may fall back to interpreted mode or abort.</li>
+ *   <li>Assert that the application surfaces a privilege-related diagnostic and does not
+ *       retry indefinitely — {@code EPERM} is permanent without a privilege change.</li>
  * </ul>
+ * Production failure mode: a tightened seccomp profile or Kubernetes Pod Security Admission
+ * change applied to a new container revision can simultaneously deny {@code PROT_EXEC} on
+ * anonymous mappings (JVM code cache) and prevent write-shared mappings on files (memory-mapped
+ * databases), causing cascading failures across both subsystems.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>POSIX specifies {@code EPERM} for {@code mmap} when the operation is structurally
+ * disallowed regardless of credentials. On Linux this arises when: {@code PROT_EXEC} is
+ * requested on a noexec filesystem or when the Yama LSM blocks executable anonymous mappings;
+ * when {@code MAP_LOCKED | MAP_ANONYMOUS} is used without {@code CAP_IPC_LOCK} and the process
+ * has reached its {@code RLIMIT_MEMLOCK} limit; or when a sealed memfd is re-mapped with
+ * incompatible flags.
+ *
+ * <p>The broad {@code MMAP} selector simultaneously injects {@code EPERM} on all call paths.
+ * This creates a comprehensive test of privilege-failure handling: a JVM that runs on a
+ * noexec filesystem will fail its JIT code-cache allocation; a database engine that uses
+ * locked anonymous memory for its page cache will fail its buffer allocation; and any file
+ * that is mapped with {@code MAP_SHARED | PROT_WRITE} on a noexec or read-only filesystem
+ * will fail its mapping.
+ *
+ * <p>glibc's standard {@code malloc} never uses {@code PROT_EXEC} or {@code MAP_LOCKED},
+ * so it will not encounter real {@code EPERM} under normal conditions. JVM internal allocators,
+ * JNA, and database engines that use mlock or executable mappings are at risk.
+ *
+ * <p>Compared with {@code EACCES}: {@code EPERM} is a structural check failure (the operation
+ * itself is disallowed for this process class); {@code EACCES} is a credential check failure
+ * on a specific object. Both are non-transient; neither will succeed on retry without privilege
+ * elevation or policy change.
  *
  * <h2>Example</h2>
  *
@@ -62,19 +80,19 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.MEMORY)
  * @ChaosMmapEperm(probability = 0.001)
- * class MemoryFaultTest {
+ * class PrivilegeDenialTest {
  *   @Test
- *   void appHandlesEpermOnAlloc(RedisConnectionInfo info) { ... }
+ *   void appHandlesEpermOnAllMmaps(RedisConnectionInfo info) {
+ *     // verify the application surfaces a privilege diagnostic and does not retry infinitely
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2; privilege faults surface rarely in
- * production but are hard to test.
- *
+ * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2; privilege failures are rare in
+ * well-configured environments — they surface when policy changes are applied.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
- * the test class. Use the repeatable form ({@code @ChaosMmapEperms}) to bind different
- * probabilities to different containers simultaneously.
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see MemoryErrnoBinding

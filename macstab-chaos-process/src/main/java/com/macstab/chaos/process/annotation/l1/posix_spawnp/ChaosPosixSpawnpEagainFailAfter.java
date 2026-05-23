@@ -14,61 +14,98 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code posix_spawnp} calls
- * succeed, then injects {@code EAGAIN} on every subsequent call until the rule is removed.
+ * After {@link #successesBeforeFailure} successful {@code posix_spawnp} calls, injects
+ * {@code EAGAIN} on every subsequent call, causing the calling code to observe a
+ * resource-temporarily-unavailable failure that persists for the remainder of the test.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code POSIX_SPAWNP}, errno = {@code EAGAIN}, effect = FAIL_AFTER) tuple. FAIL_AFTER is the
- * process module's counter-gated effect — distinct from ERRNO (probabilistic) and LATENCY
- * (unconditional). It models resource-exhaustion scenarios where the first N operations succeed and
- * then the system runs out of capacity.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code POSIX_SPAWNP}, errno = {@code EAGAIN},
+ * effect = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N calls succeed,
+ * then the counter trips permanently and every subsequent call returns the error code until the
+ * rule is removed. Compile-time safety: invalid selector/errno/effect combinations have no
+ * annotation class.
  *
- * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
- * {@code posix_spawnp} calls. After {@link #successesBeforeFailure} successes the counter trips and
- * every subsequent call returns {@code -1} with {@code errno = EAGAIN}, regardless of real kernel
- * capacity. The counter resets every time the rule is re-applied (e.g. across test methods if the
- * annotation is at class scope).
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code posix_spawnp} wrapper at the dynamic-linker level.</li>
+ *   <li>The interposer maintains a per-rule success counter; the counter does not reset
+ *       automatically between test methods when the annotation is at class scope.</li>
+ *   <li>Once the counter reaches zero it trips permanently: every subsequent {@code posix_spawnp}
+ *       call returns {@code EAGAIN} directly (POSIX spawn returns the error code, not -1).</li>
+ *   <li>The calling code receives: return value {@code EAGAIN} (11); no child process is created;
+ *       the pid output parameter is not set to a valid value.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family. This annotation installs
- * a FAIL_AFTER rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at {@code
- *       beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>The first {@link #successesBeforeFailure} calls proceed normally; all subsequent calls
+ *       return {@code EAGAIN}; assert that the application checks the return value (POSIX spawn
+ *       returns the error code directly, not -1) and retries with exponential backoff rather than
+ *       treating EAGAIN as permanent — EAGAIN self-heals when children exit.</li>
+ *   <li>FAIL_AFTER models the uid process-count ceiling ({@code RLIMIT_NPROC}): the first N spawns
+ *       succeed while the uid's process count is below the limit; after N spawns the limit is
+ *       reached and all subsequent spawns return EAGAIN — assert that the application detects this
+ *       threshold and applies load-shedding or child-reaping before retrying further spawns.</li>
+ *   <li>Assert that the application does not call {@code waitpid} on an uninitialised pid after
+ *       post-threshold EAGAIN — POSIX does not define the pid value when spawn fails.</li>
  * </ul>
+ * Production failure mode: a pipeline tool uses {@code posix_spawnp} to run helper utilities by
+ * name; a burst of parallel pipeline runs pushes the uid's process count to RLIMIT_NPROC; after N
+ * successful spawns all subsequent spawns return EAGAIN; the tool does not check the return value
+ * and calls {@code waitpid} on the uninitialised pid, blocking indefinitely or waiting on an
+ * unrelated process.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>FAIL_AFTER models the uid process-count ceiling: as the process count rises to RLIMIT_NPROC,
+ * spawns succeed until the ceiling is reached; subsequent spawns fail with EAGAIN. Real EAGAIN from
+ * this source is not probabilistic — it fires deterministically once the ceiling is hit and
+ * self-heals when children exit and their process table entries are reaped. POSIX spawn returns the
+ * error code directly — checking {@code if (ret < 0)} silently misses EAGAIN (11).
+ *
+ * <p>The distinction between EAGAIN and ENOMEM at the FAIL_AFTER threshold is operationally
+ * important: EAGAIN means the uid process count is at its ceiling (add child-reaping or reduce
+ * spawn rate); ENOMEM means the kernel's memory allocator is exhausted (reduce memory pressure,
+ * escalate to platform team). Both return as non-negative return values from posix_spawnp — code
+ * that does not check the return value silently misses both.
+ *
+ * <p>The counter does not reset between test methods when the annotation is at class scope. This
+ * enables sequential testing: the first test method exercises the success path (calls 1 through N);
+ * subsequent test methods automatically observe the EAGAIN path without reconfiguring the rule.
+ * Set {@link #successesBeforeFailure} to the uid's effective RLIMIT_NPROC minus the process count
+ * at test start to model the exact moment the ceiling is reached.
+ *
+ * <p>The {@code $PATH} search adds a subtle detail: if the uid process count reaches the ceiling
+ * during the PATH traversal phase (which opens directory fds but does not fork), the EAGAIN is
+ * returned from the fork step that follows — the PATH traversal succeeds and the binary is found,
+ * but the fork fails. Applications should not assume that EAGAIN from posix_spawnp means the
+ * binary was not found.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosPosixSpawnpEagainFailAfter(successesBeforeFailure = 128)
- * class ProcessExhaustionTest {
+ * @ChaosPosixSpawnpEagainFailAfter(successesBeforeFailure = 50)
+ * class PosixSpawnpProcessCeilingTest {
  *   @Test
- *   void handlesExhaustion(ConnectionInfo info) { ... }
+ *   void toolRunnerShedsLoadOnEagainAfterCeilingAndDoesNotWaitOnUninitPid(ConnectionInfo info) {
+ *     // first 50 spawns succeed; subsequent spawns return EAGAIN;
+ *     // verify return value checked; backoff retry applied; child reaping triggered; no waitpid on uninit pid
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of {@code
- * posix_spawnp} calls the application is expected to make before hitting the limit. Typically 5–200
- * for container-scoped tests. Zero means the very first call fails.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form
- * ({@code @ChaosPosixSpawnpEagainFailAfter.Repeatable}) to apply different counters to different
- * containers.
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to the expected
+ * number of spawns before the uid process count reaches RLIMIT_NPROC; values 10–200 cover most
+ * scenarios; 0 means the very first spawn fails (uid already at the ceiling).
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessFailAfterBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#failAfter(ProcessSelector, ProcessErrno, long)
  */
 @Repeatable(ChaosPosixSpawnpEagainFailAfter.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

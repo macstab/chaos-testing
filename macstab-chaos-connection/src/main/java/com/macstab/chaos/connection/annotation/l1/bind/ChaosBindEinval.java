@@ -14,39 +14,77 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code EINVAL} on every libchaos-intercepted {@code bind} call inside the target
- * container, making the call fail as if the kernel returned {@code EINVAL}.
+ * Injects {@code EINVAL} into {@code bind(2)}, causing the call to return {@code -1} with
+ * {@code errno = EINVAL} as if the socket is already bound to an address or the address structure
+ * length is incorrect for the socket's address family.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EINVAL}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EINVAL} is a valid POSIX result of {@code bind}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code bind} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #toxicity} is run. When it fires the
- * interceptor returns {@code -1} and sets {@code errno = EINVAL} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: invalid argument — bad length, flags, or option; the universal canary errno.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code BIND}, errno = {@code EINVAL})
+ * tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted
+ * {@code bind} call; when it fires the interposer returns {@code -1} with {@code errno = EINVAL}
+ * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.NET)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-net.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes socket-layer libc wrappers (connect, accept,
- * socket, bind, listen, shutdown, send, recv, poll). This annotation installs a rule via {@code
- * AdvancedConnectionChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
+ *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
+ *       {@code poll} at the dynamic-linker level.
+ *   <li>On each intercepted {@code bind} call a Bernoulli trial with probability {@link #toxicity}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = EINVAL}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.NET)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-connection} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code EINVAL} from {@code bind} indicates a programming error: the socket is already bound,
+ *       the address-family does not match the socket type, or the address length is incorrect.
+ *       Applications must treat this as a non-retriable fatal error.
+ *   <li>Assert that the application does not retry on {@code EINVAL}; retrying will produce the same
+ *       error indefinitely because the underlying condition (double-bind or mismatched address
+ *       family) cannot resolve itself.
+ *   <li>Assert that the application logs the error at ERROR or FATAL level with enough context to
+ *       identify the offending socket and address, so that operators can diagnose the configuration
+ *       mismatch.
+ *   <li>Server frameworks that catch all bind errors and retry will spin indefinitely on
+ *       {@code EINVAL}; this injection verifies that the framework has a non-retriable error path.
  * </ul>
+ *
+ * <p>In production, {@code EINVAL} from {@code bind} occurs when application code calls {@code bind}
+ * twice on the same socket (a common mistake when a socket is reused across requests), when the
+ * address structure is constructed for the wrong address family (e.g., passing an IPv6 address
+ * structure to an IPv4 socket), or when a helper library wraps socket setup incorrectly.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The Linux kernel returns {@code EINVAL} from {@code bind} in three main cases: the socket is
+ * already bound to an address (calling {@code bind} a second time is forbidden by POSIX); the
+ * {@code addrlen} argument does not match the size expected for the socket's address family (e.g.,
+ * passing {@code sizeof(struct sockaddr_in)} for a {@code PF_INET6} socket); or the socket has been
+ * shut down (some kernel versions return {@code EINVAL} for operations on shut-down sockets).
+ *
+ * <p>The "already bound" case is the most common in practice and is always a programming error.
+ * POSIX specifies that once bound, a socket's local address is fixed for its lifetime; the address
+ * can only be changed by closing and re-creating the socket. Connection pooling libraries that
+ * attempt to reuse sockets by calling {@code bind} again will encounter this error; the injection
+ * tests that the pool correctly detects the error and creates a new socket rather than retrying
+ * {@code bind} on the existing one.
+ *
+ * <p>Java's {@code ServerSocket} and {@code DatagramSocket} map {@code EINVAL} from {@code bind} to
+ * a {@code SocketException} with the message "Invalid argument". Application code that catches
+ * {@code SocketException} generically and retries will retry on {@code EINVAL} indefinitely. This
+ * injection verifies that the retry logic is conditioned on retriable errors (e.g., {@code EINTR})
+ * rather than all {@code SocketException} subtypes.
+ *
+ * <p>This is the {@code bind}-specific analogue of {@code EINVAL} from {@code accept} and
+ * {@code listen}: all three indicate a socket lifecycle invariant violation. The correct response in
+ * all cases is to close the socket, create a new one, and restart the socket setup sequence from
+ * the beginning.
  *
  * <h2>Example</h2>
  *
@@ -54,21 +92,18 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.NET)
  * @ChaosBindEinval(toxicity = 0.001)
- * class FaultTest {
+ * class BindEinvalTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void serverRecognisesEinvalAsNonRetriableAndFailsFast(ConnectionInfo info) {
+ *     // assert that the server does not retry bind and logs the error at FATAL level
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosBindEinvals}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosBindEaddrinuse
+ * @see ChaosBindEaddrnotavail
+ * @see com.macstab.chaos.connection.annotation.l1.ConnectionErrnoBinding
  */
 @Repeatable(ChaosBindEinval.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

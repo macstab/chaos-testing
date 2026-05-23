@@ -13,36 +13,75 @@ import com.macstab.chaos.time.annotation.l1.TimeLatencyBinding;
 import com.macstab.chaos.time.model.TimeSelector;
 
 /**
- * Delays every libchaos-intercepted {@code wildcard} call by {@link #delayMs} milliseconds before
- * delegating to the real kernel call, making the operation succeed but take longer than expected.
+ * Extends every interposed time syscall ({@code clock_gettime}, {@code nanosleep}, {@code usleep})
+ * by an additional {@link #delayMs} milliseconds before delegating to the real kernel call, making
+ * all time operations slower than the application expects.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one
- * (selector, effect = LATENCY) pair. Unlike errno variants, the latency primitive always delegates
- * to the kernel — it only adds wall-clock cost before doing so.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> every {@code wildcard} call intercepted by libchaos
- * blocks for {@link #delayMs} ms before the kernel call is issued. This simulates the wall-clock
- * cost increase from resource pressure, kernel scheduling stalls, or slow hardware — none of which
- * return an errno but all of which can exhaust application-level timeouts, saturate connection-pool
- * wait budgets, and surface hidden latency assumptions.
+ * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code WILDCARD}, effect = LATENCY)
+ * tuple. The {@code WILDCARD} selector matches all three interposed time syscalls simultaneously —
+ * equivalent to applying {@link ChaosClockGettimeLatency}, {@link ChaosNanosleepLatency}, and
+ * {@link ChaosUsleepLatency} in a single annotation. Unlike errno variants, the latency primitive
+ * always delegates to the real kernel call after the configured extra delay — the return value
+ * is 0 (success). No runtime selector-effect validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.TIME)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-time.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the libc wrappers for {@code clock_gettime},
- * {@code nanosleep}, and {@code usleep}. This annotation installs a rule via {@code
- * AdvancedTimeChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
+ *       at the dynamic-linker level.
+ *   <li>On every intercepted call to any of the three syscalls the interposer first sleeps for an
+ *       additional {@link #delayMs} milliseconds.
+ *   <li>After the extra delay, the real kernel call is issued with the original arguments; the
+ *       result is returned to the application unchanged — no error is injected.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.TIME)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-time} on the test classpath.</strong>
+ *   <li>Timestamp reads ({@code clock_gettime}) are delayed, causing elapsed-time calculations to
+ *       overestimate wall-clock durations and potentially trigger spurious timeout events in
+ *       deadline-sensitive code paths.
+ *   <li>Sleep calls ({@code nanosleep}, {@code usleep}) take longer than requested; pacing loops,
+ *       rate limiters, and connection keep-alive heartbeats miss their configured intervals.
+ *   <li>Profiling and APM agents that sample {@code clock_gettime} at high frequency will appear
+ *       to record higher latency than actual, corrupting performance metrics.
+ *   <li>Assert that SLA budgets account for time-syscall overhead and that keep-alive intervals
+ *       include sufficient headroom above the injected extra delay.
  * </ul>
+ *
+ * <p>In production, extended time-syscall durations are caused by kernel scheduling stalls, cgroup
+ * CPU quota throttling, vDSO cache pressure, and hypervisor CPU steal on noisy-neighbour cloud hosts.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The {@code WILDCARD} latency injection is the most comprehensive time-chaos primitive: it adds
+ * overhead simultaneously to clock reads, nanosecond sleeps, and microsecond sleeps. This exercises
+ * all three categories of time-dependent logic — timekeeping, backoff, and polling — with a single
+ * annotation. Applications with distributed coordination logic (e.g. lease TTLs, Raft heartbeats)
+ * are particularly sensitive: a sufficiently large {@link #delayMs} can cause lease expiry before
+ * renewal, triggering leader election races under artificial conditions.
+ *
+ * <p>On Linux, {@code clock_gettime(CLOCK_MONOTONIC)} is normally served from the vDSO without a
+ * kernel context switch. The extra delay injected by {@code libchaos-time.so} occurs in userspace
+ * inside the PLT interposer, so it is still charged to the calling thread and visible to profilers.
+ * The net effect is that {@code clock_gettime} appears to take {@link #delayMs} ms longer than
+ * normal — a condition that mimics extreme vDSO cache thrashing or hypervisor clock-source
+ * virtualization overhead.
+ *
+ * <p>C libraries embedded via JNI (librdkafka, libpq, libcurl) rely on all three time interfaces
+ * for retry timers, poll intervals, and connection keep-alive. Applying {@code WILDCARD} latency
+ * exercises the interaction between these three interfaces simultaneously, which can reveal
+ * assumptions such as "if {@code nanosleep} is slow, the retry budget must already be consumed" —
+ * assumptions that break when independent latency is applied to each.
+ *
+ * <p>Sibling per-syscall annotations ({@link ChaosClockGettimeLatency}, {@link ChaosNanosleepLatency},
+ * {@link ChaosUsleepLatency}) allow targeted latency injection to a single time interface when a
+ * narrower test scope is needed. Use the wildcard form for full system-wide time-overhead testing.
  *
  * <h2>Example</h2>
  *
@@ -50,21 +89,19 @@ import com.macstab.chaos.time.model.TimeSelector;
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.TIME)
  * @ChaosWildcardLatency(delayMs = 200)
- * class LatencyTest {
+ * class WildcardLatencyTest {
  *   @Test
- *   void appHandlesSlowOperation(ConnectionInfo info) { ... }
+ *   void applicationRemainsStableWhenAllTimeSyscallsAreSlowed(ConnectionInfo info) {
+ *     // assert that keep-alive intervals are not missed and SLA budgets hold
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Delay guidance:</strong> {@code 10}–{@code 200} ms simulates realistic stall events;
- * values above application-level timeouts produce cascading failures rather than isolated latency
- * observations — intentional in some scenarios, noisy in others.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form ({@code @ChaosWildcardLatencys}) to
- * set different delays on different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosClockGettimeLatency
+ * @see ChaosNanosleepLatency
+ * @see ChaosUsleepLatency
+ * @see com.macstab.chaos.time.annotation.l1.TimeLatencyBinding
  */
 @Repeatable(ChaosWildcardLatency.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

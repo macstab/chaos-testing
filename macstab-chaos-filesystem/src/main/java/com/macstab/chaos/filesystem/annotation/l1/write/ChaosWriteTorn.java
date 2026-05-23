@@ -13,39 +13,81 @@ import com.macstab.chaos.filesystem.annotation.l1.IoTornBinding;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code ERRNO} on every libchaos-intercepted {@code write} call inside the target
- * container, making the call fail as if the kernel returned {@code ERRNO}.
+ * Simulates a torn {@code write(2)} by intercepting the call, performing only a partial write of
+ * the caller's buffer, and returning the partial byte count — causing the caller to observe a
+ * short write without any error, exactly as POSIX permits for writes larger than {@code PIPE_BUF}.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ERRNO}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code ERRNO} is a valid POSIX result of {@code write}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code write} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = ERRNO} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: a POSIX error condition.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code WRITE}, effect = TORN) tuple.
+ * Unlike errno variants, this primitive does not inject a failure — it performs a real but partial
+ * write. A Bernoulli trial with probability {@link #probability} is run on each intercepted
+ * {@code write} call; when it fires the interposer passes a randomly-chosen prefix of the buffer
+ * to the real kernel call and returns the prefix length. No runtime operation-effect validation
+ * is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.IO)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-io.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the filesystem libc wrappers (open, read,
- * write, close, fsync, etc.) at the dynamic-linker level. This annotation installs a rule via
- * {@code AdvancedFilesystemChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
+ *       extension to upload {@code libchaos-io.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
+ *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
+ *       {@code fallocate} at the dynamic-linker level.
+ *   <li>On each intercepted {@code write} call a Bernoulli trial with probability {@link #probability}
+ *       is conducted; when it fires the interposer selects a random split point within the buffer,
+ *       issues the real {@code write} syscall with only the prefix bytes, and returns the partial
+ *       count to the caller. The remaining bytes are silently dropped for this call.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.IO)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-filesystem} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>A torn write returns a positive byte count smaller than the requested count, which is
+ *       valid POSIX behaviour for {@code write(2)} on any file descriptor. Applications that do
+ *       not loop on short writes will silently lose the trailing bytes. Assert that every write
+ *       loop correctly advances the buffer pointer and repeats until all bytes are written.
+ *   <li>Structured binary formats (database pages, WAL records, protocol framing) that are written
+ *       in a single {@code write} call may arrive partially: a page header is written but the page
+ *       body is missing, or a WAL record is split at a non-boundary. Assert that the reader
+ *       detects partial records via checksums, length-prefix validation, or magic-byte sentinels.
+ *   <li>Applications that use {@code FileChannel.write(ByteBuffer)} and check the return value
+ *       against the expected count must loop on short writes; assert that the channel-level writer
+ *       retries until all bytes are written rather than assuming a single call is sufficient.
+ *   <li>Assert that torn writes during a checkpoint or compaction do not leave the data structure
+ *       in a state that cannot be recovered — the torn record must either be fully absent (rolled
+ *       back) or fully present (committed) after crash recovery.
  * </ul>
+ *
+ * <p>In production, short writes occur when a pipe or socket write exceeds the kernel buffer size
+ * and the kernel can only accept part of the data, when a signal interrupts a large write and the
+ * kernel restarts with a partial count, and on network filesystems where the server's write window
+ * limits how many bytes the client can send in a single RPC.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>POSIX specifies that {@code write(2)} may return a count smaller than the requested count
+ * (a "short write") for any file descriptor type, without this being an error. The only guarantee
+ * for regular files is that writes smaller than or equal to {@code PIPE_BUF} bytes (4096 on Linux)
+ * to a pipe are atomic; for regular files there is no atomicity guarantee at any size. Applications
+ * that assume a single {@code write} call atomically persists an entire structured record — a
+ * database page, a WAL entry, a log line — are relying on implementation-specific behaviour that
+ * is not guaranteed by POSIX and does not hold under kernel I/O throttling or signal delivery.
+ *
+ * <p>The torn write injection tests the write-loop invariant: after every {@code write} call the
+ * application must check whether the returned count equals the requested count and, if not, advance
+ * the buffer pointer by the returned count and retry with the remaining bytes. Failure to do so
+ * results in silent data loss — the application believes the full buffer was written, but only a
+ * prefix reached the kernel. This class of bug is often invisible in testing because local
+ * filesystem writes to regular files almost never produce short counts under normal conditions.
+ *
+ * <p>Java's {@code FileOutputStream.write(byte[], int, int)} calls the underlying write syscall
+ * in a loop inside the JVM and will not return until all bytes are written, masking short writes.
+ * However, {@code FileChannel.write(ByteBuffer)} delegates directly to a single write syscall and
+ * returns the actual byte count written; callers must check the return value and retry. The
+ * {@code WritableByteChannel} contract documents this behaviour, but many callers assume the count
+ * always equals the buffer limit. This injection exposes those incorrect assumptions.
  *
  * <h2>Example</h2>
  *
@@ -53,21 +95,18 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.IO)
  * @ChaosWriteTorn(probability = 0.001)
- * class FaultTest {
+ * class WriteTornTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void walWriteLoopPersistsAllBytesUnderTornWrites() {
+ *     // assert that the WAL writer loops until all bytes are written and records are complete
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosWriteTorns}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosPwriteTorn
+ * @see ChaosReadCorrupt
+ * @see com.macstab.chaos.filesystem.annotation.l1.IoTornBinding
  */
 @Repeatable(ChaosWriteTorn.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

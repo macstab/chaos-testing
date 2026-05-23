@@ -14,60 +14,102 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Reject the nio_channel_connect operation by throwing an appropriate exception for the operation
- * type.
+ * Intercepts {@code SocketChannel.connect()} and immediately throws {@code java.io.IOException}
+ * before any TCP handshake occurs, simulating a hard connection-refused failure at the NIO channel
+ * layer used by Netty, Undertow, and async servlet containers.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> reject the NIO_CHANNEL_CONNECT operation by throwing
- * an appropriate exception for the operation type inside the JVM of the target container. The
- * effect fires on every matching call, subject to the probability configured via {@link
- * #probability()} if applicable. The rule is active from {@code beforeAll} until {@code afterAll}
- * (class-scope) or from {@code beforeEach} until {@code afterEach} (method-scope).
+ * A JVM agent L1 chaos primitive — one typed annotation per (selector family, operation type,
+ * effect) tuple. It is declared on a test class or method alongside a container annotation and
+ * activates for the lifetime of the test class ({@code beforeAll} / {@code afterAll}) or a single
+ * test method ({@code beforeEach} / {@code afterEach}).
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>Before every call to {@code java.nio.channels.SocketChannel#connect(SocketAddress)}
+ *       inside the target container's JVM, the chaos agent intercepts the calling thread.
+ *   <li>The agent throws {@code java.io.IOException} immediately — no SYN packet is sent, no
+ *       file descriptor state is modified, and the channel remains in its pre-connect state.
+ *   <li>The exception propagates to the NIO framework's connect-completion handler; Netty's
+ *       {@code ChannelFuture} is completed exceptionally with this exception.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>Netty's {@code Bootstrap.connect()} future completes with {@code IOException}; assert
+ *       that the application's {@code ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE} path is
+ *       invoked and that the channel is closed cleanly.
+ *   <li>Connection pool warm-up in frameworks using Netty connection pools (Reactor Netty's
+ *       {@code ConnectionPool}, Vert.x connection pools) will fail entirely; assert that the
+ *       pool retries and eventually establishes a minimum-size pool after the fault window closes.
+ *   <li>Outbound HTTP clients built on Reactor Netty (Spring WebClient, R2DBC) will surface the
+ *       exception as a {@code WebClientRequestException}; assert this type propagates correctly.
+ *   <li><strong>Production failure mode:</strong> a firewall rule is mistakenly applied, blocking
+ *       outbound TCP from the service to its Redis cluster; every Netty channel connect throws
+ *       connection refused; the Lettuce driver's reconnect logic fires and fills the event loop
+ *       with reconnect attempts, blocking real I/O on existing connections.
  * </ul>
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The interception targets {@code sun.nio.ch.SocketChannelImpl#connect(SocketAddress)} via
+ * Byte Buddy. When operating in non-blocking mode, {@code connect()} normally puts the channel
+ * into {@code ConnectionPending} state and returns {@code false}; the application then registers
+ * {@code SelectionKey.OP_CONNECT} interest and waits for the selector to signal connection
+ * completion. The chaos reject fires before this state transition, so the channel never enters
+ * {@code ConnectionPending} — it remains in its initial unconnected state.
+ *
+ * <p>Netty's {@code NioSocketChannel.doConnect()} catches {@code Exception} from the underlying
+ * channel connect and propagates it to the pipeline as a {@code ConnectException}. The
+ * application's {@code ChannelHandler.exceptionCaught()} and any registered
+ * {@code ChannelFutureListener}s will receive this signal. A correct Netty application must
+ * close the channel in this handler; if it does not, the unclosed channel leaks a file descriptor.
+ *
+ * <p>Lettuce's Netty-based Redis driver uses exponential back-off reconnect logic; injecting this
+ * fault will trigger the reconnect timer. If the fault window is shorter than the back-off
+ * ceiling, the driver will successfully reconnect when the fault clears. If longer, the driver
+ * may stop retrying and require a manual reconnect trigger — test both scenarios.
+ *
+ * <p>The {@code SelectionKey} readiness bit {@code OP_CONNECT} is never set in the selector's
+ * ready set because the channel never reached {@code ConnectionPending}; {@code Selector.select()}
+ * will not return this channel as ready. This is the correct behaviour for a rejected connect:
+ * from the selector's perspective, the channel was never pending.
+ *
+ * <p>Unlike {@link ChaosNioChannelConnectDelay} which inflates latency before success, this
+ * annotation produces immediate hard failure, exercising the fast-fail code path in connection
+ * managers that distinguish between "slow connect" and "connect refused".
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosNioChannelConnectReject
- * class JvmChaosTest {
+ * @ChaosNioChannelConnectReject(message = "connection refused by chaos")
+ * class NettyConnectRejectedTest {
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void lettuceReconnectTimerFires(ConnectionInfo info) {
+ *     // assert Lettuce reconnects after fault clears and commands resume
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosNioChannelConnectRejects}) to apply different configurations to different
- * containers.
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation is required; omitting
+ *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
+ *       {@code @JvmAgentChaos}; it is attached before the container starts.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
+ *       translator class can be resolved.
+ *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
+ *       intercept native executables.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosNioChannelConnectDelay
+ * @see ChaosNioChannelReadInjectException
  */
 @Repeatable(ChaosNioChannelConnectReject.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

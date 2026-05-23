@@ -14,39 +14,75 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Injects {@code ENOMEM} on every libchaos-intercepted {@code fork} call inside the target
- * container, making the call fail as if the kernel returned {@code ENOMEM}.
+ * Injects {@code ENOMEM} into {@code fork} calls intercepted by libchaos-process, causing the
+ * calling code to observe an out-of-memory failure when attempting to create a child process.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ENOMEM}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code ENOMEM} is a valid POSIX result of {@code fork}.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code FORK}, errno = {@code ENOMEM}) tuple.
+ * The {@code FORK} selector intercepts {@code fork} calls only, leaving {@code execve},
+ * {@code pthread_create}, and all other process syscalls unaffected. Compile-time safety:
+ * invalid selector/errno combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code fork} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = ENOMEM} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: out of memory — kernel cannot allocate the requested structure or buffer.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code fork} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code fork} call the interposer runs a Bernoulli trial with probability
+ *       {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = ENOMEM} and returns {@code -1}
+ *       without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 12,
+ *       {@code strerror}: "Out of memory"; no child process is created and the calling process
+ *       continues in its current state — no cleanup of child resources is required since no child
+ *       was allocated.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family at the dynamic-linker
- * level. This annotation installs a rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code fork} returns {@code -1}; {@code errno = ENOMEM} (12); the kernel cannot allocate
+ *       the data structures for the child process ({@code task_struct}, {@code mm_struct}, kernel
+ *       stack) — assert that the application treats ENOMEM as a potentially persistent failure
+ *       that may require backoff longer than the transient EAGAIN case.</li>
+ *   <li>Applications using fork for process-isolation (credential isolation, sandboxing, CGI-style
+ *       request handling) must handle ENOMEM without losing the request or leaking state — assert
+ *       that the failure path returns a clean error to the caller and does not leave partially
+ *       initialised resources from the pre-fork phase.</li>
+ *   <li>Assert that the application distinguishes fork-ENOMEM from fork-EAGAIN: ENOMEM (12) means
+ *       the kernel cannot allocate memory structures for the child (may persist under node memory
+ *       pressure, alert the memory-management team); EAGAIN (11) means the pid table or
+ *       {@code RLIMIT_NPROC} is exhausted (self-healing when children exit).</li>
  * </ul>
+ * Production failure mode: a security-sensitive service forks a child process for each request to
+ * isolate credential access; the Kubernetes node is under memory pressure from OOM-protected pods;
+ * fork returns ENOMEM; the service's fork failure path does not return a proper error to the caller,
+ * leaving the request pending indefinitely — the service appears healthy to its health check but
+ * all requests silently queue without completion.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>{@code ENOMEM} from {@code fork} occurs when the kernel fails to allocate the internal data
+ * structures required to represent the child process. The primary structures are {@code task_struct}
+ * (the process descriptor, several kilobytes), the kernel stack (typically 16 KiB on 64-bit Linux),
+ * and {@code mm_struct} (the memory management descriptor). Copy-on-write page table entries are
+ * not duplicated immediately — the actual page table duplication is deferred — so ENOMEM from fork
+ * is not directly related to the size of the parent's virtual address space.
+ *
+ * <p>The distinction from EAGAIN is important for retry strategy: ENOMEM indicates that the node's
+ * kernel memory (slab allocator, kmalloc pools) cannot satisfy the allocation, which may persist
+ * for the duration of a memory pressure event. EAGAIN indicates that the uid's process quota is
+ * full, which self-heals when children are reaped. Applications should implement exponential backoff
+ * with a limit for ENOMEM and a shorter-timeout retry for EAGAIN.
+ *
+ * <p>Fork-ENOMEM is more common in container environments than on bare metal because containers
+ * share the kernel's slab memory with the host and other containers. A memory-intensive pod on the
+ * same node can fragment the slab allocator's free lists, causing ENOMEM for fork even when the
+ * container's cgroup memory limit has not been reached. Applications that observe ENOMEM from fork
+ * in production must check node-level kernel memory metrics, not just container-level RSS.
+ *
+ * <p>Unlike exec-ENOMEM (where the failing process remains alive in its current image), fork-ENOMEM
+ * means no child was created — the parent is in a clean state with no child resources to clean up.
+ * This makes the error-handling code simpler: there is no dirfd to close, no zombie to reap, and
+ * no partial child state. The only requirement is that the parent surfaces the error correctly and
+ * does not treat the failure as a success.
  *
  * <h2>Example</h2>
  *
@@ -54,21 +90,23 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
  * @ChaosForkEnomem(probability = 0.001)
- * class FaultTest {
+ * class ForkMemoryPressureTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void serviceReturnsCleanErrorOnForkEnomemAndDoesNotLeakResources(ConnectionInfo info) {
+ *     // verify fork failure handled; caller receives error; no pending requests; no leaked state
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3 mirrors realistic OOM rates; 1.0 prevents
- * the container from starting.
- *
+ * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; fork-ENOMEM is rare in well-provisioned
+ * environments but the silent-failure risk for request-isolation services makes coverage valuable.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosForkEnomems}) to bind different probabilities to
- * different containers simultaneously.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessErrnoBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#errno(ProcessSelector, ProcessErrno, double)
  */
 @Repeatable(ChaosForkEnomem.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

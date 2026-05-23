@@ -13,59 +13,86 @@ import com.macstab.chaos.time.annotation.l1.TimeLatencyBinding;
 import com.macstab.chaos.time.model.TimeSelector;
 
 /**
- * Delays every libchaos-intercepted {@code clock gettime} call by {@link #delayMs} milliseconds
- * before delegating to the real kernel call, making the operation succeed but take longer than
- * expected.
+ * Delays every {@code clock_gettime(2)} call by {@link #delayMs} milliseconds before delegating to
+ * the real kernel call, making the call succeed but consume measurably more wall-clock time.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one
- * (selector, effect = LATENCY) pair. Unlike errno variants, the latency primitive always delegates
- * to the kernel — it only adds wall-clock cost before doing so.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> every {@code clock gettime} call intercepted by
- * libchaos blocks for {@link #delayMs} ms before the kernel call is issued. This simulates the
- * wall-clock cost increase from resource pressure, kernel scheduling stalls, or slow hardware —
- * none of which return an errno but all of which can exhaust application-level timeouts, saturate
- * connection-pool wait budgets, and surface hidden latency assumptions.
+ * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code CLOCK_GETTIME}, effect =
+ * LATENCY) tuple. Unlike errno variants, the latency primitive always invokes the real kernel call
+ * after the configured delay — the timespec is correctly populated and the return value is 0.
+ * No runtime selector-effect validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.TIME)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-time.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the libc wrappers for {@code clock_gettime},
- * {@code nanosleep}, and {@code usleep}. This annotation installs a rule via {@code
- * AdvancedTimeChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
+ *       at the dynamic-linker level.
+ *   <li>On every intercepted {@code clock_gettime} call the interposer sleeps for {@link #delayMs}
+ *       milliseconds.
+ *   <li>After the delay, the real kernel call is issued; the result is returned to the application
+ *       unchanged — no error is injected.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.TIME)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-time} on the test classpath.</strong>
+ *   <li>Every call to {@code System.currentTimeMillis()}, {@code System.nanoTime()}, and any JNI
+ *       bridge that reads the monotonic or wall clock will block for the configured delay.
+ *   <li>Application-level timeouts computed from consecutive clock readings will appear larger than
+ *       they truly are; lease durations and heartbeat intervals may expire prematurely.
+ *   <li>Distributed locking libraries (Redisson, Jedis) and Raft leaders that use monotonic time
+ *       for lease expiry may abdicate leadership when the delay exceeds the heartbeat interval.
+ *   <li>Assert that the application's timeout handling is correctly bounded and does not cascade
+ *       into a thundering-herd reconnect storm.
  * </ul>
+ *
+ * <p>In production, elevated latency in {@code clock_gettime} is caused by vDSO unavailability
+ * (e.g. inside a VM with broken TSC calibration, forcing a real syscall), kernel scheduling
+ * jitter under memory pressure, or CPU frequency scaling that slows the TSC counter.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>Under normal conditions {@code clock_gettime(CLOCK_MONOTONIC)} is served by the vDSO in
+ * sub-microsecond time; no kernel boundary is crossed. When the vDSO is disabled or miscalibrated
+ * the kernel boundary must be crossed and the typical latency rises to 1–5 µs. Under extreme
+ * scheduler contention (a fully saturated CFS runqueue) the latency can reach hundreds of
+ * microseconds.
+ *
+ * <p>{@code libchaos-time.so} injects the delay at the C library wrapper level, uniformly
+ * affecting both the vDSO fast path and the real-syscall fallback. Values of 10–200 ms correspond
+ * to the wall-clock cost of a context switch storm or a page fault cascade; values above 1 s
+ * simulate a frozen clock (e.g. a VM pause or a live-migration hiccup).
+ *
+ * <p>Frameworks most sensitive to {@code clock_gettime} latency: Caffeine's window-TinyLFU
+ * expiry (samples the clock on every cache access), Micrometer's {@code Timer} (records wall-clock
+ * on every observation), Netty's {@code HashedWheelTimer} (advances the wheel on every tick),
+ * Redis client socket timeout computation, and JVM GC safepoint bias calculations.
+ *
+ * <p>Sibling annotation: {@link ChaosClockGettimeOffset} skews the returned timestamp by a fixed
+ * delta instead of slowing the call; useful for simulating clock drift between cluster nodes.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.TIME)
- * @ChaosClockGettimeLatency(delayMs = 200)
- * class LatencyTest {
+ * @ChaosClockGettimeLatency(delayMs = 150)
+ * class ClockGettimeLatencyTest {
  *   @Test
- *   void appHandlesSlowOperation(ConnectionInfo info) { ... }
+ *   void distributedLockDoesNotExpireOnClockJitter(ConnectionInfo info) {
+ *     // assert that the lock is not prematurely released when clock reads are slow
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Delay guidance:</strong> {@code 10}–{@code 200} ms simulates realistic stall events;
- * values above application-level timeouts produce cascading failures rather than isolated latency
- * observations — intentional in some scenarios, noisy in others.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form ({@code @ChaosClockGettimeLatencys})
- * to set different delays on different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosClockGettimeOffset
+ * @see ChaosNanosleepLatency
+ * @see com.macstab.chaos.time.annotation.l1.TimeLatencyBinding
  */
 @Repeatable(ChaosClockGettimeLatency.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

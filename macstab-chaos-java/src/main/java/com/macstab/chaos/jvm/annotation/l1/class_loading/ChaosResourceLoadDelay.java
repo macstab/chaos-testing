@@ -14,58 +14,105 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Delay the resource_load operation by the configured number of milliseconds.
+ * Intercepts {@code ClassLoader.getResource()} and {@code ClassLoader.getResourceAsStream()} and
+ * holds the calling thread for {@link #delayMs()} milliseconds before the resource URL is
+ * resolved, simulating slow classpath scanning or a high-latency JAR file system when Spring,
+ * Hibernate, or any framework resolves configuration resources from the classpath.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> delay the RESOURCE_LOAD operation by the configured
- * number of milliseconds inside the JVM of the target container. The effect fires on every matching
- * call, subject to the probability configured via {@link #probability()} if applicable. The rule is
- * active from {@code beforeAll} until {@code afterAll} (class-scope) or from {@code beforeEach}
- * until {@code afterEach} (method-scope).
+ * A JVM agent L1 chaos primitive — one typed annotation per (selector family, operation type,
+ * effect) tuple. It is declared on a test class or method alongside a container annotation and
+ * activates for the lifetime of the test class ({@code beforeAll} / {@code afterAll}) or a single
+ * test method ({@code beforeEach} / {@code afterEach}).
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>Before every call to {@code java.lang.ClassLoader#getResource(String)} and
+ *       {@code ClassLoader#getResourceAsStream(String)} inside the target container's JVM, the
+ *       chaos agent intercepts the calling thread.
+ *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()},
+ *       {@link #maxDelayMs()}]; equal values produce a deterministic delay.
+ *   <li>Control returns and the underlying {@code getResource()} executes normally, scanning the
+ *       classpath entries (JAR files, directories) to locate the resource and return its URL.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>Spring Boot's auto-configuration loading calls {@code getResource()} to locate
+ *       {@code META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports}
+ *       files in each JAR on the classpath; the delay fires for each JAR lookup; on a classpath
+ *       with 200 JARs the total delay inflates startup time by {@code 200 × delayMs}; assert
+ *       that the readiness probe timeout accounts for this.
+ *   <li>Hibernate's {@code MetadataSources} scans for {@code hbm.xml} mapping files and JPA
+ *       XML configuration via {@code getResourceAsStream()}; the delay inflates the EntityManagerFactory
+ *       initialisation time; assert that the JPA timeout is configured appropriately.
+ *   <li>Log4j's configuration loading uses {@code ClassLoader.getResource("log4j2.xml")} to
+ *       locate the configuration file; a delay here extends the time between JVM startup and
+ *       the first log statement being processed; assert that the application does not lose log
+ *       events emitted before the configuration is loaded.
+ *   <li><strong>Production failure mode:</strong> an application built with a large number of
+ *       nested fat-JAR files (Spring Boot's nested JAR layout) uses a custom
+ *       {@code LaunchedURLClassLoader} that scans through nested JAR entries on each resource
+ *       lookup; under memory pressure, the JVM evicts the JAR index from the page cache; each
+ *       resource lookup requires re-reading and re-parsing JAR central directory entries, making
+ *       {@code getResource()} noticeably slow; the application's startup time increases in
+ *       proportion to heap pressure.
  * </ul>
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The interception targets {@code java.lang.ClassLoader#getResource(String)} and
+ * {@code ClassLoader#getResourceAsStream(String)}. Both follow the same delegation model as
+ * {@code loadClass()}: the parent class loader is consulted first. The chaos delay fires before
+ * the parent delegation, adding to the time for each step of the hierarchy traversal.
+ *
+ * <p>Spring's {@code PathMatchingResourcePatternResolver} uses {@code getResources()} (plural)
+ * which calls {@code getResource()} for each candidate path. Classpath scanning with a wildcard
+ * pattern ({@code classpath*:META-INF/**}) calls {@code getResources()} once per JAR or directory
+ * on the classpath; each call incurs the delay. A fat JAR with 200 classpath entries generates
+ * 200 delay invocations for a single classpath scan.
+ *
+ * <p>JAXB's {@code JAXBContext.newInstance()} calls {@code ClassLoader.getResource("jaxb.index")}
+ * and {@code getResourceAsStream("javax/xml/bind/...")}) to locate implementation classes; the
+ * delay fires here during JAXB context initialisation. Spring's XML-based configuration loading
+ * uses {@code getResourceAsStream()} to read XML files; the delay fires once per XML file.
+ *
+ * <p>The delay models realistic classpath resource lookup latency that occurs when the JVM's
+ * file metadata cache is cold (e.g. after a cold deployment on a new node) versus warm (after
+ * the OS has cached the JAR directory entries). This is particularly relevant for applications
+ * that deploy frequently and whose startup time SLO must account for cold-cache scenarios.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosResourceLoadDelay
- * class JvmChaosTest {
+ * @ChaosResourceLoadDelay(delayMs = 10)
+ * class ClasspathScanningDelayTest {
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void startupToleratesColdClasspathResourceLookup(ConnectionInfo info) {
+ *     // assert application becomes ready within the configured readiness probe timeout
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosResourceLoadDelays}) to apply different configurations to different containers.
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation is required; omitting
+ *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
+ *       {@code @JvmAgentChaos}; it is attached before the container starts.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
+ *       translator class can be resolved.
+ *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
+ *       intercept native executables.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosResourceLoadSuppress
+ * @see ChaosClassLoadDelay
  */
 @Repeatable(ChaosResourceLoadDelay.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

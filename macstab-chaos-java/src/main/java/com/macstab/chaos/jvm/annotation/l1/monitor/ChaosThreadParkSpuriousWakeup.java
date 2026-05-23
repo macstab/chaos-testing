@@ -14,40 +14,88 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Return zero ready keys from thread_park with no actual selector readiness.
+ * Causes {@link java.util.concurrent.locks.LockSupport#park(Object)} to return immediately without
+ * being unparked — every call site that parks to wait for a condition sees a spurious wakeup, as
+ * if the OS had prematurely woken the thread with no signal.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> return zero ready keys from THREAD_PARK with no
- * actual selector readiness inside the JVM of the target container. The effect fires on every
- * matching call, subject to the probability configured via {@link #probability()} if applicable.
- * The rule is active from {@code beforeAll} until {@code afterAll} (class-scope) or from {@code
- * beforeEach} until {@code afterEach} (method-scope).
+ * <p>An L1 JVM chaos primitive targeting the {@code MONITOR} selector family with the {@code
+ * spuriousWakeup} effect applied to the {@code THREAD_PARK} operation. It intercepts
+ * {@code LockSupport.park(Object)} and skips the actual park, causing the method to return
+ * immediately with no blocker signal having been received. This exercises the re-check loop that
+ * all correct {@code park}-based synchronisers must implement to guard against spurious OS wakeups.
+ * The annotation is declared on the test class or method alongside a container annotation and is
+ * active for the lifetime of the annotated scope.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <p>The JVM agent installs a Byte Buddy interceptor on {@code LockSupport.park(Object)}. When
+ * the interceptor fires:
+ *
+ * <ol>
+ *   <li>Execution is captured before the native park stub executes.
+ *   <li>The spurious-wakeup effect skips the park entirely — the native stub is not called.
+ *   <li>{@code LockSupport.park} returns {@code void} to the caller immediately, as if the OS had
+ *       delivered a spurious POSIX signal that unblocked the thread with no actual wakeup reason.
+ *   <li>The caller's thread state was never WAITING; the blocker object is never set and cleared
+ *       in the JVM's thread structure.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>AQS-based operations that require the predecessor to release the lock loop back to their
+ *       condition check and re-park; assert that the operation still completes correctly (proving
+ *       the re-check loop is implemented).
+ *   <li>Incorrectly written code that does not wrap {@code park} in a condition loop busy-waits
+ *       at CPU speed; assert that CPU consumption of the container spikes when this annotation is
+ *       active.
+ *   <li>{@code CompletableFuture.get()} re-enters its internal spin-then-park loop on each
+ *       spurious wakeup; the future eventually completes normally once the real completion arrives
+ *       — assert that the future completes correctly even under spurious wakeup injection.
+ *   <li>Timed waits ({@code parkNanos}) return early without consuming the full timeout; assert
+ *       that timed operations do not treat spurious early return as a timeout.
  * </ul>
+ *
+ * <p><strong>Production failure mode this simulates:</strong> a Linux kernel delivering spurious
+ * futex wakeups under high memory pressure — a {@code ReentrantLock} node is woken before its
+ * predecessor releases the lock; if the AQS re-check loop is missing or broken (e.g. due to an
+ * incorrect double-checked locking pattern), the thread acquires the lock prematurely and
+ * corrupts shared state, producing a race condition that is otherwise extremely rare.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p><strong>Interception point.</strong> {@code LockSupport.park(Object)} is instrumented via the
+ * bootstrap class loader channel. The spurious-wakeup effect is identical in observable behaviour
+ * to calling {@code LockSupport.unpark(Thread.currentThread())} just before the park — the permit
+ * is consumed and the park returns immediately. However, the implementation skips the park
+ * entirely rather than issuing an unpark, so the thread's park-permit counter is not touched and
+ * subsequent parks are not pre-consumed.
+ *
+ * <p><strong>AQS and the re-check loop.</strong> All correct AQS-based synchronisers call
+ * {@code park} inside a {@code while (!condition)} loop. A spurious wakeup causes the loop to
+ * evaluate the condition and re-park if the condition is still false. This annotation therefore
+ * exercises the correctness of that loop without requiring a real concurrent unpark. Code that
+ * uses {@code if} instead of {@code while} around {@code park} will misbehave and pass through
+ * the critical section prematurely.
+ *
+ * <p><strong>{@code parkNanos} and {@code parkUntil}.</strong> These timed variants are also
+ * intercepted. A spurious wakeup from a timed park cannot be distinguished from a normal timeout
+ * by the caller (both return void). Callers must check the condition or the remaining time to
+ * determine which occurred. Buggy code that assumes a timed-park return implies timeout will
+ * misidentify spurious wakeups as timeouts, silently abandoning waits prematurely.
+ *
+ * <p><strong>Distinction from {@code ChaosThreadParkDelay} and {@code ChaosThreadParkGate}.</strong>
+ * The delay effect adds time before the real park. The gate effect holds the thread indefinitely.
+ * The spurious-wakeup effect skips the park entirely, causing the caller to receive an immediate
+ * return indistinguishable from a real wakeup — it tests whether the caller re-checks its
+ * condition rather than proceeding blindly.
+ *
+ * <p><strong>Virtual-thread interaction.</strong> Virtual threads park via the same
+ * {@code LockSupport.park} path. A spurious wakeup on a virtual thread causes the virtual thread
+ * to continue executing on the carrier without yielding. Under heavy virtual-thread concurrency,
+ * many threads spinning through spurious-wakeup loops can saturate the carrier pool.
  *
  * <h2>Example</h2>
  *
@@ -55,18 +103,31 @@ import com.macstab.chaos.jvm.api.OperationType;
  * @AppContainer
  * @JvmAgentChaos
  * @ChaosThreadParkSpuriousWakeup
- * class JvmChaosTest {
+ * class SpuriousWakeupTest {
+ *
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void futureCompletesCorrectlyUnderSpuriousWakeups(AppConnectionInfo info) throws Exception {
+ *     CompletableFuture<String> result = client.fetchAsync(info);
+ *     // spurious wakeups on get()'s internal park must not corrupt the result
+ *     assertThat(result.get(5, TimeUnit.SECONDS)).isEqualTo("expected-value");
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosThreadParkSpuriousWakeups}) to apply different configurations to different
- * containers.
+ * <p><strong>Required:</strong>
+ *
+ * <ul>
+ *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
+ *   <li>A Java container image — the container must run a JVM process.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see com.macstab.chaos.jvm.api.OperationType#THREAD_PARK
+ * @see com.macstab.chaos.jvm.api.ChaosSelector#monitor(java.util.Set)
+ * @see ChaosThreadParkDelay
+ * @see ChaosThreadParkGate
  */
 @Repeatable(ChaosThreadParkSpuriousWakeup.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

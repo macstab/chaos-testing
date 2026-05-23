@@ -14,47 +14,83 @@ import com.macstab.chaos.memory.model.MemorySelector;
 import com.macstab.chaos.memory.model.MmapErrno;
 
 /**
- * Injects {@code ENODEV} on every libchaos-memory-intercepted {@code mmap (file-backed)} call
- * inside the target container, making the call fail as if the kernel returned {@code ENODEV}.
+ * Injects {@code ENODEV} into file-backed {@code mmap} calls intercepted by libchaos-memory,
+ * causing the calling code to observe a no-such-device failure when mapping a file into memory.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector = {@code MMAP_FILE}, errno = {@code ENODEV}) pair.
- * The combination is safe by construction: this annotation class exists only because {@code ENODEV}
- * is a valid POSIX result of {@code mmap (file-backed)}; the invalid combinations simply have no
- * annotation class, so the selector × errno matrix cannot be violated at compile time.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-memory primitive — one (selector = {@code MMAP_FILE}, errno = {@code ENODEV})
+ * tuple. The {@code MMAP_FILE} selector intercepts file-backed {@code mmap} calls only (those
+ * where {@code MAP_ANONYMOUS} is absent and a valid file descriptor is passed), leaving anonymous
+ * allocations, {@code munmap}, {@code mprotect}, and {@code madvise} unaffected. Compile-time
+ * safety: invalid selector/errno combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code mmap (file-backed)} call that the
- * libchaos-memory interceptor sees, a Bernoulli trial with probability {@link #probability} is run.
- * When it fires the interceptor returns {@code -1} and sets {@code errno = ENODEV} before the
- * kernel call completes — from the application perspective this is indistinguishable from a real
- * kernel-level failure. Specifically this simulates: no such device — typical of memory-backed
- * device removal or hot-unplug.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
+ *   <li>On each file-backed {@code mmap} call the interposer runs a Bernoulli trial with
+ *       probability {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = ENODEV} and returns
+ *       {@code MAP_FAILED} without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 19,
+ *       {@code strerror}: "No such device"; the file is not mapped into the address space.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.MEMORY)} annotation on the container declaration causes
- * {@code ChaosTestingExtension} to upload {@code libchaos-memory.so} into the container and prepend
- * it to {@code LD_PRELOAD} before the container process starts. The shared library interposes the
- * libc wrappers for {@code mmap}, {@code munmap}, {@code mprotect}, and {@code madvise} at the
- * dynamic-linker level. This annotation then installs a rule via {@code
- * AdvancedMemoryChaos.apply(container, rule)} that configures the interposer with the selector and
- * probability you specify.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD} which does not apply on
- *       macOS or Windows containers; annotate the test class with {@code @DisabledOnOs(OS.WINDOWS)}
- *       and be aware of macOS Docker limitations.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.MEMORY)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — this installs the shared library before container start;
- *       omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) do not
- *       honour {@code LD_PRELOAD} for statically-linked binaries; use a glibc variant or the
- *       Debian-slim image instead.
- *   <li><strong>{@code macstab-chaos-memory} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and {@code ChaosTestingExtension} throws {@code
- *       ClassNotFoundException} wrapped in {@code ExtensionConfigurationException}.
+ *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = ENODEV} (19); the filesystem
+ *       backing the file does not support memory mapping — the application must fall back to
+ *       {@code pread}/{@code pwrite} I/O or report the file as inaccessible for mmap.</li>
+ *   <li>Storage engines (RocksDB, LMDB, LevelDB) that use file-backed {@code mmap} as their
+ *       primary I/O path must handle {@code ENODEV} on SST file or data file mapping attempts
+ *       gracefully — assert that the engine falls back to {@code pread}-based I/O rather than
+ *       crashing or returning a corrupted view of the data.</li>
+ *   <li>Assert that the application does not silently use a partially-mapped view — if the
+ *       application maps multiple files and only one returns {@code ENODEV}, it must detect the
+ *       failure before accessing the region; accessing an unmapped region causes {@code SIGSEGV},
+ *       not a graceful error.</li>
  * </ul>
+ * Production failure mode: a network-attached filesystem (NFS, CIFS, GlusterFS) serving database
+ * files enters a degraded mode during a network partition — some operations succeed while
+ * {@code mmap} operations return {@code ENODEV} because the filesystem driver's {@code f_op->mmap}
+ * pointer is cleared when the transport drops; the database's mmap-based read path silently returns
+ * {@code MAP_FAILED} and the engine crashes at the first access to the presumed-mapped region.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>The kernel returns {@code ENODEV} from {@code mmap} when the filesystem backing the file
+ * does not implement the {@code mmap} operation — specifically, when the file's
+ * {@code file_operations.mmap} function pointer is {@code NULL}. This is the correct return value
+ * for filesystems that are architecturally incapable of supporting memory-mapped I/O: FUSE
+ * filesystems that do not set the {@code FUSE_CAP_MMAP_READ} capability, certain pseudo-filesystems
+ * ({@code proc}, {@code sysfs} entries that are not specially implemented), and network filesystems
+ * in degraded states where the transport layer cannot provide the page-cache coherency guarantees
+ * that memory mapping requires.
+ *
+ * <p>The most operationally significant source of {@code ENODEV} from {@code mmap} on Linux is
+ * network filesystem degradation: NFS and CIFS implementations set their {@code mmap} function
+ * pointer conditionally based on mount options and connection state. When the filesystem driver
+ * detects a transport failure and clears its operational state, subsequent {@code mmap} calls
+ * against the mounted filesystem return {@code ENODEV} rather than the more commonly expected
+ * {@code EIO}. This distinction is operationally significant: {@code EIO} indicates an I/O error
+ * on a present device; {@code ENODEV} indicates the device or driver is absent entirely. Recovery
+ * from {@code EIO} may involve retry; recovery from {@code ENODEV} requires the filesystem to be
+ * remounted or a different I/O path (such as {@code pread}) to be used.
+ *
+ * <p>FUSE-based filesystems are a second important source: user-space FUSE drivers that do not
+ * implement the {@code mmap} callback will have their kernel-side {@code f_op->mmap} set to
+ * {@code NULL}. This is common for FUSE drivers that provide a read-write interface but not a
+ * page-cache-coherent view — for example, encryption FUSE drivers (gocryptfs, EncFS) that must
+ * decrypt data at access time cannot provide the zero-copy page-cache access that {@code mmap}
+ * requires, and therefore legitimately return {@code ENODEV}. Applications that deploy on systems
+ * using FUSE encryption layers must handle {@code ENODEV} from {@code mmap} gracefully.
+ *
+ * <p>Compared with {@code EACCES}: {@code ENODEV} indicates the filesystem or driver does not
+ * support memory mapping at all (structural absence of the operation); {@code EACCES} indicates the
+ * filesystem supports mapping but the file's permissions or protection flags do not permit the
+ * requested access (credentials issue, fixable without changing filesystem). Compared with
+ * {@code ENOMEM}: {@code ENODEV} indicates the device/filesystem cannot serve the request;
+ * {@code ENOMEM} indicates the kernel cannot allocate the page-table resources to represent the
+ * mapping. Both are mapping failures, but only {@code ENOMEM} is potentially transient.
  *
  * <h2>Example</h2>
  *
@@ -62,19 +98,20 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.MEMORY)
  * @ChaosMmapFileEnodev(probability = 0.001)
- * class MemoryFaultTest {
+ * class MmapFilesystemCapabilityTest {
  *   @Test
- *   void appHandlesEnodevOnAlloc(RedisConnectionInfo info) { ... }
+ *   void engineFallsBackToPreadWhenMmapReturnsEnodev(RedisConnectionInfo info) {
+ *     // verify storage engine uses pread fallback; assert no SIGSEGV on mmap failure
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; device-removal faults are rare but
- * catastrophic when unhandled.
- *
+ * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; mmap failures at file-open time are
+ * infrequent in production but the fallback path is rarely exercised in development — any
+ * non-zero probability usefully exercises the pread fallback path.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
- * the test class. Use the repeatable form ({@code @ChaosMmapFileEnodevs}) to bind different
- * probabilities to different containers simultaneously.
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see MemoryErrnoBinding

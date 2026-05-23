@@ -14,58 +14,113 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Delay the fork_join_task_run operation by the configured number of milliseconds.
+ * Parks every {@link java.util.concurrent.ForkJoinPool} worker thread for {@link #delayMs} to
+ * {@link #maxDelayMs} milliseconds before executing a {@link java.util.concurrent.ForkJoinTask},
+ * slowing down all parallel computations that use the common pool or any custom
+ * {@code ForkJoinPool} without affecting task submission.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> delay the FORK_JOIN_TASK_RUN operation by the
- * configured number of milliseconds inside the JVM of the target container. The effect fires on
- * every matching call, subject to the probability configured via {@link #probability()} if
- * applicable. The rule is active from {@code beforeAll} until {@code afterAll} (class-scope) or
- * from {@code beforeEach} until {@code afterEach} (method-scope).
+ * <p>An L1 JVM chaos primitive in the {@code EXECUTOR} selector family targeting the {@code
+ * FORK_JOIN_TASK_RUN} operation with the {@code delay} effect. It intercepts the moment a
+ * {@code ForkJoinPool} worker picks up a {@code ForkJoinTask} and calls its {@code doExec()} or
+ * {@code exec()} entry point. The worker thread is parked for the configured duration before the
+ * task's compute method runs.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <p>This annotation targets the {@code ForkJoinPool} execution path specifically. For
+ * {@code ThreadPoolExecutor}-based pools, use {@link ChaosExecutorWorkerRunDelay} instead.
+ * Applications that use {@code CompletableFuture} with the common pool, {@code Stream.parallel()},
+ * or explicit {@code ForkJoinPool} invocation are all covered by this annotation.
  *
- * <p><strong>What is required:</strong>
+ * <h2>What chaos this applies</h2>
+ *
+ * <p>The JVM agent installs a Byte Buddy interceptor on {@code ForkJoinTask.doExec()}
+ * (or the equivalent internal execution entry point). When the interceptor fires:
+ *
+ * <ol>
+ *   <li>The interceptor fires on the {@code ForkJoinWorkerThread} that has stolen or dequeued the
+ *       task from its work-stealing deque.
+ *   <li>The delay effect calls {@code Thread.sleep(delayMs)} (or a random value in {@code
+ *       [delayMs, maxDelayMs]}), parking the worker thread.
+ *   <li>After the sleep, the task's compute method executes normally, and the task's result is
+ *       stored for any joiner waiting on {@code ForkJoinTask.join()} or {@code get()}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>{@code forkJoinPool.invoke(task)} eventually returns the correct result — the task runs
+ *       correctly, just delayed.
+ *   <li>The wall-clock time of any parallel computation (parallel streams, recursive fork/join
+ *       problems) increases by at least {@link #delayMs} ms per task stolen.
+ *   <li>{@code CompletableFuture} chains backed by the common pool complete later, causing
+ *       downstream {@code get(timeout)} calls to time out if the delay exceeds their budget.
+ *   <li>Work-stealing patterns are disrupted: workers that would normally steal tasks from each
+ *       other are all sleeping simultaneously, eliminating the throughput benefit of work stealing.
  * </ul>
+ *
+ * <p><strong>Production failure mode:</strong> a parallel stream processing pipeline runs on the
+ * JVM common pool; a GC pause or CPU throttle causes all {@code ForkJoinWorkerThread}s to stall
+ * simultaneously — the throughput of the parallel computation collapses to sequential speed or
+ * worse, causing downstream systems to observe unexpected latency.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p><strong>Interception point.</strong> The agent targets {@code ForkJoinTask.doExec()} — the
+ * internal method that dispatches to {@code exec()} (for {@code RecursiveAction}/{@code
+ * RecursiveTask}) or to {@code Callable.call()} (for {@code AdaptedCallable}). This is a package-
+ * private method in {@code java.util.concurrent.ForkJoinTask}, so the agent must use retrans-
+ * formation with bootstrap class loader access.
+ *
+ * <p><strong>Work-stealing queue interaction.</strong> {@code ForkJoinPool} uses a work-stealing
+ * deque per worker: tasks are pushed to the worker's own deque (LIFO) and stolen from other
+ * workers' deques (FIFO). When a worker sleeps inside the delay interceptor, it is not available
+ * to steal from other workers. This reduces the effective parallelism: if all workers sleep
+ * simultaneously, the pool temporarily behaves as a serial executor until the first worker wakes.
+ *
+ * <p><strong>Common pool scope.</strong> The common pool is shared across all code in the JVM that
+ * uses {@code ForkJoinPool.commonPool()}, including parallel streams, default
+ * {@code CompletableFuture} execution, and some reactive libraries. This annotation affects all of
+ * them simultaneously; there is no per-pool filter at the L1 primitive level.
+ *
+ * <p><strong>Interaction with ManagedBlocker.</strong> If a task uses {@code ForkJoinPool.managedBlock}
+ * to signal that it is about to block, the pool may spawn a spare worker to compensate. The
+ * compensation mechanism does not fire for the chaos sleep (it is invisible to the pool's blocking
+ * detection), so the pool does not add spare workers during the injected delay.
+ *
+ * <p><strong>Distinguishing from siblings.</strong> {@link ChaosExecutorWorkerRunDelay} targets
+ * {@code ThreadPoolExecutor} workers. {@link ChaosForkJoinTaskRunReject} throws an exception from
+ * the ForkJoin worker instead of delaying. Use this annotation when the target uses
+ * {@code ForkJoinPool} specifically.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosForkJoinTaskRunDelay
- * class JvmChaosTest {
+ * @ChaosForkJoinTaskRunDelay(delayMs = 200)
+ * class ParallelStreamSlowTest {
+ *
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void parallelStreamSlowerThanTimeoutWhenTasksAreDelayed(AppConnectionInfo info) {
+ *     assertThatThrownBy(() -> client.fetchParallel(info, 1, TimeUnit.SECONDS))
+ *         .isInstanceOf(TimeoutException.class);
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosForkJoinTaskRunDelays}) to apply different configurations to different containers.
+ * <ul>
+ *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
+ *   <li>A Java container image — the container must run a JVM process.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see com.macstab.chaos.jvm.api.OperationType#FORK_JOIN_TASK_RUN
+ * @see com.macstab.chaos.jvm.api.ChaosSelector#executor(java.util.Set)
+ * @see ChaosForkJoinTaskRunReject
+ * @see ChaosExecutorWorkerRunDelay
  */
 @Repeatable(ChaosForkJoinTaskRunDelay.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

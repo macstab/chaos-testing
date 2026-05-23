@@ -14,61 +14,92 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code waitpid} calls
- * succeed, then injects {@code EINVAL} on every subsequent call until the rule is removed.
+ * After {@link #successesBeforeFailure} successful {@code waitpid} calls, injects {@code EINVAL}
+ * on every subsequent call, modelling a waitpid options regression where a configuration change
+ * introduces an invalid flag after N successful waits.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code WAITPID}, errno = {@code EINVAL}, effect = FAIL_AFTER) tuple. FAIL_AFTER is the process
- * module's counter-gated effect — distinct from ERRNO (probabilistic) and LATENCY (unconditional).
- * It models resource-exhaustion scenarios where the first N operations succeed and then the system
- * runs out of capacity.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code WAITPID}, errno = {@code EINVAL},
+ * effect = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N calls succeed,
+ * then the counter trips permanently and every subsequent call returns the error code until the
+ * rule is removed. Compile-time safety: invalid selector/errno/effect combinations have no
+ * annotation class.
  *
- * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
- * {@code waitpid} calls. After {@link #successesBeforeFailure} successes the counter trips and
- * every subsequent call returns {@code -1} with {@code errno = EINVAL}, regardless of real kernel
- * capacity. The counter resets every time the rule is re-applied (e.g. across test methods if the
- * annotation is at class scope).
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code waitpid} wrapper at the dynamic-linker level.</li>
+ *   <li>The interposer maintains a per-rule success counter; the counter does not reset
+ *       automatically between test methods when the annotation is at class scope.</li>
+ *   <li>Once the counter reaches zero it trips permanently: every subsequent {@code waitpid}
+ *       call returns {@code -1} with {@code errno = EINVAL}.</li>
+ *   <li>The calling code receives: return value {@code -1}, {@code errno = EINVAL} (22); the
+ *       options bitmask contains an invalid flag combination.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family. This annotation installs
- * a FAIL_AFTER rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at {@code
- *       beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>The first {@link #successesBeforeFailure} calls proceed normally; all subsequent calls
+ *       return EINVAL; assert that the application treats EINVAL as a non-retryable programming
+ *       error and logs the options bitmask value for diagnostic purposes — EINVAL from waitpid
+ *       never resolves by retrying with the same options value.</li>
+ *   <li>FAIL_AFTER models an options regression: N waits succeed with a valid options value;
+ *       a hot-reload changes the options mask to include an invalid flag; all subsequent waits
+ *       return EINVAL — assert that the application detects this regression and alerts with the
+ *       invalid options value.</li>
+ *   <li>Assert that children spawned during the EINVAL phase become permanent zombies (unreaped);
+ *       the application must detect this zombie accumulation and alert before the process table
+ *       fills.</li>
  * </ul>
+ * Production failure mode: a process manager constructs the waitpid options mask from a
+ * configuration file to support optional job-control semantics; a configuration push changes
+ * the WUNTRACED flag encoding, producing a bitmask with invalid bits; after N successful waits
+ * all subsequent waits return EINVAL; children accumulate as zombies; the manager does not log
+ * the options value or detect zombie accumulation.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>FAIL_AFTER models the options regression: N waits succeed; a configuration change corrupts
+ * the options mask; all subsequent waits fail with EINVAL. Real EINVAL from waitpid fires
+ * deterministically whenever the invalid options are used and persists until the options are
+ * corrected. waitpid returns -1 and sets errno; checking {@code if (ret == -1 && errno == EINVAL)}
+ * is correct.
+ *
+ * <p>The counter does not reset between test methods when the annotation is at class scope. This
+ * enables sequential testing: the first test method exercises N successful waits (pre-regression);
+ * subsequent test methods exercise the EINVAL phase. Set {@link #successesBeforeFailure} to the
+ * number of waits expected before the configuration change takes effect.
+ *
+ * <p>A critical consequence of sustained EINVAL from waitpid: children that exit after the EINVAL
+ * phase begins accumulate as zombies because no successful waitpid will reap them. The zombie
+ * accumulation rate equals the child spawn rate during the EINVAL phase. Applications must detect
+ * EINVAL from waitpid and stop spawning new children until the options are corrected, to prevent
+ * zombie accumulation from exhausting the process table.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosWaitpidEinvalFailAfter(successesBeforeFailure = 128)
- * class ProcessExhaustionTest {
+ * @ChaosWaitpidEinvalFailAfter(successesBeforeFailure = 20)
+ * class WaitpidOptionsRegressionTest {
  *   @Test
- *   void handlesExhaustion(ConnectionInfo info) { ... }
+ *   void processManagerAlertsOnEinvalLogsOptionsAndStopsSpawningToPreventZombies(ConnectionInfo info) {
+ *     // first 20 waits succeed; subsequent waits return EINVAL;
+ *     // verify options bitmask logged; no retry; spawning stopped; zombie alert raised
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of {@code
- * waitpid} calls the application is expected to make before hitting the limit. Typically 5–200 for
- * container-scoped tests. Zero means the very first call fails.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form
- * ({@code @ChaosWaitpidEinvalFailAfter.Repeatable}) to apply different counters to different
- * containers.
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to the number of
+ * successful waits before the options regression takes effect; values 5–100 cover most hot-reload
+ * scenarios; 0 means every wait is invalid from startup.
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessFailAfterBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#failAfter(ProcessSelector, ProcessErrno, long)
  */
 @Repeatable(ChaosWaitpidEinvalFailAfter.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

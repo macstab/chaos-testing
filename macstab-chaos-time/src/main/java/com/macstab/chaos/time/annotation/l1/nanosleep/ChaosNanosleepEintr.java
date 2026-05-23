@@ -14,61 +14,88 @@ import com.macstab.chaos.time.model.TimeErrno;
 import com.macstab.chaos.time.model.TimeSelector;
 
 /**
- * Injects {@code EINTR} on every libchaos-intercepted {@code nanosleep} call inside the target
- * container, making the call fail as if the kernel returned {@code EINTR}.
+ * Injects {@code EINTR} into {@code nanosleep(2)}, causing the call to return {@code -1} with
+ * {@code errno = EINTR} as if a signal interrupted the sleep before the requested duration elapsed.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EINTR}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EINTR} is a valid POSIX result of {@code nanosleep}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code nanosleep} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = EINTR} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: interrupted system call — signal delivery during wait or sleep.
+ * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code NANOSLEEP}, errno = {@code EINTR})
+ * tuple. The tuple is safe by construction — {@code EINTR} is the primary documented POSIX result of
+ * {@code nanosleep(2)}: when a signal is delivered to the thread during the sleep, the call returns
+ * immediately with {@code EINTR} and writes the remaining sleep time into the {@code rem} argument.
+ * No runtime selector-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.TIME)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-time.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the libc wrappers for {@code clock_gettime},
- * {@code nanosleep}, and {@code usleep}. This annotation installs a rule via {@code
- * AdvancedTimeChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
+ *       at the dynamic-linker level.
+ *   <li>On every intercepted {@code nanosleep} call a Bernoulli trial with probability
+ *       {@link #probability} is conducted.
+ *   <li>When the trial fires the interposer returns {@code -1} and sets {@code errno = EINTR}
+ *       without waiting — the application's sleep is cut short with a partial-sleep indication.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.TIME)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-time} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>The sleep returns immediately with {@code EINTR}; correct code reads the remaining time
+ *       from the {@code rem} argument and restarts the sleep, iterating until the full duration
+ *       has elapsed.
+ *   <li>Code that treats any {@code nanosleep} failure as fatal will exit event loops prematurely,
+ *       causing reconnect storms or missed heartbeats.
+ *   <li>Retry loops with a hard maximum iteration count may underslept significantly if many
+ *       {@code EINTR} signals arrive during a single intended sleep interval.
+ *   <li>Assert that the cumulative sleep duration is at least as long as the requested interval
+ *       and that no connection or heartbeat is prematurely abandoned.
  * </ul>
+ *
+ * <p>In production, {@code EINTR} from {@code nanosleep} is a common production failure mode:
+ * any process that registers signal handlers with {@code SA_RESTART} absent will receive {@code EINTR}
+ * whenever a signal fires during a sleep — monitoring agents, GC safepoints, and JVM signal
+ * handlers all trigger this on busy systems.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>POSIX requires that when a signal interrupts {@code nanosleep}, the call writes the remaining
+ * sleep duration (the time not yet slept) to the {@code rem} argument if the pointer is non-null.
+ * The canonical restart idiom is: {@code while (nanosleep(&req, &req) == -1 && errno == EINTR) {}}.
+ * Failing to implement this idiom results in sleeping less than intended, which is a latent bug
+ * in any back-pressure or rate-limiting loop.
+ *
+ * <p>The glibc wrapper for {@code nanosleep} does not restart automatically because the semantic
+ * of a partial sleep is meaningful (the application may want to handle the signal first). This
+ * contrasts with most other syscalls where glibc sets {@code SA_RESTART}.
+ *
+ * <p>{@code libchaos-time.so} injects {@code EINTR} at the C library wrapper level; the {@code rem}
+ * struct is zeroed by the interposer (simulating a fully interrupted sleep) to trigger the worst
+ * case for incorrectly written restart loops.
+ *
+ * <p>Sibling annotations: {@link ChaosUsleepEintr} applies the same injection to the obsolete
+ * {@code usleep(3)} wrapper; {@link ChaosNanosleepLatency} adds delay without cutting the sleep
+ * short, useful for testing timeout over-runs.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.TIME)
- * @ChaosNanosleepEintr(probability = 0.001)
- * class FaultTest {
+ * @ChaosNanosleepEintr(probability = 0.1)
+ * class NanosleepEintrTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void rateLimiterSleepsFullDurationDespiteSignalInterruptions(ConnectionInfo info) {
+ *     // assert that the cumulative sleep interval matches the requested duration
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosNanosleepEintrs}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosUsleepEintr
+ * @see ChaosNanosleepLatency
+ * @see com.macstab.chaos.time.annotation.l1.TimeErrnoBinding
  */
 @Repeatable(ChaosNanosleepEintr.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

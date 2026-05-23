@@ -14,40 +14,74 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code ENOSPC} on every libchaos-intercepted {@code truncate} call inside the target
- * container, making the call fail as if the kernel returned {@code ENOSPC}.
+ * Injects {@code ENOSPC} into {@code truncate(2)}, causing the call to return {@code -1} with
+ * {@code errno = ENOSPC} as if the kernel could not allocate additional blocks needed to extend
+ * the file to the requested size because the filesystem has no free blocks remaining.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ENOSPC}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code ENOSPC} is a valid POSIX result of {@code truncate}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code truncate} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = ENOSPC} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: no space left on device — disk-full; canary for cleanup / log-rotation / disk-pressure
- * bugs.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code TRUNCATE}, errno = {@code ENOSPC})
+ * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
+ * {@code truncate} call; when it fires the interposer returns {@code -1} with {@code errno = ENOSPC}
+ * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.IO)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-io.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the filesystem libc wrappers (open, read,
- * write, close, fsync, etc.) at the dynamic-linker level. This annotation installs a rule via
- * {@code AdvancedFilesystemChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
+ *       extension to upload {@code libchaos-io.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
+ *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
+ *       {@code fallocate} at the dynamic-linker level.
+ *   <li>On each intercepted {@code truncate} call a Bernoulli trial with probability {@link #probability}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = ENOSPC}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.IO)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-filesystem} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code ENOSPC} from {@code truncate} when extending a file means the filesystem cannot
+ *       allocate the blocks needed to represent the new file size; the file's size is unchanged.
+ *       Assert that the application does not proceed as if the file was successfully extended and
+ *       reports the disk-full condition rather than attempting to write to the unextended file.
+ *   <li>Applications that use {@code truncate} to pre-size files for memory-mapped access (setting
+ *       the file to the expected mmap size before mapping it) must handle {@code ENOSPC} gracefully;
+ *       assert that the application does not attempt to mmap a file that was not successfully sized.
+ *   <li>WAL pre-allocation patterns that use {@code truncate} to extend the WAL file to a fixed
+ *       size at startup must handle {@code ENOSPC}; assert that the database fails to start with a
+ *       clear "disk full" error rather than starting with a truncated WAL file that causes
+ *       subsequent writes to fail unexpectedly.
+ *   <li>Assert that the application does not treat truncate-time {@code ENOSPC} as a benign
+ *       condition that can be ignored — unlike shrinking a file (which never needs new blocks),
+ *       extending a file via truncate requires block allocation.
  * </ul>
+ *
+ * <p>In production, {@code ENOSPC} from {@code truncate} when extending a file occurs when the
+ * filesystem is full and the application attempts to pre-allocate space (often as part of WAL
+ * file creation or memory-mapped file setup), and on sparse files when the application sets the
+ * file size to a very large value without having free blocks to back the sparse regions.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code truncate(2)} can both shrink and extend files. When shrinking a file (new length
+ * smaller than current size), the kernel frees the blocks that back the truncated region and no
+ * new allocation is needed; {@code ENOSPC} is not possible for shrink operations. When extending
+ * a file (new length larger than current size), the kernel must allocate blocks to back the new
+ * region (or create a sparse region on filesystems that support it). If the filesystem has no
+ * free blocks, extending via {@code truncate} returns {@code ENOSPC}.
+ *
+ * <p>On filesystems with sparse file support (ext4, XFS, Btrfs), extending via {@code truncate}
+ * may not allocate blocks immediately — the hole is represented as a sparse region and blocks
+ * are only allocated when the sparse region is written. In this case, {@code truncate} may succeed
+ * even when the filesystem is nearly full, and {@code ENOSPC} only appears when the application
+ * writes to the sparse region. This injection bypasses the sparse file optimisation and injects
+ * {@code ENOSPC} at the truncate call itself.
+ *
+ * <p>Java's {@code FileChannel.truncate(long)} calls {@code ftruncate(2)} via an open file
+ * descriptor and throws an {@code IOException} with the message "No space left on device" when the
+ * underlying call returns {@code ENOSPC} on an extend operation.
  *
  * <h2>Example</h2>
  *
@@ -55,21 +89,18 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.IO)
  * @ChaosTruncateEnospc(probability = 0.001)
- * class FaultTest {
+ * class TruncateEnospcTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void walPreAllocationFailurePreventsDatabaseStartup() {
+ *     // assert that ENOSPC on truncate during WAL pre-allocation fails startup with a clear error
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2 to simulate disk-pressure; ensure the app
- * has disk-full handling.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosTruncateEnospcs}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosTruncateErofs
+ * @see ChaosAllocateEnospc
+ * @see com.macstab.chaos.filesystem.annotation.l1.IoErrnoBinding
  */
 @Repeatable(ChaosTruncateEnospc.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

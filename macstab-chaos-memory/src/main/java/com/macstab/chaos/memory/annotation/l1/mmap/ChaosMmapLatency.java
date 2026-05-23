@@ -13,36 +13,60 @@ import com.macstab.chaos.memory.annotation.l1.MemoryLatencyBinding;
 import com.macstab.chaos.memory.model.MemorySelector;
 
 /**
- * Delays every libchaos-memory-intercepted {@code mmap} call by {@link #delayMs} milliseconds
- * before delegating to the real kernel call.
+ * Adds {@link #delayMs} milliseconds of latency before every {@code mmap} call (anonymous and
+ * file-backed) intercepted by libchaos-memory, making all memory-mapping operations succeed but
+ * take longer than expected.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code MMAP}, effect = LATENCY) pair. Unlike the errno variants, the latency primitive always
- * delegates to the kernel — it only adds wall-clock cost before doing so.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-memory primitive — one (selector = {@code MMAP}, effect = LATENCY) tuple.
+ * The {@code MMAP} selector covers both anonymous and file-backed {@code mmap} calls; use
+ * {@code ChaosMmapAnonLatency} or {@code ChaosMmapFileLatency} to inject latency on only one
+ * path. Unlike the errno variants, the latency primitive always delegates to the kernel and
+ * the mapping succeeds; only wall-clock time is affected.
  *
- * <p><strong>What chaos this applies:</strong> every {@code mmap} call intercepted by
- * libchaos-memory blocks for {@link #delayMs} ms before the kernel call is issued. This simulates
- * the wall-clock cost increase that surfaces under memory-pressure stall events, transparent
- * hugepage compaction storms, and NUMA balancing passes — none of which return an errno but all of
- * which add latency to allocations and can exhaust application-level timeouts.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code mmap} call (any flags) the interposer sleeps for {@link #delayMs}
+ *       milliseconds before issuing the real kernel call.</li>
+ *   <li>The kernel call is issued normally and its result is returned to the caller unchanged.</li>
+ *   <li>Both heap allocations above {@code MMAP_THRESHOLD} and file-mapping operations take at
+ *       least {@link #delayMs} ms longer than without the rule.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.MEMORY)} annotation causes {@code ChaosTestingExtension} to
- * upload {@code libchaos-memory.so} and prepend it to {@code LD_PRELOAD} before the container
- * starts. The shared library interposes the libc wrappers for the {@code MMAP} syscall family. This
- * annotation installs a LATENCY rule via {@code AdvancedMemoryChaos.apply(container, rule)} that
- * configures the sleep duration.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.MEMORY)}</strong> on the container annotation
- *       — omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-memory} on the test classpath.</strong>
+ *   <li>All large heap allocations and file-mapping operations are delayed by at least
+ *       {@link #delayMs} ms; application end-to-end latency increases correspondingly.</li>
+ *   <li>Database engines that use memory-mapped files for I/O will see increased read and write
+ *       latency; assert that operation SLOs are met or gracefully degraded.</li>
+ *   <li>Connection-pool timeouts and health-check deadlines may fire — assert graceful handling.</li>
  * </ul>
+ * Production failure mode: under severe memory pressure, THP compaction, or NUMA rebalancing,
+ * both heap allocations and file-mapping operations stall simultaneously, causing hidden latency
+ * spikes that exhaust timeouts and produce cascading failures across the application.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>The broad {@code MMAP} selector simultaneously delays all {@code mmap} call sites. This
+ * is the most aggressive latency injection setting: it stresses both the allocator path (heap
+ * fragmentation under pressure, GC stalls, JVM metaspace growth) and the file I/O path
+ * (database SST file mapping, memory-mapped log segments, shared-library loading).
+ *
+ * <p>Applications that use memory-mapped files for zero-copy I/O (Kafka log segments, RocksDB
+ * SST files, Chronicle Map) are particularly sensitive: each new segment mapping will be delayed,
+ * and the cumulative effect can saturate producer and consumer throughput budgets. Applications
+ * that also perform frequent large heap allocations (JSON parsers, video codec frame buffers)
+ * will see both paths stressed simultaneously.
+ *
+ * <p>The JVM's internal allocators (code cache, metaspace, G1 heap region allocation) all use
+ * {@code mmap} and will be delayed. This can cause GC pauses to elongate, JIT compilation
+ * threads to stall, and class loading to slow — producing non-deterministic throughput
+ * degradation that is difficult to attribute without systematic injection.
+ *
+ * <p>The latency primitive complements the errno primitives: errno variants verify error-handling
+ * correctness; this variant verifies timeout handling and SLO adherence under combined
+ * allocation and I/O stall conditions. Use the narrower selectors when testing only one path.
  *
  * <h2>Example</h2>
  *
@@ -50,16 +74,22 @@ import com.macstab.chaos.memory.model.MemorySelector;
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.MEMORY)
  * @ChaosMmapLatency(delayMs = 50)
- * class AllocationLatencyTest { ... }
+ * class CombinedAllocationAndIoStallTest {
+ *   @Test
+ *   void operationLatencyRemainsWithinSlo(RedisConnectionInfo info) {
+ *     long start = System.currentTimeMillis();
+ *     // perform operations that trigger large allocations and file mappings
+ *     assertThat(System.currentTimeMillis() - start).isLessThan(500);
+ *   }
+ * }
  * }</pre>
  *
- * <p><strong>Delay guidance:</strong> {@code 10}–{@code 100} ms mirrors realistic stall events;
- * values above {@code 1000} ms typically saturate connection-pool timeouts and produce noisy
- * cascading failures.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies the rule to every capable container. Use the repeatable form ({@code @ChaosMmapLatencys})
- * to set different delays on different containers simultaneously.
+ * <p><strong>Delay guidance:</strong> 10–100 ms mirrors realistic THP/NUMA stall events; values
+ * above 1000 ms saturate timeouts and produce cascading failures across both the allocator and
+ * the file I/O path.
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see MemoryLatencyBinding

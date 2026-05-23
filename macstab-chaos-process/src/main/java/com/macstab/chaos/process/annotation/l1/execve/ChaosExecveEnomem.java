@@ -14,39 +14,68 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Injects {@code ENOMEM} on every libchaos-intercepted {@code execve} call inside the target
- * container, making the call fail as if the kernel returned {@code ENOMEM}.
+ * Injects {@code ENOMEM} into {@code execve} calls intercepted by libchaos-process, causing the
+ * calling code to observe an out-of-memory failure when attempting to replace the process image.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ENOMEM}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code ENOMEM} is a valid POSIX result of {@code execve}.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code EXECVE}, errno = {@code ENOMEM}) tuple.
+ * The {@code EXECVE} selector intercepts {@code execve} calls only, leaving {@code fork},
+ * {@code pthread_create}, {@code posix_spawn}, {@code posix_spawnp}, {@code execveat}, and
+ * {@code waitpid} unaffected. Compile-time safety: invalid selector/errno combinations have no
+ * annotation class.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code execve} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = ENOMEM} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: out of memory — kernel cannot allocate the requested structure or buffer.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code execve} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code execve} call the interposer runs a Bernoulli trial with probability
+ *       {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = ENOMEM} and returns {@code -1}
+ *       without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 12,
+ *       {@code strerror}: "Out of memory"; no new process image is loaded and the calling
+ *       process remains unchanged.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family at the dynamic-linker
- * level. This annotation installs a rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code execve} returns {@code -1}; {@code errno = ENOMEM} (12); the kernel cannot allocate
+ *       the memory structures needed to set up the new process image — the calling process remains
+ *       in its current state (unlike a successful exec, which replaces the image non-atomically).</li>
+ *   <li>Process launchers and shell interpreters must handle {@code ENOMEM} from {@code execve}
+ *       as a transient condition — assert that the launcher retries the exec after a brief delay
+ *       or reports the failure to the orchestrator for rescheduling rather than treating it as a
+ *       permanent binary-not-found error.</li>
+ *   <li>Assert that the application correctly preserves all pre-exec state on {@code ENOMEM}:
+ *       file descriptors, signal dispositions, and memory mappings remain from the calling process
+ *       since the exec failed before the kernel committed to replacing the image.</li>
  * </ul>
+ * Production failure mode: a Kubernetes node approaches its memory limit during a rolling
+ * deployment; the orchestrator launches new pod instances while old ones are still running —
+ * the combination of existing processes and the exec overhead (kernel allocating argument pages,
+ * stack, and binfmt setup) pushes the node's committed memory above the OOM threshold; new
+ * process images fail to load with {@code ENOMEM}, causing a wave of pod startup failures that
+ * the orchestrator retries, further increasing memory pressure.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>POSIX specifies {@code ENOMEM} for {@code execve} when there is insufficient memory to set
+ * up the new process image. On Linux, the kernel's exec path allocates several structures before
+ * committing to the new image: the argument page array ({@code bprm->page}), a new stack,
+ * and VMA structures for the text, data, BSS, and stack segments. If any of these allocations
+ * fail, the kernel returns {@code -ENOMEM} and the calling process image is left unchanged.
+ *
+ * <p>The exec-ENOMEM scenario is asymmetric with fork-ENOMEM: a failed {@code fork} produces no
+ * child process and the parent continues normally; a failed {@code execve} leaves the calling
+ * process in its current state, which is the correct recovery path — the caller can retry, use a
+ * different binary, or propagate the error upstream. Applications that assume {@code execve}
+ * either succeeds or is non-recoverable will not correctly handle the ENOMEM case.
+ *
+ * <p>A nuance specific to Linux: if the application uses {@code fork} + {@code execve} (the
+ * classic process-spawn pattern), and the {@code execve} in the child fails with {@code ENOMEM},
+ * the child is still alive in the parent's image state. The child must exit (ideally with a
+ * specific exit code that the parent detects via {@code waitpid}) rather than continuing execution
+ * in the parent's image; applications that ignore the {@code execve} return value in the
+ * fork+exec idiom will create a zombie child that continues executing the parent's code.
  *
  * <h2>Example</h2>
  *
@@ -54,21 +83,24 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
  * @ChaosExecveEnomem(probability = 0.001)
- * class FaultTest {
+ * class ExecveMemoryPressureTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void launcherRetriesExecveAfterEnomemRatherThanTreatingAsMissing(ConnectionInfo info) {
+ *     // verify fork+exec child exits cleanly on ENOMEM; parent does not create zombie
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3 mirrors realistic OOM rates; 1.0 prevents
- * the container from starting.
- *
+ * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; exec-ENOMEM is a rare event in
+ * well-provisioned environments but the fork+exec zombie risk makes even low-probability
+ * coverage valuable.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosExecveEnomems}) to bind different probabilities to
- * different containers simultaneously.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessErrnoBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#errno(ProcessSelector, ProcessErrno, double)
  */
 @Repeatable(ChaosExecveEnomem.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

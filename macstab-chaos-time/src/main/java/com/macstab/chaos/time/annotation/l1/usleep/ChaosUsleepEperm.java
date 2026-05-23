@@ -14,62 +14,77 @@ import com.macstab.chaos.time.model.TimeErrno;
 import com.macstab.chaos.time.model.TimeSelector;
 
 /**
- * Injects {@code EPERM} on every libchaos-intercepted {@code usleep} call inside the target
- * container, making the call fail as if the kernel returned {@code EPERM}.
+ * Injects {@code EPERM} into {@code usleep(3)}, causing the call to return {@code -1} with
+ * {@code errno = EPERM} as if the process lacked permission to use the underlying sleep mechanism.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EPERM}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EPERM} is a valid POSIX result of {@code usleep}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code usleep} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = EPERM} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: operation not permitted — capability-dropped containers performing privileged
- * operations.
+ * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code USLEEP}, errno = {@code EPERM})
+ * tuple. The tuple is safe by construction — {@code EPERM} is a valid POSIX error indicating that
+ * a privileged operation was denied. No runtime selector-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.TIME)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-time.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the libc wrappers for {@code clock_gettime},
- * {@code nanosleep}, and {@code usleep}. This annotation installs a rule via {@code
- * AdvancedTimeChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
+ *       at the dynamic-linker level.
+ *   <li>On every intercepted {@code usleep} call a Bernoulli trial with probability
+ *       {@link #probability} is conducted.
+ *   <li>When the trial fires the interposer returns {@code -1} and sets {@code errno = EPERM}
+ *       without sleeping — the sleep is denied immediately.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.TIME)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-time} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>The sleep is skipped; callers without comprehensive error handling will proceed without
+ *       back-off, potentially overwhelming downstream services or entering a busy-loop.
+ *   <li>Code paths that treat any non-zero return as an {@code EINTR} case and immediately retry
+ *       will loop indefinitely when the error is {@code EPERM}.
+ *   <li>Assert that the application treats {@code EPERM} as a non-retriable error, logs the
+ *       denial, and applies a safe static fallback delay.
  * </ul>
+ *
+ * <p>In production, {@code EPERM} from {@code usleep} is an unusual signal; it most commonly
+ * appears in seccomp-filtered environments that block the underlying {@code nanosleep} syscall,
+ * or in mandatory access control environments that restrict sleep operations.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>Standard Linux kernels do not return {@code EPERM} from {@code nanosleep} (the backend of
+ * {@code usleep}) for ordinary processes. The injection simulates the behavior of stricter access
+ * control environments and seccomp profiles that block the sleep syscall. Code that uses
+ * {@code usleep} without considering permission failures will expose this as a production gap
+ * when deployed to hardened container environments.
+ *
+ * <p>C libraries such as libcurl, librdkafka, and OpenSSL use {@code usleep} internally in their
+ * retry backoff logic. A seccomp profile that blocks {@code nanosleep} on a container where these
+ * libraries are used will cause their retry loops to fail silently, producing retry storms.
+ *
+ * <p>Sibling annotations: {@link ChaosUsleepEintr} targets signal interruption;
+ * {@link ChaosNanosleepEperm} applies the equivalent injection to the modern interface.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.TIME)
- * @ChaosUsleepEperm(probability = 0.001)
- * class FaultTest {
+ * @ChaosUsleepEperm(probability = 0.01)
+ * class UsleepEpermTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void clientLibraryAppliesStaticFallbackOnPermissionDenied(ConnectionInfo info) {
+ *     // assert that the library does not enter an unbound busy-loop on EPERM
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosUsleepEperms}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosUsleepEintr
+ * @see ChaosNanosleepEperm
+ * @see com.macstab.chaos.time.annotation.l1.TimeErrnoBinding
  */
 @Repeatable(ChaosUsleepEperm.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

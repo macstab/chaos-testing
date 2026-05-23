@@ -13,58 +13,86 @@ import com.macstab.chaos.filesystem.annotation.l1.IoLatencyBinding;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Delays every libchaos-intercepted {@code read} call by {@link #delayMs} milliseconds before
- * delegating to the real kernel call, making the operation succeed but take longer than expected.
+ * Delays every {@code read(2)} call by an additional {@link #delayMs} milliseconds before
+ * delegating to the real kernel call, making file reads slower than the application expects while
+ * still returning the actual file data.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one
- * (selector, effect = LATENCY) pair. Unlike errno variants, the latency primitive always delegates
- * to the kernel — it only adds wall-clock cost before doing so.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> every {@code read} call intercepted by libchaos
- * blocks for {@link #delayMs} ms before the kernel call is issued. This simulates the wall-clock
- * cost increase from resource pressure, kernel scheduling stalls, or slow hardware — none of which
- * return an errno but all of which can exhaust application-level timeouts, saturate connection-pool
- * wait budgets, and surface hidden latency assumptions.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code READ}, effect = LATENCY) tuple.
+ * Unlike errno variants, the latency primitive always delegates to the real kernel call after the
+ * configured extra delay — the data is read normally. No probability gate is applied; the delay
+ * fires on every intercepted {@code read} call. No runtime operation-effect validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.IO)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-io.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the filesystem libc wrappers (open, read,
- * write, close, fsync, etc.) at the dynamic-linker level. This annotation installs a rule via
- * {@code AdvancedFilesystemChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
+ *       extension to upload {@code libchaos-io.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
+ *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
+ *       {@code fallocate} at the dynamic-linker level.
+ *   <li>On each intercepted {@code read} call the interposer sleeps for {@link #delayMs} ms before
+ *       issuing the real kernel call.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.IO)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-filesystem} on the test classpath.</strong>
+ *   <li>File read operations take longer than normal; applications that read files on request
+ *       critical paths (config parsing, credential loading, data file access) will see increased
+ *       latency. Assert that the application's read timeout or operation deadline accounts for
+ *       the injected delay.
+ *   <li>Applications that perform many small reads per request (reading a binary format header,
+ *       then record by record) accumulate the delay across all read calls; assert that the total
+ *       request timeout is calibrated for the worst-case number of reads per request.
+ *   <li>Streaming file parsers (XML, JSON stream parsers, CSV readers) that issue one read per
+ *       token or line will be severely impacted by per-read latency; assert that the application
+ *       uses a buffered reader to minimize the number of underlying read calls.
+ *   <li>Assert that the application does not treat slow reads as read errors — a delayed read
+ *       still returns data, and any timeout logic must not conflate a delayed read with an
+ *       {@code EIO} or EOF condition.
  * </ul>
+ *
+ * <p>In production, slow {@code read} calls occur when the page cache is cold after a process
+ * restart and each read results in a disk access (page fault into kernel page cache), when
+ * network filesystems (NFS, CIFS) are under load and I/O requests are queued behind other
+ * outstanding requests, and when cgroup I/O bandwidth throttling ({@code blkio.throttle}) limits
+ * the process's storage throughput.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The {@code read(2)} syscall copies data from the kernel's page cache to the user-space
+ * buffer. If the data is in the page cache (a cache hit), the copy is fast (limited by memory
+ * bandwidth). If the data is not in the page cache (a cache miss), the kernel must read it from
+ * the storage device, which adds the device's latency to the read. This injection simulates the
+ * miss-path latency without requiring actual disk I/O.
+ *
+ * <p>Applications that read large files sequentially benefit from the kernel's read-ahead
+ * mechanism, which prefetches upcoming pages into the cache. Read-ahead reduces per-read latency
+ * by overlapping I/O with processing time. This injection adds delay before the read call, which
+ * occurs after the read-ahead has already prefetched the data; the injection therefore measures
+ * the process scheduling cost rather than storage latency.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.IO)
- * @ChaosReadLatency(delayMs = 200)
- * class LatencyTest {
+ * @ChaosReadLatency(delayMs = 50)
+ * class ReadLatencyTest {
  *   @Test
- *   void appHandlesSlowOperation(ConnectionInfo info) { ... }
+ *   void configurationFileParsingCompletesWithinDeadlineUnderSlowStorage() {
+ *     // assert that config parsing finishes within its deadline even when reads are slow
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Delay guidance:</strong> {@code 10}–{@code 200} ms simulates realistic stall events;
- * values above application-level timeouts produce cascading failures rather than isolated latency
- * observations — intentional in some scenarios, noisy in others.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form ({@code @ChaosReadLatencys}) to set
- * different delays on different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosReadEio
+ * @see ChaosWriteLatency
+ * @see com.macstab.chaos.filesystem.annotation.l1.IoLatencyBinding
  */
 @Repeatable(ChaosReadLatency.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

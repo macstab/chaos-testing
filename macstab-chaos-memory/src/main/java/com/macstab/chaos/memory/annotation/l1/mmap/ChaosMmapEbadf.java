@@ -14,47 +14,63 @@ import com.macstab.chaos.memory.model.MemorySelector;
 import com.macstab.chaos.memory.model.MmapErrno;
 
 /**
- * Injects {@code EBADF} on every libchaos-memory-intercepted {@code mmap} call inside the target
- * container, making the call fail as if the kernel returned {@code EBADF}.
+ * Injects {@code EBADF} into all {@code mmap} calls (anonymous and file-backed) intercepted by
+ * libchaos-memory, causing the calling code to observe a bad-file-descriptor failure from any
+ * memory-mapping operation.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector = {@code MMAP}, errno = {@code EBADF}) pair. The
- * combination is safe by construction: this annotation class exists only because {@code EBADF} is a
- * valid POSIX result of {@code mmap}; the invalid combinations simply have no annotation class, so
- * the selector × errno matrix cannot be violated at compile time.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-memory primitive — one (selector = {@code MMAP}, errno = {@code EBADF}) tuple.
+ * The {@code MMAP} selector covers both anonymous and file-backed {@code mmap} calls; use
+ * {@code ChaosMmapAnonEbadf} or {@code ChaosMmapFileEbadf} for narrower fault isolation.
+ * Compile-time safety: invalid selector/errno combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code mmap} call that the libchaos-memory
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = EBADF} before the kernel call
- * completes — from the application perspective this is indistinguishable from a real kernel-level
- * failure. Specifically this simulates: bad file descriptor — typical of fd lifecycle bugs and
- * shared-fd races.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code mmap} call the interposer runs a Bernoulli trial with probability
+ *       {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = EBADF} and returns
+ *       {@code MAP_FAILED} without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 9,
+ *       {@code strerror}: "Bad file descriptor".</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.MEMORY)} annotation on the container declaration causes
- * {@code ChaosTestingExtension} to upload {@code libchaos-memory.so} into the container and prepend
- * it to {@code LD_PRELOAD} before the container process starts. The shared library interposes the
- * libc wrappers for {@code mmap}, {@code munmap}, {@code mprotect}, and {@code madvise} at the
- * dynamic-linker level. This annotation then installs a rule via {@code
- * AdvancedMemoryChaos.apply(container, rule)} that configures the interposer with the selector and
- * probability you specify.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD} which does not apply on
- *       macOS or Windows containers; annotate the test class with {@code @DisabledOnOs(OS.WINDOWS)}
- *       and be aware of macOS Docker limitations.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.MEMORY)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — this installs the shared library before container start;
- *       omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) do not
- *       honour {@code LD_PRELOAD} for statically-linked binaries; use a glibc variant or the
- *       Debian-slim image instead.
- *   <li><strong>{@code macstab-chaos-memory} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and {@code ChaosTestingExtension} throws {@code
- *       ClassNotFoundException} wrapped in {@code ExtensionConfigurationException}.
+ *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = EBADF} (9); both the anonymous
+ *       allocator path and the file-backed mapping path observe the failure simultaneously.</li>
+ *   <li>File-mapping code that passes a real fd to {@code mmap} should surface a diagnostic
+ *       naming the invalid descriptor; allocator code should propagate {@code NULL} or
+ *       {@code OutOfMemoryError}.</li>
+ *   <li>Assert that no code path silently proceeds with a {@code MAP_FAILED} pointer.</li>
  * </ul>
+ * Production failure mode: a shared file descriptor closed by one thread while another thread
+ * attempts to map it ({@code close-on-exec} race, or an erroneous {@code dup2} overwriting a
+ * live fd) produces real {@code EBADF} from the file-backed {@code mmap} — an error that is
+ * nearly impossible to reproduce in testing without fault injection.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>POSIX specifies {@code EBADF} for {@code mmap} when the file descriptor is not a valid open
+ * file descriptor, or when the fd was opened in write-only mode ({@code O_WRONLY}) and
+ * {@code PROT_READ} is requested. For anonymous mappings ({@code MAP_ANONYMOUS}), the kernel
+ * ignores the fd (conventionally {@code -1}) and cannot return {@code EBADF} from that path.
+ *
+ * <p>The broad {@code MMAP} selector injects {@code EBADF} on both call paths. This is realistic
+ * for applications that share a code path for both anonymous and file-backed mappings (e.g. an
+ * allocator that tries a file-backed mapping first and falls back to anonymous). Both paths
+ * must guard against {@code EBADF} even if only one is expected to receive it in practice.
+ *
+ * <p>The most impactful scenario is file-backed mappings in database storage engines. RocksDB,
+ * LMDB, and similar engines keep file descriptors open for extended periods; if a monitoring
+ * process or a buggy cleanup routine closes one of these descriptors, the next {@code mmap}
+ * call against it returns {@code EBADF}. Error recovery typically requires reopening the file,
+ * but this may race with concurrent writes — a complex failure mode that this annotation
+ * exercises without any production risk.
+ *
+ * <p>Compared with {@code EACCES}: {@code EBADF} means the descriptor is invalid (closed or
+ * never opened); {@code EACCES} means the descriptor is valid but the permissions are wrong.
+ * Both are non-transient programmer errors but require different corrective action.
  *
  * <h2>Example</h2>
  *
@@ -62,19 +78,19 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.MEMORY)
  * @ChaosMmapEbadf(probability = 0.001)
- * class MemoryFaultTest {
+ * class FdRaceConditionTest {
  *   @Test
- *   void appHandlesEbadfOnAlloc(RedisConnectionInfo info) { ... }
+ *   void appHandlesEbadfOnAllMmaps(RedisConnectionInfo info) {
+ *     // verify no code path dereferences MAP_FAILED and that diagnostics name the bad fd
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> low rates (1e-4) to catch missing fd-lifecycle guards;
- * 1.0 breaks container startup.
- *
+ * <p><strong>Probability guidance:</strong> low rates (1e-4 to 1e-3) are sufficient to exercise
+ * the error path; 1.0 prevents the process from loading shared libraries.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
- * the test class. Use the repeatable form ({@code @ChaosMmapEbadfs}) to bind different
- * probabilities to different containers simultaneously.
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see MemoryErrnoBinding

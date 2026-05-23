@@ -14,61 +14,82 @@ import com.macstab.chaos.time.model.TimeErrno;
 import com.macstab.chaos.time.model.TimeSelector;
 
 /**
- * Injects {@code EINVAL} on every libchaos-intercepted {@code wildcard} call inside the target
- * container, making the call fail as if the kernel returned {@code EINVAL}.
+ * Injects {@code EINVAL} into every interposed time syscall ({@code clock_gettime}, {@code nanosleep},
+ * {@code usleep}), causing each to return {@code -1} with {@code errno = EINVAL} as if the kernel
+ * rejected an invalid argument.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EINVAL}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EINVAL} is a valid POSIX result of {@code wildcard}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code wildcard} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = EINVAL} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: invalid argument — bad length, flags, or option; the universal canary errno.
+ * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code WILDCARD}, errno = {@code EINVAL})
+ * tuple. The {@code WILDCARD} selector matches all three interposed time syscalls simultaneously —
+ * equivalent to applying {@link ChaosClockGettimeEinval}, {@link ChaosNanosleepEinval}, and
+ * {@link ChaosUsleepEinval} in a single annotation. No runtime selector-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.TIME)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-time.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the libc wrappers for {@code clock_gettime},
- * {@code nanosleep}, and {@code usleep}. This annotation installs a rule via {@code
- * AdvancedTimeChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
+ *       at the dynamic-linker level.
+ *   <li>On every intercepted call to any of the three syscalls a Bernoulli trial with probability
+ *       {@link #probability} is conducted independently.
+ *   <li>When the trial fires the interposer returns {@code -1} and sets {@code errno = EINVAL}
+ *       without performing any real work.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.TIME)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-time} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>All three time syscalls may simultaneously return {@code EINVAL}; this is a hard error
+ *       for all three — callers must not retry {@code EINVAL} indefinitely.
+ *   <li>Application code that handles {@code EINTR} as the only time-syscall error and treats
+ *       any other failure as fatal will crash or abort under this injection.
+ *   <li>Assert that the application handles {@code EINVAL} as a programming error, logs it
+ *       clearly, and does not enter an infinite retry loop.
  * </ul>
+ *
+ * <p>In production, simultaneous {@code EINVAL} across all time syscalls indicates a systematic
+ * argument construction bug — the kind of bug that only manifests on architectures or kernel
+ * versions with stricter argument validation.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The {@code WILDCARD} selector applies the injection uniformly to all three interposed time
+ * syscalls. For {@code clock_gettime}, {@code EINVAL} means an invalid clock id; for
+ * {@code nanosleep}, it means an out-of-range nanosecond value; for {@code usleep}, it means a
+ * microsecond value ≥ 1,000,000. The wildcard form exercises all three without requiring separate
+ * annotations for each.
+ *
+ * <p>This annotation is most powerful when testing the "unknown error" handling posture of
+ * applications: code that hard-codes only the expected success and {@code EINTR} cases for time
+ * syscalls will mishandle the {@code EINVAL} returned by this injection. That is precisely the
+ * latent bug being exercised.
+ *
+ * <p>Sibling per-syscall annotations ({@link ChaosClockGettimeEinval}, {@link ChaosNanosleepEinval},
+ * {@link ChaosUsleepEinval}) allow targeted injection to a single syscall. Use the wildcard form
+ * when testing system-wide argument-validation hardening.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.TIME)
- * @ChaosWildcardEinval(probability = 0.001)
- * class FaultTest {
+ * @ChaosWildcardEinval(probability = 0.005)
+ * class WildcardEinvalTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void applicationHandlesInvalidArgumentAcrossAllTimeSyscalls(ConnectionInfo info) {
+ *     // assert that no retry loop spins on EINVAL and that structured errors are emitted
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosWildcardEinvals}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosClockGettimeEinval
+ * @see ChaosNanosleepEinval
+ * @see ChaosUsleepEinval
+ * @see com.macstab.chaos.time.annotation.l1.TimeErrnoBinding
  */
 @Repeatable(ChaosWildcardEinval.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

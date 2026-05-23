@@ -14,61 +14,90 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code ETIMEDOUT} on every libchaos-intercepted {@code recv} call inside the target
- * container, making the call fail as if the kernel returned {@code ETIMEDOUT}.
+ * Injects {@code ETIMEDOUT} into {@code recv(2)}, causing the call to return {@code -1} with
+ * {@code errno = ETIMEDOUT} as if the TCP keep-alive probing mechanism determined that the remote
+ * peer is no longer reachable after the keep-alive retransmission limit was exceeded.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ETIMEDOUT}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code ETIMEDOUT} is a valid POSIX result of {@code recv}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code recv} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #toxicity} is run. When it fires the
- * interceptor returns {@code -1} and sets {@code errno = ETIMEDOUT} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: operation timeout — peer unresponsive or routing black-holed.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code RECV}, errno = {@code ETIMEDOUT})
+ * tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted
+ * {@code recv} call; when it fires the interposer returns {@code -1} with {@code errno = ETIMEDOUT}
+ * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.NET)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-net.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes socket-layer libc wrappers (connect, accept,
- * socket, bind, listen, shutdown, send, recv, poll). This annotation installs a rule via {@code
- * AdvancedConnectionChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
+ *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
+ *       {@code poll} at the dynamic-linker level.
+ *   <li>On each intercepted {@code recv} call a Bernoulli trial with probability {@link #toxicity}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = ETIMEDOUT}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.NET)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-connection} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code ETIMEDOUT} from {@code recv} indicates that the connection was silently lost (no RST
+ *       received); the socket is permanently closed by the kernel and must be replaced. Assert that
+ *       the application closes the socket and creates a new connection rather than retrying recv.
+ *   <li>Connection pools must detect this error and evict the dead connection; assert that the pool
+ *       creates a replacement connection and serves subsequent requests from it.
+ *   <li>In-flight requests whose responses were not received are permanently lost; assert that the
+ *       application handles the loss correctly — retrying idempotent requests and returning errors
+ *       for non-idempotent ones.
+ *   <li>Assert that the application emits a "connection timed out" metric or alert with the remote
+ *       address, enabling operators to correlate the event with network partition logs.
  * </ul>
+ *
+ * <p>In production, {@code ETIMEDOUT} from {@code recv} occurs when a connection is held open
+ * across a network partition: the TCP keep-alive mechanism (if enabled) sends probes and eventually
+ * determines that the peer is unreachable. The timeout duration depends on
+ * {@code tcp_keepalive_time}, {@code tcp_keepalive_intvl}, and {@code tcp_keepalive_probes};
+ * with defaults, the kernel may take two hours or more to detect the dead connection.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The kernel returns {@code ETIMEDOUT} from {@code recv} in two scenarios: when TCP keep-alive
+ * probes exhaust their retry limit (controlled by {@code tcp_keepalive_probes}, default 9) and no
+ * ACK is received, indicating the remote peer is permanently unreachable; and when the retransmission
+ * timer for unacknowledged data exhausts its limit (controlled by {@code tcp_retries2}, default 15,
+ * which gives a timeout of approximately 15 minutes under normal RTT). In both cases the kernel
+ * closes the connection and marks the socket as error-pending.
+ *
+ * <p>This injection delivers {@code ETIMEDOUT} immediately without waiting for keep-alive probes or
+ * retransmission timeouts, making it practical to test the application's dead-connection handling
+ * without the real multi-minute wait. For tests that need to verify that the application correctly
+ * configures TCP keep-alive (so that dead connections are detected faster), use the injection with
+ * a low toxicity to simulate the occasional keep-alive timeout that would occur in production.
+ *
+ * <p>Java maps {@code ETIMEDOUT} from {@code recv} to a {@code SocketException} with the message
+ * "Connection timed out". The same message is used for {@code ETIMEDOUT} from {@code connect};
+ * application code must inspect the phase (connecting vs. receiving) to apply the correct recovery
+ * strategy. Connection pool libraries typically detect both forms and replace the connection.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.NET)
- * @ChaosRecvEtimedout(toxicity = 0.001)
- * class FaultTest {
+ * @ChaosRecvEtimedout(toxicity = 0.02)
+ * class RecvEtimedoutTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void connectionPoolDetectsAndReplacesTimedOutConnection(ConnectionInfo info) {
+ *     // assert that pool detects the timeout, evicts the connection, and reconnects
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-2 to 1e-1 for timeout testing; combine with
- * retry-budget exhaustion tests.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosRecvEtimedouts}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosRecvEconnreset
+ * @see ChaosRecvLatency
+ * @see com.macstab.chaos.connection.annotation.l1.ConnectionErrnoBinding
  */
 @Repeatable(ChaosRecvEtimedout.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

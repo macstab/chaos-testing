@@ -13,53 +13,93 @@ import com.macstab.chaos.memory.annotation.l1.MemoryLatencyBinding;
 import com.macstab.chaos.memory.model.MemorySelector;
 
 /**
- * Delays every libchaos-memory-intercepted {@code munmap} call by {@link #delayMs} milliseconds
- * before delegating to the real kernel call.
+ * Adds {@link #delayMs} milliseconds of latency before every {@code munmap} call intercepted
+ * by libchaos-memory, making all memory-release operations succeed but take longer than
+ * expected.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code MUNMAP}, effect = LATENCY) pair. Unlike the errno variants, the latency primitive always
- * delegates to the kernel — it only adds wall-clock cost before doing so.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-memory primitive — one (selector = {@code MUNMAP}, effect = LATENCY) tuple.
+ * The {@code MUNMAP} selector intercepts {@code munmap} calls only; use other latency
+ * annotations for {@code mmap}, {@code mprotect}, or {@code madvise}. Unlike the errno variants,
+ * the latency primitive always delegates to the kernel and the unmap succeeds; only wall-clock
+ * time is affected.
  *
- * <p><strong>What chaos this applies:</strong> every {@code munmap} call intercepted by
- * libchaos-memory blocks for {@link #delayMs} ms before the kernel call is issued. This simulates
- * the wall-clock cost increase that surfaces under memory-pressure stall events, transparent
- * hugepage compaction storms, and NUMA balancing passes — none of which return an errno but all of
- * which add latency to allocations and can exhaust application-level timeouts.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
+ *       interposing the libc {@code munmap} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code munmap} call the interposer sleeps for {@link #delayMs} milliseconds
+ *       before issuing the real kernel call.</li>
+ *   <li>The kernel call is issued normally and its result is returned to the caller unchanged.</li>
+ *   <li>The unmap succeeds but takes at least {@link #delayMs} ms longer than without the rule.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.MEMORY)} annotation causes {@code ChaosTestingExtension} to
- * upload {@code libchaos-memory.so} and prepend it to {@code LD_PRELOAD} before the container
- * starts. The shared library interposes the libc wrappers for the {@code MUNMAP} syscall family.
- * This annotation installs a LATENCY rule via {@code AdvancedMemoryChaos.apply(container, rule)}
- * that configures the sleep duration.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.MEMORY)}</strong> on the container annotation
- *       — omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-memory} on the test classpath.</strong>
+ *   <li>All {@code munmap} calls are delayed by at least {@link #delayMs} ms; the memory
+ *       is eventually released; no error-handling code is exercised.</li>
+ *   <li>Memory managers that call {@code munmap} on the deallocation path (glibc {@code free}
+ *       for large chunks, Java NIO {@code DirectByteBuffer} cleanup, JVM heap shrink) will
+ *       see deallocation throughput decrease; assert that application GC pause times or
+ *       deallocation SLOs remain acceptable.</li>
+ *   <li>Applications that release large memory-mapped segments on rotation (Kafka log segment
+ *       deletion, RocksDB SST file eviction) will block the rotating thread for
+ *       {@code numSegments * delayMs}; assert that the rotation thread does not exhaust
+ *       its deadline and that readers are not blocked on the rotating thread's lock.</li>
  * </ul>
+ * Production failure mode: under memory pressure, the kernel's TLB shootdown mechanism (which
+ * is invoked by {@code munmap} to invalidate mappings on all CPUs sharing the address space)
+ * stalls when many cores simultaneously execute TLB invalidation IPIs; on large NUMA systems
+ * with many threads, {@code munmap} latency spikes to tens of milliseconds, blocking log
+ * rotation and GC threads and causing cascading SLO violations.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>The primary source of {@code munmap} latency in production is the TLB (Translation Lookaside
+ * Buffer) shootdown: when a mapping is removed, the kernel must invalidate the TLB entries for
+ * that mapping on every CPU that might have cached the translation. On a NUMA system with 128
+ * cores, the TLB shootdown requires sending an inter-processor interrupt (IPI) to each core and
+ * waiting for acknowledgement. Under high CPU utilisation, cores may not respond immediately,
+ * causing the requesting thread to spin for milliseconds before all TLB entries are confirmed
+ * invalidated.
+ *
+ * <p>Applications that frequently unmap large regions (database engines releasing SST files,
+ * Kafka log segments being deleted) are most affected by TLB shootdown latency. The rotation
+ * thread that calls {@code munmap} on a segment holds the segment's lock while the shootdown
+ * completes; readers that need to access the segment are blocked for the full TLB shootdown
+ * duration. This creates a latency spike in read throughput that is correlated with memory
+ * release operations — a non-obvious production failure mode.
+ *
+ * <p>The JVM's G1 garbage collector releases heap regions to the OS by calling {@code madvise
+ * MADV_FREE} or {@code munmap} during concurrent phases. If {@code munmap} stalls due to TLB
+ * shootdown, the GC concurrent phase extends beyond its budget, increasing the probability of
+ * a stop-the-world fallback. This annotation allows tests to verify that GC SLOs hold even
+ * when memory release is slow.
+ *
+ * <p>The latency primitive complements the errno primitives: the errno variants verify
+ * error-handling correctness when unmap fails; this variant verifies throughput and SLO
+ * adherence when unmap is merely slow. Both are necessary for comprehensive coverage of
+ * systems that perform frequent large-region memory releases.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.MEMORY)
- * @ChaosMunmapLatency(delayMs = 50)
- * class AllocationLatencyTest { ... }
+ * @ChaosMunmapLatency(delayMs = 30)
+ * class SegmentRotationLatencyTest {
+ *   @Test
+ *   void segmentRotationDoesNotBlockReadersForLongerThanSlo(RedisConnectionInfo info) {
+ *     // verify readers are not blocked for more than SLO during munmap-delayed segment rotation
+ *   }
+ * }
  * }</pre>
  *
- * <p><strong>Delay guidance:</strong> {@code 10}–{@code 100} ms mirrors realistic stall events;
- * values above {@code 1000} ms typically saturate connection-pool timeouts and produce noisy
- * cascading failures.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies the rule to every capable container. Use the repeatable form
- * ({@code @ChaosMunmapLatencys}) to set different delays on different containers simultaneously.
+ * <p><strong>Delay guidance:</strong> 10–50 ms mirrors realistic TLB-shootdown stall events on
+ * large NUMA systems; values above 500 ms will prevent timely GC and cause stop-the-world
+ * fallbacks in the JVM.
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see MemoryLatencyBinding

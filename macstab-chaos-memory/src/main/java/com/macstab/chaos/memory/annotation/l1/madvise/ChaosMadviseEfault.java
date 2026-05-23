@@ -14,67 +14,90 @@ import com.macstab.chaos.memory.model.MemorySelector;
 import com.macstab.chaos.memory.model.MmapErrno;
 
 /**
- * Injects {@code EFAULT} on every libchaos-memory-intercepted {@code madvise} call inside the
- * target container, making the call fail as if the kernel returned {@code EFAULT}.
+ * Injects {@code EFAULT} into {@code madvise} calls intercepted by libchaos-memory, causing the
+ * calling code to observe a bad-address failure when providing a memory usage hint to the kernel.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector = {@code MADVISE}, errno = {@code EFAULT}) pair. The
- * combination is safe by construction: this annotation class exists only because {@code EFAULT} is
- * a valid POSIX result of {@code madvise}; the invalid combinations simply have no annotation
- * class, so the selector × errno matrix cannot be violated at compile time.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-memory primitive — one (selector = {@code MADVISE}, errno = {@code EFAULT})
+ * tuple. The {@code MADVISE} selector intercepts {@code madvise} calls only, leaving
+ * {@code mmap}, {@code munmap}, and {@code mprotect} unaffected. Compile-time safety: invalid
+ * selector/errno combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code madvise} call that the
- * libchaos-memory interceptor sees, a Bernoulli trial with probability {@link #probability} is run.
- * When it fires the interceptor returns {@code -1} and sets {@code errno = EFAULT} before the
- * kernel call completes — from the application perspective this is indistinguishable from a real
- * kernel-level failure. Specifically this simulates: bad address — typical of unhandled
- * SIGSEGV-adjacent edge cases in JIT or native code.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
+ *       interposing the libc {@code madvise} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code madvise} call the interposer runs a Bernoulli trial with probability
+ *       {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = EFAULT} and returns {@code -1}
+ *       without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 14,
+ *       {@code strerror}: "Bad address"; the hint is not applied.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.MEMORY)} annotation on the container declaration causes
- * {@code ChaosTestingExtension} to upload {@code libchaos-memory.so} into the container and prepend
- * it to {@code LD_PRELOAD} before the container process starts. The shared library interposes the
- * libc wrappers for {@code mmap}, {@code munmap}, {@code mprotect}, and {@code madvise} at the
- * dynamic-linker level. This annotation then installs a rule via {@code
- * AdvancedMemoryChaos.apply(container, rule)} that configures the interposer with the selector and
- * probability you specify.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD} which does not apply on
- *       macOS or Windows containers; annotate the test class with {@code @DisabledOnOs(OS.WINDOWS)}
- *       and be aware of macOS Docker limitations.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.MEMORY)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — this installs the shared library before container start;
- *       omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) do not
- *       honour {@code LD_PRELOAD} for statically-linked binaries; use a glibc variant or the
- *       Debian-slim image instead.
- *   <li><strong>{@code macstab-chaos-memory} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and {@code ChaosTestingExtension} throws {@code
- *       ClassNotFoundException} wrapped in {@code ExtensionConfigurationException}.
+ *   <li>{@code madvise} returns {@code -1}; {@code errno = EFAULT} (14); the hint is not applied
+ *       — the application must not assume the advised behaviour is active and must not depend on
+ *       the hint having taken effect for correctness.</li>
+ *   <li>Memory managers that advise address ranges computed from allocation metadata must
+ *       validate page alignment before issuing {@code madvise}; assert that {@code EFAULT}
+ *       triggers a diagnostic that includes the address and length so that stale-pointer bugs
+ *       can be attributed from logs.</li>
+ *   <li>Assert that a failed {@code madvise} is treated as a best-effort hint failure — the
+ *       application must not abort, retry indefinitely, or degrade correctness in response
+ *       to a failed hint.</li>
  * </ul>
+ * Production failure mode: a native memory manager advises address ranges for performance
+ * optimisation (e.g. {@code MADV_WILLNEED} for a segment it is about to access); a
+ * concurrent {@code munmap} in another thread removes the mapping before the {@code madvise}
+ * call completes, causing the kernel to return {@code EFAULT} for the now-unmapped range —
+ * a race that is invisible in single-threaded testing.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>POSIX specifies {@code EFAULT} for {@code madvise} when the address range
+ * {@code [addr, addr+len)} extends outside the process's accessible address space. On Linux,
+ * the kernel walks the VMA list in {@code do_madvise} and returns {@code -EFAULT} if it
+ * encounters a gap in the VMA tree within the requested range — meaning part of the range
+ * is not mapped. This is distinct from {@code EINVAL} (which is returned for misaligned
+ * addresses or invalid advice values).
+ *
+ * <p>The most common production path to {@code EFAULT} from {@code madvise} is a TOCTOU race:
+ * a thread computes an address range (which is valid at that moment) and then passes it to
+ * {@code madvise} after another thread has unmapped the range. Between the computation and
+ * the syscall, the VMA is gone. The kernel sees a gap in the VMA tree and returns
+ * {@code EFAULT}. This race is difficult to reproduce without fault injection.
+ *
+ * <p>A second path is incorrect range arithmetic: a memory manager that tracks region sizes
+ * in 32-bit integers and promotes them to 64-bit without sign-extension can produce
+ * {@code addr + len} that exceeds the process's virtual address space, causing
+ * {@code EFAULT} from the overflow check. This is the same integer-width bug that can
+ * affect {@code munmap} (see {@code ChaosMunmapEfault}).
+ *
+ * <p>Compared with {@code EINVAL}: {@code EFAULT} occurs when the address range contains an
+ * inaccessible gap or overflows the address space (structural mapping problem); {@code EINVAL}
+ * occurs when the arguments are structurally invalid regardless of the current mapping state
+ * (misaligned address, zero length, unknown advice). Both are non-fatal for advisory hints.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.MEMORY)
- * @ChaosMadviseEfault(probability = 0.001)
- * class MemoryFaultTest {
+ * @ChaosMadviseEfault(probability = 0.0001)
+ * class MadviseRaceTest {
  *   @Test
- *   void appHandlesEfaultOnAlloc(RedisConnectionInfo info) { ... }
+ *   void appHandlesEfaultOnMadviseWithoutFatalError(RedisConnectionInfo info) {
+ *     // verify TOCTOU EFAULT is logged and the application proceeds without the hint
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> very low rates (1e-5 to 1e-4); EFAULT at high rate
- * produces unmaskable crashes.
- *
+ * <p><strong>Probability guidance:</strong> very low (1e-5 to 1e-4) to simulate the TOCTOU
+ * race; higher rates are safe since madvise failures are non-fatal.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
- * the test class. Use the repeatable form ({@code @ChaosMadviseEfaults}) to bind different
- * probabilities to different containers simultaneously.
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see MemoryErrnoBinding

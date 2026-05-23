@@ -14,59 +14,111 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Throw the configured exception at the jdbc_transaction_rollback call site.
+ * Intercepts {@code Connection.rollback()} and throws the configured exception before the
+ * rollback command is sent to the database, simulating a failed rollback that leaves the
+ * connection in an unknown state and exercises the most deeply nested error-recovery paths
+ * in JDBC-using frameworks.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> throw the configured exception at the
- * JDBC_TRANSACTION_ROLLBACK call site inside the JVM of the target container. The effect fires on
- * every matching call, subject to the probability configured via {@link #probability()} if
- * applicable. The rule is active from {@code beforeAll} until {@code afterAll} (class-scope) or
- * from {@code beforeEach} until {@code afterEach} (method-scope).
+ * A JVM agent L1 chaos primitive — one typed annotation per (selector family, operation type,
+ * effect) tuple. It is declared on a test class or method alongside a container annotation and
+ * activates for the lifetime of the test class ({@code beforeAll} / {@code afterAll}) or a single
+ * test method ({@code beforeEach} / {@code afterEach}).
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>Before every call to {@code java.sql.Connection#rollback()} inside the target container's
+ *       JVM, the chaos agent intercepts the calling thread.
+ *   <li>The agent reflectively instantiates the class named by {@link #exceptionClassName()} with
+ *       the message from {@link #message()} and throws it immediately.
+ *   <li>No rollback is sent to the database; the connection's state is indeterminate; row-level
+ *       locks may remain held until the database detects the broken connection and rolls back
+ *       automatically (typically via TCP keepalive timeout or idle connection timeout).
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>The rollback itself throws an exception; Spring's {@code DataSourceTransactionManager}
+ *       catches it in the rollback path and — depending on version — may swallow it or re-throw
+ *       it as {@code TransactionSystemException}; assert which behaviour the application relies on.
+ *   <li>HikariCP will evict the connection from the pool when rollback fails (the pool calls
+ *       {@code isValid()} on exception and evicts the connection if the check fails); assert
+ *       that the pool size shrinks and that the pool replenishes correctly.
+ *   <li>The original business exception (which triggered the rollback) may be masked by the
+ *       rollback exception; assert that error logging captures both the business exception and
+ *       the rollback exception so operators can diagnose the root cause.
+ *   <li><strong>Production failure mode:</strong> a database reboot causes all open connections
+ *       to drop; the application's exception handlers call rollback on broken connections, the
+ *       rollback throws {@code SQLException: connection closed}, the pool evicts all connections
+ *       simultaneously, and the pool's connection-creation logic hammers the restarting database
+ *       with reconnect attempts — a reconnect storm layered on top of the original restart.
  * </ul>
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>A rollback failure is exceptional in production because rollback is called in error-handling
+ * paths that already assume something went wrong. Most application code does not have a
+ * try-catch around rollback; a thrown exception here propagates up through the transaction
+ * manager's finally block, potentially masking the original exception that caused the rollback.
+ * Java's exception masking rule means the original exception is attached as a suppressed exception,
+ * not as the cause — verify that the application's logging or error-tracking tool surfaces both.
+ *
+ * <p>Spring's {@code DataSourceTransactionManager.doRollback()} wraps the rollback in a try-catch
+ * and calls {@code triggerAfterCompletion(status, ROLLBACK_FAILED)} on all registered
+ * synchronizations. A failing rollback means the database connection is in an unknown state;
+ * Spring marks the connection as damaged and calls {@code DataSourceUtils.releaseConnection()},
+ * which asks the pool to close (not return) the connection. HikariCP then removes the connection
+ * from its internal bag and schedules pool replenishment.
+ *
+ * <p>Hibernate's {@code SessionImpl}: if rollback fails, Hibernate does not attempt to re-use the
+ * session. The {@code Session} is closed in its finally block regardless of rollback success;
+ * the {@code EntityManager} is invalidated. Any subsequent call to the same {@code EntityManager}
+ * throws {@code IllegalStateException: Session is closed}.
+ *
+ * <p>This annotation is most useful combined with {@link ChaosJdbcTransactionCommitInjectException}
+ * in a single test class using different probabilities: some transactions fail at commit, some
+ * also fail at rollback, creating a full matrix of transaction lifecycle failure scenarios that
+ * expose gaps in exception-handling coverage.
+ *
+ * <p>The most realistic injected exception class is {@code java.sql.SQLRecoverableException},
+ * which is what most JDBC drivers throw when the connection is lost. Using
+ * {@code java.sql.SQLNonTransientException} tests the path where the application gives up
+ * rather than retrying.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosJdbcTransactionRollbackInjectException
- * class JvmChaosTest {
+ * @ChaosJdbcTransactionRollbackInjectException(
+ *     exceptionClassName = "java.sql.SQLRecoverableException",
+ *     message = "connection lost during rollback")
+ * class RollbackFailureTest {
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void bothExceptionsAreLoggedAndPoolReplenishes(ConnectionInfo info) {
+ *     // assert original exception and rollback exception both appear in logs
+ *     // assert pool size returns to minimum after eviction
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosJdbcTransactionRollbackInjectExceptions}) to apply different configurations to
- * different containers.
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation is required; omitting
+ *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
+ *       {@code @JvmAgentChaos}; it is attached before the container starts.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
+ *       translator class can be resolved.
+ *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
+ *       intercept native executables.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosJdbcTransactionRollbackDelay
+ * @see ChaosJdbcTransactionCommitInjectException
  */
 @Repeatable(ChaosJdbcTransactionRollbackInjectException.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

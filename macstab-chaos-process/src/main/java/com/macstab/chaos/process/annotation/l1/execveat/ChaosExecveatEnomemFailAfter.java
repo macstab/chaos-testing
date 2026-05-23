@@ -14,61 +14,111 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code execveat} calls
- * succeed, then injects {@code ENOMEM} on every subsequent call until the rule is removed.
+ * After {@link #successesBeforeFailure} successful {@code execveat} calls, injects {@code ENOMEM}
+ * on every subsequent call, causing the calling code to observe an out-of-memory failure that
+ * persists for the remainder of the test.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code EXECVEAT}, errno = {@code ENOMEM}, effect = FAIL_AFTER) tuple. FAIL_AFTER is the process
- * module's counter-gated effect — distinct from ERRNO (probabilistic) and LATENCY (unconditional).
- * It models resource-exhaustion scenarios where the first N operations succeed and then the system
- * runs out of capacity.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code EXECVEAT}, errno = {@code ENOMEM}, effect
+ * = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N calls succeed, then the
+ * counter trips permanently and every subsequent call fails until the rule is removed. This is
+ * distinct from ERRNO (independent Bernoulli trial on each call) and LATENCY (unconditional delay).
+ * Compile-time safety: invalid selector/errno/effect combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
- * {@code execveat} calls. After {@link #successesBeforeFailure} successes the counter trips and
- * every subsequent call returns {@code -1} with {@code errno = ENOMEM}, regardless of real kernel
- * capacity. The counter resets every time the rule is re-applied (e.g. across test methods if the
- * annotation is at class scope).
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code execveat} wrapper at the dynamic-linker level.</li>
+ *   <li>The interposer maintains a per-rule success counter. Each {@code execveat} call that
+ *       passes the counter check decrements the remaining budget; the counter does not reset
+ *       automatically between test methods when the annotation is at class scope.</li>
+ *   <li>Once the counter reaches zero it trips permanently: every subsequent {@code execveat} call
+ *       sets {@code errno = ENOMEM} and returns {@code -1} without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 12,
+ *       {@code strerror}: "Out of memory"; the calling process remains in its current state and
+ *       the {@code dirfd} must be closed explicitly since no close-on-exec processing occurs for
+ *       failed execs; in fork+exec patterns the child must call {@code _exit()} to avoid zombies.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family. This annotation installs
- * a FAIL_AFTER rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at {@code
- *       beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>The first {@link #successesBeforeFailure} calls proceed normally; all subsequent calls
+ *       return {@code -1} with {@code errno = ENOMEM}; assert that the application closes the
+ *       {@code dirfd} on every failure and reports a memory-pressure diagnostic rather than
+ *       treating the failure as a permanent binary-unavailability error.</li>
+ *   <li>In fork+exec patterns using {@code execveat}, the child process that receives
+ *       post-threshold {@code ENOMEM} must call {@code _exit()} (not {@code exit()}) so that
+ *       the parent can detect the exec failure via {@code waitpid} without a zombie accumulating
+ *       for each failed launch — assert that the runtime's fork+exec child exits cleanly with
+ *       a specific exit code that the parent maps to an ENOMEM error.</li>
+ *   <li>Assert that the runtime implements exponential backoff for subsequent exec attempts after
+ *       the counter trips — ENOMEM under memory pressure is often transient, and tight retry loops
+ *       under OOM conditions worsen the memory situation by repeatedly allocating argv/envp copies
+ *       for each exec attempt before the kernel rejects the call.</li>
  * </ul>
+ * Production failure mode: a container runtime uses {@code execveat(AT_EMPTY_PATH)} to launch
+ * containerised workloads; the Kubernetes node is under progressive memory pressure from
+ * OOM-protected workloads whose actual RSS exceeds their requests; after N successful launches
+ * the exec's internal kernel memory allocations fail; the runtime's fork+exec children do not
+ * call {@code _exit()} on exec failure, producing zombie processes that consume pid table space
+ * and worsening the OOM condition.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>FAIL_AFTER captures the progressive memory exhaustion curve more accurately than probabilistic
+ * ERRNO. Real {@code ENOMEM} from {@code execveat} follows a threshold pattern: the node has
+ * sufficient memory for the first N exec calls (each of which allocates kernel data structures
+ * for the new process image); once the node's free memory falls below the allocation requirement
+ * the exec fails and continues to fail until memory is reclaimed. Setting
+ * {@link #successesBeforeFailure} to the observed exec count before the node crosses the exhaustion
+ * threshold reproduces this deterministic behaviour.
+ *
+ * <p>The {@code execveat} + FAIL_AFTER combination creates a compounding dirfd leak risk not
+ * present in the ERRNO variant: under FAIL_AFTER, each of the first N successful execs closes
+ * the dirfd via {@code FD_CLOEXEC} on exec success. After the counter trips, every subsequent
+ * call opens a fresh dirfd, then receives {@code ENOMEM} from the interposer. The dirfd is now
+ * open but the exec has not proceeded — the application must close it explicitly. Applications
+ * that omit the explicit close accumulate one leaked fd per failed exec attempt under memory
+ * pressure, progressively adding to the system-wide fd count.
+ *
+ * <p>The fork+exec zombie risk is amplified under FAIL_AFTER because all fork+exec calls after
+ * the counter trips will fail in the child. In the probabilistic ERRNO variant, only a fraction
+ * of child processes fail and each failure is independent; under FAIL_AFTER, every fork+exec
+ * child after the threshold fails in the exec and must call {@code _exit()}. Applications that
+ * use {@code exit()} rather than {@code _exit()} in the failed-exec child run C++ destructors
+ * and flush stdio buffers inherited from the parent, which can corrupt the parent's shared state
+ * and is undefined behaviour.
+ *
+ * <p>The counter is scoped to the container lifecycle and does not reset between test methods at
+ * class scope. This allows a test class to verify the success phase in early methods and the
+ * failure-with-backoff phase in later methods without redeploying the container — the same
+ * progression a production node experiences during a memory exhaustion incident.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosExecveatEnomemFailAfter(successesBeforeFailure = 128)
- * class ProcessExhaustionTest {
+ * @ChaosExecveatEnomemFailAfter(successesBeforeFailure = 30)
+ * class ExecveatMemoryExhaustionTest {
  *   @Test
- *   void handlesExhaustion(ConnectionInfo info) { ... }
+ *   void runtimeClosesDirfdAndExitsCleanlyAfterEnomemThreshold(ConnectionInfo info) {
+ *     // first 30 execveat calls succeed; subsequent calls return ENOMEM;
+ *     // verify dirfd closed on each failure; no zombie processes; backoff retry implemented
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of {@code
- * execveat} calls the application is expected to make before hitting the limit. Typically 5–200 for
- * container-scoped tests. Zero means the very first call fails.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form
- * ({@code @ChaosExecveatEnomemFailAfter.Repeatable}) to apply different counters to different
- * containers.
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to the expected
+ * number of successful exec calls before the memory exhaustion threshold is crossed; values in
+ * the range 10–100 cover most container-density scenarios; 0 exercises the cold-start OOM path
+ * where memory is exhausted before the first launch succeeds.
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessFailAfterBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#failAfter(ProcessSelector, ProcessErrno, long)
  */
 @Repeatable(ChaosExecveatEnomemFailAfter.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

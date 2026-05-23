@@ -14,58 +14,106 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Delay the socket_read operation by the configured number of milliseconds.
+ * Intercepts {@code SocketInputStream.read()} and holds the calling thread for {@link #delayMs()}
+ * milliseconds before bytes are read from the kernel receive buffer, inflating read latency for
+ * blocking socket clients such as JDBC drivers, legacy HTTP clients, and Kafka consumers that use
+ * {@code java.net.Socket}-based I/O.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> delay the SOCKET_READ operation by the configured
- * number of milliseconds inside the JVM of the target container. The effect fires on every matching
- * call, subject to the probability configured via {@link #probability()} if applicable. The rule is
- * active from {@code beforeAll} until {@code afterAll} (class-scope) or from {@code beforeEach}
- * until {@code afterEach} (method-scope).
+ * A JVM agent L1 chaos primitive — one typed annotation per (selector family, operation type,
+ * effect) tuple. It is declared on a test class or method alongside a container annotation and
+ * activates for the lifetime of the test class ({@code beforeAll} / {@code afterAll}) or a single
+ * test method ({@code beforeEach} / {@code afterEach}).
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>Before every call to {@code java.net.SocketInputStream#read(byte[], int, int)} inside the
+ *       target container's JVM, the chaos agent intercepts the calling thread.
+ *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()},
+ *       {@link #maxDelayMs()}]; equal values produce a deterministic delay.
+ *   <li>Control returns and the underlying {@code read()} executes normally, blocking until data
+ *       is available in the kernel receive buffer and copying it to the caller's byte array.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>The thread that calls {@code read()} is blocked for at least {@link #delayMs()} ms on
+ *       every read; in thread-per-request servers (Tomcat), each active connection occupies its
+ *       thread for the extra duration; assert that thread pool utilisation increases and that the
+ *       application's thread pool queue fills if requests arrive faster than threads complete.
+ *   <li>If the delay exceeds the socket's read timeout ({@code SO_TIMEOUT} set via
+ *       {@code Socket.setSoTimeout()}), the timeout fires after the sleep and the read itself
+ *       never executes; the caller receives {@code SocketTimeoutException}; assert that the
+ *       application distinguishes a read timeout from a connection reset.
+ *   <li>JDBC drivers that use blocking reads for query response parsing experience inflated query
+ *       times; HikariCP's statement-level timeout (if configured) may expire during the read
+ *       delay; assert that the connection is properly evicted rather than returned to the pool.
+ *   <li><strong>Production failure mode:</strong> a database runs a long query that returns a
+ *       large result set in multiple TCP segments; the application's JDBC thread blocks on
+ *       {@code SocketInputStream.read()} waiting for each segment; if the DB server is under GC
+ *       pressure it pauses sending; the Tomcat thread is blocked for the GC pause duration;
+ *       during this time the Tomcat connector cannot allocate threads for new requests, causing
+ *       cascading request queuing and timeout failures.
  * </ul>
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The interception targets {@code java.net.SocketInputStream#read(byte[], int, int)}, the
+ * internal stream used by {@code Socket.getInputStream()}. Unlike NIO
+ * {@code SocketChannel.read(ByteBuffer)} which is used by Netty and async frameworks, this path
+ * is used exclusively by blocking socket clients. The read call ultimately issues a {@code recv(2)}
+ * syscall; the chaos delay fires before this syscall, holding the calling thread.
+ *
+ * <p>PostgreSQL JDBC's {@code org.postgresql.core.PGStream} wraps the socket input stream and
+ * calls {@code read()} to receive protocol messages from the database. Every query response, every
+ * COPY data chunk, and every notification is received via this path. The delay fires on each read
+ * call, compounding for large result sets that arrive in multiple reads.
+ *
+ * <p>The {@code SO_TIMEOUT} set via {@code Socket.setSoTimeout()} is enforced by the OS-level
+ * {@code SO_RCVTIMEO} socket option. The chaos delay fires in the JVM before the syscall; if the
+ * delay itself exceeds the SO_TIMEOUT value, the timeout fires immediately when {@code recv(2)} is
+ * called after the sleep — the OS does not know about the JVM sleep. This creates an apparent
+ * read timeout even when the sender is responsive, which is a realistic simulation of a slow
+ * consumer exceeding its own timeout budget.
+ *
+ * <p>Kafka's Java consumer uses {@code kafka.network.Selector} which is NIO-based for the
+ * consumer group protocol, but the older {@code SimpleConsumer} (Kafka 0.x/1.x) used blocking
+ * sockets; this annotation applies to legacy Kafka integrations. Modern Kafka clients should use
+ * {@link ChaosNioChannelReadDelay} instead.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosSocketReadDelay
- * class JvmChaosTest {
+ * @ChaosSocketReadDelay(delayMs = 500)
+ * class JdbcReadTimeoutTest {
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void hikariCpEvictsConnectionOnReadTimeout(ConnectionInfo info) {
+ *     // assert that SocketTimeoutException is mapped to SQLTimeoutException
+ *     // assert connection is not returned to pool after timeout
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosSocketReadDelays}) to apply different configurations to different containers.
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation is required; omitting
+ *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
+ *       {@code @JvmAgentChaos}; it is attached before the container starts.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
+ *       translator class can be resolved.
+ *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
+ *       intercept native executables.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosSocketReadInjectException
+ * @see ChaosSocketWriteDelay
+ * @see ChaosNioChannelReadDelay
  */
 @Repeatable(ChaosSocketReadDelay.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

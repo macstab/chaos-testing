@@ -14,61 +14,89 @@ import com.macstab.chaos.dns.annotation.l1.DnsSelectorKind;
 import com.macstab.chaos.dns.model.EaiErrno;
 
 /**
- * Injects {@code EAI_NONAME} on every libchaos-intercepted {@code forward} call inside the target
- * container, making the call fail as if the kernel returned {@code EAI_NONAME}.
+ * Injects {@code EAI_NONAME} into every {@code getaddrinfo(3)} call (forward DNS lookup), causing
+ * the call to return {@code EAI_NONAME} as if the hostname does not exist in the DNS namespace.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EAI_NONAME}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EAI_NONAME} is a valid POSIX result of {@code forward}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code forward} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = EAI_NONAME} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: hostname not found — NXDOMAIN; simulates service deletion or misconfiguration.
+ * <p>L1 libchaos primitive. Encodes exactly one (selectorKind = {@code FORWARD}, errno =
+ * {@code EAI_NONAME}) tuple. This annotation always fires on every intercepted forward lookup —
+ * there is no per-call probability field. Use it when you need every resolution attempt to produce
+ * an NXDOMAIN-equivalent failure so that the application's host-not-found handling is exercised.
+ * No runtime selector-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.DNS)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-dns.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the libc resolver wrappers {@code
- * getaddrinfo} and {@code getnameinfo}. This annotation installs a rule via {@code
- * AdvancedDnsChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.DNS)} on the container definition causes the
+ *       extension to upload {@code libchaos-dns.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code getaddrinfo(3)} and {@code getnameinfo(3)} at the
+ *       dynamic-linker level.
+ *   <li>On every intercepted {@code getaddrinfo} call the interposer immediately returns
+ *       {@code EAI_NONAME} without performing any real resolver query.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.DNS)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-dns} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>Every forward resolution attempt fails as if the hostname does not exist; the application
+ *       must not retry on {@code EAI_NONAME} as if it were a transient error — the name does not
+ *       exist and retrying will produce the same result.
+ *   <li>Service-discovery clients that expect the hostname to be present will fail to resolve
+ *       and must either fall back to a hardcoded IP, use a service mesh sidecar, or surface an
+ *       error to the caller.
+ *   <li>Java's {@code InetAddress.getByName()} maps {@code EAI_NONAME} to an
+ *       {@code UnknownHostException} with message "Name or service not known"; assert that the
+ *       application catches this and emits a domain-specific error rather than an NPE.
+ *   <li>Assert that the application correctly distinguishes between "name does not exist" and
+ *       "name exists but cannot be reached" when constructing its diagnostic messages.
  * </ul>
+ *
+ * <p>In production, {@code EAI_NONAME} from {@code getaddrinfo} occurs when a DNS record is
+ * deleted (service decommission), when the application connects to the wrong environment (e.g.
+ * a development hostname in a production configuration), or when a Kubernetes service is deleted
+ * while the application is running.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code EAI_NONAME} is defined by POSIX as "the node or service is not known". It is
+ * returned when the authoritative DNS server responds with {@code NXDOMAIN} ({@code RCODE 3}),
+ * meaning the queried name definitively does not exist in the zone. This is distinct from
+ * {@code EAI_FAIL}, which signals a resolver infrastructure failure, and from {@code EAI_AGAIN},
+ * which signals a transient failure.
+ *
+ * <p>The glibc resolver maps {@code NXDOMAIN} to {@code h_errno = HOST_NOT_FOUND} and then to
+ * {@code EAI_NONAME}. Applications that call the deprecated {@code gethostbyname(3)} instead of
+ * {@code getaddrinfo(3)} will receive {@code NULL} with {@code h_errno = HOST_NOT_FOUND}; the
+ * injection from {@code libchaos-dns.so} targets the {@code getaddrinfo} path specifically, making
+ * it necessary to use the modern API to observe the injection.
+ *
+ * <p>Connection pools that pre-resolve hostnames at startup will fail to initialise under this
+ * injection. Pools configured with lazy resolution (connect-on-first-use) will fail at the first
+ * connection attempt. Injecting {@code EAI_NONAME} before pool initialisation is the most
+ * thorough way to ensure that startup-time DNS failures are handled gracefully rather than causing
+ * an unhandled exception in the pool's background thread.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.DNS)
- * @ChaosForwardEainoname(probability = 0.001)
- * class FaultTest {
+ * @ChaosForwardEainoname
+ * class ForwardEainонameTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void applicationFailsCleanlyWhenHostnameDoesNotExist(ConnectionInfo info) {
+ *     // assert that an UnknownHostException is correctly wrapped and surfaced
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-2 to 1e-1; 1.0 simulates a full DNS outage for the
- * container.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosForwardEainonames}) to bind different probabilities
- * to different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosForwardEaiagain
+ * @see ChaosForwardEaifail
+ * @see ChaosWildcardEainoname
+ * @see com.macstab.chaos.dns.annotation.l1.DnsEaiBinding
  */
 @Repeatable(ChaosForwardEainoname.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

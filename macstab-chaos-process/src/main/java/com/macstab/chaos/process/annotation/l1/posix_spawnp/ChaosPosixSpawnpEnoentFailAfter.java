@@ -14,61 +14,104 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code posix_spawnp} calls
- * succeed, then injects {@code ENOENT} on every subsequent call until the rule is removed.
+ * After {@link #successesBeforeFailure} successful {@code posix_spawnp} calls, injects
+ * {@code ENOENT} on every subsequent call, causing the calling code to observe a persistent
+ * binary-not-found failure that models a binary disappearing from {@code $PATH} during a rolling
+ * deployment.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code POSIX_SPAWNP}, errno = {@code ENOENT}, effect = FAIL_AFTER) tuple. FAIL_AFTER is the
- * process module's counter-gated effect — distinct from ERRNO (probabilistic) and LATENCY
- * (unconditional). It models resource-exhaustion scenarios where the first N operations succeed and
- * then the system runs out of capacity.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code POSIX_SPAWNP}, errno = {@code ENOENT},
+ * effect = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N calls succeed,
+ * then the counter trips permanently and every subsequent call returns the error code until the
+ * rule is removed. Compile-time safety: invalid selector/errno/effect combinations have no
+ * annotation class.
  *
- * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
- * {@code posix_spawnp} calls. After {@link #successesBeforeFailure} successes the counter trips and
- * every subsequent call returns {@code -1} with {@code errno = ENOENT}, regardless of real kernel
- * capacity. The counter resets every time the rule is re-applied (e.g. across test methods if the
- * annotation is at class scope).
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code posix_spawnp} wrapper at the dynamic-linker level.</li>
+ *   <li>The interposer maintains a per-rule success counter; the counter does not reset
+ *       automatically between test methods when the annotation is at class scope.</li>
+ *   <li>Once the counter reaches zero it trips permanently: every subsequent {@code posix_spawnp}
+ *       call returns {@code ENOENT} directly (POSIX spawn returns the error code, not -1).</li>
+ *   <li>The calling code receives: return value {@code ENOENT} (2); no child process is created;
+ *       the binary name was not found in any directory listed in {@code $PATH}.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family. This annotation installs
- * a FAIL_AFTER rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at {@code
- *       beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>The first {@link #successesBeforeFailure} calls proceed normally; all subsequent calls
+ *       return {@code ENOENT}; assert that the application includes the binary name and the
+ *       {@code $PATH} value in the error diagnostic and raises a deployment-integrity alert —
+ *       binary disappearance is a deployment error requiring operator action, not in-process retry.</li>
+ *   <li>FAIL_AFTER models the binary-disappearance scenario: N successful spawns occur while the
+ *       binary is present in a {@code $PATH} directory; a rolling deployment removes or replaces
+ *       the binary in that directory; subsequent spawns fail with ENOENT — assert that the
+ *       application detects this deployment-integrity failure at the threshold and reports which
+ *       binary name is missing.</li>
+ *   <li>Assert that the application does not call {@code waitpid} on an uninitialised pid after
+ *       post-threshold ENOENT, and does not retry — ENOENT from posix_spawnp is not transient;
+ *       assert that the application distinguishes posix_spawnp-ENOENT (binary not in any PATH
+ *       directory) from posix_spawn-ENOENT (specific explicit path missing) in error messages.</li>
  * </ul>
+ * Production failure mode: a service uses {@code posix_spawnp} to invoke a helper utility by name;
+ * a rolling deployment updates the container image; during the update window the binary is
+ * temporarily absent from its {@code $PATH} directory; after N successful spawns all subsequent
+ * spawns return ENOENT; the service has no deployment-integrity alert and operators cannot determine
+ * which binary name is missing or which PATH directories were searched.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>FAIL_AFTER models the rolling-deployment binary-absence scenario: N spawns succeed while the
+ * binary is present; at the deployment boundary the binary is removed from the PATH directory;
+ * subsequent spawns return ENOENT after exhausting the PATH search. Real ENOENT from this scenario
+ * is not probabilistic — it fires deterministically once the binary is removed and persists until
+ * the binary is restored. POSIX spawn returns the error code directly — checking {@code if (ret < 0)}
+ * silently misses ENOENT (2).
+ *
+ * <p>The posix_spawnp ENOENT scenario differs from posix_spawn ENOENT in the diagnostic
+ * information required: spawnp ENOENT means the binary name (the {@code file} argument) was not
+ * found in any directory listed in the {@code $PATH} environment variable; the error message should
+ * include both the binary name and the current PATH value so that operators can determine which
+ * directories were searched. posix_spawn ENOENT means a specific explicit path was invalid, and
+ * the error message should include the explicit path.
+ *
+ * <p>The counter does not reset between test methods when the annotation is at class scope. This
+ * enables sequential testing: the first test method exercises the success path (calls 1 through N,
+ * simulating normal operation before the deployment window); subsequent test methods exercise the
+ * ENOENT path automatically without redeploying the container. Set {@link #successesBeforeFailure}
+ * to the expected number of spawns before the deployment window opens.
+ *
+ * <p>Unlike EAGAIN (which warrants retry) or EMFILE (which warrants fd cleanup before retry),
+ * ENOENT from posix_spawnp warrants neither retry nor in-process recovery. The application should
+ * open a circuit-breaker immediately and alert the deployment pipeline or on-call team with the
+ * missing binary name and PATH. Retry loops on ENOENT are not only useless but dangerous — they
+ * produce log storms that can obscure other concurrent alerts during a deployment incident.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosPosixSpawnpEnoentFailAfter(successesBeforeFailure = 128)
- * class ProcessExhaustionTest {
+ * @ChaosPosixSpawnpEnoentFailAfter(successesBeforeFailure = 25)
+ * class PosixSpawnpBinaryDisappearanceTest {
  *   @Test
- *   void handlesExhaustion(ConnectionInfo info) { ... }
+ *   void executorReportsBinaryNameAndPathOnEnoentAfterThresholdAndAlertsDeploymentTeam(ConnectionInfo info) {
+ *     // first 25 spawns succeed; subsequent spawns return ENOENT;
+ *     // verify binary name and $PATH in diagnostic; deployment alert raised; no retry; no waitpid on uninit pid
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of {@code
- * posix_spawnp} calls the application is expected to make before hitting the limit. Typically 5–200
- * for container-scoped tests. Zero means the very first call fails.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form
- * ({@code @ChaosPosixSpawnpEnoentFailAfter.Repeatable}) to apply different counters to different
- * containers.
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to the expected
+ * number of successful spawns before the deployment window opens; values 5–100 cover most
+ * deployment scenarios; 0 means the binary is missing from the first spawn (cold deployment error).
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessFailAfterBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#failAfter(ProcessSelector, ProcessErrno, long)
  */
 @Repeatable(ChaosPosixSpawnpEnoentFailAfter.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

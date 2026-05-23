@@ -14,39 +14,75 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code ENOENT} on every libchaos-intercepted {@code truncate} call inside the target
- * container, making the call fail as if the kernel returned {@code ENOENT}.
+ * Injects {@code ENOENT} into {@code truncate(2)}, causing the call to return {@code -1} with
+ * {@code errno = ENOENT} as if the named file does not exist or a component of the path prefix
+ * is a directory that does not exist or is a dangling symbolic link.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ENOENT}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code ENOENT} is a valid POSIX result of {@code truncate}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code truncate} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = ENOENT} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: no such file or directory — binary path not found or file deleted.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code TRUNCATE}, errno = {@code ENOENT})
+ * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
+ * {@code truncate} call; when it fires the interposer returns {@code -1} with {@code errno = ENOENT}
+ * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.IO)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-io.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the filesystem libc wrappers (open, read,
- * write, close, fsync, etc.) at the dynamic-linker level. This annotation installs a rule via
- * {@code AdvancedFilesystemChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
+ *       extension to upload {@code libchaos-io.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
+ *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
+ *       {@code fallocate} at the dynamic-linker level.
+ *   <li>On each intercepted {@code truncate} call a Bernoulli trial with probability {@link #probability}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = ENOENT}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.IO)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-filesystem} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code ENOENT} from {@code truncate} means the target file was not found at the given path;
+ *       this is a TOCTOU (time-of-check, time-of-use) race condition scenario where the file was
+ *       deleted or renamed between the application's existence check and the {@code truncate} call.
+ *       Assert that the application re-creates the file or reports an appropriate error rather than
+ *       assuming the file still exists.
+ *   <li>Log rotation implementations that truncate the current log file after archiving it may
+ *       encounter {@code ENOENT} if the file was already deleted by an external cleanup process;
+ *       assert that the rotation handles this as a benign condition (the file is already gone) and
+ *       proceeds to create a new log file.
+ *   <li>Applications that use the "create, write, truncate to size, memory-map" pattern to prepare
+ *       files for mmap must handle {@code ENOENT} on truncate if the file was removed between
+ *       creation and truncation; assert that the application retries the entire sequence from
+ *       creation rather than leaving a partially-prepared file in place.
+ *   <li>Assert that the application distinguishes {@code ENOENT} (file absent) from {@code EACCES}
+ *       (file inaccessible) and {@code EROFS} (filesystem read-only) to apply the correct
+ *       remediation for each condition.
  * </ul>
+ *
+ * <p>In production, {@code ENOENT} from {@code truncate} occurs in TOCTOU races where an external
+ * process deletes or renames the file between the application's check and its modification
+ * operation, and when a Kubernetes ConfigMap or Secret is unmounted between the application's
+ * configuration file discovery and its attempt to resize the file.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code truncate(2)} takes a path argument and resolves it through the VFS namespace at the
+ * time of the call. If any component of the path has been removed or replaced since the
+ * application last verified the path's existence, the call returns {@code ENOENT}. Unlike
+ * {@code ftruncate(2)}, which uses an already-open file descriptor and is immune to path-level
+ * changes, {@code truncate} is subject to the POSIX TOCTOU race condition.
+ *
+ * <p>The TOCTOU race between existence check and modification is particularly relevant for log
+ * rotation, where an external log rotation daemon (logrotate, newsyslog) may rename the current
+ * log file while the application's logger is about to truncate it. Applications should prefer
+ * {@code ftruncate(2)} on an open file descriptor to avoid this race, or should be prepared to
+ * handle {@code ENOENT} from {@code truncate} and recreate the file.
+ *
+ * <p>Java's {@code FileChannel.truncate(long)} uses {@code ftruncate(2)} via an open file
+ * descriptor, so it is not affected by this annotation. Applications that call the path-based
+ * truncate through JNI or through a native wrapper that uses {@code truncate(2)} directly are
+ * affected.
  *
  * <h2>Example</h2>
  *
@@ -54,21 +90,18 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.IO)
  * @ChaosTruncateEnoent(probability = 0.001)
- * class FaultTest {
+ * class TruncateEnoentTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void logRotationHandlesFileAbsenceByCreatingNewLogFile() {
+ *     // assert that ENOENT on truncate causes a new log file to be created rather than an error
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosTruncateEnoents}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosTruncateEacces
+ * @see ChaosTruncateErofs
+ * @see com.macstab.chaos.filesystem.annotation.l1.IoErrnoBinding
  */
 @Repeatable(ChaosTruncateEnoent.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

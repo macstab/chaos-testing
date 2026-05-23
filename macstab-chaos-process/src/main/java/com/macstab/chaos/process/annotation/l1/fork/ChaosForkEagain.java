@@ -14,62 +14,100 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Injects {@code EAGAIN} on every libchaos-intercepted {@code fork} call inside the target
- * container, making the call fail as if the kernel returned {@code EAGAIN}.
+ * Injects {@code EAGAIN} into {@code fork} calls intercepted by libchaos-process, causing the
+ * calling code to observe a resource-temporarily-unavailable failure when attempting to create
+ * a child process.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EAGAIN}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EAGAIN} is a valid POSIX result of {@code fork}.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code FORK}, errno = {@code EAGAIN}) tuple.
+ * The {@code FORK} selector intercepts {@code fork} calls only, leaving {@code execve},
+ * {@code pthread_create}, and all other process syscalls unaffected. Compile-time safety:
+ * invalid selector/errno combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code fork} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = EAGAIN} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: temporary failure / resource temporarily unavailable — typical of RLIMIT exhaustion or
- * kernel pressure.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code fork} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code fork} call the interposer runs a Bernoulli trial with probability
+ *       {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = EAGAIN} and returns {@code -1}
+ *       without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 11,
+ *       {@code strerror}: "Resource temporarily unavailable"; no child process is created and
+ *       the calling process continues in its current state.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family at the dynamic-linker
- * level. This annotation installs a rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code fork} returns {@code -1}; {@code errno = EAGAIN} (11); the kernel cannot allocate
+ *       the process table entry or the process count has reached {@code RLIMIT_NPROC} — assert
+ *       that the application retries with backoff rather than treating EAGAIN as a permanent
+ *       failure, since EAGAIN from fork is always transient.</li>
+ *   <li>Applications that use fork for request isolation (CGI-style process-per-request, credential
+ *       isolation via fork+exec) must handle EAGAIN without dropping the request — assert that
+ *       the application's fork failure handler either queues the request for retry or returns a
+ *       retriable error to the caller rather than silently discarding it.</li>
+ *   <li>Assert that the application distinguishes fork-EAGAIN from fork-ENOMEM: EAGAIN (11) means
+ *       the process table is full or {@code RLIMIT_NPROC} is exhausted (transient, retry after
+ *       backoff); ENOMEM (12) means the kernel cannot allocate memory structures for the child
+ *       (may be persistent under memory pressure, requires different handling).</li>
  * </ul>
+ * Production failure mode: a credential-isolation service forks a child process to handle each
+ * sensitive request in a separate process boundary; a concurrent request burst exhaust the node's
+ * {@code RLIMIT_NPROC}; fork returns EAGAIN; the service treats EAGAIN as a hard failure and
+ * returns 500 to the client rather than queuing for retry — every request during the burst fails.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>{@code EAGAIN} from {@code fork} has two distinct sources in the kernel: {@code RLIMIT_NPROC}
+ * (the per-user limit on the number of processes, checked against the user's current process count
+ * in the kernel's user namespace) and the kernel's internal {@code max_threads} limit, which is
+ * derived from the available memory divided by a minimum thread size. Both limits are transient
+ * in practice: the process count falls as children exit, and memory pressure changes over time.
+ * Applications that treat fork-EAGAIN as permanent will fail unnecessarily under bursty load.
+ *
+ * <p>The {@code RLIMIT_NPROC} source is unique to {@code fork} and {@code clone}: it counts all
+ * threads owned by the user, not just the calling process's children. In containerised environments,
+ * the runtime and all sidecar processes share the same uid, so a burst of container launches by
+ * any one component can trigger {@code RLIMIT_NPROC} for all others. Applications that fork for
+ * isolation must monitor the per-uid process count and implement load-shedding before the limit
+ * is reached.
+ *
+ * <p>The contrast with {@code pthread_create}-EAGAIN is important: both return EAGAIN but they
+ * indicate different resource classes. Fork-EAGAIN indicates process table or uid slot exhaustion,
+ * while pthread_create-EAGAIN indicates the thread library's stack allocation failed or the
+ * kernel's thread count limit was reached. The recovery action differs: for fork-EAGAIN, wait for
+ * child processes to exit; for pthread_create-EAGAIN, reduce the thread pool size or increase stack
+ * reuse.
+ *
+ * <p>The EAGAIN semantics are symmetric across fork and clone: the kernel uses the same limit
+ * checks for both. Applications that mix fork and clone (e.g. using {@code clone(SIGCHLD)} for
+ * resource-sharing forks and {@code fork()} for isolation forks) will encounter EAGAIN from both
+ * paths when the limit is hit — the chaos annotation only intercepts the {@code fork} libc wrapper,
+ * not the raw {@code clone} syscall.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosForkEagain(probability = 0.001)
- * class FaultTest {
+ * @ChaosForkEagain(probability = 0.01)
+ * class ForkProcessTablePressureTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void serviceRetriesWithBackoffOnForkEagainAndDoesNotDropRequest(ConnectionInfo info) {
+ *     // verify fork failure is retried; EAGAIN does not cause request drop; backoff applied
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3 to simulate transient pressure; high rates
- * saturate retry budgets.
- *
+ * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2; EAGAIN from fork is transient and
+ * the application should retry; any non-zero probability exercises the retry path.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosForkEagains}) to bind different probabilities to
- * different containers simultaneously.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessErrnoBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#errno(ProcessSelector, ProcessErrno, double)
  */
 @Repeatable(ChaosForkEagain.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

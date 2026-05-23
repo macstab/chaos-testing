@@ -14,11 +14,71 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * L1 chaos primitive: inject {@code ENOBUFS} on every libchaos-net-intercepted {@code recv}
- * syscall, gated by {@link #toxicity}.
+ * Injects {@code ENOBUFS} into {@code recv(2)}, causing the call to return {@code -1} with
+ * {@code errno = ENOBUFS} as if the kernel's network receive buffer pool is exhausted and cannot
+ * allocate a buffer to hold the arriving datagram.
  *
- * <p><strong>What this simulates:</strong> no buffer space available — kernel send buffers
- * exhausted.
+ * <h2>What this annotation is</h2>
+ *
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code RECV}, errno = {@code ENOBUFS})
+ * tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted
+ * {@code recv} call; when it fires the interposer returns {@code -1} with {@code errno = ENOBUFS}
+ * without performing any real kernel operation. No runtime operation-errno validation is needed.
+ *
+ * <h2>What chaos this applies</h2>
+ *
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
+ *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
+ *       {@code poll} at the dynamic-linker level.
+ *   <li>On each intercepted {@code recv} call a Bernoulli trial with probability {@link #toxicity}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = ENOBUFS}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
+ *
+ * <ul>
+ *   <li>{@code ENOBUFS} on {@code recv} indicates that the kernel's socket buffer pool is
+ *       exhausted; unlike {@code EAGAIN} (no data available yet), {@code ENOBUFS} means the kernel
+ *       cannot hold the incoming data. The application should back off and reduce ingestion rate.
+ *   <li>Assert that the application does not close the connection on {@code ENOBUFS}; the
+ *       connection may still be valid and retrying recv after a short delay may succeed once buffer
+ *       pressure is reduced.
+ *   <li>{@code ENOBUFS} is more commonly seen on UDP sockets (where each datagram requires a
+ *       separate buffer allocation) than on TCP sockets; assert that the application's UDP receive
+ *       loop handles the error gracefully and does not drop the processing thread.
+ *   <li>Assert that the application emits a buffer-exhaustion metric when it encounters
+ *       {@code ENOBUFS}, so that operators can tune {@code net.core.rmem_max} and
+ *       {@code net.core.rmem_default} to reduce the frequency of the error.
+ * </ul>
+ *
+ * <p>In production, {@code ENOBUFS} from {@code recv} occurs on UDP-based protocols (DNS, QUIC,
+ * custom datagram protocols) when incoming traffic exceeds the rate at which the application drains
+ * the receive buffer, causing the kernel's socket buffer to fill and the kernel to drop subsequent
+ * packets with a corresponding {@code ENOBUFS} when the application calls {@code recv}.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code ENOBUFS} on {@code recv} is uncommon for TCP sockets because TCP's flow control
+ * prevents the remote sender from overrunning the receiver's buffer; the kernel advertises a reduced
+ * receive window when the buffer is nearly full, and the sender slows down. For UDP sockets, there
+ * is no flow control: the kernel drops datagrams when the socket receive buffer is full and may
+ * return {@code ENOBUFS} to indicate the overrun condition.
+ *
+ * <p>The kernel tracks per-socket buffer usage via the socket's {@code sk_rcvbuf} limit. When a
+ * datagram arrives and {@code sk_rmem_alloc} exceeds {@code sk_rcvbuf}, the kernel calls
+ * {@code sock_drop} and increments the {@code InErrors} counter in {@code /proc/net/udp}.
+ * Applications that monitor this counter can detect packet loss without waiting for an
+ * application-level {@code ENOBUFS}.
+ *
+ * <p>Java's {@code DatagramSocket} and {@code DatagramChannel} map {@code ENOBUFS} from
+ * {@code recv} to a {@code SocketException} with the message "No buffer space available". This is
+ * the same message used for {@code ENOBUFS} from {@code send}; application code that relies on the
+ * message text to classify the error may not correctly distinguish the two directions.
  *
  * <h2>Example</h2>
  *
@@ -26,14 +86,18 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.NET)
  * @ChaosRecvEnobufs(toxicity = 0.1)
- * class MyTest { ... }
+ * class RecvEnobufsTest {
+ *   @Test
+ *   void udpReceiverBacksOffAndEmitsBufferExhaustionMetricOnEnobufs(ConnectionInfo info) {
+ *     // assert that the receiver backs off and emits a buffer-exhaustion alert
+ *   }
+ * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> applies to every {@code recv} call across all endpoints. For
- * per-endpoint targeting use the imperative {@code AdvancedConnectionChaos} API.
- *
  * @author Christian Schnapka - Macstab GmbH
- * @see com.macstab.chaos.connection.model.NetRule#errno
+ * @see ChaosRecvEconnreset
+ * @see ChaosRecvEagain
+ * @see com.macstab.chaos.connection.annotation.l1.ConnectionErrnoBinding
  */
 @Repeatable(ChaosRecvEnobufs.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

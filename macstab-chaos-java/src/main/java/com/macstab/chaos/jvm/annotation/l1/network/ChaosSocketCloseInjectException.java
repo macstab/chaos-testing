@@ -14,59 +14,109 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Throw the configured exception at the socket_close call site.
+ * Intercepts {@code Socket.close()} and throws the configured exception before the TCP connection
+ * is torn down, simulating a close failure that leaves the socket open and the file descriptor
+ * unreleased, exercising the rare but consequential error path where connection teardown itself
+ * fails in JDBC drivers, HTTP clients, and connection pool eviction logic.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> throw the configured exception at the SOCKET_CLOSE
- * call site inside the JVM of the target container. The effect fires on every matching call,
- * subject to the probability configured via {@link #probability()} if applicable. The rule is
- * active from {@code beforeAll} until {@code afterAll} (class-scope) or from {@code beforeEach}
- * until {@code afterEach} (method-scope).
+ * A JVM agent L1 chaos primitive — one typed annotation per (selector family, operation type,
+ * effect) tuple. It is declared on a test class or method alongside a container annotation and
+ * activates for the lifetime of the test class ({@code beforeAll} / {@code afterAll}) or a single
+ * test method ({@code beforeEach} / {@code afterEach}).
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>Before every call to {@code java.net.Socket#close()} inside the target container's JVM,
+ *       the chaos agent intercepts the calling thread.
+ *   <li>The agent reflectively instantiates the class named by {@link #exceptionClassName()} with
+ *       the message from {@link #message()} and throws it; the real {@code close()} is not called;
+ *       the file descriptor is not released and the TCP connection remains open.
+ *   <li>The exception propagates to the caller — JDBC driver, HTTP client close path, or pool
+ *       eviction code — which must handle a close failure or leak the socket.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>Because the underlying socket is not closed, the file descriptor is not released; if many
+ *       sockets fail to close, the application's file descriptor count grows; assert that the
+ *       application's monitoring detects the file descriptor leak and that an alert fires before
+ *       the OS limit is reached.
+ *   <li>JDBC drivers' {@code java.sql.Connection.close()} implementations typically call
+ *       {@code socket.close()} in a try-catch or finally block; if the close throws, the driver
+ *       may swallow the exception or propagate it to the pool; HikariCP's eviction path catches
+ *       exceptions from {@code close()} and logs them but does not retry — assert that the pool
+ *       log captures the close failure and that the pool does not attempt to reuse the unclosed
+ *       connection.
+ *   <li>Applications that close connections in finally blocks will have the close exception
+ *       propagate out of the finally block, potentially masking the original exception that caused
+ *       the finally block to execute; assert that both the original exception and the close
+ *       exception are logged and neither is silently lost.
+ *   <li><strong>Production failure mode:</strong> a JVM run at the OS file descriptor limit
+ *       ({@code ulimit -n}) combined with a connection pool that evicts connections and fails to
+ *       close them causes the file descriptor count to grow monotonically; new connection attempts
+ *       fail with {@code IOException: Too many open files}; the pool cannot create new connections;
+ *       the application appears healthy (it is running) but cannot process any new requests that
+ *       require database access.
  * </ul>
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The interception targets {@code java.net.Socket#close()} via Byte Buddy. In the JVM,
+ * {@code Socket.close()} calls {@code impl.close()}, which calls {@code socketClose()}, which
+ * issues {@code close(2)} on the file descriptor. The chaos exception fires before any of this
+ * occurs; the underlying OS socket remains open and the file descriptor is unreleased.
+ *
+ * <p>PostgreSQL JDBC's {@code AbstractJdbc2Connection.close()} calls
+ * {@code protoConnection.close()} which eventually calls {@code pgStream.close()} and then
+ * {@code socket.close()}. If the socket close throws, the JDBC connection object transitions to
+ * a closed state internally (it sets {@code openStackTrace = null} and similar flags) even though
+ * the underlying OS socket is not closed. This creates a split state: the JVM considers the
+ * connection closed but the OS has an open socket with pending data in its send buffer.
+ *
+ * <p>HikariCP's {@code PoolBase.quietlyCloseConnection()} wraps the close in a try-catch,
+ * logs the exception at WARN level, and does not propagate it. The pool's internal state is
+ * updated to remove the connection from its tracking structures. Because the OS socket is still
+ * open, the remote database server still holds the connection open; the database's
+ * {@code max_connections} is not freed until the database's idle timeout fires and closes the
+ * socket from the server side.
+ *
+ * <p>This is one of the most difficult failure modes to test without chaos tooling because
+ * {@code Socket.close()} almost never throws in production; its failure requires either kernel
+ * errors or driver bugs. This annotation makes it reproducible and testable.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosSocketCloseInjectException
- * class JvmChaosTest {
+ * @ChaosSocketCloseInjectException(
+ *     exceptionClassName = "java.io.IOException",
+ *     message = "close failed: transport endpoint is not connected")
+ * class SocketCloseFailureLeakTest {
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void fileDescriptorLeakIsDetectedAndAlertFires(ConnectionInfo info) {
+ *     // assert FD count grows and monitoring alert fires before OS limit
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosSocketCloseInjectExceptions}) to apply different configurations to different
- * containers.
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation is required; omitting
+ *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
+ *       {@code @JvmAgentChaos}; it is attached before the container starts.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
+ *       translator class can be resolved.
+ *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
+ *       intercept native executables.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosSocketCloseDelay
  */
 @Repeatable(ChaosSocketCloseInjectException.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

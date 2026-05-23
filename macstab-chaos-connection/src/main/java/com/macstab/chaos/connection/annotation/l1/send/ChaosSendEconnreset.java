@@ -14,60 +14,91 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code ECONNRESET} on every libchaos-intercepted {@code send} call inside the target
- * container, making the call fail as if the kernel returned {@code ECONNRESET}.
+ * Injects {@code ECONNRESET} into {@code send(2)}, causing the call to return {@code -1} with
+ * {@code errno = ECONNRESET} as if the remote peer sent a TCP RST segment in response to data
+ * being sent on the connection, terminating the connection mid-transfer.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ECONNRESET}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code ECONNRESET} is a valid POSIX result of {@code send}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code send} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #toxicity} is run. When it fires the
- * interceptor returns {@code -1} and sets {@code errno = ECONNRESET} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: connection reset by peer — protocol error, RST-on-close, or load-balancer failover.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code SEND}, errno =
+ * {@code ECONNRESET}) tuple. A Bernoulli trial with probability {@link #toxicity} is run on each
+ * intercepted {@code send} call; when it fires the interposer returns {@code -1} with
+ * {@code errno = ECONNRESET} without performing any real kernel operation. No runtime
+ * operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.NET)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-net.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes socket-layer libc wrappers (connect, accept,
- * socket, bind, listen, shutdown, send, recv, poll). This annotation installs a rule via {@code
- * AdvancedConnectionChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
+ *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
+ *       {@code poll} at the dynamic-linker level.
+ *   <li>On each intercepted {@code send} call a Bernoulli trial with probability {@link #toxicity}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = ECONNRESET}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.NET)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-connection} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>The connection is permanently terminated on send-time reset; the application must close the
+ *       socket and discard any data that was in the send buffer — the remote peer did not receive it.
+ *   <li>Assert that the application correctly handles partially-sent messages: if a multi-part send
+ *       sequence is interrupted by a reset mid-way, the remote side may have received some but not
+ *       all of the data; the application must close and reconnect rather than continuing on the
+ *       same socket.
+ *   <li>Connection pools must evict the connection on send-time reset and create a replacement;
+ *       assert that the pool does not return a reset connection to a caller after a reset.
+ *   <li>Assert that the application's retry logic for non-idempotent operations (e.g., database
+ *       writes) does not blindly retry on ECONNRESET from send, since the remote side may have
+ *       already processed the request before sending RST.
  * </ul>
+ *
+ * <p>In production, {@code ECONNRESET} from {@code send} occurs when the remote server sends RST
+ * in response to data it cannot process (e.g., after a timeout, after a protocol violation, or
+ * during server restart), when a load balancer terminates a connection while data is in transit,
+ * and when a firewall rule change causes packets to be rejected with RST after some data has
+ * already been forwarded.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The kernel can receive a RST at any time on an established TCP connection. If the RST arrives
+ * while the application is blocked in {@code send}, the kernel unblocks the call and returns
+ * {@code -1} with {@code errno = ECONNRESET}. If the RST arrives between calls, it is queued and
+ * the error is returned on the next socket operation (send or recv). The data that was in the
+ * local send buffer when the RST was received is discarded by the kernel without being transmitted.
+ *
+ * <p>The key question for idempotency: when {@code ECONNRESET} is returned from {@code send}, the
+ * application cannot determine how much (if any) of the sent data reached the remote side. For
+ * idempotent operations, the safe response is to retry on a new connection. For non-idempotent
+ * operations (payment processing, database writes), the application must use application-level
+ * deduplication or transaction IDs to avoid double processing.
+ *
+ * <p>Java maps {@code ECONNRESET} from {@code send} to a {@code SocketException} with the message
+ * "Connection reset by peer". Note that "Connection reset" (without "by peer") is the message for
+ * reset during {@code recv}; application code that inspects the message text to distinguish the two
+ * cases may fail on non-glibc systems where the messages differ.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.NET)
- * @ChaosSendEconnreset(toxicity = 0.001)
- * class FaultTest {
+ * @ChaosSendEconnreset(toxicity = 0.05)
+ * class SendEconnresetTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void nonIdempotentOperationsAreNotRetriedOnSendTimeReset(ConnectionInfo info) {
+ *     // assert that the application does not blindly retry non-idempotent operations
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-2 to 1e-1 for mid-stream reset testing.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosSendEconnresets}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosSendEpipe
+ * @see ChaosSendEtimedout
+ * @see com.macstab.chaos.connection.annotation.l1.ConnectionErrnoBinding
  */
 @Repeatable(ChaosSendEconnreset.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

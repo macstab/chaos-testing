@@ -14,39 +14,78 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code EIO} on every libchaos-intercepted {@code fsync} call inside the target container,
- * making the call fail as if the kernel returned {@code EIO}.
+ * Injects {@code EIO} into {@code fsync(2)}, causing the call to return {@code -1} with
+ * {@code errno = EIO} as if the kernel could not flush all of the file's dirty pages to the
+ * storage device because the device returned a hardware I/O error during the flush operation.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EIO}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EIO} is a valid POSIX result of {@code fsync}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code fsync} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = EIO} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: I/O error — disk failure, bad sector, or storage backend error.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code FSYNC}, errno = {@code EIO})
+ * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
+ * {@code fsync} call; when it fires the interposer returns {@code -1} with {@code errno = EIO}
+ * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.IO)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-io.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the filesystem libc wrappers (open, read,
- * write, close, fsync, etc.) at the dynamic-linker level. This annotation installs a rule via
- * {@code AdvancedFilesystemChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
+ *       extension to upload {@code libchaos-io.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
+ *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
+ *       {@code fallocate} at the dynamic-linker level.
+ *   <li>On each intercepted {@code fsync} call a Bernoulli trial with probability {@link #probability}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = EIO}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.IO)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-filesystem} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code EIO} from {@code fsync} means the durability guarantee failed: some or all dirty
+ *       pages that were written to the page cache since the last successful {@code fsync} are not
+ *       guaranteed to have reached the storage device. Assert that the application does not consider
+ *       the preceding writes durable and aborts any transaction or operation that depended on the
+ *       fsync for its durability guarantee.
+ *   <li>Write-ahead logging (WAL) implementations use {@code fsync} to make WAL records durable
+ *       before acknowledging a transaction commit. An {@code EIO} on the WAL fsync means the WAL
+ *       records may not be durable; the engine must abort all transactions that were waiting for
+ *       this fsync to commit and must not send commit acknowledgements to clients.
+ *   <li>The "write-to-temporary-then-rename" atomic update pattern requires both an {@code fsync}
+ *       on the temporary file and an {@code fsync} on the parent directory; assert that an
+ *       {@code EIO} on the temporary file's fsync causes the rename to be skipped, leaving the
+ *       original target file intact.
+ *   <li>Assert that the application marks the storage device as degraded after a configurable
+ *       number of consecutive fsync failures and transitions to a read-only or error state to
+ *       prevent accumulating unacknowledged writes.
  * </ul>
+ *
+ * <p>In production, {@code EIO} from {@code fsync} occurs when a disk sector that backs a dirty
+ * page cannot be written (bad sector, reallocated sectors list full), when a write-through RAID
+ * loses a member disk during the flush and the remaining disks cannot provide write parity, and
+ * when a network filesystem's server-side write fails and the client-side fsync is rejected.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code fsync(2)} flushes all dirty pages associated with the file descriptor's inode to the
+ * storage device, including both data pages and metadata (inode, indirect blocks). It does not
+ * return until the storage device acknowledges the write — or until an I/O error is detected.
+ * When the device returns an error for any of the dirty pages being flushed, the kernel returns
+ * {@code EIO} for the {@code fsync} call and clears the error flag so that a subsequent
+ * {@code fsync} can succeed (if the device error was transient). The pages that failed to flush
+ * remain dirty and will be retried on the next writeback.
+ *
+ * <p>A subtle but critical distinction: after {@code fsync} returns {@code EIO} on Linux, the
+ * kernel clears the file's error flag. A subsequent successful {@code fsync} does not retroactively
+ * make the data from before the failed fsync durable — it only makes the data written since the
+ * last fsync durable. Applications that retry a failed fsync should be aware that the successful
+ * retry confirms durability only for newly-written data.
+ *
+ * <p>Java's {@code FileDescriptor.sync()} and {@code FileChannel.force(boolean)} both call
+ * {@code fsync(2)} under the hood. When the underlying call returns {@code EIO}, Java throws
+ * a {@code SyncFailedException} (from {@code FileDescriptor.sync()}) or an {@code IOException}
+ * (from {@code FileChannel.force()}). Application code must propagate this exception to the
+ * transaction layer rather than catching and suppressing it.
  *
  * <h2>Example</h2>
  *
@@ -54,21 +93,18 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.IO)
  * @ChaosFsyncEio(probability = 0.001)
- * class FaultTest {
+ * class FsyncEioTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void walFsyncFailureAbortsTransactionAndRefusesCommitAcknowledgement() {
+ *     // assert that EIO on fsync aborts the WAL transaction rather than acknowledging commit
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> very low rates (1e-5 to 1e-4); EIO at high rate
- * produces unrecoverable data loss.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosFsyncEios}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosFdatasyncEio
+ * @see ChaosWriteEio
+ * @see com.macstab.chaos.filesystem.annotation.l1.IoErrnoBinding
  */
 @Repeatable(ChaosFsyncEio.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

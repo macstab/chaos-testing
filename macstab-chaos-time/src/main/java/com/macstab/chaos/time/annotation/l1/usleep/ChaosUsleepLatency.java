@@ -13,58 +13,81 @@ import com.macstab.chaos.time.annotation.l1.TimeLatencyBinding;
 import com.macstab.chaos.time.model.TimeSelector;
 
 /**
- * Delays every libchaos-intercepted {@code usleep} call by {@link #delayMs} milliseconds before
- * delegating to the real kernel call, making the operation succeed but take longer than expected.
+ * Extends every {@code usleep(3)} call by an additional {@link #delayMs} milliseconds before
+ * delegating to the real kernel call, making the sleep longer than the application requested.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one
- * (selector, effect = LATENCY) pair. Unlike errno variants, the latency primitive always delegates
- * to the kernel — it only adds wall-clock cost before doing so.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> every {@code usleep} call intercepted by libchaos
- * blocks for {@link #delayMs} ms before the kernel call is issued. This simulates the wall-clock
- * cost increase from resource pressure, kernel scheduling stalls, or slow hardware — none of which
- * return an errno but all of which can exhaust application-level timeouts, saturate connection-pool
- * wait budgets, and surface hidden latency assumptions.
+ * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code USLEEP}, effect = LATENCY)
+ * tuple. Unlike errno variants, the latency primitive always delegates to the real kernel call
+ * after sleeping the configured extra duration — the return value is 0 (success). No runtime
+ * selector-effect validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.TIME)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-time.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the libc wrappers for {@code clock_gettime},
- * {@code nanosleep}, and {@code usleep}. This annotation installs a rule via {@code
- * AdvancedTimeChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
+ *       at the dynamic-linker level.
+ *   <li>On every intercepted {@code usleep} call the interposer first sleeps for an additional
+ *       {@link #delayMs} milliseconds.
+ *   <li>After the extra delay, the real kernel call is issued with the original {@code usec}
+ *       argument; the result is returned to the application unchanged — no error is injected.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.TIME)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-time} on the test classpath.</strong>
+ *   <li>Rate-limiting loops that use {@code usleep} for pacing will run more slowly than
+ *       configured, reducing throughput below the target rate.
+ *   <li>Polling loops in client libraries (database connectors, message broker clients) that
+ *       sleep between polls will miss their desired poll interval, increasing latency.
+ *   <li>Connection keep-alive loops that sleep between heartbeats will miss intervals, potentially
+ *       triggering server-side idle timeout disconnects.
+ *   <li>Assert that SLA budgets account for scheduler jitter and that keep-alive intervals include
+ *       sufficient headroom above the extra delay.
  * </ul>
+ *
+ * <p>In production, extended {@code usleep} durations are caused by kernel scheduling stalls,
+ * cgroup CPU quota throttling, and hypervisor CPU steal on noisy-neighbour cloud hosts.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code usleep(3)} is a microsecond-precision sleep wrapper over {@code nanosleep(2)};
+ * its nominal precision is limited by kernel timer resolution (typically 1 ms on HZ=1000 kernels).
+ * The extra latency injected by {@code libchaos-time.so} simulates the effect of the OS not
+ * returning to the process promptly after the timer fires — a common occurrence when the CFS
+ * runqueue is saturated or the CPU is being stolen by another VM.
+ *
+ * <p>C libraries embedded in JNI (libcurl, librdkafka, libpq) frequently use {@code usleep}
+ * in their connection retry and poll loops. Extending those sleeps forces the application to wait
+ * longer than the library's configured retry interval, which can cascade into connection pool
+ * exhaustion or request timeout failures at the application layer.
+ *
+ * <p>Sibling annotation: {@link ChaosNanosleepLatency} applies the same delay to the modern
+ * {@code nanosleep} interface; {@link ChaosWildcardLatency} applies it to all interposed time
+ * syscalls simultaneously.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.TIME)
- * @ChaosUsleepLatency(delayMs = 200)
- * class LatencyTest {
+ * @ChaosUsleepLatency(delayMs = 300)
+ * class UsleepLatencyTest {
  *   @Test
- *   void appHandlesSlowOperation(ConnectionInfo info) { ... }
+ *   void connectionPoolDoesNotExhaustUnderExtendedPollDelay(ConnectionInfo info) {
+ *     // assert that the pool survives a 300 ms extra delay in the poll cycle
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Delay guidance:</strong> {@code 10}–{@code 200} ms simulates realistic stall events;
- * values above application-level timeouts produce cascading failures rather than isolated latency
- * observations — intentional in some scenarios, noisy in others.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form ({@code @ChaosUsleepLatencys}) to set
- * different delays on different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosNanosleepLatency
+ * @see ChaosWildcardLatency
+ * @see com.macstab.chaos.time.annotation.l1.TimeLatencyBinding
  */
 @Repeatable(ChaosUsleepLatency.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

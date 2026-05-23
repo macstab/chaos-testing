@@ -14,62 +14,99 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code ENETUNREACH} on every libchaos-intercepted {@code connect} call inside the target
- * container, making the call fail as if the kernel returned {@code ENETUNREACH}.
+ * Injects {@code ENETUNREACH} into {@code connect(2)}, causing the call to return {@code -1} with
+ * {@code errno = ENETUNREACH} as if the kernel's routing table contains no route to the destination
+ * network and the packet cannot be forwarded.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ENETUNREACH}) pair and has no
- * runtime selector-errno matrix to validate. The combination is safe by construction: this
- * annotation class exists only because {@code ENETUNREACH} is a valid POSIX result of {@code
- * connect}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code connect} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #toxicity} is run. When it fires the
- * interceptor returns {@code -1} and sets {@code errno = ENETUNREACH} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: network unreachable — split-brain or partition event.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code CONNECT}, errno =
+ * {@code ENETUNREACH}) tuple. A Bernoulli trial with probability {@link #toxicity} is run on each
+ * intercepted {@code connect} call; when it fires the interposer returns {@code -1} with
+ * {@code errno = ENETUNREACH} without performing any real kernel operation. No runtime
+ * operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.NET)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-net.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes socket-layer libc wrappers (connect, accept,
- * socket, bind, listen, shutdown, send, recv, poll). This annotation installs a rule via {@code
- * AdvancedConnectionChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
+ *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
+ *       {@code poll} at the dynamic-linker level.
+ *   <li>On each intercepted {@code connect} call a Bernoulli trial with probability {@link #toxicity}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = ENETUNREACH}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.NET)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-connection} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code ENETUNREACH} indicates a total absence of routing to the destination network; unlike
+ *       {@code EHOSTUNREACH} (which implies a route to the network exists but the host is down),
+ *       this error means the routing table has no entry for the destination prefix at all.
+ *   <li>Assert that the application's connection pool quarantines the affected remote endpoint and
+ *       does not retry immediately; routing convergence after a partition event typically takes
+ *       several seconds to minutes, making fast retry wasteful.
+ *   <li>Multi-datacenter services that maintain connections to remote clusters must detect
+ *       {@code ENETUNREACH} and activate their inter-datacenter failover path; assert that the
+ *       failover activates within the configured detection timeout.
+ *   <li>Assert that the application reports the network-partition condition at an appropriate
+ *       severity level so that on-call engineers are paged rather than the error being silently
+ *       counted in a low-priority metric.
  * </ul>
+ *
+ * <p>In production, {@code ENETUNREACH} from {@code connect} occurs during network partitions where
+ * the routing table loses its default route (e.g., a BGP session drops and the kernel flushes the
+ * route), when a container's network namespace is misconfigured and lacks a route to the pod CIDR
+ * range, and during network interface failures where the only route to a network segment goes down.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The kernel returns {@code ENETUNREACH} from {@code connect} when the routing lookup for the
+ * destination address returns a "no route" result — neither the main routing table nor the policy
+ * routing tables contain an entry for the destination network. This differs from {@code EHOSTUNREACH}
+ * in that {@code ENETUNREACH} does not involve sending any packet at all; the failure is purely
+ * local (routing table lookup) rather than involving ICMP responses from a remote router.
+ *
+ * <p>In Linux's routing model, a missing route typically means neither a specific route for the
+ * destination prefix nor a default route (0.0.0.0/0) exists. Container network plugins (Flannel,
+ * Calico, Cilium) install routes to pod CIDRs in the host kernel's routing table; when a network
+ * plugin crashes or a route advertisement is withdrawn, connections to pods on other nodes fail with
+ * {@code ENETUNREACH}. This is a common failure mode in Kubernetes during CNI plugin upgrades.
+ *
+ * <p>Java maps {@code ENETUNREACH} to a {@code NoRouteToHostException} with the message
+ * "Network is unreachable". Note that Java uses the same exception class for both
+ * {@code ENETUNREACH} and {@code EHOSTUNREACH}; application code that catches
+ * {@code NoRouteToHostException} cannot distinguish between the two based on the exception type
+ * alone. For production diagnostics, the errno value from the underlying native call must be
+ * captured via JNA or a native agent.
+ *
+ * <p>The behaviour of connection pools on {@code ENETUNREACH} varies: HikariCP will attempt to
+ * reconnect using its {@code connectionTimeout} and {@code keepaliveTime} settings; Lettuce
+ * (Redis client) will trigger its reconnect handler with exponential back-off. This injection verifies
+ * that these reconnect strategies are configured with delays long enough to allow routing convergence
+ * without causing excessive connection-creation load.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.NET)
- * @ChaosConnectEnetunreach(toxicity = 0.001)
- * class FaultTest {
+ * @ChaosConnectEnetunreach(toxicity = 0.01)
+ * class ConnectEnetunreachTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void serviceActivatesInterDatacenterFailoverOnNetworkPartition(ConnectionInfo info) {
+ *     // assert that failover activates within the configured detection timeout
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosConnectEnetunreachs}) to bind different
- * probabilities to different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosConnectEhostunreach
+ * @see ChaosConnectEtimedout
+ * @see com.macstab.chaos.connection.annotation.l1.ConnectionErrnoBinding
  */
 @Repeatable(ChaosConnectEnetunreach.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

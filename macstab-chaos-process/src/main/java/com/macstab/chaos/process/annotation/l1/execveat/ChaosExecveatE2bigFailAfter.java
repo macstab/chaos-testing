@@ -14,61 +14,111 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code execveat} calls
- * succeed, then injects {@code E2BIG} on every subsequent call until the rule is removed.
+ * After {@link #successesBeforeFailure} successful {@code execveat} calls, injects {@code E2BIG}
+ * on every subsequent call, causing the calling code to observe an argument-list-too-large failure
+ * that persists for the remainder of the test.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code EXECVEAT}, errno = {@code E2BIG}, effect = FAIL_AFTER) tuple. FAIL_AFTER is the process
- * module's counter-gated effect — distinct from ERRNO (probabilistic) and LATENCY (unconditional).
- * It models resource-exhaustion scenarios where the first N operations succeed and then the system
- * runs out of capacity.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code EXECVEAT}, errno = {@code E2BIG}, effect
+ * = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N calls succeed, then the
+ * counter trips permanently and every subsequent call fails until the rule is removed. This is
+ * distinct from ERRNO (independent Bernoulli trial on each call) and LATENCY (unconditional delay).
+ * Compile-time safety: invalid selector/errno/effect combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
- * {@code execveat} calls. After {@link #successesBeforeFailure} successes the counter trips and
- * every subsequent call returns {@code -1} with {@code errno = E2BIG}, regardless of real kernel
- * capacity. The counter resets every time the rule is re-applied (e.g. across test methods if the
- * annotation is at class scope).
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code execveat} wrapper at the dynamic-linker level.</li>
+ *   <li>The interposer maintains a per-rule success counter. Each {@code execveat} call that
+ *       passes the counter check decrements the remaining budget; the counter does not reset
+ *       automatically between test methods when the annotation is at class scope.</li>
+ *   <li>Once the counter reaches zero it trips permanently: every subsequent {@code execveat} call
+ *       sets {@code errno = E2BIG} and returns {@code -1} without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 7,
+ *       {@code strerror}: "Argument list too long"; the {@code dirfd} must be closed by the
+ *       caller to avoid an fd leak since no close-on-exec processing occurs for failed execs.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family. This annotation installs
- * a FAIL_AFTER rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at {@code
- *       beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>The first {@link #successesBeforeFailure} calls proceed normally; all subsequent calls
+ *       return {@code -1} with {@code errno = E2BIG}; assert that the counter threshold aligns
+ *       with the application's expected exec budget so the failure fires at a predictable point
+ *       in the test scenario.</li>
+ *   <li>Container runtimes using {@code execveat} with {@code AT_EMPTY_PATH} must close the open
+ *       {@code dirfd} in the {@code E2BIG} error path — assert that every exec failure closes
+ *       the dirfd before propagating the error, since failed execs do not trigger
+ *       {@code FD_CLOEXEC} processing on the dirfd.</li>
+ *   <li>FAIL_AFTER is more accurate than probabilistic ERRNO for modelling environment variable
+ *       accumulation across Kubernetes admission webhook chains: each webhook layer adds headers,
+ *       tracing context, and sidecar env vars; the cumulative argument vector is well below
+ *       {@code ARG_MAX} for the first N launches but crosses the limit deterministically after
+ *       enough webhook transformations — assert that the runtime's argument pruning logic or
+ *       error surface activates at the expected call count, not at a random trial.</li>
  * </ul>
+ * Production failure mode: a container runtime uses {@code execveat(AT_EMPTY_PATH)} to launch
+ * sidecar containers injected by admission webhooks; each webhook layer adds environment variables
+ * ({@code OTEL_*}, {@code AWS_*}, service-mesh metadata); after N container launches the
+ * cumulative environment size crosses {@code ARG_MAX}, all subsequent launches fail with
+ * {@code E2BIG}, and the runtime's error path leaks the open {@code dirfd} it prepared for exec.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>The FAIL_AFTER counter models the progressive accumulation of environment variables across
+ * a series of exec calls more accurately than a probabilistic ERRNO. In real {@code E2BIG} incidents,
+ * the failure is not random — it occurs when cumulative environment inflation from CI/CD tooling,
+ * service-mesh sidecars, and observability agents pushes the argument vector past {@code ARG_MAX}
+ * (128 KiB on Linux by default for the sum of argv + envp + their NUL terminators). The Nth exec
+ * succeeds; the (N+1)th fails. Setting {@link #successesBeforeFailure} to the observed number of
+ * execs before failure reproduces this deterministic threshold exactly.
+ *
+ * <p>The {@code execveat} context adds a layer of complexity absent from plain {@code execve}:
+ * the caller must open a {@code dirfd} before calling exec. Under FAIL_AFTER, the first N calls
+ * open and exec correctly (dirfd closed by kernel on success with {@code FD_CLOEXEC}). After the
+ * counter trips, every subsequent call opens the dirfd, then receives {@code E2BIG} from the
+ * interposer — the kernel never sees the call, so no close-on-exec processing occurs, and the
+ * dirfd remains open. Applications that omit an explicit {@code close(dirfd)} in the {@code E2BIG}
+ * error path leak one fd per failed exec, progressively exhausting {@code RLIMIT_NOFILE} and
+ * creating a compounding failure where the argument-size problem is followed by an fd-exhaustion
+ * problem.
+ *
+ * <p>The counter does not reset between test methods when the annotation is placed at class scope.
+ * This is intentional: it allows a test suite to exercise the "first N succeed" phase in early
+ * test methods and the "all subsequent fail" phase in later methods without re-deploying the
+ * container. When per-method isolation is needed, place the annotation at method scope so the
+ * counter re-initialises before each test.
+ *
+ * <p>Contrast with {@code ChaosExecveatE2big} (ERRNO, probabilistic): the ERRNO variant fires
+ * with probability {@code p} on each call independently, making it suited for testing transient
+ * argument-size failures under load. FAIL_AFTER is suited for testing what happens when an
+ * application reaches a resource ceiling deterministically — the failure boundary that real
+ * production incidents produce when environment accumulation crosses {@code ARG_MAX}.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosExecveatE2bigFailAfter(successesBeforeFailure = 128)
- * class ProcessExhaustionTest {
+ * @ChaosExecveatE2bigFailAfter(successesBeforeFailure = 50)
+ * class ExecveatArgAccumulationTest {
  *   @Test
- *   void handlesExhaustion(ConnectionInfo info) { ... }
+ *   void runtimeClosesDirfdAndReportsArgSizeOnE2bigAfterThreshold(ConnectionInfo info) {
+ *     // first 50 execveat calls succeed; subsequent calls return E2BIG;
+ *     // verify dirfd closed on each failure; E2BIG error surfaced with arg size context
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of {@code
- * execveat} calls the application is expected to make before hitting the limit. Typically 5–200 for
- * container-scoped tests. Zero means the very first call fails.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form
- * ({@code @ChaosExecveatE2bigFailAfter.Repeatable}) to apply different counters to different
- * containers.
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to match the
+ * application's observed exec count before environment accumulation exceeds {@code ARG_MAX} in
+ * production; values in the range 10–200 cover most container-launch scenarios; 0 means the
+ * very first exec fails, which tests cold-start failure handling.
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessFailAfterBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#failAfter(ProcessSelector, ProcessErrno, long)
  */
 @Repeatable(ChaosExecveatE2bigFailAfter.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

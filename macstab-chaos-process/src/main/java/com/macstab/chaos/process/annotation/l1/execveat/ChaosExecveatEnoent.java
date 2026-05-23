@@ -14,39 +14,62 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Injects {@code ENOENT} on every libchaos-intercepted {@code execveat} call inside the target
- * container, making the call fail as if the kernel returned {@code ENOENT}.
+ * Injects {@code ENOENT} into {@code execveat} calls intercepted by libchaos-process, causing the
+ * calling code to observe a no-such-file failure when attempting to replace the process image
+ * relative to a directory file descriptor.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ENOENT}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code ENOENT} is a valid POSIX result of {@code execveat}.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code EXECVEAT}, errno = {@code ENOENT}) tuple.
+ * The {@code EXECVEAT} selector intercepts {@code execveat} calls only (the Linux-specific
+ * directory-relative exec syscall), leaving {@code execve} and all other process syscalls
+ * unaffected. Compile-time safety: invalid selector/errno combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code execveat} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = ENOENT} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: no such file or directory — binary path not found or file deleted.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code execveat} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code execveat} call the interposer runs a Bernoulli trial with probability
+ *       {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = ENOENT} and returns {@code -1}
+ *       without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 2,
+ *       {@code strerror}: "No such file or directory"; no new process image is loaded.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family at the dynamic-linker
- * level. This annotation installs a rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code execveat} returns {@code -1}; {@code errno = ENOENT} (2); the path relative to
+ *       {@code dirfd} does not resolve to an existing file — the application must handle the
+ *       failure and close the {@code dirfd} to avoid a file descriptor leak.</li>
+ *   <li>Applications using {@code execveat} with a relative path and a directory fd must handle
+ *       {@code ENOENT} from the relative path resolution, which may occur even when the directory
+ *       fd itself is valid — assert that the error message includes both the fd number and the
+ *       attempted relative path to aid operator diagnosis.</li>
+ *   <li>Note that {@code execveat} with {@code AT_EMPTY_PATH} (exec-by-fd) cannot return
+ *       {@code ENOENT} from path resolution because no path is looked up; however, if the
+ *       {@code dirfd} itself refers to a file that was deleted after being opened (a deleted inode
+ *       still open), the exec may succeed or fail with {@code ENOENT} depending on the kernel
+ *       version and filesystem — assert that both outcomes are handled.</li>
  * </ul>
+ * Production failure mode: a container runtime uses {@code execveat} with a relative path to
+ * launch a sidecar binary from a specific directory; the directory's content is updated during
+ * a rolling deployment and the relative path no longer exists during the update window; the exec
+ * fails with {@code ENOENT} for requests during the update, causing intermittent sidecar
+ * startup failures without a clear path-not-found diagnostic.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>{@code execveat} resolves the binary path as follows: if {@code flags} includes
+ * {@code AT_EMPTY_PATH} and {@code pathname} is empty, the {@code dirfd} itself is the executable;
+ * otherwise, if {@code pathname} is absolute, {@code dirfd} is ignored and the path is resolved
+ * absolutely; if {@code pathname} is relative, it is resolved relative to the directory referred
+ * to by {@code dirfd}. {@code ENOENT} is returned when the VFS lookup fails at any point in
+ * the relative resolution chain.
+ *
+ * <p>A unique source of {@code ENOENT} from {@code execveat} is the case where {@code pathname}
+ * is non-empty and {@code dirfd} refers to a deleted directory (unlinked but still open via a
+ * retained fd): on Linux, some filesystems return {@code ENOENT} for relative lookup operations
+ * on a deleted directory even if the directory's content was not modified. Applications that cache
+ * directory fds for repeated exec calls must handle this case.
  *
  * <h2>Example</h2>
  *
@@ -54,21 +77,23 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
  * @ChaosExecveatEnoent(probability = 0.001)
- * class FaultTest {
+ * class ExecveatMissingBinaryTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void runtimeReportsMissingBinaryWithDirfdAndRelativePathInDiagnostic(ConnectionInfo info) {
+ *     // verify dirfd closed on ENOENT; error includes dirfd number and relative path
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
+ * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; binary-not-found during exec is a
+ * deployment error, so any non-zero probability exercises the error handling path.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosExecveatEnoents}) to bind different probabilities to
- * different containers simultaneously.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessErrnoBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#errno(ProcessSelector, ProcessErrno, double)
  */
 @Repeatable(ChaosExecveatEnoent.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

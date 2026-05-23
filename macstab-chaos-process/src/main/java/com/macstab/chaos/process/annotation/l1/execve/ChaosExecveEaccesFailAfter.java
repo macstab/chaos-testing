@@ -14,61 +14,87 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Lets the first {@link #successesBeforeFailure} libchaos-intercepted {@code execve} calls succeed,
- * then injects {@code EACCES} on every subsequent call until the rule is removed.
+ * Allows the first {@link #successesBeforeFailure} {@code execve} calls to succeed, then injects
+ * {@code EACCES} on every subsequent call, simulating a permission-policy change that takes effect
+ * after a bounded number of successful process image replacements.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one (selector
- * = {@code EXECVE}, errno = {@code EACCES}, effect = FAIL_AFTER) tuple. FAIL_AFTER is the process
- * module's counter-gated effect — distinct from ERRNO (probabilistic) and LATENCY (unconditional).
- * It models resource-exhaustion scenarios where the first N operations succeed and then the system
- * runs out of capacity.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-process primitive — one (selector = {@code EXECVE}, errno = {@code EACCES},
+ * effect = FAIL_AFTER) tuple. FAIL_AFTER is libchaos-process's counter-gated effect: the first
+ * {@link #successesBeforeFailure} matched calls succeed normally; every call after that returns
+ * {@code -1} with {@code errno = EACCES} until the rule is removed. This models scenarios where
+ * a security policy change (LSM rule update, seccomp profile reload, capability drop) takes effect
+ * mid-run and causes previously-permitted exec calls to fail with permission denied.
  *
- * <p><strong>What chaos this applies:</strong> the libchaos-process interceptor counts successful
- * {@code execve} calls. After {@link #successesBeforeFailure} successes the counter trips and every
- * subsequent call returns {@code -1} with {@code errno = EACCES}, regardless of real kernel
- * capacity. The counter resets every time the rule is re-applied (e.g. across test methods if the
- * annotation is at class scope).
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
+ *       interposing the libc {@code execve} wrapper at the dynamic-linker level.</li>
+ *   <li>The interposer maintains a per-rule atomic counter of successful {@code execve} calls.</li>
+ *   <li>Once the counter reaches {@link #successesBeforeFailure}, it trips and every subsequent
+ *       intercepted call sets {@code errno = EACCES} and returns {@code -1} without executing.</li>
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 13,
+ *       {@code strerror}: "Permission denied"; the counter remains tripped until rule removal.</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)} annotation causes {@code ChaosTestingExtension}
- * to upload {@code libchaos-process.so} and prepend it to {@code LD_PRELOAD}. The shared library
- * interposes the libc wrappers for the process-management syscall family. This annotation installs
- * a FAIL_AFTER rule via {@code AdvancedProcessChaos.apply(container, rule)}.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.PROCESS)}</strong> on the container
- *       annotation — omitting it causes an {@code ExtensionConfigurationException} at {@code
- *       beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-process} on the test classpath.</strong>
+ *   <li>The first {@link #successesBeforeFailure} {@code execve} calls succeed; subsequent calls
+ *       fail with {@code EACCES} — the application must detect the transition and disable or
+ *       degrade the feature that requires child process spawning.</li>
+ *   <li>Applications that spawn helper processes as part of request handling must handle the
+ *       mid-run permission revocation scenario: assert that in-flight requests that relied on
+ *       successful exec before the threshold complete normally, while new requests after the
+ *       threshold fail with a clear {@code EACCES} diagnostic rather than silently producing
+ *       incorrect results.</li>
+ *   <li>Assert that the application does not cache a stale "exec is permitted" assumption after
+ *       the fail-after threshold trips — each exec attempt should check the return value and
+ *       not assume that because previous execs succeeded, future ones will too.</li>
  * </ul>
+ * Production failure mode: a live LSM policy update (AppArmor profile reload, SELinux policy
+ * update) takes effect on a running container after N successful exec calls; subsequent exec
+ * calls fail with {@code EACCES}; the application continues processing requests that internally
+ * require the helper process but silently skips the exec-dependent step, producing incorrect
+ * output that is only detected hours later during auditing.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>The FAIL_AFTER effect for {@code EACCES} is particularly well-suited to modelling LSM
+ * policy changes that take effect mid-run: unlike resource exhaustion (which typically follows
+ * a monotonically increasing pressure curve), permission changes are discrete events that flip
+ * the permission state immediately. The N-success-then-fail pattern captures the window between
+ * the policy update and the application detecting it — during which some exec calls succeed and
+ * subsequent ones fail.
+ *
+ * <p>Unlike the probabilistic ERRNO effect (which fires randomly), FAIL_AFTER guarantees that
+ * the transition happens at a predictable call count. This makes it suitable for testing
+ * state-machine correctness in process managers: set the threshold to the exact number of
+ * worker spawns that occur during a normal request cycle, then verify that the manager's
+ * state machine transitions correctly from "healthy" to "degraded" when exec starts failing.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.PROCESS)
- * @ChaosExecveEaccesFailAfter(successesBeforeFailure = 128)
- * class ProcessExhaustionTest {
+ * @ChaosExecveEaccesFailAfter(successesBeforeFailure = 5)
+ * class PolicyRevocationTest {
  *   @Test
- *   void handlesExhaustion(ConnectionInfo info) { ... }
+ *   void processManagerDegradesMidRunWhenExecveEaccesTriggers(ConnectionInfo info) {
+ *     // verify manager detects permission change and signals degraded state to health check
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Guidance:</strong> set {@link #successesBeforeFailure} to the number of {@code execve}
- * calls the application is expected to make before hitting the limit. Typically 5–200 for
- * container-scoped tests. Zero means the very first call fails.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form
- * ({@code @ChaosExecveEaccesFailAfter.Repeatable}) to apply different counters to different
- * containers.
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to the number of
+ * {@code execve} calls that occur during the "healthy" phase of the test scenario; zero triggers
+ * failure on the first exec (useful for startup-permission testing).
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container
+ * in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ProcessFailAfterBinding
+ * @see com.macstab.chaos.process.model.ProcessRule#failAfter(ProcessSelector, ProcessErrno, long)
  */
 @Repeatable(ChaosExecveEaccesFailAfter.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

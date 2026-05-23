@@ -14,61 +14,87 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code EMFILE} on every libchaos-intercepted {@code accept} call inside the target
- * container, making the call fail as if the kernel returned {@code EMFILE}.
+ * Injects {@code EMFILE} into {@code accept(2)}, causing the call to return {@code -1} with
+ * {@code errno = EMFILE} as if the process has reached its per-process file descriptor limit and
+ * cannot allocate a new fd for the accepted connection.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EMFILE}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EMFILE} is a valid POSIX result of {@code accept}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code accept} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #toxicity} is run. When it fires the
- * interceptor returns {@code -1} and sets {@code errno = EMFILE} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: per-process file-descriptor limit reached — typical of fd-leaks in connection pools.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code ACCEPT}, errno = {@code EMFILE})
+ * tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted
+ * {@code accept} call; when it fires the interposer returns {@code -1} with {@code errno = EMFILE}
+ * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.NET)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-net.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes socket-layer libc wrappers (connect, accept,
- * socket, bind, listen, shutdown, send, recv, poll). This annotation installs a rule via {@code
- * AdvancedConnectionChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
+ *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
+ *       {@code poll} at the dynamic-linker level.
+ *   <li>On every intercepted {@code accept} call a Bernoulli trial with probability
+ *       {@link #toxicity} is conducted; when it fires the interposer returns {@code -1} and
+ *       sets {@code errno = EMFILE}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.NET)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-connection} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>The server cannot accept new connections even though the listening socket is still active
+ *       and clients are connecting; the accept queue fills up and the kernel begins rejecting
+ *       new SYN packets with RST.
+ *   <li>Servers must respond to {@code EMFILE} by closing idle connections to free file descriptors,
+ *       activating a back-pressure mechanism, or alerting an operator — not by retrying accept
+ *       indefinitely.
+ *   <li>Connection pools on the client side will time out while waiting for the server to accept
+ *       their connections; assert that the pool correctly identifies the failure as a server-side
+ *       resource limit rather than a network failure.
+ *   <li>Assert that the server emits an alert or metric that is visible to monitoring systems when
+ *       it receives {@code EMFILE} from {@code accept}.
  * </ul>
+ *
+ * <p>In production, {@code EMFILE} from {@code accept} occurs when the server process accumulates
+ * file descriptor leaks (unclosed sockets, log files, temp files) and exhausts its {@code RLIMIT_NOFILE}
+ * limit. It is a leading indicator of memory pressure and resource exhaustion that precedes a full
+ * process crash.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code EMFILE} is the per-process fd limit ({@code RLIMIT_NOFILE}), which defaults to 1024
+ * on most Linux distributions but is raised to 65536 or higher in production container deployments.
+ * When the limit is reached, any syscall that would create a new fd (including {@code accept},
+ * {@code open}, {@code socket}) fails with {@code EMFILE}.
+ *
+ * <p>Java's JVM typically holds fds for class files, jar files, native libraries, and heap
+ * mappings in addition to application sockets. A JVM process that reaches its fd limit will fail
+ * to accept connections but may also fail to load new classes or write log files. This injection
+ * tests the accept-specific code path in isolation, without requiring the process to actually
+ * reach its fd limit.
+ *
+ * <p>Netty's accept loop converts {@code EMFILE} to a warning-level log entry and activates a
+ * self-protection mechanism that temporarily stops accepting to allow fds to be freed. This
+ * injection exercises that self-protection code path without requiring real fd exhaustion.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.NET)
- * @ChaosAcceptEmfile(toxicity = 0.001)
- * class FaultTest {
+ * @ChaosAcceptEmfile(toxicity = 0.01)
+ * class AcceptEmfileTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void serverActivatesBackPressureOnFileDescriptorExhaustion(ConnectionInfo info) {
+ *     // assert that the server stops accepting temporarily and emits a resource-limit metric
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosAcceptEmfiles}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosAcceptEnfile
+ * @see ChaosAcceptEconnreset
+ * @see com.macstab.chaos.connection.annotation.l1.ConnectionErrnoBinding
  */
 @Repeatable(ChaosAcceptEmfile.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

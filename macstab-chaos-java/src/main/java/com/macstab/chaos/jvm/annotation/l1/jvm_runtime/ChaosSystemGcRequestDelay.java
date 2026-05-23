@@ -14,56 +14,91 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Delay the system_gc_request operation by the configured number of milliseconds.
+ * Delays every explicit {@code System.gc()} call by a configurable number of milliseconds,
+ * simulating a JVM under such GC pressure that a requested collection cannot be honoured promptly.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> delay the SYSTEM_GC_REQUEST operation by the
- * configured number of milliseconds inside the JVM of the target container. The effect fires on
- * every matching call, subject to the probability configured via {@link #probability()} if
- * applicable. The rule is active from {@code beforeAll} until {@code afterAll} (class-scope) or
- * from {@code beforeEach} until {@code afterEach} (method-scope).
+ * <p>A JVM agent L1 chaos primitive targeting the {@code SYSTEM_GC_REQUEST} operation — one typed
+ * annotation per (selector family, operation type, effect) tuple. Declared on a test class or
+ * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until
+ * {@code afterAll}/{@code afterEach} respectively.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>The chaos agent intercepts every call to {@code System.gc()} in the target container's
+ *       JVM.
+ *   <li>Before forwarding the call, the interceptor parks the calling thread for a duration sampled
+ *       uniformly between {@link #delayMs()} and {@link #maxDelayMs()} milliseconds.
+ *   <li>After the delay, the real {@code System.gc()} executes normally; the caller resumes after
+ *       both the injected delay and the actual GC pause complete.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li><strong>Off-heap cleanup stalls.</strong> NIO code that calls {@code System.gc()} to
+ *       prompt collection of {@code DirectByteBuffer} objects will find that off-heap memory is not
+ *       reclaimed promptly; assert that the application does not allocate unboundedly while waiting.
+ *   <li><strong>Finalizer-dependent shutdown blocks.</strong> Shutdown hooks that rely on
+ *       {@code System.gc()} to run finalizers before closing resources will hang for the injected
+ *       delay; assert that the container still shuts down within the pod termination grace period.
+ *   <li><strong>RMI / distributed GC heartbeat delayed.</strong> Java RMI uses periodic
+ *       {@code System.gc()} calls to ensure distributed garbage collection; assert that remote
+ *       references are not prematurely invalidated.
+ *   <li><strong>Production failure mode:</strong> memory-sensitive libraries (e.g. Netty's
+ *       pooled allocator) call {@code System.gc()} when off-heap pressure is high; delaying
+ *       the response causes the allocator to throw {@code OutOfMemoryError: Direct buffer memory}
+ *       while the GC is still blocked in the injected sleep.
  * </ul>
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code System.gc()} is a hint to the JVM that the application believes it would be a good
+ * time to run a full collection. In HotSpot the method is native and typically triggers a full
+ * stop-the-world collection unless {@code -XX:+DisableExplicitGC} is set. Intercepting it requires
+ * the same native-method delegation pattern used for {@code System.currentTimeMillis()}: the agent
+ * installs a Java-visible wrapper in the bootstrap class loader, injects the delay in that wrapper,
+ * then delegates to the real native implementation.
+ *
+ * <p>The delay lengthens the time from when the caller invokes {@code System.gc()} to when the
+ * collection actually begins, but the GC pause duration itself is unaffected. A test that asserts
+ * "direct buffers are freed within N milliseconds of System.gc()" needs to account for both the
+ * injected delay and the GC pause, making the assertion timeout window explicit.
+ *
+ * <p>Combining this annotation with {@link ChaosSystemGcRequestSuppress} (in a repeatable
+ * annotation block) on different containers lets a test verify that the cluster tolerates one node
+ * whose GC is delayed while another node's GC is completely suppressed — a common pattern when
+ * testing mixed-health cluster behaviour.
+ *
+ * <p>The delay is applied on the thread that issued the {@code System.gc()} call. If the
+ * application calls {@code System.gc()} from a finalizer or shutdown-hook thread, the chaos will
+ * manifest as a slow shutdown rather than a slow runtime operation.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosSystemGcRequestDelay
- * class JvmChaosTest {
+ * @ChaosSystemGcRequestDelay(delayMs = 500, maxDelayMs = 2_000)
+ * class GcDelayTest {
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void directBufferReleasedEvenWithSlowGc(ConnectionInfo info) { ... }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosSystemGcRequestDelays}) to apply different configurations to different containers.
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
+ *       agent before the container JVM starts; omitting it causes an
+ *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
+ *       {@code @JvmAgentChaos}.
+ *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the
+ *       translator.
+ *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
+ *       intercept native executables.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
  */

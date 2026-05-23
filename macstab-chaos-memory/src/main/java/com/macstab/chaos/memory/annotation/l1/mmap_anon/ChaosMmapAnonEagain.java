@@ -14,47 +14,65 @@ import com.macstab.chaos.memory.model.MemorySelector;
 import com.macstab.chaos.memory.model.MmapErrno;
 
 /**
- * Injects {@code EAGAIN} on every libchaos-memory-intercepted {@code mmap(MAP_ANONYMOUS)} call
- * inside the target container, making the call fail as if the kernel returned {@code EAGAIN}.
+ * Injects {@code EAGAIN} into {@code mmap(MAP_ANONYMOUS)} calls intercepted by libchaos-memory,
+ * causing the calling code to observe a transient resource-unavailable failure on anonymous
+ * memory allocation.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector = {@code MMAP_ANON}, errno = {@code EAGAIN}) pair.
- * The combination is safe by construction: this annotation class exists only because {@code EAGAIN}
- * is a valid POSIX result of {@code mmap(MAP_ANONYMOUS)}; the invalid combinations simply have no
- * annotation class, so the selector × errno matrix cannot be violated at compile time.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-memory primitive — one (selector = {@code MMAP_ANON}, errno = {@code EAGAIN}) tuple.
+ * Compile-time safety: this annotation exists only because {@code EAGAIN} is a defined POSIX result
+ * for {@code mmap}; invalid combinations have no annotation class and cannot be expressed.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code mmap(MAP_ANONYMOUS)} call that the
- * libchaos-memory interceptor sees, a Bernoulli trial with probability {@link #probability} is run.
- * When it fires the interceptor returns {@code -1} and sets {@code errno = EAGAIN} before the
- * kernel call completes — from the application perspective this is indistinguishable from a real
- * kernel-level failure. Specifically this simulates: temporary failure (would block) — surfaces in
- * kernels under memory pressure or rlimit exhaustion.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code mmap(MAP_ANONYMOUS)} call the interposer runs a Bernoulli trial with
+ *       probability {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = EAGAIN} and returns
+ *       {@code MAP_FAILED} without issuing the real kernel call.</li>
+ *   <li>The calling code receives the transient-failure signal: {@code MAP_FAILED} return,
+ *       {@code errno} 11, {@code strerror}: "Resource temporarily unavailable".</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.MEMORY)} annotation on the container declaration causes
- * {@code ChaosTestingExtension} to upload {@code libchaos-memory.so} into the container and prepend
- * it to {@code LD_PRELOAD} before the container process starts. The shared library interposes the
- * libc wrappers for {@code mmap}, {@code munmap}, {@code mprotect}, and {@code madvise} at the
- * dynamic-linker level. This annotation then installs a rule via {@code
- * AdvancedMemoryChaos.apply(container, rule)} that configures the interposer with the selector and
- * probability you specify.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD} which does not apply on
- *       macOS or Windows containers; annotate the test class with {@code @DisabledOnOs(OS.WINDOWS)}
- *       and be aware of macOS Docker limitations.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.MEMORY)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — this installs the shared library before container start;
- *       omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) do not
- *       honour {@code LD_PRELOAD} for statically-linked binaries; use a glibc variant or the
- *       Debian-slim image instead.
- *   <li><strong>{@code macstab-chaos-memory} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and {@code ChaosTestingExtension} throws {@code
- *       ClassNotFoundException} wrapped in {@code ExtensionConfigurationException}.
+ *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = EAGAIN} (11); well-written code
+ *       should retry with back-off or report a transient error rather than crashing.</li>
+ *   <li>glibc {@code malloc} does not retry on {@code EAGAIN} from {@code mmap} — it propagates
+ *       {@code NULL}; the JVM raises {@code OutOfMemoryError} for the affected allocation.</li>
+ *   <li>Assert that the application tolerates transient allocation failures without data
+ *       corruption, and that retry logic (where present) does not loop infinitely.</li>
  * </ul>
+ * Production failure mode: kernels under severe memory pressure combined with {@code RLIMIT_AS}
+ * limits, or a cgroup memory controller near its high-watermark, can return {@code EAGAIN}
+ * instead of {@code ENOMEM} for anonymous mappings — a transient condition that catches callers
+ * who treat all allocation failures as fatal.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>POSIX allows {@code mmap} to return {@code EAGAIN} when the kernel has insufficient resources
+ * to complete the request but the condition is transient. On Linux this arises when
+ * {@code mmap_sem} (now {@code mmap_lock}) cannot be acquired in write mode within the kernel's
+ * internal retry budget, or when a memory cgroup is operating in soft-limit mode and the page
+ * reclaim loop yields {@code -ENOMEM} through the {@code EAGAIN} propagation path in specific
+ * kernel versions (3.x/4.x era). Under normal conditions the kernel prefers {@code ENOMEM} for
+ * permanent exhaustion and avoids {@code EAGAIN} for anonymous mappings; its occurrence in
+ * production is therefore rare but not impossible.
+ *
+ * <p>Because {@code EAGAIN} semantically means "try again", well-designed allocators may loop
+ * when they receive it. This creates a subtle risk: if the probability is high, the retry loop
+ * spins without ever succeeding, consuming CPU and causing watchdog timeouts. Design retry
+ * budgets carefully and pair this annotation with a timeout assertion.
+ *
+ * <p>For JVM workloads using {@code DirectByteBuffer} or JNA, the distinction between {@code
+ * EAGAIN} and {@code ENOMEM} is invisible — both produce {@code OutOfMemoryError}. The difference
+ * matters only in native C/C++ allocators and in frameworks that wrap {@code mmap} directly
+ * (e.g. RocksDB's memory table allocator, MemSQL's native storage engine).
+ *
+ * <p>Compared with siblings: {@code ENOMEM} signals structural exhaustion (retry is futile);
+ * {@code EAGAIN} signals transience (retry may succeed). {@code EINVAL} signals a programmer
+ * error. Test both {@code EAGAIN} and {@code ENOMEM} to verify the application handles each
+ * code path correctly.
  *
  * <h2>Example</h2>
  *
@@ -62,19 +80,19 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.MEMORY)
  * @ChaosMmapAnonEagain(probability = 0.001)
- * class MemoryFaultTest {
+ * class TransientAllocationTest {
  *   @Test
- *   void appHandlesEagainOnAlloc(RedisConnectionInfo info) { ... }
+ *   void appHandlesEagainOnAlloc(RedisConnectionInfo info) {
+ *     // drive allocations; assert the application retries or returns a graceful error
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3 to simulate transient pressure; high rates
- * quickly saturate retry budgets.
- *
+ * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3 simulates transient pressure; rates
+ * above 0.01 exhaust retry budgets quickly and produce cascading failures.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
- * the test class. Use the repeatable form ({@code @ChaosMmapAnonEagains}) to bind different
- * probabilities to different containers simultaneously.
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see MemoryErrnoBinding

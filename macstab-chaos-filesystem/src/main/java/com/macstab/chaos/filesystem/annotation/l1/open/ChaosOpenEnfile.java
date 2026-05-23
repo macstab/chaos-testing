@@ -14,61 +14,96 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code ENFILE} on every libchaos-intercepted {@code open} call inside the target
- * container, making the call fail as if the kernel returned {@code ENFILE}.
+ * Injects {@code ENFILE} into {@code open(2)}, causing the call to return {@code -1} with
+ * {@code errno = ENFILE} as if the system-wide open file count has reached the kernel's global
+ * limit ({@code fs.file-max}) and no new file descriptors can be allocated by any process on
+ * the host.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ENFILE}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code ENFILE} is a valid POSIX result of {@code open}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code open} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = ENFILE} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: system-wide file-descriptor limit reached — typical of host-side fd exhaustion.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code OPEN}, errno = {@code ENFILE})
+ * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
+ * {@code open} call; when it fires the interposer returns {@code -1} with {@code errno = ENFILE}
+ * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.IO)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-io.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the filesystem libc wrappers (open, read,
- * write, close, fsync, etc.) at the dynamic-linker level. This annotation installs a rule via
- * {@code AdvancedFilesystemChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
+ *       extension to upload {@code libchaos-io.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
+ *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
+ *       {@code fallocate} at the dynamic-linker level.
+ *   <li>On each intercepted {@code open} call a Bernoulli trial with probability {@link #probability}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = ENFILE}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.IO)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-filesystem} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code ENFILE} from {@code open} is a system-wide exhaustion condition affecting all
+ *       processes on the host; unlike {@code EMFILE} (per-process limit), it cannot be resolved
+ *       by the application closing its own file descriptors. Assert that the application treats
+ *       {@code ENFILE} as a temporary host-wide shortage and backs off rather than failing
+ *       permanently.
+ *   <li>Assert that the application distinguishes {@code ENFILE} from {@code EMFILE} in its error
+ *       reporting — the remediation is different (host-level {@code sysctl fs.file-max} vs.
+ *       process-level {@code ulimit -n}), and mixing the two in a "too many open files" catch-all
+ *       delays incident response.
+ *   <li>Startup sequences that open multiple configuration files, certificate stores, and log files
+ *       concurrently must handle {@code ENFILE} by serializing the opens and retrying with back-off;
+ *       assert that the startup does not fail permanently on transient host fd exhaustion.
+ *   <li>Assert that the application emits a "system file descriptor limit reached" metric or alert
+ *       with the current {@code /proc/sys/fs/file-max} value, enabling operators to tune the host
+ *       limit or identify the tenant causing the exhaustion.
  * </ul>
+ *
+ * <p>In production, {@code ENFILE} from {@code open} occurs on Kubernetes nodes where multiple
+ * containers collectively exhaust the host's {@code fs.file-max} limit. Because the limit is
+ * shared across all cgroups on the node, a traffic spike on one container can cause {@code ENFILE}
+ * for unrelated workloads on the same node — a noisy-neighbor failure mode that is difficult to
+ * diagnose without host-level monitoring.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The kernel's global file table ({@code file_struct}) tracks all open file descriptions across
+ * all processes. When the count reaches {@code /proc/sys/fs/file-max}, {@code get_empty_filp()}
+ * (called by {@code do_filp_open} during {@code open(2)} processing) returns NULL and the kernel
+ * returns {@code ENFILE} to the calling process. This check is performed before the filesystem
+ * layer is involved; the specific file type (regular file, socket, pipe) does not affect the check.
+ *
+ * <p>The distinction between file descriptions and file descriptors is important: a file description
+ * is a kernel-internal object (referenced via {@code struct file}); a file descriptor is a
+ * per-process integer that references a file description. {@code dup(2)} creates a new file
+ * descriptor pointing to the same file description; the count in {@code /proc/sys/fs/file-nr}
+ * counts file descriptions (not descriptors). {@code ENFILE} is triggered when file descriptions
+ * are exhausted; {@code EMFILE} is triggered when a process's file descriptors are exhausted.
+ *
+ * <p>Java maps {@code ENFILE} from {@code open} to a {@code FileNotFoundException} with the message
+ * "Too many open files in system". This message is generated by {@code strerror(ENFILE)} in glibc;
+ * the "in system" suffix distinguishes it from the per-process {@code EMFILE} message "Too many
+ * open files", though the distinction is easy to miss in logs that truncate long messages.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.IO)
- * @ChaosOpenEnfile(probability = 0.001)
- * class FaultTest {
+ * @ChaosOpenEnfile(probability = 0.05)
+ * class OpenEnfileTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void startupBacksOffWhenSystemFileDescriptorLimitIsReached() {
+ *     // assert that startup retries with delay rather than aborting permanently
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosOpenEnfiles}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosOpenEmfile
+ * @see ChaosOpenEacces
+ * @see com.macstab.chaos.filesystem.annotation.l1.IoErrnoBinding
  */
 @Repeatable(ChaosOpenEnfile.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

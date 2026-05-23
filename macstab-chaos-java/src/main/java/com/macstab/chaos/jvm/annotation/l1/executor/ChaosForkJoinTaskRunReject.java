@@ -14,59 +14,114 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Reject the fork_join_task_run operation by throwing an appropriate exception for the operation
- * type.
+ * Throws {@link java.util.concurrent.RejectedExecutionException} from every
+ * {@link java.util.concurrent.ForkJoinPool} worker the moment it begins executing a
+ * {@link java.util.concurrent.ForkJoinTask} — the task's compute method never runs, and the task
+ * completes exceptionally with the injected exception.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> reject the FORK_JOIN_TASK_RUN operation by throwing
- * an appropriate exception for the operation type inside the JVM of the target container. The
- * effect fires on every matching call, subject to the probability configured via {@link
- * #probability()} if applicable. The rule is active from {@code beforeAll} until {@code afterAll}
- * (class-scope) or from {@code beforeEach} until {@code afterEach} (method-scope).
+ * <p>An L1 JVM chaos primitive in the {@code EXECUTOR} selector family targeting the {@code
+ * FORK_JOIN_TASK_RUN} operation with the {@code reject} effect. It intercepts the internal
+ * {@code ForkJoinTask.doExec()} entry point and throws {@code RejectedExecutionException} with the
+ * configured {@link #message()} before the task's {@code exec()} or {@code compute()} method is
+ * called. The exception is stored as the task's exceptional result — any caller blocked on
+ * {@code ForkJoinTask.get()} receives {@code ExecutionException} wrapping the injected exception.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <p>This is the ForkJoin-specific analogue of {@link ChaosExecutorWorkerRunReject}. For
+ * {@code ThreadPoolExecutor}-based pools, use that annotation instead.
  *
- * <p><strong>What is required:</strong>
+ * <h2>What chaos this applies</h2>
+ *
+ * <p>The JVM agent installs a Byte Buddy interceptor on {@code ForkJoinTask.doExec()}. When the
+ * interceptor fires:
+ *
+ * <ol>
+ *   <li>The interceptor fires on the {@code ForkJoinWorkerThread} that has picked up the task.
+ *   <li>The reject effect throws {@code new RejectedExecutionException(message)} before any of
+ *       the task's own code runs.
+ *   <li>{@code ForkJoinTask}'s internal exception handling catches the exception and stores it as
+ *       the task's exceptional result via the task's status CAS.
+ *   <li>The worker thread is unharmed and continues processing other tasks from its deque.
+ *   <li>Any thread calling {@code task.get()} or {@code task.join()} receives the stored exception
+ *       wrapped in {@code ExecutionException}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>{@code task.get()} throws {@link java.util.concurrent.ExecutionException} whose
+ *       {@code getCause()} is a {@code RejectedExecutionException} with the configured message.
+ *   <li>{@code task.join()} throws {@link java.util.concurrent.CancellationException} or
+ *       re-throws the exception directly, depending on how {@code ForkJoinTask} surfaces it.
+ *   <li>The task's compute or action method never executes — no side effects occur.
+ *   <li>Parallel streams backed by the common pool will throw {@code RuntimeException} wrapping
+ *       the injected exception when the stream terminal operation is collected.
+ *   <li>All subtasks forked by the failing task are also affected if they are submitted to the
+ *       same pool — each subtask independently triggers the interceptor and is also rejected.
  * </ul>
+ *
+ * <p><strong>Production failure mode:</strong> a JVM that encounters an out-of-memory condition
+ * during a parallel computation has its {@code ForkJoinWorkerThread}s throw {@code OutOfMemoryError}
+ * from inside task bodies; caller code that only handles {@code ExecutionException} (not
+ * {@code Error}) propagates the failure incorrectly — this annotation injects a recoverable
+ * exception version to test the error-propagation path without requiring actual OOM.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p><strong>Interception point.</strong> The agent targets {@code ForkJoinTask.doExec()} — a
+ * package-private method in {@code java.util.concurrent.ForkJoinTask}. Retransformation via the
+ * bootstrap class loader channel is required. The method is called by
+ * {@code ForkJoinWorkerThread.run()} when the worker picks up a task, and also by
+ * {@code ForkJoinTask.join()} when a caller thread executes the task inline (helping mode). Both
+ * paths are intercepted.
+ *
+ * <p><strong>Task status CAS.</strong> {@code ForkJoinTask} uses a status field with CAS to record
+ * completion and exceptions. When the reject exception is thrown from {@code doExec()}'s body, the
+ * exception handling in {@code ForkJoinTask} stores the exception via {@code recordExceptionalCompletion},
+ * which CAS-sets the status to {@code EXCEPTIONAL}. This propagates to all tasks that join on this
+ * one, making the failure cascade through recursive fork/join decompositions.
+ *
+ * <p><strong>Helping mode interaction.</strong> In {@code ForkJoinPool}'s helping protocol, a
+ * thread that calls {@code join()} on an incomplete task may execute it inline rather than block.
+ * The interceptor fires in this case too — the joining thread itself throws the exception. The
+ * exception is stored in the task and re-thrown from the {@code join()} call.
+ *
+ * <p><strong>Distinguishing from siblings.</strong> {@link ChaosForkJoinTaskRunDelay} delays but
+ * allows the task to run. This annotation prevents the task from running at all.
+ * {@link ChaosExecutorWorkerRunReject} does the same thing but targets {@code ThreadPoolExecutor}
+ * workers — it does not affect {@code ForkJoinPool} tasks. Use this annotation specifically when
+ * the application relies on {@code ForkJoinPool}.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosForkJoinTaskRunReject
- * class JvmChaosTest {
+ * @ChaosForkJoinTaskRunReject(message = "chaos: fork-join task rejected")
+ * class ParallelStreamRejectTest {
+ *
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void parallelStreamPropagatesExceptionWhenTasksAreRejected(AppConnectionInfo info) {
+ *     assertThatThrownBy(() -> client.fetchParallel(info))
+ *         .isInstanceOf(RuntimeException.class)
+ *         .hasRootCauseInstanceOf(RejectedExecutionException.class);
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosForkJoinTaskRunRejects}) to apply different configurations to different containers.
+ * <ul>
+ *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
+ *   <li>A Java container image — the container must run a JVM process.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see com.macstab.chaos.jvm.api.OperationType#FORK_JOIN_TASK_RUN
+ * @see com.macstab.chaos.jvm.api.ChaosSelector#executor(java.util.Set)
+ * @see ChaosForkJoinTaskRunDelay
+ * @see ChaosExecutorWorkerRunReject
  */
 @Repeatable(ChaosForkJoinTaskRunReject.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

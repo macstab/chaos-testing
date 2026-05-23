@@ -14,58 +14,108 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Delay the class_load operation by the configured number of milliseconds.
+ * Intercepts {@code ClassLoader.loadClass()} and holds the calling thread for {@link #delayMs()}
+ * milliseconds before the class is located and resolved, simulating slow class loading from a
+ * network-attached JAR repository, a high-latency class data sharing (CDS) miss, or a heavily
+ * loaded custom class loader in application frameworks that use dynamic loading.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> delay the CLASS_LOAD operation by the configured
- * number of milliseconds inside the JVM of the target container. The effect fires on every matching
- * call, subject to the probability configured via {@link #probability()} if applicable. The rule is
- * active from {@code beforeAll} until {@code afterAll} (class-scope) or from {@code beforeEach}
- * until {@code afterEach} (method-scope).
+ * A JVM agent L1 chaos primitive — one typed annotation per (selector family, operation type,
+ * effect) tuple. It is declared on a test class or method alongside a container annotation and
+ * activates for the lifetime of the test class ({@code beforeAll} / {@code afterAll}) or a single
+ * test method ({@code beforeEach} / {@code afterEach}).
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>Before every call to {@code java.lang.ClassLoader#loadClass(String)} inside the target
+ *       container's JVM, the chaos agent intercepts the calling thread.
+ *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()},
+ *       {@link #maxDelayMs()}]; equal values produce a deterministic delay.
+ *   <li>Control returns and the underlying {@code loadClass()} executes normally, delegating to
+ *       the parent class loader (delegation model) or searching the class loader's own resources.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>Spring's application context refresh resolves hundreds of bean classes via
+ *       {@code Class.forName()} which calls {@code ClassLoader.loadClass()}; the delay inflates
+ *       the context startup time; assert that the application's startup probe has sufficient
+ *       initialPeriodSeconds to tolerate slow class loading.
+ *   <li>{@code ClassLoader.loadClass()} holds a lock on the {@code ClassLoader} object during
+ *       loading (the JVM's parallel class loading does not fully eliminate lock contention);
+ *       with a delay, multiple threads trying to load different classes through the same class
+ *       loader serialise; assert that the application does not deadlock under concurrent class
+ *       loading with the delay applied.
+ *   <li>Frameworks that use lazy class loading for bean definitions (Spring's lazy init, CDI's
+ *       normal scope proxies) will incur the delay on first use of each lazily loaded bean;
+ *       assert that the first-request latency spike is bounded and does not exceed SLO limits.
+ *   <li><strong>Production failure mode:</strong> a class loader leak causes the JVM's metaspace
+ *       to fill; the GC spends increasing time sweeping metaspace for unreachable classes; each
+ *       {@code loadClass()} call takes longer because the class loader hierarchy is deeper due
+ *       to accumulated leaked class loaders; new class loads begin failing with
+ *       {@code OutOfMemoryError: Metaspace}; this annotation models the slow-loadClass symptom
+ *       without requiring an actual metaspace leak.
  * </ul>
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The interception targets {@code java.lang.ClassLoader#loadClass(String, boolean)}, the
+ * protected method that implements the class loading protocol. The public
+ * {@code ClassLoader.loadClass(String)} delegates to this method with {@code resolve = false}.
+ * JVM class loading follows the delegation model: a class loader first delegates to its parent;
+ * only if the parent cannot load the class does it attempt loading itself. The chaos delay fires
+ * before the parent delegation call, adding to the total time for the entire delegation chain.
+ *
+ * <p>Parallel class loading (enabled via {@code ClassLoader.registerAsParallelCapable()}) allows
+ * multiple threads to load different classes from the same class loader concurrently by using
+ * per-class-name locks rather than a per-class-loader lock. The chaos delay fires before the lock
+ * is acquired; threads waiting for a delayed load of the same class name are serialised by the
+ * per-name lock. If many classes are loaded concurrently and all are delayed, the total class
+ * loading time grows linearly with the number of distinct class names being loaded.
+ *
+ * <p>Spring's {@code ClassPathBeanDefinitionScanner} uses {@code ClassLoader.loadClass()} to
+ * load candidate bean classes for inspection during component scanning. On a large classpath with
+ * many {@code @Component}-annotated classes, this is called hundreds of times during startup.
+ * The chaos delay applies to each call, multiplying the startup time by the number of scanned
+ * classes divided by any parallelism in the scanning process.
+ *
+ * <p>Groovy, JRuby, and other dynamic JVM languages generate classes at runtime using
+ * {@code ClassLoader.defineClass()} (see {@link ChaosClassDefineDelay}); their script loading
+ * also calls {@code loadClass()} to resolve referenced types. The delay applies to both the
+ * generated classes and the referenced standard library classes.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosClassLoadDelay
- * class JvmChaosTest {
+ * @ChaosClassLoadDelay(delayMs = 50)
+ * class SlowClassLoadingStartupTest {
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void startupProbeToleratesSlowClassLoading(ConnectionInfo info) {
+ *     // assert application becomes READY within the configured probe timeout
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosClassLoadDelays}) to apply different configurations to different containers.
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation is required; omitting
+ *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
+ *       {@code @JvmAgentChaos}; it is attached before the container starts.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
+ *       translator class can be resolved.
+ *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
+ *       intercept native executables.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosClassLoadInjectException
+ * @see ChaosClassDefineDelay
+ * @see ChaosResourceLoadDelay
  */
 @Repeatable(ChaosClassLoadDelay.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

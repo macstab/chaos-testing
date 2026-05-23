@@ -14,39 +14,69 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code ENFILE} on every libchaos-intercepted {@code accept} call inside the target
- * container, making the call fail as if the kernel returned {@code ENFILE}.
+ * Injects {@code ENFILE} into {@code accept(2)}, causing the call to return {@code -1} with
+ * {@code errno = ENFILE} as if the system-wide open-file limit has been reached and the kernel
+ * cannot allocate a new file table entry for the accepted connection.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code ENFILE}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code ENFILE} is a valid POSIX result of {@code accept}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code accept} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #toxicity} is run. When it fires the
- * interceptor returns {@code -1} and sets {@code errno = ENFILE} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: system-wide file-descriptor limit reached — typical of host-side fd exhaustion.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code ACCEPT}, errno = {@code ENFILE})
+ * tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted
+ * {@code accept} call; when it fires the interposer returns {@code -1} with {@code errno = ENFILE}
+ * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.NET)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-net.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes socket-layer libc wrappers (connect, accept,
- * socket, bind, listen, shutdown, send, recv, poll). This annotation installs a rule via {@code
- * AdvancedConnectionChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
+ *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
+ *       {@code poll} at the dynamic-linker level.
+ *   <li>On every intercepted {@code accept} call a Bernoulli trial with probability
+ *       {@link #toxicity} is conducted; when it fires the interposer returns {@code -1} and
+ *       sets {@code errno = ENFILE}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.NET)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-connection} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code ENFILE} is a system-wide limit, not a per-process limit; the server cannot
+ *       increase its own fd limit to recover — only reducing the total number of open fds
+ *       across all processes on the host can resolve the condition.
+ *   <li>Servers must treat {@code ENFILE} as a severe resource-pressure signal and activate
+ *       back-pressure mechanisms, such as stopping the accept loop temporarily or sending
+ *       a 503 response to queued requests.
+ *   <li>Assert that the server correctly distinguishes {@code ENFILE} (system-wide) from
+ *       {@code EMFILE} (per-process) and applies the appropriate recovery strategy for each.
+ *   <li>Assert that the server emits a metric or alert labelled "system file table full" so
+ *       that operations teams can identify the host-level cause.
  * </ul>
+ *
+ * <p>In production, {@code ENFILE} from {@code accept} occurs on densely packed hosts where
+ * many processes share the kernel's file table (controlled by {@code /proc/sys/fs/file-max}).
+ * It is rarer than {@code EMFILE} but more severe, since it affects all processes on the host
+ * simultaneously.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code ENFILE} is the system-wide counterpart to {@code EMFILE}. The kernel maintains a
+ * global file table that stores file descriptions shared across all processes; when this table is
+ * full, no process on the host can open new fds regardless of its individual {@code RLIMIT_NOFILE}.
+ * The limit is controlled by {@code /proc/sys/fs/file-max} and defaults to a value computed from
+ * available memory at boot.
+ *
+ * <p>In containerised environments, the file table limit is shared between the container and the
+ * host kernel (cgroups do not isolate this limit). A container that generates a very high rate of
+ * short-lived connections can exhaust the system file table, causing other unrelated processes on
+ * the same host to fail to open files. This injection tests the application's handling of that
+ * host-wide resource pressure condition without requiring a real host to be stressed.
+ *
+ * <p>The operational difference between {@code EMFILE} and {@code ENFILE} is significant: on
+ * {@code EMFILE} the process can recover by closing its own fds; on {@code ENFILE} no action
+ * within the process can resolve the condition. Servers that apply the same recovery strategy to
+ * both errors will fail to recover from {@code ENFILE} — this injection makes that logic visible.
  *
  * <h2>Example</h2>
  *
@@ -54,21 +84,18 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.NET)
  * @ChaosAcceptEnfile(toxicity = 0.001)
- * class FaultTest {
+ * class AcceptEnfileTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void serverEmitsSystemFileLimitAlertOnEnfile(ConnectionInfo info) {
+ *     // assert that the server emits a metric labelled "system file table full"
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosAcceptEnfiles}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosAcceptEmfile
+ * @see ChaosAcceptEconnreset
+ * @see com.macstab.chaos.connection.annotation.l1.ConnectionErrnoBinding
  */
 @Repeatable(ChaosAcceptEnfile.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

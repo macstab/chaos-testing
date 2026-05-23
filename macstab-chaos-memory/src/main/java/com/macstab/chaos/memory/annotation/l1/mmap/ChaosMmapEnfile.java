@@ -14,47 +14,65 @@ import com.macstab.chaos.memory.model.MemorySelector;
 import com.macstab.chaos.memory.model.MmapErrno;
 
 /**
- * Injects {@code ENFILE} on every libchaos-memory-intercepted {@code mmap} call inside the target
- * container, making the call fail as if the kernel returned {@code ENFILE}.
+ * Injects {@code ENFILE} into all {@code mmap} calls (anonymous and file-backed) intercepted by
+ * libchaos-memory, causing the calling code to observe a system-wide file-descriptor limit
+ * failure from any memory-mapping operation.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector = {@code MMAP}, errno = {@code ENFILE}) pair. The
- * combination is safe by construction: this annotation class exists only because {@code ENFILE} is
- * a valid POSIX result of {@code mmap}; the invalid combinations simply have no annotation class,
- * so the selector × errno matrix cannot be violated at compile time.
+ * <h2>What this annotation is</h2>
+ * L1 libchaos-memory primitive — one (selector = {@code MMAP}, errno = {@code ENFILE}) tuple.
+ * The {@code MMAP} selector covers both anonymous and file-backed {@code mmap} calls; use
+ * {@code ChaosMmapAnonEnfile} or {@code ChaosMmapFileEnfile} for narrower fault isolation.
+ * Compile-time safety: invalid selector/errno combinations have no annotation class.
  *
- * <p><strong>What chaos this applies:</strong> on every {@code mmap} call that the libchaos-memory
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = ENFILE} before the kernel call
- * completes — from the application perspective this is indistinguishable from a real kernel-level
- * failure. Specifically this simulates: system-wide file-descriptor limit reached — typical of
- * host-side fd exhaustion incidents.
+ * <h2>What chaos this applies</h2>
+ * <ol>
+ *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
+ *   <li>On each {@code mmap} call the interposer runs a Bernoulli trial with probability
+ *       {@link #probability}.</li>
+ *   <li>When the trial fires, the interposer sets {@code errno = ENFILE} and returns
+ *       {@code MAP_FAILED} without issuing the real kernel call.</li>
+ *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 23,
+ *       {@code strerror}: "Too many open files in system".</li>
+ * </ol>
  *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.MEMORY)} annotation on the container declaration causes
- * {@code ChaosTestingExtension} to upload {@code libchaos-memory.so} into the container and prepend
- * it to {@code LD_PRELOAD} before the container process starts. The shared library interposes the
- * libc wrappers for {@code mmap}, {@code munmap}, {@code mprotect}, and {@code madvise} at the
- * dynamic-linker level. This annotation then installs a rule via {@code
- * AdvancedMemoryChaos.apply(container, rule)} that configures the interposer with the selector and
- * probability you specify.
- *
- * <p><strong>What is required:</strong>
- *
+ * <h2>Observable effects and what to assert in tests</h2>
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD} which does not apply on
- *       macOS or Windows containers; annotate the test class with {@code @DisabledOnOs(OS.WINDOWS)}
- *       and be aware of macOS Docker limitations.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.MEMORY)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — this installs the shared library before container start;
- *       omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) do not
- *       honour {@code LD_PRELOAD} for statically-linked binaries; use a glibc variant or the
- *       Debian-slim image instead.
- *   <li><strong>{@code macstab-chaos-memory} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and {@code ChaosTestingExtension} throws {@code
- *       ClassNotFoundException} wrapped in {@code ExtensionConfigurationException}.
+ *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = ENFILE} (23); both heap
+ *       allocations and file-mapping operations are affected simultaneously.</li>
+ *   <li>Applications should preserve the distinction between {@code ENFILE} (host-level,
+ *       requires infrastructure intervention) and {@code EMFILE} (process-level, fixable
+ *       by closing unused descriptors).</li>
+ *   <li>Assert that error logs contain the specific errno value or "Too many open files in
+ *       system" rather than a generic "Out of memory" or "I/O error" message.</li>
  * </ul>
+ * Production failure mode: a Kubernetes node hosting many containers can exhaust the
+ * system-wide file-descriptor table ({@code fs.file-max}); all processes on the node then
+ * receive {@code ENFILE} from any fd-consuming syscall, including file-backed {@code mmap}
+ * calls inside running containers — a host-level incident that looks identical to OOM
+ * from the application's perspective unless the errno is preserved in logs.
+ *
+ * <h2>Deep technical dive</h2>
+ * <p>POSIX specifies {@code ENFILE} when the system-wide limit on open files ({@code fs.file-max})
+ * is reached. The kernel's global file-table structure ({@code files_struct}) is allocated from
+ * a slab cache that can be exhausted under high-concurrency workloads running many containers.
+ * On Linux, {@code ENFILE} is generated in {@code alloc_empty_file} when the global file count
+ * would exceed {@code sysctl fs.file-max}.
+ *
+ * <p>For the broad {@code MMAP} selector, both anonymous and file-backed paths are injected
+ * simultaneously. This represents a host-level failure that affects all processes on the system.
+ * Applications running in containers should be able to recognise and log this condition
+ * distinctly from per-process {@code EMFILE} failures.
+ *
+ * <p>The most important difference from {@code EMFILE}: {@code ENFILE} cannot be remediated
+ * by the process itself — it requires the host operator to either increase {@code fs.file-max},
+ * reduce container density, or restart the most fd-heavy processes. Applications that log
+ * {@code ENFILE} as "Out of memory" or conflate it with {@code EMFILE} make incident response
+ * significantly harder.
+ *
+ * <p>Compared with {@code EMFILE}: {@code EMFILE} is per-process (one process hit its own
+ * {@code RLIMIT_NOFILE}); {@code ENFILE} is system-wide (all processes on the host are
+ * affected). Both produce identical {@code MAP_FAILED} returns from {@code mmap}.
  *
  * <h2>Example</h2>
  *
@@ -62,19 +80,19 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.MEMORY)
  * @ChaosMmapEnfile(probability = 0.001)
- * class MemoryFaultTest {
+ * class SystemFdExhaustionTest {
  *   @Test
- *   void appHandlesEnfileOnAlloc(RedisConnectionInfo info) { ... }
+ *   void appDistinguishesEnfileFromEnomem(RedisConnectionInfo info) {
+ *     // verify logs contain "Too many open files in system" rather than "Out of memory"
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; system-wide limit fires are rare —
- * simulate near-limit conditions.
- *
+ * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; system-wide limit exhaustion is rare
+ * in single-host environments — low probability is sufficient to exercise the error-handling branch.
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
- * the test class. Use the repeatable form ({@code @ChaosMmapEnfiles}) to bind different
- * probabilities to different containers simultaneously.
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see MemoryErrnoBinding

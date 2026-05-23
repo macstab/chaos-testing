@@ -14,60 +14,117 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Reject the executor_worker_run operation by throwing an appropriate exception for the operation
- * type.
+ * Throws {@link java.util.concurrent.RejectedExecutionException} from every executor worker thread
+ * the moment it dequeues a task — the task body is never executed, the associated {@code Future}
+ * completes exceptionally, and the worker thread continues to the next task.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> reject the EXECUTOR_WORKER_RUN operation by throwing
- * an appropriate exception for the operation type inside the JVM of the target container. The
- * effect fires on every matching call, subject to the probability configured via {@link
- * #probability()} if applicable. The rule is active from {@code beforeAll} until {@code afterAll}
- * (class-scope) or from {@code beforeEach} until {@code afterEach} (method-scope).
+ * <p>An L1 JVM chaos primitive in the {@code EXECUTOR} selector family targeting the {@code
+ * EXECUTOR_WORKER_RUN} operation with the {@code reject} effect. It intercepts the worker thread's
+ * task-dispatch entry point and throws {@code RejectedExecutionException} with the configured
+ * {@link #message()} before the task body ({@code Runnable.run()} or {@code Callable.call()}) is
+ * invoked. The submitter's call to {@code executor.submit()} already returned a {@code Future} at
+ * this point — the exception appears to the submitter via {@code Future.get()} as an
+ * {@code ExecutionException} wrapping a {@code RejectedExecutionException}.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <p>This is distinct from {@link ChaosExecutorSubmitReject}, which rejects at submission time
+ * (the caller's {@code submit()} throws immediately and no {@code Future} is returned). Here the
+ * {@code Future} is returned normally; only the execution of the task body is rejected.
  *
- * <p><strong>What is required:</strong>
+ * <h2>What chaos this applies</h2>
+ *
+ * <p>The JVM agent installs a Byte Buddy interceptor on the task-execution entry point inside
+ * {@code ThreadPoolExecutor}'s {@code runWorker} loop. When the interceptor fires:
+ *
+ * <ol>
+ *   <li>The worker thread has dequeued the task and is about to invoke {@code task.run()}.
+ *   <li>The reject effect throws {@code new RejectedExecutionException(message)} from the
+ *       interceptor, before the task body begins.
+ *   <li>The {@code ThreadPoolExecutor}'s {@code runWorker} loop catches the unchecked exception
+ *       and routes it through the {@code afterExecute} hook; the underlying {@code FutureTask}
+ *       stores the exception as its cause.
+ *   <li>Any caller blocking on {@code future.get()} receives {@code ExecutionException} wrapping
+ *       the {@code RejectedExecutionException}.
+ *   <li>The worker thread survives the exception and loops back to dequeue the next task.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>{@code future.get()} throws {@link java.util.concurrent.ExecutionException} whose
+ *       {@code getCause()} is a {@code RejectedExecutionException} with the configured message.
+ *   <li>The task's business logic never runs — no side effects, no database writes, no I/O.
+ *   <li>The worker thread is not killed; subsequent tasks (if any) are dequeued and also rejected
+ *       as long as the annotation is active.
+ *   <li>Throughput drops to zero for all tasks submitted while the annotation is active, because
+ *       every dequeued task is immediately rejected by the worker.
  * </ul>
+ *
+ * <p><strong>Production failure mode:</strong> a JVM that exhausts its metaspace or native memory
+ * mid-task throws an {@code Error} inside the worker thread, causing {@code ThreadPoolExecutor} to
+ * kill the worker — this annotation simulates the lighter version where the worker throws a
+ * recoverable {@code RuntimeException} and lives on, but the caller's task is still lost.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p><strong>Interception point.</strong> The interceptor fires at the {@code task.run()} call
+ * inside {@code ThreadPoolExecutor.runWorker(Worker)}. This is after the worker has dequeued the
+ * task and acquired the worker lock ({@code w.lock()}). The thrown exception is caught by the
+ * {@code try/finally} block in {@code runWorker}, which calls {@code afterExecute(task, thrown)}
+ * before releasing the lock. Application code that overrides {@code afterExecute} will see the
+ * injected exception.
+ *
+ * <p><strong>FutureTask exception routing.</strong> When {@code FutureTask} wraps the submitted
+ * callable, it catches any exception from {@code Callable.call()} and stores it via
+ * {@code setException}. Because the interceptor throws before entering {@code FutureTask.run()},
+ * the exception bypasses {@code FutureTask}'s catch block and is instead caught by
+ * {@code runWorker}'s catch — the {@code FutureTask} completes exceptionally only if
+ * {@code runWorker} propagates the exception back through the worker's exception handler. The exact
+ * routing depends on the JDK version and executor configuration; test your target version.
+ *
+ * <p><strong>Cascading effects.</strong> While the annotation is active, the executor's worker
+ * threads are effectively turned into reject-and-continue machines: they drain the queue rapidly
+ * (no task body runs) but complete every future with an exception. Any downstream logic that
+ * chains on those futures — {@code thenApply}, {@code handle}, etc. — will fire their error paths.
+ *
+ * <p><strong>Distinguishing from siblings.</strong> {@link ChaosExecutorSubmitReject} rejects
+ * before the task enters the queue — no {@code Future} is returned. This annotation rejects after
+ * the task is already in the queue and a {@code Future} has been handed to the caller — the caller
+ * gets an exceptionally-completed {@code Future} rather than an immediate exception.
+ * {@link ChaosExecutorWorkerRunDelay} delays instead of rejecting, allowing the task to eventually
+ * run.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosExecutorWorkerRunReject
- * class JvmChaosTest {
+ * @ChaosExecutorWorkerRunReject(message = "chaos: worker rejection")
+ * class WorkerRejectTest {
+ *
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void futureCompletesExceptionallyWhenWorkerRejects(AppConnectionInfo info) {
+ *     Future<String> result = client.submitBackgroundTask(info);
+ *     assertThatThrownBy(() -> result.get(2, TimeUnit.SECONDS))
+ *         .isInstanceOf(ExecutionException.class)
+ *         .hasCauseInstanceOf(RejectedExecutionException.class);
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosExecutorWorkerRunRejects}) to apply different configurations to different
- * containers.
+ * <ul>
+ *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
+ *   <li>A Java container image — the container must run a JVM process.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see com.macstab.chaos.jvm.api.OperationType#EXECUTOR_WORKER_RUN
+ * @see com.macstab.chaos.jvm.api.ChaosSelector#executor(java.util.Set)
+ * @see ChaosExecutorWorkerRunDelay
+ * @see ChaosExecutorSubmitReject
  */
 @Repeatable(ChaosExecutorWorkerRunReject.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

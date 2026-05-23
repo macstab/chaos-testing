@@ -14,60 +14,110 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Reject the executor_shutdown operation by throwing an appropriate exception for the operation
- * type.
+ * Throws {@link java.util.concurrent.RejectedExecutionException} from every
+ * {@link java.util.concurrent.ExecutorService#shutdown shutdown()} and
+ * {@link java.util.concurrent.ExecutorService#shutdownNow shutdownNow()} call, preventing the
+ * executor from transitioning to the shutdown state — the executor remains {@code RUNNING} and
+ * continues to accept new tasks indefinitely.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> reject the EXECUTOR_SHUTDOWN operation by throwing
- * an appropriate exception for the operation type inside the JVM of the target container. The
- * effect fires on every matching call, subject to the probability configured via {@link
- * #probability()} if applicable. The rule is active from {@code beforeAll} until {@code afterAll}
- * (class-scope) or from {@code beforeEach} until {@code afterEach} (method-scope).
+ * <p>An L1 JVM chaos primitive in the {@code EXECUTOR} selector family targeting the {@code
+ * EXECUTOR_SHUTDOWN} operation with the {@code reject} effect. It intercepts every shutdown attempt
+ * on any {@code ExecutorService} in the container JVM and throws {@code RejectedExecutionException}
+ * with the configured {@link #message()} before the executor's internal shutdown state transition
+ * executes. The executor stays in the {@code RUNNING} state; worker threads continue processing
+ * queued tasks and accepting new submissions as if no shutdown had been requested.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <p>The JVM agent installs a Byte Buddy interceptor on {@code ExecutorService.shutdown} and
+ * {@code ExecutorService.shutdownNow}. When the interceptor fires:
+ *
+ * <ol>
+ *   <li>The interceptor is entered on the calling thread before any state transition in the
+ *       executor.
+ *   <li>The reject effect throws {@code new RejectedExecutionException(message)} immediately.
+ *   <li>The executor's state remains {@code RUNNING}; no shutdown flag is set.
+ *   <li>The exception propagates up the call stack of the thread that tried to shut down the
+ *       executor — typically a shutdown hook, a lifecycle manager, or a test's {@code afterAll}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li>{@code executor.shutdown()} throws {@link java.util.concurrent.RejectedExecutionException}
+ *       — the shutdown call fails immediately.
+ *   <li>{@code executor.isShutdown()} returns {@code false} — the executor is still running.
+ *   <li>{@code executor.isTerminated()} returns {@code false}.
+ *   <li>Subsequent {@code executor.submit(task)} calls succeed — the executor keeps accepting work.
+ *   <li>Application lifecycle managers that do not handle {@code RejectedExecutionException} from
+ *       shutdown will propagate an unhandled exception through their shutdown sequence, potentially
+ *       skipping subsequent cleanup steps.
  * </ul>
+ *
+ * <p><strong>Production failure mode:</strong> a JVM shutdown hook calls
+ * {@code executorService.shutdown()} on a shared executor, but a concurrent thread holds the
+ * executor's internal lock (e.g., inside a long-running task that also calls {@code shutdown}),
+ * causing the shutdown attempt to fail or deadlock — the executor never drains and the JVM process
+ * hangs at exit, eventually killed by the OS after the shutdown timeout.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p><strong>Interception point.</strong> The agent targets
+ * {@code java.util.concurrent.ExecutorService#shutdown()} and
+ * {@code java.util.concurrent.ExecutorService#shutdownNow()} on all concrete implementations via
+ * Byte Buddy retransformation. The exception is thrown before the executor's main lock is acquired,
+ * so the executor's internal state is guaranteed to remain unmodified.
+ *
+ * <p><strong>Resource leak implication.</strong> Because the executor never shuts down, all worker
+ * threads remain alive for the container's lifetime. Any tasks that the application submitted
+ * expecting them to be the last will continue running. If the application shuts down external
+ * resources (database connections, file handles) after calling shutdown but relies on the executor
+ * to drain before those resources are released, the still-running worker threads may encounter
+ * already-closed resources, producing secondary errors.
+ *
+ * <p><strong>Interaction with awaitTermination.</strong> Calls to
+ * {@code executor.awaitTermination(timeout, unit)} immediately after the rejected shutdown will
+ * block until the timeout elapses (since the executor is still running) and return {@code false},
+ * signalling to the caller that the executor did not terminate within the budget.
+ *
+ * <p><strong>Distinguishing from siblings.</strong> {@link ChaosExecutorShutdownDelay} allows the
+ * shutdown to succeed, just slowly. This annotation prevents the shutdown from happening at all.
+ * Combine with a subsequent test assertion on the application's restart/recovery behavior to verify
+ * that the system eventually reaches a consistent state after a failed shutdown attempt.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosExecutorShutdownReject
- * class JvmChaosTest {
+ * @ChaosExecutorShutdownReject(message = "chaos: shutdown blocked")
+ * class ShutdownRejectedTest {
+ *
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void lifecycleManagerHandlesShutdownFailure(AppConnectionInfo info) {
+ *     // trigger the app's graceful shutdown path
+ *     assertThatThrownBy(() -> client.triggerGracefulShutdown(info))
+ *         .hasMessageContaining("executor shutdown failed");
+ *     // app should still serve requests since the executor keeps running
+ *     assertThat(client.healthCheck(info)).isEqualTo(200);
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosExecutorShutdownRejects}) to apply different configurations to different
- * containers.
+ * <ul>
+ *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
+ *   <li>A Java container image — the container must run a JVM process.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
+ * @see com.macstab.chaos.jvm.api.OperationType#EXECUTOR_SHUTDOWN
+ * @see com.macstab.chaos.jvm.api.ChaosSelector#executor(java.util.Set)
+ * @see ChaosExecutorShutdownDelay
+ * @see ChaosExecutorAwaitTerminationDelay
  */
 @Repeatable(ChaosExecutorShutdownReject.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

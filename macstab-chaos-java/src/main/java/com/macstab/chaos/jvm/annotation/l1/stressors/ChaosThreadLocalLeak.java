@@ -11,51 +11,111 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Activates a self-driving JVM stressor that plant large ThreadLocal entries in pool threads inside
- * the target container's JVM for the duration of the test class or test method.
+ * Simulates a ThreadLocal memory leak by planting large, never-removed {@code ThreadLocal} values
+ * into pool threads, reproducing the pattern where a framework stores per-request data in a thread
+ * from a reusable pool and forgets to clean up after the request completes.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent stressor L1 primitive. Unlike
- * interceptor primitives, stressors don't intercept a specific JVM operation — they spawn a
- * self-driving background routine that runs from activation ({@code beforeAll} or {@code
- * beforeEach}) until cleanup ({@code afterAll} or {@code afterEach}).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> the stressor plant large ThreadLocal entries in pool
- * threads. The effect persists throughout the test and is not probabilistic — it runs continuously
- * at the configured intensity until the rule is removed.
+ * <p>A JVM agent stressor L1 primitive. Unlike interceptor primitives, stressors do not intercept
+ * a specific JVM operation — they spawn a self-driving background routine that runs from activation
+ * ({@code beforeAll} or {@code beforeEach}) until cleanup ({@code afterAll} or {@code afterEach}).
+ * The stressor submits tasks to the common fork-join pool (or a known thread pool in the
+ * container's JVM) that call {@code ThreadLocal.set()} with a large byte-array value and then
+ * return without calling {@code ThreadLocal.remove()}, leaving the value permanently attached to
+ * the pool thread.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>The agent identifies pool threads in the target JVM (the common fork-join pool's workers
+ *       or the application's servlet thread pool, depending on configuration).</li>
+ *   <li>A task is submitted to each pool thread that calls {@code threadLocal.set(new
+ *       byte[valueSizeBytes])} {@link #entriesPerThread()} times using distinct
+ *       {@code ThreadLocal} instances. The task returns without removing any of the values.</li>
+ *   <li>Because pool threads are never terminated (they are reused for future tasks), the
+ *       {@code ThreadLocal} values are retained indefinitely. Each value is reachable via:
+ *       {@code Thread → ThreadLocalMap → Entry → value}. The GC cannot collect these values as
+ *       long as the thread is alive.</li>
+ *   <li>Total retained heap = number of pool threads × {@link #entriesPerThread()} ×
+ *       {@link #valueSizeBytes()} bytes. With 16 pool threads, 100 entries each of 64 KB, total
+ *       retention is 100 MB.</li>
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — attaches the chaos agent before container start.
- *   <li><strong>The chaos agent JAR</strong> accessible at the configured path.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath.</strong>
- *   <li><strong>Java container image</strong> — the target must run a JVM process.
+ *   <li><strong>Heap pressure from retained ThreadLocal values.</strong> The retained values are
+ *       permanent GC roots via the thread object; they grow the live set and reduce free heap for
+ *       application objects; assert that the heap does not OOM within the test window.
+ *   <li><strong>Increased GC pause time.</strong> A larger live set requires the GC to mark and
+ *       copy more objects during each collection; pause times grow in proportion to the total
+ *       retained bytes; assert that GC pauses remain within SLA.
+ *   <li><strong>ThreadLocalMap growth and lookup latency.</strong> Each thread's
+ *       {@code ThreadLocalMap} is an open-addressing hash table; with many entries its load factor
+ *       increases and lookup time for any ThreadLocal (including the application's own) grows;
+ *       assert that the framework's per-request ThreadLocal access latency does not become a
+ *       bottleneck.
+ *   <li><strong>Off-heap interactions.</strong> Some ThreadLocal values hold references to
+ *       off-heap resources (database connections, output streams); retaining the ThreadLocal
+ *       value prevents the off-heap resource from being released; assert that the resource pool
+ *       detects the over-retention and reclaims leaked entries.
+ *   <li><strong>Production failure mode:</strong> a servlet container thread serves a request,
+ *       stores the request context in a {@code ThreadLocal}, and then throws an unhandled exception
+ *       that bypasses the cleanup code in the {@code finally} block; the thread is returned to the
+ *       pool with the context still set, and the next request on that thread picks up the previous
+ *       request's context — causing data leakage between tenants.
  * </ul>
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>Each Java thread owns a {@code ThreadLocalMap} — an open-addressing, linearly-probed hash
+ * table keyed by {@code ThreadLocal} identity (using the ThreadLocal object's identity hash code).
+ * Values are stored as {@code Entry} objects that weakly reference the {@code ThreadLocal} key but
+ * strongly reference the value. If the {@code ThreadLocal} object itself is GC-collected (because
+ * no code holds a strong reference to it), the entry's key becomes {@code null} and the entry
+ * becomes a "stale entry". The JVM will clean up stale entries during subsequent {@code get()},
+ * {@code set()}, or {@code remove()} calls, but never proactively.
+ *
+ * <p>This stressor keeps the {@code ThreadLocal} instances reachable (stored in a stressor-owned
+ * list), so the entries are not stale — both the key and the value are strongly reachable. The
+ * entries therefore never become candidates for cleanup regardless of GC frequency.
+ *
+ * <p>The interaction with virtual threads is important: virtual threads do not share a carrier's
+ * {@code ThreadLocalMap}; each virtual thread has its own map. However, virtual threads use
+ * {@code ScopedValue} rather than {@code ThreadLocal} in modern code; legacy code using
+ * {@code ThreadLocal} on virtual threads still leaks as described, except that virtual threads may
+ * be destroyed and recreated frequently (unlike pool threads), so the leak is bounded by the
+ * lifetime of each virtual thread.
+ *
+ * <p>Combining this stressor with {@link ChaosHeapPressure} produces a cumulative heap-retention
+ * scenario that is representative of a production system under a slow ThreadLocal leak: the
+ * retained heap grows steadily while the application continues to allocate, eventually triggering
+ * an OOM.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosThreadLocalLeak
- * class JvmStressorTest {
+ * @ChaosThreadLocalLeak(entriesPerThread = 50, valueSizeBytes = 32_768)
+ * class ThreadLocalLeakTest {
  *   @Test
- *   void appResilientUnderStress(ConnectionInfo info) { ... }
+ *   void applicationDetectsAndAlertsOnThreadLocalRetention(ConnectionInfo info) { ... }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosThreadLocalLeaks}) to apply different stressor intensities to different containers.
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
+ *       agent before the container JVM starts; omitting it causes an
+ *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
+ *       {@code @JvmAgentChaos}.
+ *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the
+ *       translator.
+ *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
+ *       intercept native executables.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
  */

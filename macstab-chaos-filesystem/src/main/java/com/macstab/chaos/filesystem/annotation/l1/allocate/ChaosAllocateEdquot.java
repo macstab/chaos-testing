@@ -14,39 +14,75 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code EDQUOT} on every libchaos-intercepted {@code allocate} call inside the target
- * container, making the call fail as if the kernel returned {@code EDQUOT}.
+ * Injects {@code EDQUOT} into {@code fallocate(2)}, causing the call to return {@code -1} with
+ * {@code errno = EDQUOT} as if the user's or group's disk quota has been exceeded and the kernel
+ * cannot pre-allocate the requested disk space for the file.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EDQUOT}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EDQUOT} is a valid POSIX result of {@code allocate}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code allocate} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #probability} is run. When it fires
- * the interceptor returns {@code -1} and sets {@code errno = EDQUOT} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: disk quota exceeded — typical of multi-tenant filesystem environments.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code ALLOCATE}, errno = {@code EDQUOT})
+ * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
+ * {@code fallocate} call; when it fires the interposer returns {@code -1} with {@code errno = EDQUOT}
+ * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.IO)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-io.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the filesystem libc wrappers (open, read,
- * write, close, fsync, etc.) at the dynamic-linker level. This annotation installs a rule via
- * {@code AdvancedFilesystemChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
+ *       extension to upload {@code libchaos-io.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
+ *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
+ *       {@code fallocate} at the dynamic-linker level.
+ *   <li>On each intercepted {@code fallocate} call a Bernoulli trial with probability {@link #probability}
+ *       is conducted; when it fires the interposer returns {@code -1} and sets
+ *       {@code errno = EDQUOT}, simulating a quota-exceeded condition at block pre-allocation time.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.IO)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-filesystem} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>{@code EDQUOT} from {@code fallocate} means the quota manager rejected the block allocation
+ *       before any data was written; the file's size and content are unchanged. Assert that the
+ *       application treats this as a quota-exceeded error (not a disk-full error) and notifies the
+ *       user or operator that quota limits need to be raised before retrying.
+ *   <li>Database engines that use {@code fallocate} to pre-allocate WAL segment files must handle
+ *       {@code EDQUOT} at segment creation time; assert that the database does not attempt to write
+ *       to a segment that failed pre-allocation and that the transaction in progress is rolled back
+ *       cleanly.
+ *   <li>Applications that pre-allocate large output files before writing (avoiding fragmentation)
+ *       must handle {@code EDQUOT} as a hard stop; assert that the application falls back to writing
+ *       without pre-allocation or aborts with a clear quota-exceeded error rather than a generic I/O
+ *       error.
+ *   <li>Assert that the application distinguishes {@code EDQUOT} from {@code ENOSPC}: quota
+ *       exhaustion is per-user or per-group (the quota can be raised without freeing space), while
+ *       disk-full requires either deleting files or expanding the filesystem.
  * </ul>
+ *
+ * <p>In production, {@code EDQUOT} from {@code fallocate} occurs in multi-tenant environments where
+ * disk quotas are enforced per service account, in Kubernetes clusters with per-pod storage limits
+ * enforced through project quotas, and in enterprise storage systems where each department has
+ * capacity allocations enforced at the filesystem level.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>{@code fallocate(2)} with {@code FALLOC_FL_KEEP_SIZE} or without it allocates real disk blocks
+ * for a file region without writing any data. This allows applications to guarantee that future
+ * writes to the allocated region will not fail with {@code ENOSPC}. The quota check occurs before
+ * any blocks are reserved: the kernel computes whether the requested allocation would push the
+ * caller's block usage beyond the hard quota limit and returns {@code EDQUOT} immediately if so.
+ *
+ * <p>On ext4 and XFS, the quota accounting tracks both block usage and inode usage. {@code fallocate}
+ * only increases block usage (not inode count), so {@code EDQUOT} from {@code fallocate} indicates
+ * that the block quota limit has been reached. Applications that perform their own free-space
+ * estimation using {@code statfs(2)} will not see the quota limit — {@code statfs} reports filesystem-wide
+ * free space, not per-user quota headroom. Only the actual allocation call exposes the quota limit.
+ *
+ * <p>Java's NIO {@code FileChannel} does not expose {@code fallocate} directly. Applications that
+ * use native code or JNI to call {@code fallocate} must handle the returned error through their
+ * native bridge; the JVM layer will throw an {@code IOException} wrapping the native error. Some
+ * database embedded in the JVM (like RocksDB or SQLite via JDBC) use {@code fallocate} through JNI
+ * and may surface {@code EDQUOT} as a generic storage exception.
  *
  * <h2>Example</h2>
  *
@@ -54,21 +90,18 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.IO)
  * @ChaosAllocateEdquot(probability = 0.001)
- * class FaultTest {
+ * class AllocateEdquotTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void walSegmentPreallocationFailsGracefullyOnQuotaExhaustion() {
+ *     // assert that EDQUOT on fallocate aborts the WAL segment creation cleanly
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> use low rates (1e-4 to 1e-2) to avoid breaking
- * container initialisation.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosAllocateEdquots}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosAllocateEnospc
+ * @see ChaosWriteEdquot
+ * @see com.macstab.chaos.filesystem.annotation.l1.IoErrnoBinding
  */
 @Repeatable(ChaosAllocateEdquot.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

@@ -14,57 +14,91 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Throw the configured exception at the jmx_get_attr call site.
+ * Throws a configurable exception at every {@code MBeanServer.getAttribute()} call site,
+ * simulating a broken MBean, a deregistered MBean, or an attribute that cannot be read.
  *
- * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
- * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
- * alongside a container annotation and activates for the lifetime of the test class (class-scope)
- * or a single {@code @Test} method (method-scope).
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> throw the configured exception at the JMX_GET_ATTR
- * call site inside the JVM of the target container. The effect fires on every matching call,
- * subject to the probability configured via {@link #probability()} if applicable. The rule is
- * active from {@code beforeAll} until {@code afterAll} (class-scope) or from {@code beforeEach}
- * until {@code afterEach} (method-scope).
+ * <p>A JVM agent L1 chaos primitive targeting the {@code JMX_GET_ATTR} operation — one typed
+ * annotation per (selector family, operation type, effect) tuple. Declared on a test class or
+ * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until
+ * {@code afterAll}/{@code afterEach} respectively.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @JvmAgentChaos} annotation on the
- * container declaration causes {@code ChaosTestingExtension} to attach the chaos Java agent to the
- * container's JVM before it starts (via {@code -javaagent}). The agent uses Byte Buddy to install
- * method interceptors at runtime. This annotation adds a typed {@code ChaosScenario} to the
- * container's active {@code ChaosPlan} via {@link
- * com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator}; the accumulator serialises the merged
- * plan and pushes it to the agent API after every change.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>The chaos agent intercepts every call to
+ *       {@code javax.management.MBeanServer.getAttribute(ObjectName, String)} in the target
+ *       container's JVM.
+ *   <li>Before the MBean is consulted, the interceptor instantiates the exception class named by
+ *       {@link #exceptionClassName()} with {@link #message()} and throws it.
+ *   <li>The calling thread unwinds from the throw site; no attribute value is returned.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation (e.g.
- *       {@code @AppContainer}) — this attaches the chaos agent to the container JVM before it
- *       starts; omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>The chaos agent JAR</strong> must be accessible at the path configured in
- *       {@code @JvmAgentChaos}; the agent is attached before container start.
- *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — without it the
- *       translator class cannot be loaded.
- *   <li><strong>Java container image</strong> — the target container must run a JVM process; the
- *       agent cannot intercept native executables.
+ *   <li><strong>Monitoring scraper receives errors.</strong> Jolokia or custom JMX clients that
+ *       read attributes will receive an exception; assert that the monitoring pipeline marks the
+ *       metric as unavailable rather than recording a zero or stale value.
+ *   <li><strong>Auto-scaling logic receives null or error.</strong> Auto-scalers that drive
+ *       scaling decisions from JMX metrics will operate without data; assert that the scaler
+ *       defaults to the last known value or to a safe scaling policy rather than crashing.
+ *   <li><strong>JMX-based health check fails.</strong> Management probes that read JVM health
+ *       attributes will receive exceptions; assert that the probe reports the node as unhealthy
+ *       and triggers a restart, rather than interpreting the exception as a transient error and
+ *       continuing to serve traffic.
+ *   <li><strong>Production failure mode:</strong> a deregistered or replaced MBean (e.g. after
+ *       an application redeployment on a running server) causes all attribute reads on the old
+ *       {@code ObjectName} to throw {@code InstanceNotFoundException}; monitoring dashboards go
+ *       blank and alerting rules that depend on JMX data stop firing.
  * </ul>
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The natural exception types for JMX attribute failures are:
+ * {@code javax.management.InstanceNotFoundException} (the MBean is not registered),
+ * {@code javax.management.AttributeNotFoundException} (the MBean does not expose the requested
+ * attribute), and {@code javax.management.MBeanException} (the MBean's getter threw an exception).
+ * Each corresponds to a different root cause and exercises a different branch in the caller's
+ * exception handler; select {@link #exceptionClassName()} to match the scenario under test.
+ *
+ * <p>The exception is thrown before any MBean-side code runs, so the MBean's state is not changed.
+ * Callers that cache the attribute value and fall back to the cache on exception will not observe
+ * stale data from the MBean itself; they will simply use whatever was in the cache at the time the
+ * chaos was activated. Tests should verify this caching behaviour if it is part of the expected
+ * resilience strategy.
+ *
+ * <p>JMX attribute reads issued from the JVM's own internal monitoring infrastructure (e.g. the
+ * garbage collector's self-reporting via MBeans) are also intercepted if they go through
+ * {@code MBeanServer.getAttribute()}. However, most internal JVM monitoring uses direct field
+ * access rather than the JMX API, so the impact on JVM-internal monitoring is typically small.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @JvmAgentChaos
- * @ChaosJmxGetAttrInjectException
- * class JvmChaosTest {
+ * @ChaosJmxGetAttrInjectException(
+ *     exceptionClassName = "javax.management.InstanceNotFoundException",
+ *     message = "MBean not registered: com.example:type=Cache")
+ * class JmxAttrFailureTest {
  *   @Test
- *   void appHandlesFault(ConnectionInfo info) { ... }
+ *   void monitoringPipelineHandlesMissingMbeanGracefully(ConnectionInfo info) { ... }
  * }
  * }</pre>
  *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
- * string applies to every agent-capable container. Use the repeatable form
- * ({@code @ChaosJmxGetAttrInjectExceptions}) to apply different configurations to different
- * containers.
+ * <ul>
+ *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
+ *       agent before the container JVM starts; omitting it causes an
+ *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
+ *       {@code @JvmAgentChaos}.
+ *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the
+ *       translator.
+ *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
+ *       intercept native executables.
+ * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
  */

@@ -14,62 +14,90 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code EAGAIN} on every libchaos-intercepted {@code accept} call inside the target
- * container, making the call fail as if the kernel returned {@code EAGAIN}.
+ * Injects {@code EAGAIN} into {@code accept(2)}, causing the call to return {@code -1} with
+ * {@code errno = EAGAIN} as if the listening socket is non-blocking and no connection is currently
+ * waiting to be accepted.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive — the smallest declarative
- * chaos unit. It encodes exactly one (selector, errno = {@code EAGAIN}) pair and has no runtime
- * selector-errno matrix to validate. The combination is safe by construction: this annotation class
- * exists only because {@code EAGAIN} is a valid POSIX result of {@code accept}.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> on every {@code accept} call that the libchaos
- * interceptor sees, a Bernoulli trial with probability {@link #toxicity} is run. When it fires the
- * interceptor returns {@code -1} and sets {@code errno = EAGAIN} — from the application's
- * perspective this is indistinguishable from a real kernel-level failure. Specifically this
- * simulates: temporary failure / resource temporarily unavailable — typical of RLIMIT exhaustion or
- * kernel pressure.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code ACCEPT}, errno = {@code EAGAIN})
+ * tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted
+ * {@code accept} call; when it fires the interposer returns {@code -1} with {@code errno = EAGAIN}
+ * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.NET)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-net.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes socket-layer libc wrappers (connect, accept,
- * socket, bind, listen, shutdown, send, recv, poll). This annotation installs a rule via {@code
- * AdvancedConnectionChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
+ *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
+ *       {@code poll} at the dynamic-linker level.
+ *   <li>On every intercepted {@code accept} call a Bernoulli trial with probability
+ *       {@link #toxicity} is conducted; when it fires the interposer returns {@code -1} and
+ *       sets {@code errno = EAGAIN}.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD}, which does not apply on
- *       macOS or Windows; annotate the test with {@code @DisabledOnOs(OS.WINDOWS)}.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.NET)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) may not
- *       honour {@code LD_PRELOAD} for statically-linked processes; use Debian-slim instead.
- *   <li><strong>{@code macstab-chaos-connection} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and the extension throws {@code ClassNotFoundException}.
+ *   <li>Server-side accept loops must handle {@code EAGAIN} correctly — typically by returning
+ *       to the event loop and re-registering the listening socket for readability rather than
+ *       treating it as a fatal error.
+ *   <li>Blocking-mode servers that call {@code accept} without {@code O_NONBLOCK} should not
+ *       receive {@code EAGAIN} in production; the injection surfaces the assumption that
+ *       {@code accept} only fails with {@code EAGAIN} on non-blocking sockets.
+ *   <li>Accept loops that retry on all non-zero returns without limit will spin under this
+ *       injection, revealing the absence of a back-off or error-checking guard.
+ *   <li>Assert that the server correctly handles spurious {@code EAGAIN} results and continues
+ *       accepting subsequent connections without logging false-alarm errors.
  * </ul>
+ *
+ * <p>In production, {@code EAGAIN} from {@code accept} occurs when the listening socket has been
+ * set to non-blocking mode (a common pattern in event-driven servers) and no connection is in the
+ * accept queue at the moment the call is made — a normal occurrence under low inbound traffic.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>POSIX specifies that {@code accept(2)} on a non-blocking socket returns {@code EAGAIN} (or
+ * the equivalent {@code EWOULDBLOCK}) when no connections are pending. Event-driven server
+ * frameworks (Netty, Vert.x, libuv) rely on this behaviour: they call {@code accept} in a loop
+ * until {@code EAGAIN} is received, which signals that the accept queue is drained for this
+ * epoll event cycle. Injecting {@code EAGAIN} mid-loop tests whether the loop exits cleanly
+ * without logging spurious errors or leaving accepted fds unclosed.
+ *
+ * <p>Blocking-mode servers that use a thread-per-connection model typically call {@code accept}
+ * on a blocking socket; they should never receive {@code EAGAIN} in normal operation. When this
+ * injection fires against such a server, the application's handling of an unexpected {@code EAGAIN}
+ * is exercised — most implementations treat it as a warning and retry, but some incorrectly treat
+ * it as a fatal error and shut down the accept loop.
+ *
+ * <p>Java's {@code ServerSocketChannel} in blocking mode wraps {@code accept} and converts
+ * {@code EAGAIN} to a null return (no connection available). In non-blocking mode it throws
+ * {@code SocketTimeoutException} or returns null. Application code that inspects the return value
+ * rather than catching exceptions will silently discard the connection attempt, which this
+ * injection makes visible by observing that the accept loop does not increment its connection
+ * counter.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @RedisStandalone
  * @SyscallLevelChaos(LibchaosLib.NET)
- * @ChaosAcceptEagain(toxicity = 0.001)
- * class FaultTest {
+ * @ChaosAcceptEagain(toxicity = 0.01)
+ * class AcceptEagainTest {
  *   @Test
- *   void appHandlesFailure(ConnectionInfo info) { ... }
+ *   void serverAcceptLoopHandlesSpuriousEagainWithoutLoggingErrors(ConnectionInfo info) {
+ *     // assert that the server continues accepting and does not log EAGAIN as a warning
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3 to simulate transient pressure; high rates
- * saturate retry budgets.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every capable container in the test
- * class. Use the repeatable form ({@code @ChaosAcceptEagains}) to bind different probabilities to
- * different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosAcceptEconnreset
+ * @see ChaosAcceptLatency
+ * @see com.macstab.chaos.connection.annotation.l1.ConnectionErrnoBinding
  */
 @Repeatable(ChaosAcceptEagain.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

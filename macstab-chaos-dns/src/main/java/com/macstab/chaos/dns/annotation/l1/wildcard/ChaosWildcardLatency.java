@@ -13,58 +13,88 @@ import com.macstab.chaos.dns.annotation.l1.DnsLatencyBinding;
 import com.macstab.chaos.dns.annotation.l1.DnsSelectorKind;
 
 /**
- * Delays every libchaos-intercepted {@code wildcard} call by {@link #delayMs} milliseconds before
- * delegating to the real kernel call, making the operation succeed but take longer than expected.
+ * Delays both {@code getaddrinfo(3)} (forward lookup) and {@code getnameinfo(3)} (reverse lookup)
+ * by an additional {@link #delayMs} milliseconds before delegating to the real resolver, making
+ * all DNS resolution slower than the application expects.
  *
- * <p><strong>What this annotation is:</strong> an L1 chaos primitive encoding exactly one
- * (selector, effect = LATENCY) pair. Unlike errno variants, the latency primitive always delegates
- * to the kernel — it only adds wall-clock cost before doing so.
+ * <h2>What this annotation is</h2>
  *
- * <p><strong>What chaos this applies:</strong> every {@code wildcard} call intercepted by libchaos
- * blocks for {@link #delayMs} ms before the kernel call is issued. This simulates the wall-clock
- * cost increase from resource pressure, kernel scheduling stalls, or slow hardware — none of which
- * return an errno but all of which can exhaust application-level timeouts, saturate connection-pool
- * wait budgets, and surface hidden latency assumptions.
+ * <p>L1 libchaos primitive. Encodes exactly one (selectorKind = {@code WILDCARD}, effect = LATENCY)
+ * tuple. The {@code WILDCARD} selector matches both interposed DNS calls simultaneously —
+ * equivalent to applying {@link ChaosForwardLatency} and {@link ChaosReverseLatency} in a single
+ * annotation. Unlike EAI errno variants, the latency primitive always delegates to the real
+ * resolver after the configured extra delay — the return value reflects the actual DNS response.
+ * No runtime selector-effect validation is needed.
  *
- * <p><strong>How this occurs (mechanism):</strong> the {@code @SyscallLevelChaos(LibchaosLib.DNS)}
- * annotation causes {@code ChaosTestingExtension} to upload {@code libchaos-dns.so} and prepend it
- * to {@code LD_PRELOAD}. The shared library interposes the libc resolver wrappers {@code
- * getaddrinfo} and {@code getnameinfo}. This annotation installs a rule via {@code
- * AdvancedDnsChaos.apply(container, rule)}.
+ * <h2>What chaos this applies</h2>
  *
- * <p><strong>What is required:</strong>
+ * <ol>
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.DNS)} on the container definition causes the
+ *       extension to upload {@code libchaos-dns.so} into the container and prepend it to
+ *       {@code LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code getaddrinfo(3)} and {@code getnameinfo(3)} at the
+ *       dynamic-linker level.
+ *   <li>On every intercepted call to either function the interposer first sleeps for an additional
+ *       {@link #delayMs} milliseconds.
+ *   <li>After the extra delay, the real resolver call is issued; the result (success or error) is
+ *       returned to the application unchanged.
+ * </ol>
+ *
+ * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Linux host</strong> — {@code LD_PRELOAD} does not apply on macOS or Windows.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.DNS)}</strong> on the container annotation
- *       (e.g. {@code @AppContainer}) — omitting it causes an {@code
- *       ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images may not honour {@code
- *       LD_PRELOAD} for statically-linked processes.
- *   <li><strong>{@code macstab-chaos-dns} on the test classpath.</strong>
+ *   <li>Connection establishment is slower because forward resolution takes {@link #delayMs} ms
+ *       longer; application-level connection timeouts that budget less than the DNS delay plus
+ *       the actual resolver round trip will expire before the socket is opened.
+ *   <li>Reverse lookups for access logging, audit trails, and peer validation are delayed by the
+ *       same amount; request processing that waits for these enrichments will appear slower.
+ *   <li>The combination exercises the scenario where a degraded upstream DNS server makes all
+ *       resolution slow simultaneously — a situation that is hard to reproduce in test environments
+ *       without disrupting shared infrastructure.
+ *   <li>Assert that the application's total connection timeout budget explicitly accounts for
+ *       DNS resolution latency and that reverse lookups are never on the critical path.
  * </ul>
+ *
+ * <p>In production, simultaneous latency on both DNS APIs occurs when the upstream DNS server is
+ * under load, when the resolver's UDP packets are queued behind other traffic on a congested
+ * network link, or when the DNS search domain list causes multiple sequential lookups per query.
+ *
+ * <h2>Deep technical dive</h2>
+ *
+ * <p>The {@code WILDCARD} latency injection is the most comprehensive DNS-overhead primitive:
+ * it adds the configured delay to every resolver call regardless of direction. This simulates
+ * a degraded but functional DNS infrastructure where all queries succeed eventually, but only
+ * after a longer-than-expected round trip.
+ *
+ * <p>For applications that call {@code getaddrinfo} synchronously on connection establishment,
+ * {@link #delayMs} is added to the observed connection latency. For applications that call
+ * {@code getnameinfo} asynchronously for logging enrichment, the same delay is added to the
+ * background enrichment thread, which may cause the thread pool to back up if connections
+ * arrive faster than enrichments complete.
+ *
+ * <p>HTTP client libraries that budget a single total timeout across DNS resolution, TCP connect,
+ * and TLS handshake (e.g. OkHttp's {@code callTimeout}) will exhaust their budget in the DNS
+ * phase when the injected delay is large, making the TCP and TLS code paths unreachable. This
+ * injection reveals those hidden assumptions without requiring real network infrastructure.
  *
  * <h2>Example</h2>
  *
  * <pre>{@code
  * @AppContainer
  * @SyscallLevelChaos(LibchaosLib.DNS)
- * @ChaosWildcardLatency(delayMs = 200)
- * class LatencyTest {
+ * @ChaosWildcardLatency(delayMs = 500)
+ * class WildcardLatencyTest {
  *   @Test
- *   void appHandlesSlowOperation(ConnectionInfo info) { ... }
+ *   void connectionTimeoutBudgetExplicitlyAccountsForDnsLatency(ConnectionInfo info) {
+ *     // assert that DNS timeout is budgeted separately from connect and TLS timeout
+ *   }
  * }
  * }</pre>
  *
- * <p><strong>Delay guidance:</strong> {@code 10}–{@code 200} ms simulates realistic stall events;
- * values above application-level timeouts produce cascading failures rather than isolated latency
- * observations — intentional in some scenarios, noisy in others.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds to a single container; the default empty string
- * applies to every capable container. Use the repeatable form ({@code @ChaosWildcardLatencys}) to
- * set different delays on different containers simultaneously.
- *
  * @author Christian Schnapka - Macstab GmbH
+ * @see ChaosForwardLatency
+ * @see ChaosReverseLatency
+ * @see com.macstab.chaos.dns.annotation.l1.DnsLatencyBinding
  */
 @Repeatable(ChaosWildcardLatency.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)
