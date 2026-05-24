@@ -7,6 +7,8 @@ import java.lang.reflect.Method;
 import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.extension.L1Translator;
+import com.macstab.chaos.core.syscall.LibchaosLib;
+import com.macstab.chaos.core.syscall.LibchaosTransport;
 import com.macstab.chaos.memory.CompositeMemoryChaos;
 import com.macstab.chaos.memory.annotation.l1.MemoryErrnoBinding;
 import com.macstab.chaos.memory.api.AdvancedMemoryChaos;
@@ -73,7 +75,7 @@ public final class MemoryErrnoTranslator implements L1Translator<Annotation> {
       // contract).
       return;
     }
-    CompositeMemoryChaos.standard().advanced().remove(container, ruleHandle);
+    new LibchaosTransport(LibchaosLib.MEMORY).removeRules(container, ruleHandle.owner());
   }
 
   private static double readProbability(final Annotation annotation) {

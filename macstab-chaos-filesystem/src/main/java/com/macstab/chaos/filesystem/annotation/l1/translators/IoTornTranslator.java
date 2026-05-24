@@ -7,6 +7,8 @@ import java.lang.reflect.Method;
 import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.extension.L1Translator;
+import com.macstab.chaos.core.syscall.LibchaosLib;
+import com.macstab.chaos.core.syscall.LibchaosTransport;
 import com.macstab.chaos.filesystem.CompositeFilesystemChaos;
 import com.macstab.chaos.filesystem.annotation.l1.IoTornBinding;
 import com.macstab.chaos.filesystem.api.AdvancedFilesystemChaos;
@@ -36,7 +38,7 @@ public final class IoTornTranslator implements L1Translator<Annotation> {
     if (!(handle instanceof RuleHandle ruleHandle)) {
       return;
     }
-    CompositeFilesystemChaos.standard().advanced().remove(container, ruleHandle);
+    new LibchaosTransport(LibchaosLib.IO).removeRules(container, ruleHandle.owner());
   }
 
   static IoRule buildRule(final Annotation annotation) {

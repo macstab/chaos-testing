@@ -6,6 +6,8 @@ import java.lang.annotation.Annotation;
 import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.extension.L1Translator;
+import com.macstab.chaos.core.syscall.LibchaosLib;
+import com.macstab.chaos.core.syscall.LibchaosTransport;
 import com.macstab.chaos.dns.CompositeDnsChaos;
 import com.macstab.chaos.dns.annotation.l1.DnsEaiBinding;
 import com.macstab.chaos.dns.api.AdvancedDnsChaos;
@@ -34,7 +36,7 @@ public final class DnsEaiTranslator implements L1Translator<Annotation> {
     if (!(handle instanceof RuleHandle ruleHandle)) {
       return;
     }
-    CompositeDnsChaos.standard().advanced().remove(container, ruleHandle);
+    new LibchaosTransport(LibchaosLib.DNS).removeRules(container, ruleHandle.owner());
   }
 
   static DnsRule buildRule(final Annotation annotation) {

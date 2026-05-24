@@ -8,6 +8,8 @@ import java.time.Duration;
 import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.extension.L1Translator;
+import com.macstab.chaos.core.syscall.LibchaosLib;
+import com.macstab.chaos.core.syscall.LibchaosTransport;
 import com.macstab.chaos.time.CompositeTimeChaos;
 import com.macstab.chaos.time.annotation.l1.TimeLatencyBinding;
 import com.macstab.chaos.time.api.AdvancedTimeChaos;
@@ -36,7 +38,7 @@ public final class TimeLatencyTranslator implements L1Translator<Annotation> {
     if (!(handle instanceof RuleHandle ruleHandle)) {
       return;
     }
-    CompositeTimeChaos.standard().advanced().remove(container, ruleHandle);
+    new LibchaosTransport(LibchaosLib.TIME).removeRules(container, ruleHandle.owner());
   }
 
   static TimeRule buildRule(final Annotation annotation) {

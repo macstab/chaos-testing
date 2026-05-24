@@ -9,6 +9,8 @@ import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.connection.CompositeConnectionChaos;
 import com.macstab.chaos.connection.annotation.l1.ConnectionLatencyBinding;
+import com.macstab.chaos.core.syscall.LibchaosLib;
+import com.macstab.chaos.core.syscall.LibchaosTransport;
 import com.macstab.chaos.connection.api.AdvancedConnectionChaos;
 import com.macstab.chaos.connection.api.RuleHandle;
 import com.macstab.chaos.connection.model.Endpoint;
@@ -38,7 +40,7 @@ public final class ConnectionLatencyTranslator implements L1Translator<Annotatio
     if (!(handle instanceof RuleHandle ruleHandle)) {
       return;
     }
-    CompositeConnectionChaos.standard().advanced().remove(container, ruleHandle);
+    new LibchaosTransport(LibchaosLib.NET).removeRules(container, ruleHandle.owner());
   }
 
   static NetRule buildRule(final Annotation annotation) {

@@ -7,6 +7,8 @@ import java.lang.reflect.Method;
 import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.extension.L1Translator;
+import com.macstab.chaos.core.syscall.LibchaosLib;
+import com.macstab.chaos.core.syscall.LibchaosTransport;
 import com.macstab.chaos.process.CompositeProcessChaos;
 import com.macstab.chaos.process.annotation.l1.ProcessErrnoBinding;
 import com.macstab.chaos.process.api.AdvancedProcessChaos;
@@ -37,7 +39,7 @@ public final class ProcessErrnoTranslator implements L1Translator<Annotation> {
     if (!(handle instanceof RuleHandle ruleHandle)) {
       return;
     }
-    CompositeProcessChaos.standard().advanced().remove(container, ruleHandle);
+    new LibchaosTransport(LibchaosLib.PROCESS).removeRules(container, ruleHandle.owner());
   }
 
   /**

@@ -8,6 +8,8 @@ import java.time.Duration;
 import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.extension.L1Translator;
+import com.macstab.chaos.core.syscall.LibchaosLib;
+import com.macstab.chaos.core.syscall.LibchaosTransport;
 import com.macstab.chaos.process.CompositeProcessChaos;
 import com.macstab.chaos.process.annotation.l1.ProcessLatencyBinding;
 import com.macstab.chaos.process.api.AdvancedProcessChaos;
@@ -36,7 +38,7 @@ public final class ProcessLatencyTranslator implements L1Translator<Annotation> 
     if (!(handle instanceof RuleHandle ruleHandle)) {
       return;
     }
-    CompositeProcessChaos.standard().advanced().remove(container, ruleHandle);
+    new LibchaosTransport(LibchaosLib.PROCESS).removeRules(container, ruleHandle.owner());
   }
 
   static ProcessRule buildRule(final Annotation annotation) {

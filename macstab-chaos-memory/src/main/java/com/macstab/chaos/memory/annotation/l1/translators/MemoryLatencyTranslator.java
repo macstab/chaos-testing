@@ -8,6 +8,8 @@ import java.time.Duration;
 import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.core.extension.L1Translator;
+import com.macstab.chaos.core.syscall.LibchaosLib;
+import com.macstab.chaos.core.syscall.LibchaosTransport;
 import com.macstab.chaos.memory.CompositeMemoryChaos;
 import com.macstab.chaos.memory.annotation.l1.MemoryLatencyBinding;
 import com.macstab.chaos.memory.api.AdvancedMemoryChaos;
@@ -60,7 +62,7 @@ public final class MemoryLatencyTranslator implements L1Translator<Annotation> {
     if (!(handle instanceof RuleHandle ruleHandle)) {
       return;
     }
-    CompositeMemoryChaos.standard().advanced().remove(container, ruleHandle);
+    new LibchaosTransport(LibchaosLib.MEMORY).removeRules(container, ruleHandle.owner());
   }
 
   private static long readDelayMs(final Annotation annotation) {
