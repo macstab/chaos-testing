@@ -20,21 +20,21 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code CLOCK_GETTIME}, errno =
- * {@code EINTR}) tuple. The tuple is safe by construction — {@code EINTR} is a documented POSIX
- * result indicating that a signal interrupted an otherwise synchronous call. No runtime
- * selector-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code CLOCK_GETTIME}, errno = {@code
+ * EINTR}) tuple. The tuple is safe by construction — {@code EINTR} is a documented POSIX result
+ * indicating that a signal interrupted an otherwise synchronous call. No runtime selector-errno
+ * validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
- *       extension to upload {@code libchaos-time.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
  *       at the dynamic-linker level.
- *   <li>On every intercepted {@code clock_gettime} call a Bernoulli trial with probability
- *       {@link #probability} is conducted.
+ *   <li>On every intercepted {@code clock_gettime} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted.
  *   <li>When the trial fires the interposer returns {@code -1} and sets {@code errno = EINTR}
  *       without invoking the real kernel call — the application sees a signal-interrupted failure.
  * </ol>
@@ -46,25 +46,25 @@ import com.macstab.chaos.time.model.TimeSelector;
  *       retry the call immediately in a loop — code that does not loop will lose the sample.
  *   <li>Instrumentation loops in profiling agents and APM agents that timestamp every sample are
  *       the highest-frequency callers and the most likely to expose retry gaps.
- *   <li>Code that falls through on any negative return without checking errno will treat
- *       {@code EINTR} as a hard failure, which is incorrect.
+ *   <li>Code that falls through on any negative return without checking errno will treat {@code
+ *       EINTR} as a hard failure, which is incorrect.
  *   <li>Assert that the retry loop is bounded (avoids busy-spin under sustained signal pressure)
  *       and that the final timestamp is valid.
  * </ul>
  *
  * <p>In production, {@code EINTR} from {@code clock_gettime} is uncommon because the call is
  * synchronous and very fast; signal delivery during such a brief window is rare. It becomes
- * relevant in high-throughput signal environments (e.g. processes receiving many {@code SIGCHLD}
- * or {@code SIGALRM} signals per second).
+ * relevant in high-throughput signal environments (e.g. processes receiving many {@code SIGCHLD} or
+ * {@code SIGALRM} signals per second).
  *
  * <h2>Deep technical dive</h2>
  *
  * <p>The Linux kernel restarts {@code clock_gettime} automatically for most signal dispositions
- * when the {@code SA_RESTART} flag is set. Without {@code SA_RESTART}, the syscall returns
- * {@code EINTR} to userspace. glibc's signal installation wrappers default to setting
- * {@code SA_RESTART}, which means that under normal conditions {@code EINTR} is suppressed.
- * The injection via {@code libchaos-time.so} bypasses this restart logic by returning
- * {@code EINTR} at the C library level rather than from the kernel.
+ * when the {@code SA_RESTART} flag is set. Without {@code SA_RESTART}, the syscall returns {@code
+ * EINTR} to userspace. glibc's signal installation wrappers default to setting {@code SA_RESTART},
+ * which means that under normal conditions {@code EINTR} is suppressed. The injection via {@code
+ * libchaos-time.so} bypasses this restart logic by returning {@code EINTR} at the C library level
+ * rather than from the kernel.
  *
  * <p>This distinction matters: the injected {@code EINTR} is seen by application code, not by the
  * glibc restart machinery. It therefore exercises paths that only fire when {@code SA_RESTART} is

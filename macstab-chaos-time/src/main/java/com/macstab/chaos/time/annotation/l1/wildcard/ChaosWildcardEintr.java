@@ -14,23 +14,24 @@ import com.macstab.chaos.time.model.TimeErrno;
 import com.macstab.chaos.time.model.TimeSelector;
 
 /**
- * Injects {@code EINTR} into every interposed time syscall ({@code clock_gettime}, {@code nanosleep},
- * {@code usleep}), causing each to return {@code -1} with {@code errno = EINTR} as if a signal
- * interrupted the call.
+ * Injects {@code EINTR} into every interposed time syscall ({@code clock_gettime}, {@code
+ * nanosleep}, {@code usleep}), causing each to return {@code -1} with {@code errno = EINTR} as if a
+ * signal interrupted the call.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code WILDCARD}, errno = {@code EINTR})
- * tuple. The {@code WILDCARD} selector matches all three interposed time syscalls simultaneously —
- * equivalent to applying {@link ChaosClockGettimeEintr}, {@link ChaosNanosleepEintr}, and
- * {@link ChaosUsleepEintr} in a single annotation. No runtime selector-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code WILDCARD}, errno = {@code
+ * EINTR}) tuple. The {@code WILDCARD} selector matches all three interposed time syscalls
+ * simultaneously — equivalent to applying {@link ChaosClockGettimeEintr}, {@link
+ * ChaosNanosleepEintr}, and {@link ChaosUsleepEintr} in a single annotation. No runtime
+ * selector-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
- *       extension to upload {@code libchaos-time.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
  *       at the dynamic-linker level.
  *   <li>On every intercepted call to any of the three syscalls, a Bernoulli trial with probability
@@ -59,14 +60,14 @@ import com.macstab.chaos.time.model.TimeSelector;
  * <h2>Deep technical dive</h2>
  *
  * <p>The {@code WILDCARD} selector is the most aggressive time-chaos primitive: it exercises the
- * union of all signal-interruption paths with a single annotation. This is particularly useful
- * for fuzz-testing the time subsystem of applications that were written assuming {@code clock_gettime}
+ * union of all signal-interruption paths with a single annotation. This is particularly useful for
+ * fuzz-testing the time subsystem of applications that were written assuming {@code clock_gettime}
  * never fails and {@code nanosleep} only fails with {@code EINTR}.
  *
  * <p>The injection probability is applied independently to each call; a probability of 0.01 means
- * roughly 1 in 100 calls of each type is interrupted. Under high-frequency time calls (e.g. a
- * hot loop that reads the clock for every cache entry), this creates a visible stream of errors
- * that stress-tests the retry and error-handling logic thoroughly.
+ * roughly 1 in 100 calls of each type is interrupted. Under high-frequency time calls (e.g. a hot
+ * loop that reads the clock for every cache entry), this creates a visible stream of errors that
+ * stress-tests the retry and error-handling logic thoroughly.
  *
  * <p>Sibling per-syscall annotations ({@link ChaosClockGettimeEintr}, {@link ChaosNanosleepEintr},
  * {@link ChaosUsleepEintr}) allow scoped injection to a single syscall when a targeted test is

@@ -649,7 +649,8 @@ class L1AnnotationProcessorTest {
       assertThat(classHandles).hasSize(2); // class rule on both containers
       assertThat(SuccessTranslator.APPLY_COUNT).hasValue(2);
 
-      // Field-level: only "primary" field has @FixtureSuccess → displaces class rule for primary only
+      // Field-level: only "primary" field has @FixtureSuccess → displaces class rule for primary
+      // only
       final List<L1AnnotationProcessor.AppliedL1> fieldHandles =
           L1AnnotationProcessor.applyFieldLevel(
               WithOnlyPrimaryFieldAnnotation.class,

@@ -14,11 +14,12 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * After {@link #successesBeforeFailure} successful {@code posix_spawnp} calls, injects
- * {@code EMFILE} on every subsequent call, causing the calling code to observe a persistent
- * per-process fd-table exhaustion failure that models a fd leak accumulation threshold.
+ * After {@link #successesBeforeFailure} successful {@code posix_spawnp} calls, injects {@code
+ * EMFILE} on every subsequent call, causing the calling code to observe a persistent per-process
+ * fd-table exhaustion failure that models a fd leak accumulation threshold.
  *
  * <h2>What this annotation is</h2>
+ *
  * L1 libchaos-process primitive — one (selector = {@code POSIX_SPAWNP}, errno = {@code EMFILE},
  * effect = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N calls succeed,
  * then the counter trips permanently and every subsequent call returns the error code until the
@@ -26,44 +27,48 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * annotation class.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
- *       interposing the libc {@code posix_spawnp} wrapper at the dynamic-linker level.</li>
+ *       interposing the libc {@code posix_spawnp} wrapper at the dynamic-linker level.
  *   <li>The interposer maintains a per-rule success counter; the counter does not reset
- *       automatically between test methods when the annotation is at class scope.</li>
+ *       automatically between test methods when the annotation is at class scope.
  *   <li>Once the counter reaches zero it trips permanently: every subsequent {@code posix_spawnp}
- *       call returns {@code EMFILE} directly (POSIX spawn returns the error code, not -1).</li>
+ *       call returns {@code EMFILE} directly (POSIX spawn returns the error code, not -1).
  *   <li>The calling code receives: return value {@code EMFILE} (24); no child process is created;
- *       the process's fd table has reached {@code RLIMIT_NOFILE}.</li>
+ *       the process's fd table has reached {@code RLIMIT_NOFILE}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
  *   <li>The first {@link #successesBeforeFailure} calls proceed normally; all subsequent calls
  *       return {@code EMFILE}; assert that the application includes the current fd count in the
- *       error diagnostic and does not call {@code waitpid} on an uninitialised pid.</li>
+ *       error diagnostic and does not call {@code waitpid} on an uninitialised pid.
  *   <li>FAIL_AFTER models the fd-leak accumulation threshold: each successful spawnp opens and
  *       should close pipe fds for subprocess communication; leaked pipe read-ends accumulate across
  *       spawns; after N spawns the fd table is full; assert that the application's diagnostic
- *       reports the open fd count and identifies the source of the leak.</li>
+ *       reports the open fd count and identifies the source of the leak.
  *   <li>Assert that the application distinguishes post-threshold EMFILE (24, per-process fd table
  *       full, fixable by closing leaked fds) from ENFILE (23, system-wide, requires platform team
- *       escalation) — in-process fd cleanup resolves EMFILE but not ENFILE.</li>
+ *       escalation) — in-process fd cleanup resolves EMFILE but not ENFILE.
  * </ul>
+ *
  * Production failure mode: a shell command executor uses {@code posix_spawnp} to run utilities;
  * each command capture leaks a pipe read-end fd; after N spawns the fd table is full; spawnp
  * returns EMFILE; the executor does not report the fd count, leaving operators unable to determine
- * whether the failure is per-process (EMFILE, fixable in-process) or system-wide (ENFILE,
- * requiring platform escalation) without inspecting {@code /proc/pid/fd}.
+ * whether the failure is per-process (EMFILE, fixable in-process) or system-wide (ENFILE, requiring
+ * platform escalation) without inspecting {@code /proc/pid/fd}.
  *
  * <h2>Deep technical dive</h2>
+ *
  * <p>FAIL_AFTER models the fd-leak accumulation threshold: glibc's posix_spawnp uses an internal
  * parent-child error-reporting pipe, which requires two fd slots from the parent's fd table. Each
  * successful spawn that captures output also allocates a capture pipe. If pipe read-ends are not
  * closed after each child exits, the fd count rises by approximately two per spawn cycle. After N
  * cycles the fd table (capped at RLIMIT_NOFILE) is full and the next spawn's internal pipe
- * allocation fails with EMFILE. POSIX spawn returns the error code directly — checking
- * {@code if (ret < 0)} silently misses EMFILE (24).
+ * allocation fails with EMFILE. POSIX spawn returns the error code directly — checking {@code if
+ * (ret < 0)} silently misses EMFILE (24).
  *
  * <p>The {@code $PATH} search in posix_spawnp adds additional fd pressure: each PATH directory is
  * opened with {@code opendir} during the search. Under a nearly-full fd table, the PATH search
@@ -100,12 +105,13 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * }
  * }</pre>
  *
- * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to
- * {@code RLIMIT_NOFILE / leakRatePerSpawn}; values 20–100 cover typical fd-leak scenarios;
- * 0 means every spawn fails immediately (fd table pre-exhausted).
+ * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to {@code
+ * RLIMIT_NOFILE / leakRatePerSpawn}; values 20–100 cover typical fd-leak scenarios; 0 means every
+ * spawn fails immediately (fd table pre-exhausted).
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every process-chaos-capable container
- * in the test class.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container in
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ProcessFailAfterBinding

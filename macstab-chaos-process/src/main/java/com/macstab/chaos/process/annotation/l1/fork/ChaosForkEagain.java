@@ -15,62 +15,67 @@ import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
  * Injects {@code EAGAIN} into {@code fork} calls intercepted by libchaos-process, causing the
- * calling code to observe a resource-temporarily-unavailable failure when attempting to create
- * a child process.
+ * calling code to observe a resource-temporarily-unavailable failure when attempting to create a
+ * child process.
  *
  * <h2>What this annotation is</h2>
- * L1 libchaos-process primitive — one (selector = {@code FORK}, errno = {@code EAGAIN}) tuple.
- * The {@code FORK} selector intercepts {@code fork} calls only, leaving {@code execve},
- * {@code pthread_create}, and all other process syscalls unaffected. Compile-time safety:
- * invalid selector/errno combinations have no annotation class.
+ *
+ * L1 libchaos-process primitive — one (selector = {@code FORK}, errno = {@code EAGAIN}) tuple. The
+ * {@code FORK} selector intercepts {@code fork} calls only, leaving {@code execve}, {@code
+ * pthread_create}, and all other process syscalls unaffected. Compile-time safety: invalid
+ * selector/errno combinations have no annotation class.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
- *       interposing the libc {@code fork} wrapper at the dynamic-linker level.</li>
- *   <li>On each {@code fork} call the interposer runs a Bernoulli trial with probability
- *       {@link #probability}.</li>
+ *       interposing the libc {@code fork} wrapper at the dynamic-linker level.
+ *   <li>On each {@code fork} call the interposer runs a Bernoulli trial with probability {@link
+ *       #probability}.
  *   <li>When the trial fires, the interposer sets {@code errno = EAGAIN} and returns {@code -1}
- *       without issuing the real kernel call.</li>
- *   <li>The calling code receives: {@code -1} return, {@code errno} 11,
- *       {@code strerror}: "Resource temporarily unavailable"; no child process is created and
- *       the calling process continues in its current state.</li>
+ *       without issuing the real kernel call.
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 11, {@code strerror}: "Resource
+ *       temporarily unavailable"; no child process is created and the calling process continues in
+ *       its current state.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
  *   <li>{@code fork} returns {@code -1}; {@code errno = EAGAIN} (11); the kernel cannot allocate
- *       the process table entry or the process count has reached {@code RLIMIT_NPROC} — assert
- *       that the application retries with backoff rather than treating EAGAIN as a permanent
- *       failure, since EAGAIN from fork is always transient.</li>
+ *       the process table entry or the process count has reached {@code RLIMIT_NPROC} — assert that
+ *       the application retries with backoff rather than treating EAGAIN as a permanent failure,
+ *       since EAGAIN from fork is always transient.
  *   <li>Applications that use fork for request isolation (CGI-style process-per-request, credential
- *       isolation via fork+exec) must handle EAGAIN without dropping the request — assert that
- *       the application's fork failure handler either queues the request for retry or returns a
- *       retriable error to the caller rather than silently discarding it.</li>
+ *       isolation via fork+exec) must handle EAGAIN without dropping the request — assert that the
+ *       application's fork failure handler either queues the request for retry or returns a
+ *       retriable error to the caller rather than silently discarding it.
  *   <li>Assert that the application distinguishes fork-EAGAIN from fork-ENOMEM: EAGAIN (11) means
  *       the process table is full or {@code RLIMIT_NPROC} is exhausted (transient, retry after
- *       backoff); ENOMEM (12) means the kernel cannot allocate memory structures for the child
- *       (may be persistent under memory pressure, requires different handling).</li>
+ *       backoff); ENOMEM (12) means the kernel cannot allocate memory structures for the child (may
+ *       be persistent under memory pressure, requires different handling).
  * </ul>
+ *
  * Production failure mode: a credential-isolation service forks a child process to handle each
  * sensitive request in a separate process boundary; a concurrent request burst exhaust the node's
  * {@code RLIMIT_NPROC}; fork returns EAGAIN; the service treats EAGAIN as a hard failure and
  * returns 500 to the client rather than queuing for retry — every request during the burst fails.
  *
  * <h2>Deep technical dive</h2>
+ *
  * <p>{@code EAGAIN} from {@code fork} has two distinct sources in the kernel: {@code RLIMIT_NPROC}
  * (the per-user limit on the number of processes, checked against the user's current process count
  * in the kernel's user namespace) and the kernel's internal {@code max_threads} limit, which is
- * derived from the available memory divided by a minimum thread size. Both limits are transient
- * in practice: the process count falls as children exit, and memory pressure changes over time.
+ * derived from the available memory divided by a minimum thread size. Both limits are transient in
+ * practice: the process count falls as children exit, and memory pressure changes over time.
  * Applications that treat fork-EAGAIN as permanent will fail unnecessarily under bursty load.
  *
  * <p>The {@code RLIMIT_NPROC} source is unique to {@code fork} and {@code clone}: it counts all
- * threads owned by the user, not just the calling process's children. In containerised environments,
- * the runtime and all sidecar processes share the same uid, so a burst of container launches by
- * any one component can trigger {@code RLIMIT_NPROC} for all others. Applications that fork for
- * isolation must monitor the per-uid process count and implement load-shedding before the limit
- * is reached.
+ * threads owned by the user, not just the calling process's children. In containerised
+ * environments, the runtime and all sidecar processes share the same uid, so a burst of container
+ * launches by any one component can trigger {@code RLIMIT_NPROC} for all others. Applications that
+ * fork for isolation must monitor the per-uid process count and implement load-shedding before the
+ * limit is reached.
  *
  * <p>The contrast with {@code pthread_create}-EAGAIN is important: both return EAGAIN but they
  * indicate different resource classes. Fork-EAGAIN indicates process table or uid slot exhaustion,
@@ -99,11 +104,12 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2; EAGAIN from fork is transient and
- * the application should retry; any non-zero probability exercises the retry path.
+ * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2; EAGAIN from fork is transient and the
+ * application should retry; any non-zero probability exercises the retry path.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every process-chaos-capable container
- * in the test class.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container in
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ProcessErrnoBinding

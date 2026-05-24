@@ -19,21 +19,21 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code NANOSLEEP}, errno = {@code EAGAIN})
- * tuple. The tuple is safe by construction — {@code EAGAIN} is a valid transient POSIX error
- * indicating resource temporarily unavailable; injecting it exercises defensive retry paths in
- * sleep-based back-pressure logic. No runtime selector-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code NANOSLEEP}, errno = {@code
+ * EAGAIN}) tuple. The tuple is safe by construction — {@code EAGAIN} is a valid transient POSIX
+ * error indicating resource temporarily unavailable; injecting it exercises defensive retry paths
+ * in sleep-based back-pressure logic. No runtime selector-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
- *       extension to upload {@code libchaos-time.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
  *       at the dynamic-linker level.
- *   <li>On every intercepted {@code nanosleep} call a Bernoulli trial with probability
- *       {@link #probability} is conducted.
+ *   <li>On every intercepted {@code nanosleep} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted.
  *   <li>When the trial fires the interposer returns {@code -1} and sets {@code errno = EAGAIN}
  *       without sleeping — the sleep is skipped.
  * </ol>
@@ -51,8 +51,8 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * <p>In production, {@code EAGAIN} from {@code nanosleep} does not occur on standard Linux kernels.
  * It is more relevant in POSIX emulation layers and exotic real-time operating systems. Injecting
- * it is primarily useful for verifying that callers handle any non-zero return from {@code nanosleep}
- * defensively, regardless of the specific errno.
+ * it is primarily useful for verifying that callers handle any non-zero return from {@code
+ * nanosleep} defensively, regardless of the specific errno.
  *
  * <h2>Deep technical dive</h2>
  *
@@ -62,8 +62,8 @@ import com.macstab.chaos.time.model.TimeSelector;
  * pattern in libraries that want to restart the sleep for any transient error.
  *
  * <p>Code that uses a pattern such as {@code while (nanosleep(...) && errno != EINVAL) {}} will
- * restart the sleep on {@code EAGAIN} without sleeping any additional time, potentially leading
- * to a tight loop. This annotation surfaces that bug in integration tests before it reaches
+ * restart the sleep on {@code EAGAIN} without sleeping any additional time, potentially leading to
+ * a tight loop. This annotation surfaces that bug in integration tests before it reaches
  * production.
  *
  * <p>Sibling annotations: {@link ChaosNanosleepEintr} is the far more realistic signal-interruption

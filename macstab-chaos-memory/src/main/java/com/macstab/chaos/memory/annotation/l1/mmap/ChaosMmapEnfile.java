@@ -15,64 +15,69 @@ import com.macstab.chaos.memory.model.MmapErrno;
 
 /**
  * Injects {@code ENFILE} into all {@code mmap} calls (anonymous and file-backed) intercepted by
- * libchaos-memory, causing the calling code to observe a system-wide file-descriptor limit
- * failure from any memory-mapping operation.
+ * libchaos-memory, causing the calling code to observe a system-wide file-descriptor limit failure
+ * from any memory-mapping operation.
  *
  * <h2>What this annotation is</h2>
- * L1 libchaos-memory primitive — one (selector = {@code MMAP}, errno = {@code ENFILE}) tuple.
- * The {@code MMAP} selector covers both anonymous and file-backed {@code mmap} calls; use
- * {@code ChaosMmapAnonEnfile} or {@code ChaosMmapFileEnfile} for narrower fault isolation.
- * Compile-time safety: invalid selector/errno combinations have no annotation class.
+ *
+ * L1 libchaos-memory primitive — one (selector = {@code MMAP}, errno = {@code ENFILE}) tuple. The
+ * {@code MMAP} selector covers both anonymous and file-backed {@code mmap} calls; use {@code
+ * ChaosMmapAnonEnfile} or {@code ChaosMmapFileEnfile} for narrower fault isolation. Compile-time
+ * safety: invalid selector/errno combinations have no annotation class.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
- *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
- *   <li>On each {@code mmap} call the interposer runs a Bernoulli trial with probability
- *       {@link #probability}.</li>
- *   <li>When the trial fires, the interposer sets {@code errno = ENFILE} and returns
- *       {@code MAP_FAILED} without issuing the real kernel call.</li>
- *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 23,
- *       {@code strerror}: "Too many open files in system".</li>
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.
+ *   <li>On each {@code mmap} call the interposer runs a Bernoulli trial with probability {@link
+ *       #probability}.
+ *   <li>When the trial fires, the interposer sets {@code errno = ENFILE} and returns {@code
+ *       MAP_FAILED} without issuing the real kernel call.
+ *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 23, {@code strerror}:
+ *       "Too many open files in system".
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
- *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = ENFILE} (23); both heap
- *       allocations and file-mapping operations are affected simultaneously.</li>
- *   <li>Applications should preserve the distinction between {@code ENFILE} (host-level,
- *       requires infrastructure intervention) and {@code EMFILE} (process-level, fixable
- *       by closing unused descriptors).</li>
- *   <li>Assert that error logs contain the specific errno value or "Too many open files in
- *       system" rather than a generic "Out of memory" or "I/O error" message.</li>
+ *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = ENFILE} (23); both heap allocations
+ *       and file-mapping operations are affected simultaneously.
+ *   <li>Applications should preserve the distinction between {@code ENFILE} (host-level, requires
+ *       infrastructure intervention) and {@code EMFILE} (process-level, fixable by closing unused
+ *       descriptors).
+ *   <li>Assert that error logs contain the specific errno value or "Too many open files in system"
+ *       rather than a generic "Out of memory" or "I/O error" message.
  * </ul>
- * Production failure mode: a Kubernetes node hosting many containers can exhaust the
- * system-wide file-descriptor table ({@code fs.file-max}); all processes on the node then
- * receive {@code ENFILE} from any fd-consuming syscall, including file-backed {@code mmap}
- * calls inside running containers — a host-level incident that looks identical to OOM
- * from the application's perspective unless the errno is preserved in logs.
+ *
+ * Production failure mode: a Kubernetes node hosting many containers can exhaust the system-wide
+ * file-descriptor table ({@code fs.file-max}); all processes on the node then receive {@code
+ * ENFILE} from any fd-consuming syscall, including file-backed {@code mmap} calls inside running
+ * containers — a host-level incident that looks identical to OOM from the application's perspective
+ * unless the errno is preserved in logs.
  *
  * <h2>Deep technical dive</h2>
+ *
  * <p>POSIX specifies {@code ENFILE} when the system-wide limit on open files ({@code fs.file-max})
- * is reached. The kernel's global file-table structure ({@code files_struct}) is allocated from
- * a slab cache that can be exhausted under high-concurrency workloads running many containers.
- * On Linux, {@code ENFILE} is generated in {@code alloc_empty_file} when the global file count
- * would exceed {@code sysctl fs.file-max}.
+ * is reached. The kernel's global file-table structure ({@code files_struct}) is allocated from a
+ * slab cache that can be exhausted under high-concurrency workloads running many containers. On
+ * Linux, {@code ENFILE} is generated in {@code alloc_empty_file} when the global file count would
+ * exceed {@code sysctl fs.file-max}.
  *
  * <p>For the broad {@code MMAP} selector, both anonymous and file-backed paths are injected
  * simultaneously. This represents a host-level failure that affects all processes on the system.
- * Applications running in containers should be able to recognise and log this condition
- * distinctly from per-process {@code EMFILE} failures.
+ * Applications running in containers should be able to recognise and log this condition distinctly
+ * from per-process {@code EMFILE} failures.
  *
- * <p>The most important difference from {@code EMFILE}: {@code ENFILE} cannot be remediated
- * by the process itself — it requires the host operator to either increase {@code fs.file-max},
- * reduce container density, or restart the most fd-heavy processes. Applications that log
- * {@code ENFILE} as "Out of memory" or conflate it with {@code EMFILE} make incident response
- * significantly harder.
+ * <p>The most important difference from {@code EMFILE}: {@code ENFILE} cannot be remediated by the
+ * process itself — it requires the host operator to either increase {@code fs.file-max}, reduce
+ * container density, or restart the most fd-heavy processes. Applications that log {@code ENFILE}
+ * as "Out of memory" or conflate it with {@code EMFILE} make incident response significantly
+ * harder.
  *
- * <p>Compared with {@code EMFILE}: {@code EMFILE} is per-process (one process hit its own
- * {@code RLIMIT_NOFILE}); {@code ENFILE} is system-wide (all processes on the host are
- * affected). Both produce identical {@code MAP_FAILED} returns from {@code mmap}.
+ * <p>Compared with {@code EMFILE}: {@code EMFILE} is per-process (one process hit its own {@code
+ * RLIMIT_NOFILE}); {@code ENFILE} is system-wide (all processes on the host are affected). Both
+ * produce identical {@code MAP_FAILED} returns from {@code mmap}.
  *
  * <h2>Example</h2>
  *
@@ -88,8 +93,9 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; system-wide limit exhaustion is rare
- * in single-host environments — low probability is sufficient to exercise the error-handling branch.
+ * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; system-wide limit exhaustion is rare in
+ * single-host environments — low probability is sufficient to exercise the error-handling branch.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
  * the test class.

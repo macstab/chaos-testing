@@ -19,22 +19,22 @@ import com.macstab.chaos.dns.model.EaiErrno;
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (selectorKind = {@code REVERSE}, errno =
- * {@code EAI_NONAME}) tuple. This annotation always fires on every intercepted reverse lookup —
- * there is no per-call probability field. Use it when you need every reverse resolution attempt to
- * produce a "no PTR record" failure — the most common production scenario for cloud IP addresses —
- * so that all fallback paths are exercised. No runtime selector-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (selectorKind = {@code REVERSE}, errno = {@code
+ * EAI_NONAME}) tuple. This annotation always fires on every intercepted reverse lookup — there is
+ * no per-call probability field. Use it when you need every reverse resolution attempt to produce a
+ * "no PTR record" failure — the most common production scenario for cloud IP addresses — so that
+ * all fallback paths are exercised. No runtime selector-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.DNS)} on the container definition causes the
- *       extension to upload {@code libchaos-dns.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-dns.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code getaddrinfo(3)} and {@code getnameinfo(3)} at the
  *       dynamic-linker level.
- *   <li>On every intercepted {@code getnameinfo} call the interposer immediately returns
- *       {@code EAI_NONAME} without performing any real resolver query.
+ *   <li>On every intercepted {@code getnameinfo} call the interposer immediately returns {@code
+ *       EAI_NONAME} without performing any real resolver query.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -44,37 +44,36 @@ import com.macstab.chaos.dns.model.EaiErrno;
  *       for cloud environments where most IPs do not have PTR records.
  *   <li>Applications that log peer hostnames for access auditing will record raw IP addresses;
  *       assert that the log format remains valid and parseable when the hostname field is absent.
- *   <li>When {@code getnameinfo} is called with {@code NI_NAMEREQD}, the caller explicitly
- *       requires a hostname and treats absence as an error; assert that the application applies
- *       the correct access policy (permit or deny) when the hostname requirement cannot be met.
- *   <li>Assert that the application does not cache a null hostname indefinitely and re-attempts
- *       the lookup when the TTL expires.
+ *   <li>When {@code getnameinfo} is called with {@code NI_NAMEREQD}, the caller explicitly requires
+ *       a hostname and treats absence as an error; assert that the application applies the correct
+ *       access policy (permit or deny) when the hostname requirement cannot be met.
+ *   <li>Assert that the application does not cache a null hostname indefinitely and re-attempts the
+ *       lookup when the TTL expires.
  * </ul>
  *
- * <p>In production, {@code EAI_NONAME} from {@code getnameinfo} occurs when no PTR record has
- * been configured for the IP address — the standard situation for cloud compute instances,
- * container overlay networks, and most private-range IPs. This is the default failure mode for
- * reverse DNS, not an exceptional one.
+ * <p>In production, {@code EAI_NONAME} from {@code getnameinfo} occurs when no PTR record has been
+ * configured for the IP address — the standard situation for cloud compute instances, container
+ * overlay networks, and most private-range IPs. This is the default failure mode for reverse DNS,
+ * not an exceptional one.
  *
  * <h2>Deep technical dive</h2>
  *
  * <p>For reverse lookups, {@code EAI_NONAME} signals that the authoritative nameserver for the
  * reverse zone responded with {@code NXDOMAIN}, meaning the PTR record does not exist. This is
- * equivalent to the forward {@code EAI_NONAME} case, but the semantic implication is different:
- * a missing forward record means the service does not exist; a missing PTR record means the IP
+ * equivalent to the forward {@code EAI_NONAME} case, but the semantic implication is different: a
+ * missing forward record means the service does not exist; a missing PTR record means the IP
  * address has not been registered in the reverse DNS zone, which is normal for most IPs.
  *
- * <p>glibc's {@code getnameinfo} without {@code NI_NAMEREQD} falls back to a numeric
- * representation of the address when the lookup fails, effectively converting the error into a
- * no-op from the caller's perspective. With {@code NI_NAMEREQD} set, the function returns an
- * error code instead. This injection exercises the {@code NI_NAMEREQD} path by returning
- * {@code EAI_NONAME} regardless of the flags, making it useful for testing code that handles
- * both cases explicitly.
+ * <p>glibc's {@code getnameinfo} without {@code NI_NAMEREQD} falls back to a numeric representation
+ * of the address when the lookup fails, effectively converting the error into a no-op from the
+ * caller's perspective. With {@code NI_NAMEREQD} set, the function returns an error code instead.
+ * This injection exercises the {@code NI_NAMEREQD} path by returning {@code EAI_NONAME} regardless
+ * of the flags, making it useful for testing code that handles both cases explicitly.
  *
  * <p>In Kubernetes environments, the overlay network's IP addresses typically have no PTR records
  * in the cluster DNS ({@code .svc.cluster.local} forward records exist, but there is usually no
- * corresponding {@code in-addr.arpa} delegation). Applications that rely on {@code getnameinfo}
- * for peer authentication or logging must handle {@code EAI_NONAME} as a first-class result.
+ * corresponding {@code in-addr.arpa} delegation). Applications that rely on {@code getnameinfo} for
+ * peer authentication or logging must handle {@code EAI_NONAME} as a first-class result.
  *
  * <h2>Example</h2>
  *

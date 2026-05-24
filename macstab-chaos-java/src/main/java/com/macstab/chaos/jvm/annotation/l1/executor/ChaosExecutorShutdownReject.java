@@ -14,11 +14,11 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Throws {@link java.util.concurrent.RejectedExecutionException} from every
- * {@link java.util.concurrent.ExecutorService#shutdown shutdown()} and
- * {@link java.util.concurrent.ExecutorService#shutdownNow shutdownNow()} call, preventing the
- * executor from transitioning to the shutdown state — the executor remains {@code RUNNING} and
- * continues to accept new tasks indefinitely.
+ * Throws {@link java.util.concurrent.RejectedExecutionException} from every {@link
+ * java.util.concurrent.ExecutorService#shutdown shutdown()} and {@link
+ * java.util.concurrent.ExecutorService#shutdownNow shutdownNow()} call, preventing the executor
+ * from transitioning to the shutdown state — the executor remains {@code RUNNING} and continues to
+ * accept new tasks indefinitely.
  *
  * <h2>What this annotation is</h2>
  *
@@ -31,8 +31,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <h2>What chaos this applies</h2>
  *
- * <p>The JVM agent installs a Byte Buddy interceptor on {@code ExecutorService.shutdown} and
- * {@code ExecutorService.shutdownNow}. When the interceptor fires:
+ * <p>The JVM agent installs a Byte Buddy interceptor on {@code ExecutorService.shutdown} and {@code
+ * ExecutorService.shutdownNow}. When the interceptor fires:
  *
  * <ol>
  *   <li>The interceptor is entered on the calling thread before any state transition in the
@@ -56,19 +56,19 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       skipping subsequent cleanup steps.
  * </ul>
  *
- * <p><strong>Production failure mode:</strong> a JVM shutdown hook calls
- * {@code executorService.shutdown()} on a shared executor, but a concurrent thread holds the
- * executor's internal lock (e.g., inside a long-running task that also calls {@code shutdown}),
- * causing the shutdown attempt to fail or deadlock — the executor never drains and the JVM process
- * hangs at exit, eventually killed by the OS after the shutdown timeout.
+ * <p><strong>Production failure mode:</strong> a JVM shutdown hook calls {@code
+ * executorService.shutdown()} on a shared executor, but a concurrent thread holds the executor's
+ * internal lock (e.g., inside a long-running task that also calls {@code shutdown}), causing the
+ * shutdown attempt to fail or deadlock — the executor never drains and the JVM process hangs at
+ * exit, eventually killed by the OS after the shutdown timeout.
  *
  * <h2>Deep technical dive</h2>
  *
- * <p><strong>Interception point.</strong> The agent targets
- * {@code java.util.concurrent.ExecutorService#shutdown()} and
- * {@code java.util.concurrent.ExecutorService#shutdownNow()} on all concrete implementations via
- * Byte Buddy retransformation. The exception is thrown before the executor's main lock is acquired,
- * so the executor's internal state is guaranteed to remain unmodified.
+ * <p><strong>Interception point.</strong> The agent targets {@code
+ * java.util.concurrent.ExecutorService#shutdown()} and {@code
+ * java.util.concurrent.ExecutorService#shutdownNow()} on all concrete implementations via Byte
+ * Buddy retransformation. The exception is thrown before the executor's main lock is acquired, so
+ * the executor's internal state is guaranteed to remain unmodified.
  *
  * <p><strong>Resource leak implication.</strong> Because the executor never shuts down, all worker
  * threads remain alive for the container's lifetime. Any tasks that the application submitted
@@ -77,9 +77,9 @@ import com.macstab.chaos.jvm.api.OperationType;
  * to drain before those resources are released, the still-running worker threads may encounter
  * already-closed resources, producing secondary errors.
  *
- * <p><strong>Interaction with awaitTermination.</strong> Calls to
- * {@code executor.awaitTermination(timeout, unit)} immediately after the rejected shutdown will
- * block until the timeout elapses (since the executor is still running) and return {@code false},
+ * <p><strong>Interaction with awaitTermination.</strong> Calls to {@code
+ * executor.awaitTermination(timeout, unit)} immediately after the rejected shutdown will block
+ * until the timeout elapses (since the executor is still running) and return {@code false},
  * signalling to the caller that the executor did not terminate within the budget.
  *
  * <p><strong>Distinguishing from siblings.</strong> {@link ChaosExecutorShutdownDelay} allows the
@@ -108,7 +108,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java container image — the container must run a JVM process.
  * </ul>

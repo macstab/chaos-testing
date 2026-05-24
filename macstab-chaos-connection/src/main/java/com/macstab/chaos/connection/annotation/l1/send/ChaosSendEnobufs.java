@@ -14,29 +14,29 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code ENOBUFS} into {@code send(2)}, causing the call to return {@code -1} with
- * {@code errno = ENOBUFS} as if the kernel's network buffer pool is exhausted and cannot allocate
- * a buffer to queue the outgoing data for transmission.
+ * Injects {@code ENOBUFS} into {@code send(2)}, causing the call to return {@code -1} with {@code
+ * errno = ENOBUFS} as if the kernel's network buffer pool is exhausted and cannot allocate a buffer
+ * to queue the outgoing data for transmission.
  *
  * <h2>What this annotation is</h2>
  *
  * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code SEND}, errno = {@code ENOBUFS})
- * tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted
- * {@code send} call; when it fires the interposer returns {@code -1} with {@code errno = ENOBUFS}
- * without performing any real kernel operation. No runtime operation-errno validation is needed.
+ * tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted {@code
+ * send} call; when it fires the interposer returns {@code -1} with {@code errno = ENOBUFS} without
+ * performing any real kernel operation. No runtime operation-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
- *       extension to upload {@code libchaos-net.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
- *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
- *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
- *       {@code poll} at the dynamic-linker level.
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket}, {@code
+ *       bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and {@code poll} at
+ *       the dynamic-linker level.
  *   <li>On each intercepted {@code send} call a Bernoulli trial with probability {@link #toxicity}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = ENOBUFS}.
+ *       is conducted; when it fires the interposer returns {@code -1} and sets {@code errno =
+ *       ENOBUFS}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -46,8 +46,8 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *       unlike {@code EAGAIN} (send buffer full due to flow control), {@code ENOBUFS} means the
  *       kernel's global socket buffer pool (sk_buff allocator) is exhausted. The application should
  *       back off sending rather than retrying immediately.
- *   <li>Assert that the application does not close the connection on {@code ENOBUFS}; the connection
- *       remains valid and sending can resume once kernel memory pressure is relieved.
+ *   <li>Assert that the application does not close the connection on {@code ENOBUFS}; the
+ *       connection remains valid and sending can resume once kernel memory pressure is relieved.
  *   <li>UDP senders that generate many datagrams per second are most susceptible to this error;
  *       assert that the UDP sender reduces its transmission rate when it receives {@code ENOBUFS}
  *       and gradually resumes as conditions improve.
@@ -69,16 +69,16 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * and affects all processes, not just the one receiving the error.
  *
  * <p>For TCP sockets, {@code ENOBUFS} is uncommon because TCP's flow control naturally limits the
- * rate of data injection into the kernel's network stack. For UDP sockets without flow control,
- * a sender that generates packets faster than the network can transmit them will fill the sk_buff
- * slab and trigger {@code ENOBUFS}. This is distinct from {@code EAGAIN}: the latter indicates
- * the per-socket send buffer is full (a flow-control signal), while {@code ENOBUFS} indicates
- * global kernel memory exhaustion (a resource-pressure signal).
+ * rate of data injection into the kernel's network stack. For UDP sockets without flow control, a
+ * sender that generates packets faster than the network can transmit them will fill the sk_buff
+ * slab and trigger {@code ENOBUFS}. This is distinct from {@code EAGAIN}: the latter indicates the
+ * per-socket send buffer is full (a flow-control signal), while {@code ENOBUFS} indicates global
+ * kernel memory exhaustion (a resource-pressure signal).
  *
- * <p>Java maps {@code ENOBUFS} from {@code send} to a {@code SocketException} with the message
- * "No buffer space available". Application code that catches {@code SocketException} and checks
- * for this message text to identify the condition should be aware that the message text varies
- * across JVM implementations and glibc versions.
+ * <p>Java maps {@code ENOBUFS} from {@code send} to a {@code SocketException} with the message "No
+ * buffer space available". Application code that catches {@code SocketException} and checks for
+ * this message text to identify the condition should be aware that the message text varies across
+ * JVM implementations and glibc versions.
  *
  * <h2>Example</h2>
  *

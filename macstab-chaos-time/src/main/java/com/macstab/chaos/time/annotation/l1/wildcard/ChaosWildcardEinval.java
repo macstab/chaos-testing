@@ -14,23 +14,24 @@ import com.macstab.chaos.time.model.TimeErrno;
 import com.macstab.chaos.time.model.TimeSelector;
 
 /**
- * Injects {@code EINVAL} into every interposed time syscall ({@code clock_gettime}, {@code nanosleep},
- * {@code usleep}), causing each to return {@code -1} with {@code errno = EINVAL} as if the kernel
- * rejected an invalid argument.
+ * Injects {@code EINVAL} into every interposed time syscall ({@code clock_gettime}, {@code
+ * nanosleep}, {@code usleep}), causing each to return {@code -1} with {@code errno = EINVAL} as if
+ * the kernel rejected an invalid argument.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code WILDCARD}, errno = {@code EINVAL})
- * tuple. The {@code WILDCARD} selector matches all three interposed time syscalls simultaneously —
- * equivalent to applying {@link ChaosClockGettimeEinval}, {@link ChaosNanosleepEinval}, and
- * {@link ChaosUsleepEinval} in a single annotation. No runtime selector-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code WILDCARD}, errno = {@code
+ * EINVAL}) tuple. The {@code WILDCARD} selector matches all three interposed time syscalls
+ * simultaneously — equivalent to applying {@link ChaosClockGettimeEinval}, {@link
+ * ChaosNanosleepEinval}, and {@link ChaosUsleepEinval} in a single annotation. No runtime
+ * selector-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
- *       extension to upload {@code libchaos-time.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
  *       at the dynamic-linker level.
  *   <li>On every intercepted call to any of the three syscalls a Bernoulli trial with probability
@@ -42,12 +43,12 @@ import com.macstab.chaos.time.model.TimeSelector;
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>All three time syscalls may simultaneously return {@code EINVAL}; this is a hard error
- *       for all three — callers must not retry {@code EINVAL} indefinitely.
- *   <li>Application code that handles {@code EINTR} as the only time-syscall error and treats
- *       any other failure as fatal will crash or abort under this injection.
- *   <li>Assert that the application handles {@code EINVAL} as a programming error, logs it
- *       clearly, and does not enter an infinite retry loop.
+ *   <li>All three time syscalls may simultaneously return {@code EINVAL}; this is a hard error for
+ *       all three — callers must not retry {@code EINVAL} indefinitely.
+ *   <li>Application code that handles {@code EINTR} as the only time-syscall error and treats any
+ *       other failure as fatal will crash or abort under this injection.
+ *   <li>Assert that the application handles {@code EINVAL} as a programming error, logs it clearly,
+ *       and does not enter an infinite retry loop.
  * </ul>
  *
  * <p>In production, simultaneous {@code EINVAL} across all time syscalls indicates a systematic
@@ -57,19 +58,19 @@ import com.macstab.chaos.time.model.TimeSelector;
  * <h2>Deep technical dive</h2>
  *
  * <p>The {@code WILDCARD} selector applies the injection uniformly to all three interposed time
- * syscalls. For {@code clock_gettime}, {@code EINVAL} means an invalid clock id; for
- * {@code nanosleep}, it means an out-of-range nanosecond value; for {@code usleep}, it means a
- * microsecond value ≥ 1,000,000. The wildcard form exercises all three without requiring separate
- * annotations for each.
+ * syscalls. For {@code clock_gettime}, {@code EINVAL} means an invalid clock id; for {@code
+ * nanosleep}, it means an out-of-range nanosecond value; for {@code usleep}, it means a microsecond
+ * value ≥ 1,000,000. The wildcard form exercises all three without requiring separate annotations
+ * for each.
  *
  * <p>This annotation is most powerful when testing the "unknown error" handling posture of
  * applications: code that hard-codes only the expected success and {@code EINTR} cases for time
  * syscalls will mishandle the {@code EINVAL} returned by this injection. That is precisely the
  * latent bug being exercised.
  *
- * <p>Sibling per-syscall annotations ({@link ChaosClockGettimeEinval}, {@link ChaosNanosleepEinval},
- * {@link ChaosUsleepEinval}) allow targeted injection to a single syscall. Use the wildcard form
- * when testing system-wide argument-validation hardening.
+ * <p>Sibling per-syscall annotations ({@link ChaosClockGettimeEinval}, {@link
+ * ChaosNanosleepEinval}, {@link ChaosUsleepEinval}) allow targeted injection to a single syscall.
+ * Use the wildcard form when testing system-wide argument-validation hardening.
  *
  * <h2>Example</h2>
  *

@@ -16,77 +16,77 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
 /**
  * Injects {@code EINVAL} into {@code shutdown(2)}, causing the call to return {@code -1} with
  * {@code errno = EINVAL} as if the {@code how} argument was not one of the valid shutdown
- * directions ({@code SHUT_RD}, {@code SHUT_WR}, {@code SHUT_RDWR}) or the socket is not in a
- * state that supports the requested shutdown direction.
+ * directions ({@code SHUT_RD}, {@code SHUT_WR}, {@code SHUT_RDWR}) or the socket is not in a state
+ * that supports the requested shutdown direction.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code SHUTDOWN}, errno = {@code EINVAL})
- * tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted
- * {@code shutdown} call; when it fires the interposer returns {@code -1} with {@code errno = EINVAL}
- * without performing any real kernel operation. No runtime operation-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code SHUTDOWN}, errno = {@code
+ * EINVAL}) tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted
+ * {@code shutdown} call; when it fires the interposer returns {@code -1} with {@code errno =
+ * EINVAL} without performing any real kernel operation. No runtime operation-errno validation is
+ * needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
- *       extension to upload {@code libchaos-net.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
- *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
- *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
- *       {@code poll} at the dynamic-linker level.
- *   <li>On each intercepted {@code shutdown} call a Bernoulli trial with probability {@link #toxicity}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = EINVAL}.
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket}, {@code
+ *       bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and {@code poll} at
+ *       the dynamic-linker level.
+ *   <li>On each intercepted {@code shutdown} call a Bernoulli trial with probability {@link
+ *       #toxicity} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = EINVAL}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>{@code EINVAL} from {@code shutdown} is a non-retriable programming error in production:
- *       it indicates an invalid shutdown direction argument. However, libraries that wrap
- *       {@code shutdown} may receive it if a race condition causes the socket to be closed before
- *       shutdown is called. Assert that the application does not propagate the error as a fatal
- *       connection failure — the connection itself may still be valid.
+ *   <li>{@code EINVAL} from {@code shutdown} is a non-retriable programming error in production: it
+ *       indicates an invalid shutdown direction argument. However, libraries that wrap {@code
+ *       shutdown} may receive it if a race condition causes the socket to be closed before shutdown
+ *       is called. Assert that the application does not propagate the error as a fatal connection
+ *       failure — the connection itself may still be valid.
  *   <li>Cleanup code that calls {@code shutdown} before {@code close} must tolerate {@code EINVAL}
  *       without aborting the close sequence; assert that {@code close} is still called on the
  *       socket even when {@code shutdown} returns {@code EINVAL}.
  *   <li>Connection pool teardown paths that call {@code shutdown(SHUT_RDWR)} to signal graceful
  *       close should continue to call {@code close} on error; assert that pool shutdown completes
  *       even when individual {@code shutdown} calls fail.
- *   <li>Assert that the application logs the error at a diagnostic level rather than escalating
- *       it as an unrecoverable failure, since {@code EINVAL} from {@code shutdown} during cleanup
- *       is typically benign.
+ *   <li>Assert that the application logs the error at a diagnostic level rather than escalating it
+ *       as an unrecoverable failure, since {@code EINVAL} from {@code shutdown} during cleanup is
+ *       typically benign.
  * </ul>
  *
- * <p>In production, {@code EINVAL} from {@code shutdown} occurs when a shutdown direction value
- * is corrupted by a bug, when a framework attempts to shut down a socket that is in the wrong
- * state for the requested direction, or when a double-shutdown race condition occurs in a
- * multi-threaded connection pool where two threads attempt to shut down the same socket
- * concurrently.
+ * <p>In production, {@code EINVAL} from {@code shutdown} occurs when a shutdown direction value is
+ * corrupted by a bug, when a framework attempts to shut down a socket that is in the wrong state
+ * for the requested direction, or when a double-shutdown race condition occurs in a multi-threaded
+ * connection pool where two threads attempt to shut down the same socket concurrently.
  *
  * <h2>Deep technical dive</h2>
  *
  * <p>The {@code shutdown(2)} syscall accepts three valid values for the {@code how} argument:
  * {@code SHUT_RD} (0), {@code SHUT_WR} (1), and {@code SHUT_RDWR} (2). If any other value is
- * passed, the kernel returns {@code EINVAL} immediately without modifying the socket state.
- * On Linux, {@code EINVAL} from {@code shutdown} can also occur if the socket's protocol does not
+ * passed, the kernel returns {@code EINVAL} immediately without modifying the socket state. On
+ * Linux, {@code EINVAL} from {@code shutdown} can also occur if the socket's protocol does not
  * support the shutdown operation, though this is uncommon for TCP/IP sockets.
  *
  * <p>The relationship between {@code shutdown} and {@code close} is important: {@code shutdown}
  * selectively disables communication directions on the socket (sending FIN for the write direction,
- * discarding incoming data for the read direction), while {@code close} releases the file descriptor
- * and decrements the socket's reference count. Many applications call {@code shutdown(SHUT_RDWR)}
- * before {@code close} to ensure that the FIN is sent before the socket is freed; if
- * {@code shutdown} returns {@code EINVAL}, the application must still call {@code close} to
- * release the file descriptor.
+ * discarding incoming data for the read direction), while {@code close} releases the file
+ * descriptor and decrements the socket's reference count. Many applications call {@code
+ * shutdown(SHUT_RDWR)} before {@code close} to ensure that the FIN is sent before the socket is
+ * freed; if {@code shutdown} returns {@code EINVAL}, the application must still call {@code close}
+ * to release the file descriptor.
  *
- * <p>Java's {@code Socket.close()} calls {@code shutdown(SHUT_RDWR)} internally before closing
- * the file descriptor; if {@code shutdown} returns {@code EINVAL}, the JVM catches the error and
+ * <p>Java's {@code Socket.close()} calls {@code shutdown(SHUT_RDWR)} internally before closing the
+ * file descriptor; if {@code shutdown} returns {@code EINVAL}, the JVM catches the error and
  * proceeds to close the file descriptor without propagating the error to the caller. Application
  * code that calls {@code Socket.shutdownInput()} or {@code Socket.shutdownOutput()} explicitly
- * receives a {@code SocketException} with the message "Invalid argument" if the underlying
- * {@code shutdown} syscall returns {@code EINVAL}.
+ * receives a {@code SocketException} with the message "Invalid argument" if the underlying {@code
+ * shutdown} syscall returns {@code EINVAL}.
  *
  * <p>Native code and C-based server processes (Redis, memcached, Nginx) call {@code shutdown}
  * directly and must check the return value; robust implementations log the error and proceed with

@@ -19,45 +19,50 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * allocation.
  *
  * <h2>What this annotation is</h2>
+ *
  * L1 libchaos-memory primitive — one (selector = {@code MMAP_ANON}, errno = {@code EBADF}) tuple.
  * Compile-time safety: this annotation exists only because {@code EBADF} is a defined POSIX result
  * for {@code mmap}; invalid combinations have no annotation class and cannot be expressed.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
- *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.
  *   <li>On each {@code mmap(MAP_ANONYMOUS)} call the interposer runs a Bernoulli trial with
- *       probability {@link #probability}.</li>
- *   <li>When the trial fires, the interposer sets {@code errno = EBADF} and returns
- *       {@code MAP_FAILED} without issuing the real kernel call.</li>
- *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 9,
- *       {@code strerror}: "Bad file descriptor".</li>
+ *       probability {@link #probability}.
+ *   <li>When the trial fires, the interposer sets {@code errno = EBADF} and returns {@code
+ *       MAP_FAILED} without issuing the real kernel call.
+ *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 9, {@code strerror}:
+ *       "Bad file descriptor".
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
- *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = EBADF} (9); the application
- *       should surface a clear diagnostic rather than attempting to use the returned pointer.</li>
- *   <li>glibc {@code malloc} propagates the failure as {@code NULL}; JVM direct allocators
- *       raise {@code OutOfMemoryError}. Error messages may not distinguish {@code EBADF}
- *       from {@code ENOMEM} at the Java level — check native log lines or JMX metrics.</li>
+ *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = EBADF} (9); the application should
+ *       surface a clear diagnostic rather than attempting to use the returned pointer.
+ *   <li>glibc {@code malloc} propagates the failure as {@code NULL}; JVM direct allocators raise
+ *       {@code OutOfMemoryError}. Error messages may not distinguish {@code EBADF} from {@code
+ *       ENOMEM} at the Java level — check native log lines or JMX metrics.
  *   <li>Assert that the application does not crash with a null dereference and that any
- *       file-descriptor lifecycle code correctly validates descriptors before use.</li>
+ *       file-descriptor lifecycle code correctly validates descriptors before use.
  * </ul>
- * Production failure mode: a file-descriptor leak in a connection pool exhausts the process
- * {@code EMFILE} limit; when the pool attempts to open a new connection via a backing file and
- * then maps it, {@code EBADF} surfaces if the fd was silently closed by a race condition
- * (e.g. {@code close-on-exec} set incorrectly across a {@code fork}).
+ *
+ * Production failure mode: a file-descriptor leak in a connection pool exhausts the process {@code
+ * EMFILE} limit; when the pool attempts to open a new connection via a backing file and then maps
+ * it, {@code EBADF} surfaces if the fd was silently closed by a race condition (e.g. {@code
+ * close-on-exec} set incorrectly across a {@code fork}).
  *
  * <h2>Deep technical dive</h2>
+ *
  * <p>POSIX specifies {@code EBADF} for {@code mmap} when the file descriptor argument is negative
- * or not open for reading (when {@code PROT_READ} is requested). For anonymous mappings
- * ({@code MAP_ANONYMOUS | MAP_PRIVATE}) the kernel ignores the {@code fd} argument entirely
- * (callers pass {@code -1} by convention), so genuine {@code EBADF} from the kernel on an
- * anonymous mapping is extremely unlikely in correct code. This annotation therefore exercises
- * error-handling paths that are almost never reached in production — making it especially
- * valuable for verifying that allocator error paths do not have dormant bugs.
+ * or not open for reading (when {@code PROT_READ} is requested). For anonymous mappings ({@code
+ * MAP_ANONYMOUS | MAP_PRIVATE}) the kernel ignores the {@code fd} argument entirely (callers pass
+ * {@code -1} by convention), so genuine {@code EBADF} from the kernel on an anonymous mapping is
+ * extremely unlikely in correct code. This annotation therefore exercises error-handling paths that
+ * are almost never reached in production — making it especially valuable for verifying that
+ * allocator error paths do not have dormant bugs.
  *
  * <p>The most common real-world scenario is a library that wraps a file-backed and an anonymous
  * path through a shared {@code mmap} function: if the caller passes a closed fd to the shared
@@ -65,10 +70,10 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * EBADF} before it processes the {@code MAP_ANONYMOUS} flag, depending on the kernel version and
  * the order of argument validation in {@code do_mmap_pgoff}.
  *
- * <p>glibc's {@code malloc} does not call {@code mmap} with an explicit fd — it always uses
- * {@code -1} with {@code MAP_ANONYMOUS}. The {@code EBADF} path in {@code malloc}'s {@code mmap}
- * branch is therefore unreachable in practice, which means the error-recovery code in many
- * libraries has never been exercised. This annotation triggers it.
+ * <p>glibc's {@code malloc} does not call {@code mmap} with an explicit fd — it always uses {@code
+ * -1} with {@code MAP_ANONYMOUS}. The {@code EBADF} path in {@code malloc}'s {@code mmap} branch is
+ * therefore unreachable in practice, which means the error-recovery code in many libraries has
+ * never been exercised. This annotation triggers it.
  *
  * <p>Compared with siblings: {@code EBADF} indicates an invalid descriptor (programmer error);
  * {@code EACCES} indicates a permissions check failure on a valid descriptor. Both surface as
@@ -88,8 +93,9 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> low rates (1e-4 to 1e-3) are sufficient to exercise
- * the error path; 1.0 prevents the container process from completing startup.
+ * <p><strong>Probability guidance:</strong> low rates (1e-4 to 1e-3) are sufficient to exercise the
+ * error path; 1.0 prevents the container process from completing startup.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
  * the test class.

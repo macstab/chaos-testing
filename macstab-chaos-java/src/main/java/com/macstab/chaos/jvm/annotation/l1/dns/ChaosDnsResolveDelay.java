@@ -15,9 +15,9 @@ import com.macstab.chaos.jvm.api.OperationType;
 
 /**
  * Parks the calling thread inside {@link java.net.InetAddress#getByName(String)
- * InetAddress.getByName()} for the configured number of milliseconds before the JVM's DNS
- * resolver is consulted — every hostname-to-address lookup takes at least {@code delayMs} longer
- * than normal.
+ * InetAddress.getByName()} for the configured number of milliseconds before the JVM's DNS resolver
+ * is consulted — every hostname-to-address lookup takes at least {@code delayMs} longer than
+ * normal.
  *
  * <h2>What this annotation is</h2>
  *
@@ -25,9 +25,9 @@ import com.macstab.chaos.jvm.api.OperationType;
  * effect applied to the {@code DNS_RESOLVE} operation. It intercepts the JVM's DNS resolution path
  * at the JSSE / {@code java.net} level — specifically {@code InetAddress.getByName(String)} and
  * {@code InetAddress.getAllByName(String)} — and artificially inflates the resolution latency by
- * parking the calling thread before the resolver is consulted. This is distinct from the
- * libchaos DNS module, which operates at the libc {@code getaddrinfo} level and affects all
- * processes on the host; this annotation affects only JVM-level name resolution.
+ * parking the calling thread before the resolver is consulted. This is distinct from the libchaos
+ * DNS module, which operates at the libc {@code getaddrinfo} level and affects all processes on the
+ * host; this annotation affects only JVM-level name resolution.
  *
  * <h2>What chaos this applies</h2>
  *
@@ -35,36 +35,36 @@ import com.macstab.chaos.jvm.api.OperationType;
  * {@code InetAddress.getAllByName(String)}. When the interceptor fires:
  *
  * <ol>
- *   <li>Execution is captured before the JVM's name-service lookup begins (before the
- *       {@code NameService} SPI chain is consulted).
+ *   <li>Execution is captured before the JVM's name-service lookup begins (before the {@code
+ *       NameService} SPI chain is consulted).
  *   <li>The delay effect calls {@code LockSupport.parkNanos} on the calling thread for the
  *       configured duration in milliseconds.
  *   <li>After the park returns, the real resolver runs — checking the JVM's internal DNS cache
- *       ({@code InetAddress} positive/negative cache) and, on a cache miss, calling the OS
- *       resolver — and returns the result to the caller.
+ *       ({@code InetAddress} positive/negative cache) and, on a cache miss, calling the OS resolver
+ *       — and returns the result to the caller.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>The wall-clock time of a connection-establishment call (which internally calls
- *       {@code getByName}) is at least {@code delayMs} longer — assert via client-side timing.
- *   <li>Connection pools that resolve hostnames lazily (e.g. on first checkout after a cache
- *       miss) show elevated checkout latency proportional to {@code delayMs} — assert the pool
- *       checkout time.
- *   <li>HTTP clients with connection-timeout settings shorter than {@code delayMs} throw a
- *       {@code ConnectException} or {@code SocketTimeoutException} before the connection is
- *       attempted — assert the exception type.
+ *   <li>The wall-clock time of a connection-establishment call (which internally calls {@code
+ *       getByName}) is at least {@code delayMs} longer — assert via client-side timing.
+ *   <li>Connection pools that resolve hostnames lazily (e.g. on first checkout after a cache miss)
+ *       show elevated checkout latency proportional to {@code delayMs} — assert the pool checkout
+ *       time.
+ *   <li>HTTP clients with connection-timeout settings shorter than {@code delayMs} throw a {@code
+ *       ConnectException} or {@code SocketTimeoutException} before the connection is attempted —
+ *       assert the exception type.
  *   <li>Cached addresses are not affected: once an address is in the JVM's positive cache, the
  *       interceptor still fires but the real resolver returns immediately from cache — the total
  *       delay is {@code delayMs} regardless of whether the cache is warm.
  * </ul>
  *
- * <p><strong>Production failure mode this simulates:</strong> a corporate DNS resolver under
- * heavy load that takes 800 ms to respond — every new outbound HTTP connection from a Java service
- * that does not pre-warm its connection pool stalls for 800 ms at the DNS step, pushing the
- * end-to-end latency over the configured 1-second timeout and causing cascading
- * {@code ConnectTimeoutException} failures across all dependent services.
+ * <p><strong>Production failure mode this simulates:</strong> a corporate DNS resolver under heavy
+ * load that takes 800 ms to respond — every new outbound HTTP connection from a Java service that
+ * does not pre-warm its connection pool stalls for 800 ms at the DNS step, pushing the end-to-end
+ * latency over the configured 1-second timeout and causing cascading {@code
+ * ConnectTimeoutException} failures across all dependent services.
  *
  * <h2>Deep technical dive</h2>
  *
@@ -76,27 +76,26 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p><strong>JVM DNS cache interaction.</strong> The JVM maintains two caches: a positive cache
  * (successful lookups, TTL controlled by {@code networkaddress.cache.ttl} security property,
- * default 30 s) and a negative cache (failed lookups, TTL controlled by
- * {@code networkaddress.cache.negative.ttl}, default 10 s). This annotation's delay fires
- * before the cache is checked, so even cache-hit paths are delayed. The real resolver (OS
- * {@code getaddrinfo}) is only invoked on a cache miss.
+ * default 30 s) and a negative cache (failed lookups, TTL controlled by {@code
+ * networkaddress.cache.negative.ttl}, default 10 s). This annotation's delay fires before the cache
+ * is checked, so even cache-hit paths are delayed. The real resolver (OS {@code getaddrinfo}) is
+ * only invoked on a cache miss.
  *
  * <p><strong>Distinction from the libchaos DNS module.</strong> The libchaos DNS module injects
- * latency at the native {@code getaddrinfo} call, affecting all processes and all languages
- * sharing the host's libc. This annotation operates exclusively within the JVM's Java-level
- * resolver path and does not affect other processes or non-Java code running in the same
- * container.
+ * latency at the native {@code getaddrinfo} call, affecting all processes and all languages sharing
+ * the host's libc. This annotation operates exclusively within the JVM's Java-level resolver path
+ * and does not affect other processes or non-Java code running in the same container.
  *
  * <p><strong>Thread binding.</strong> The park is applied to the calling thread, which may be a
- * virtual thread on JDK 21+. Parking a virtual thread at a {@code InetAddress} call that
- * internally calls native code (e.g. {@code getaddrinfo} via JNI) pins the carrier thread for
- * the duration of the park before the native call, and then again during the native call itself
- * (as native calls always pin the carrier in JDK 21).
+ * virtual thread on JDK 21+. Parking a virtual thread at a {@code InetAddress} call that internally
+ * calls native code (e.g. {@code getaddrinfo} via JNI) pins the carrier thread for the duration of
+ * the park before the native call, and then again during the native call itself (as native calls
+ * always pin the carrier in JDK 21).
  *
- * <p><strong>Custom name services.</strong> Applications that install a custom
- * {@code sun.net.spi.nameservice.NameService} (e.g. for service-discovery integration) still pass
- * through {@code InetAddress.getByName} — the interceptor fires regardless of which
- * {@code NameService} implementation is active.
+ * <p><strong>Custom name services.</strong> Applications that install a custom {@code
+ * sun.net.spi.nameservice.NameService} (e.g. for service-discovery integration) still pass through
+ * {@code InetAddress.getByName} — the interceptor fires regardless of which {@code NameService}
+ * implementation is active.
  *
  * <h2>Example</h2>
  *
@@ -120,7 +119,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java container image — the container must run a JVM process.
  * </ul>

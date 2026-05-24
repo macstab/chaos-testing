@@ -21,8 +21,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p>A JVM agent L1 chaos primitive targeting the {@code ZONED_DATE_TIME_NOW} operation — one typed
  * annotation per (selector family, operation type, effect) tuple. Declared on a test class or
- * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until
- * {@code afterAll}/{@code afterEach} respectively.
+ * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until {@code
+ * afterAll}/{@code afterEach} respectively.
  *
  * <h2>What chaos this applies</h2>
  *
@@ -46,8 +46,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       moment; assert that the fallback default behaviour is safe.
  *   <li><strong>Distributed lock expiry wrong.</strong> Optimistic locking records that embed a
  *       {@code ZonedDateTime} expiry will expire early or late depending on skew direction.
- *   <li><strong>Production failure mode:</strong> recurring jobs triggered at a fixed
- *       {@code ZonedDateTime} wall-clock time (e.g. "3:00 AM UTC+1") will either be skipped or
+ *   <li><strong>Production failure mode:</strong> recurring jobs triggered at a fixed {@code
+ *       ZonedDateTime} wall-clock time (e.g. "3:00 AM UTC+1") will either be skipped or
  *       double-fired when the clock is skewed across the trigger boundary.
  * </ul>
  *
@@ -57,15 +57,14 @@ import com.macstab.chaos.jvm.api.OperationType;
  * corresponding UTC offset — making it the richest of the java.time "now" methods. Applications
  * that need to reason about DST transitions or to present timestamps to users in their local zone
  * will favour this type. Because it encodes zone information, skewing it also affects derived
- * conversions to {@code Instant} ({@code .toInstant()}) and to epoch milliseconds
- * ({@code .toEpochSecond() * 1000}), providing a single-annotation path to distort all three
+ * conversions to {@code Instant} ({@code .toInstant()}) and to epoch milliseconds ({@code
+ * .toEpochSecond() * 1000}), providing a single-annotation path to distort all three
  * representations simultaneously.
  *
  * <p>The agent intercepts {@code ZonedDateTime.now(ZoneId)} using Byte Buddy method-entry advice,
  * delegates to the real implementation to obtain the true {@code ZonedDateTime}, and then adjusts
- * the result by adding the skew duration before returning it. The zone ID is not altered, so
- * {@code result.getZone()} will still return the JVM's default zone or the explicitly requested
- * one.
+ * the result by adding the skew duration before returning it. The zone ID is not altered, so {@code
+ * result.getZone()} will still return the JVM's default zone or the explicitly requested one.
  *
  * <p>Combining this annotation with {@link ChaosInstantNowSkew} allows a test to apply different
  * offsets to the two APIs simultaneously, creating an inconsistency that mimics an application
@@ -93,8 +92,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
- *       agent before the container JVM starts; omitting it causes an
- *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       agent before the container JVM starts; omitting it causes an {@code
+ *       ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
  *       {@code @JvmAgentChaos}.
  *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the

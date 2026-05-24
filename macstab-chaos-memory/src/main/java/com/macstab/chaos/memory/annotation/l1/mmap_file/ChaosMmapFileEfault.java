@@ -19,60 +19,64 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * file-backed memory mapping.
  *
  * <h2>What this annotation is</h2>
- * L1 libchaos-memory primitive — one (selector = {@code MMAP_FILE}, errno = {@code EFAULT})
- * tuple. The {@code MMAP_FILE} selector intercepts only file-backed {@code mmap} calls (those
- * without {@code MAP_ANONYMOUS}), leaving anonymous allocations unaffected. Compile-time
- * safety: invalid selector/errno combinations have no annotation class.
+ *
+ * L1 libchaos-memory primitive — one (selector = {@code MMAP_FILE}, errno = {@code EFAULT}) tuple.
+ * The {@code MMAP_FILE} selector intercepts only file-backed {@code mmap} calls (those without
+ * {@code MAP_ANONYMOUS}), leaving anonymous allocations unaffected. Compile-time safety: invalid
+ * selector/errno combinations have no annotation class.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
- *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.
  *   <li>On each file-backed {@code mmap} call the interposer runs a Bernoulli trial with
- *       probability {@link #probability}.</li>
- *   <li>When the trial fires, the interposer sets {@code errno = EFAULT} and returns
- *       {@code MAP_FAILED} without issuing the real kernel call.</li>
- *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 14,
- *       {@code strerror}: "Bad address".</li>
+ *       probability {@link #probability}.
+ *   <li>When the trial fires, the interposer sets {@code errno = EFAULT} and returns {@code
+ *       MAP_FAILED} without issuing the real kernel call.
+ *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 14, {@code strerror}:
+ *       "Bad address".
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
- *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = EFAULT} (14); the caller must
- *       not dereference the return value — treating {@code MAP_FAILED} as a valid address causes
- *       an immediate {@code SIGSEGV}.</li>
+ *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = EFAULT} (14); the caller must not
+ *       dereference the return value — treating {@code MAP_FAILED} as a valid address causes an
+ *       immediate {@code SIGSEGV}.
  *   <li>Assert that the application checks the return value against {@code MAP_FAILED} before
  *       accessing any byte of the mapped region, and that it surfaces a structured error rather
- *       than dereferencing the sentinel value.</li>
- *   <li>Assert that the application's error message includes the errno string "Bad address" so
- *       that operators can distinguish this from {@code EBADF} or {@code EACCES}.</li>
+ *       than dereferencing the sentinel value.
+ *   <li>Assert that the application's error message includes the errno string "Bad address" so that
+ *       operators can distinguish this from {@code EBADF} or {@code EACCES}.
  * </ul>
+ *
  * Production failure mode: a stale hint address cached by a native allocator, JNA binding, or
- * memory-mapped I/O subsystem causes a file-backed {@code mmap} call to pass an address range
- * that was unmapped by a concurrent {@code munmap} — the kernel returns {@code EFAULT} on the
- * hint validation before establishing the mapping.
+ * memory-mapped I/O subsystem causes a file-backed {@code mmap} call to pass an address range that
+ * was unmapped by a concurrent {@code munmap} — the kernel returns {@code EFAULT} on the hint
+ * validation before establishing the mapping.
  *
  * <h2>Deep technical dive</h2>
+ *
  * <p>POSIX specifies {@code EFAULT} for {@code mmap} when the {@code addr} hint falls within an
  * inaccessible address range. On Linux, the kernel's {@code do_mmap_pgoff} rejects hint addresses
  * below {@code vm.mmap_min_addr} (typically 65536) and addresses that overlap with inaccessible
  * kernel-reserved regions. For file-backed mappings, the kernel also validates that the requested
- * address range does not conflict with existing VMAs in a way that would require splitting a
- * sealed mapping.
+ * address range does not conflict with existing VMAs in a way that would require splitting a sealed
+ * mapping.
  *
- * <p>In practice, real {@code EFAULT} from file-backed {@code mmap} on a normally configured
- * Linux system is extremely rare because the kernel ignores hint addresses that conflict with
- * existing mappings (returning a different address) unless {@code MAP_FIXED} is set. With
- * {@code MAP_FIXED}, a stale hint that falls within a kernel-reserved range or below
- * {@code mmap_min_addr} produces {@code EFAULT}. Database engines that use {@code MAP_FIXED} for
- * deterministic layout (e.g. large-address-space databases that need contiguous address ranges)
- * are most exposed.
+ * <p>In practice, real {@code EFAULT} from file-backed {@code mmap} on a normally configured Linux
+ * system is extremely rare because the kernel ignores hint addresses that conflict with existing
+ * mappings (returning a different address) unless {@code MAP_FIXED} is set. With {@code MAP_FIXED},
+ * a stale hint that falls within a kernel-reserved range or below {@code mmap_min_addr} produces
+ * {@code EFAULT}. Database engines that use {@code MAP_FIXED} for deterministic layout (e.g.
+ * large-address-space databases that need contiguous address ranges) are most exposed.
  *
  * <p>The JVM rarely uses file-backed {@code MAP_FIXED} mappings for user data — it prefers
  * anonymous mappings for the heap. However, GraalVM native images and JVM internal infrastructure
- * (code cache placement on some platforms) may use hint-based placement with narrow address
- * ranges. A stale hint caused by arena reuse or address-space layout change can produce
- * {@code EFAULT} on the file path in these environments.
+ * (code cache placement on some platforms) may use hint-based placement with narrow address ranges.
+ * A stale hint caused by arena reuse or address-space layout change can produce {@code EFAULT} on
+ * the file path in these environments.
  *
  * <p>Compared with {@code EINVAL}: {@code EFAULT} occurs when the address is inaccessible to the
  * kernel (protection-level issue); {@code EINVAL} occurs when the arguments are structurally
@@ -96,6 +100,7 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * <p><strong>Probability guidance:</strong> very low (1e-5 to 1e-4); {@code EFAULT} at high rates
  * prevents all file-backed mapping operations, breaking shared-library loading and causing process
  * abort rather than structured error handling.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
  * the test class.

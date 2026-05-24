@@ -23,15 +23,15 @@ import com.macstab.chaos.time.model.TimeSelector;
  * tuple. The {@code WILDCARD} selector matches all three interposed time syscalls simultaneously —
  * equivalent to applying {@link ChaosClockGettimeLatency}, {@link ChaosNanosleepLatency}, and
  * {@link ChaosUsleepLatency} in a single annotation. Unlike errno variants, the latency primitive
- * always delegates to the real kernel call after the configured extra delay — the return value
- * is 0 (success). No runtime selector-effect validation is needed.
+ * always delegates to the real kernel call after the configured extra delay — the return value is 0
+ * (success). No runtime selector-effect validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
- *       extension to upload {@code libchaos-time.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
  *       at the dynamic-linker level.
  *   <li>On every intercepted call to any of the three syscalls the interposer first sleeps for an
@@ -48,14 +48,15 @@ import com.macstab.chaos.time.model.TimeSelector;
  *       deadline-sensitive code paths.
  *   <li>Sleep calls ({@code nanosleep}, {@code usleep}) take longer than requested; pacing loops,
  *       rate limiters, and connection keep-alive heartbeats miss their configured intervals.
- *   <li>Profiling and APM agents that sample {@code clock_gettime} at high frequency will appear
- *       to record higher latency than actual, corrupting performance metrics.
+ *   <li>Profiling and APM agents that sample {@code clock_gettime} at high frequency will appear to
+ *       record higher latency than actual, corrupting performance metrics.
  *   <li>Assert that SLA budgets account for time-syscall overhead and that keep-alive intervals
  *       include sufficient headroom above the injected extra delay.
  * </ul>
  *
  * <p>In production, extended time-syscall durations are caused by kernel scheduling stalls, cgroup
- * CPU quota throttling, vDSO cache pressure, and hypervisor CPU steal on noisy-neighbour cloud hosts.
+ * CPU quota throttling, vDSO cache pressure, and hypervisor CPU steal on noisy-neighbour cloud
+ * hosts.
  *
  * <h2>Deep technical dive</h2>
  *
@@ -79,9 +80,10 @@ import com.macstab.chaos.time.model.TimeSelector;
  * assumptions such as "if {@code nanosleep} is slow, the retry budget must already be consumed" —
  * assumptions that break when independent latency is applied to each.
  *
- * <p>Sibling per-syscall annotations ({@link ChaosClockGettimeLatency}, {@link ChaosNanosleepLatency},
- * {@link ChaosUsleepLatency}) allow targeted latency injection to a single time interface when a
- * narrower test scope is needed. Use the wildcard form for full system-wide time-overhead testing.
+ * <p>Sibling per-syscall annotations ({@link ChaosClockGettimeLatency}, {@link
+ * ChaosNanosleepLatency}, {@link ChaosUsleepLatency}) allow targeted latency injection to a single
+ * time interface when a narrower test scope is needed. Use the wildcard form for full system-wide
+ * time-overhead testing.
  *
  * <h2>Example</h2>
  *

@@ -14,9 +14,9 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Throws the configured exception inside the virtual-thread start path before the
- * {@code Continuation} is submitted to the carrier fork-join pool — the virtual thread never
- * mounts, its {@code Runnable} is never executed, and the caller receives an exception.
+ * Throws the configured exception inside the virtual-thread start path before the {@code
+ * Continuation} is submitted to the carrier fork-join pool — the virtual thread never mounts, its
+ * {@code Runnable} is never executed, and the caller receives an exception.
  *
  * <h2>What this annotation is</h2>
  *
@@ -39,11 +39,11 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <ol>
  *   <li>Execution is captured before the virtual thread's {@code Continuation} is handed to the
  *       carrier fork-join pool.
- *   <li>The reject effect constructs and throws the configured exception (default message:
- *       {@code "rejected by chaos L1"}) from within the interceptor body.
+ *   <li>The reject effect constructs and throws the configured exception (default message: {@code
+ *       "rejected by chaos L1"}) from within the interceptor body.
  *   <li>The exception propagates to the caller of {@code Thread.ofVirtual().start(runnable)} or
- *       {@code StructuredTaskScope.fork(callable)} — the virtual thread is never created at the
- *       JVM level and no carrier slot is consumed.
+ *       {@code StructuredTaskScope.fork(callable)} — the virtual thread is never created at the JVM
+ *       level and no carrier slot is consumed.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -72,29 +72,29 @@ import com.macstab.chaos.jvm.api.OperationType;
  * package-private {@code VirtualThread#start()} method, which differs from the platform-thread
  * {@code Thread#start()} at the bytecode level. The agent targets this internal override via the
  * bootstrap instrumentation channel. Rejecting here means the {@code Continuation} object is
- * allocated but never enqueued in the fork-join work queue, so the carrier pool sees no evidence
- * of the attempted thread.
+ * allocated but never enqueued in the fork-join work queue, so the carrier pool sees no evidence of
+ * the attempted thread.
  *
  * <p><strong>Structured concurrency interaction.</strong> {@code StructuredTaskScope} wraps each
- * {@code fork()} call in a try-catch for {@code RejectedExecutionException}; the scope's
- * completion handler records the failure and triggers scope cancellation. This annotation's
- * exception will surface through that path — verify that the scope's {@code Throwable} collector
- * holds the injected exception so that diagnostics are preserved.
+ * {@code fork()} call in a try-catch for {@code RejectedExecutionException}; the scope's completion
+ * handler records the failure and triggers scope cancellation. This annotation's exception will
+ * surface through that path — verify that the scope's {@code Throwable} collector holds the
+ * injected exception so that diagnostics are preserved.
  *
- * <p><strong>Carrier-pool isolation.</strong> Because the rejection fires before the
- * {@code Continuation} enters the fork-join queue, the carrier pool's worker threads are
- * completely unaffected. This makes the reject effect invisible to JVM flight-recorder carrier
- * utilisation metrics — the only observable signal is the exception in the calling thread's stack.
+ * <p><strong>Carrier-pool isolation.</strong> Because the rejection fires before the {@code
+ * Continuation} enters the fork-join queue, the carrier pool's worker threads are completely
+ * unaffected. This makes the reject effect invisible to JVM flight-recorder carrier utilisation
+ * metrics — the only observable signal is the exception in the calling thread's stack.
  *
- * <p><strong>Distinction from {@code ChaosVirtualThreadStartDelay}.</strong> The delay effect
- * lets the virtual thread start eventually (after a park on the calling thread). The reject effect
- * is terminal: the thread is never created. Use reject to test fallback logic such as circuit
- * breakers or graceful degradation under thread-creation failure.
+ * <p><strong>Distinction from {@code ChaosVirtualThreadStartDelay}.</strong> The delay effect lets
+ * the virtual thread start eventually (after a park on the calling thread). The reject effect is
+ * terminal: the thread is never created. Use reject to test fallback logic such as circuit breakers
+ * or graceful degradation under thread-creation failure.
  *
- * <p><strong>Exception type note.</strong> The default exception message is passed as a
- * {@code RuntimeException} wrapper by the {@code RejectTranslator}. Configure
- * {@code exceptionClassName} if the application code catches a specific type such as
- * {@code java.util.concurrent.RejectedExecutionException}.
+ * <p><strong>Exception type note.</strong> The default exception message is passed as a {@code
+ * RuntimeException} wrapper by the {@code RejectTranslator}. Configure {@code exceptionClassName}
+ * if the application code catches a specific type such as {@code
+ * java.util.concurrent.RejectedExecutionException}.
  *
  * <h2>Example</h2>
  *
@@ -116,7 +116,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java 21+ container image — virtual threads require JDK 21 or later.
  * </ul>

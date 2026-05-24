@@ -15,29 +15,29 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
  * Injects {@code EOPNOTSUPP} into {@code listen(2)}, causing the call to return {@code -1} with
- * {@code errno = EOPNOTSUPP} as if the socket type does not support the listening operation —
- * the most common real cause being calling {@code listen} on a {@code SOCK_DGRAM} UDP socket.
+ * {@code errno = EOPNOTSUPP} as if the socket type does not support the listening operation — the
+ * most common real cause being calling {@code listen} on a {@code SOCK_DGRAM} UDP socket.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code LISTEN}, errno =
- * {@code EOPNOTSUPP}) tuple. A Bernoulli trial with probability {@link #toxicity} is run on each
- * intercepted {@code listen} call; when it fires the interposer returns {@code -1} with
- * {@code errno = EOPNOTSUPP} without performing any real kernel operation. No runtime
- * operation-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code LISTEN}, errno = {@code
+ * EOPNOTSUPP}) tuple. A Bernoulli trial with probability {@link #toxicity} is run on each
+ * intercepted {@code listen} call; when it fires the interposer returns {@code -1} with {@code
+ * errno = EOPNOTSUPP} without performing any real kernel operation. No runtime operation-errno
+ * validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
- *       extension to upload {@code libchaos-net.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
- *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
- *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
- *       {@code poll} at the dynamic-linker level.
- *   <li>On each intercepted {@code listen} call a Bernoulli trial with probability {@link #toxicity}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = EOPNOTSUPP}.
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket}, {@code
+ *       bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and {@code poll} at
+ *       the dynamic-linker level.
+ *   <li>On each intercepted {@code listen} call a Bernoulli trial with probability {@link
+ *       #toxicity} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = EOPNOTSUPP}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -66,22 +66,22 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>POSIX defines {@code listen} as meaningful only for connection-oriented socket types:
- * {@code SOCK_STREAM} (TCP) and {@code SOCK_SEQPACKET} (SCTP, Unix domain sequenced-packet sockets).
- * Calling {@code listen} on a {@code SOCK_DGRAM} (UDP) or {@code SOCK_RAW} socket returns
- * {@code EOPNOTSUPP} because these socket types have no concept of a connection queue — they receive
+ * <p>POSIX defines {@code listen} as meaningful only for connection-oriented socket types: {@code
+ * SOCK_STREAM} (TCP) and {@code SOCK_SEQPACKET} (SCTP, Unix domain sequenced-packet sockets).
+ * Calling {@code listen} on a {@code SOCK_DGRAM} (UDP) or {@code SOCK_RAW} socket returns {@code
+ * EOPNOTSUPP} because these socket types have no concept of a connection queue — they receive
  * datagrams from any sender without a connection establishment phase.
  *
  * <p>The error is significant for generic socket abstraction layers used in embedded systems,
- * protocol-agnostic middleware, and network testing frameworks: if the layer selects the socket type
- * based on a configuration parameter, a misconfiguration can cause {@code listen} to fail with
+ * protocol-agnostic middleware, and network testing frameworks: if the layer selects the socket
+ * type based on a configuration parameter, a misconfiguration can cause {@code listen} to fail with
  * {@code EOPNOTSUPP}. This injection verifies that the abstraction layer propagates the error
  * clearly rather than swallowing it or converting it to a generic "socket setup failed" message.
  *
  * <p>Java's {@code ServerSocket} only creates {@code SOCK_STREAM} sockets and will never encounter
  * {@code EOPNOTSUPP} from the JVM's own calls. This error path is relevant to native code called
- * via JNI, socket file descriptors imported from native libraries, and tests of native socket
- * setup code wrapped behind a Java API.
+ * via JNI, socket file descriptors imported from native libraries, and tests of native socket setup
+ * code wrapped behind a Java API.
  *
  * <h2>Example</h2>
  *

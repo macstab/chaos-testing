@@ -45,19 +45,18 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       separately from {@code java.io.IOException} general-failure handlers.
  *   <li>Framework-level error translation: Spring's {@code RestTemplate} wraps most HTTP client
  *       exceptions in {@code ResourceAccessException}; assert that translation is correct.
- *   <li><strong>Production failure mode:</strong> DNS resolution failure surfaces as
- *       {@code java.net.UnknownHostException}; inject that to verify the application returns a
- *       meaningful user-facing error rather than a raw stack trace.
+ *   <li><strong>Production failure mode:</strong> DNS resolution failure surfaces as {@code
+ *       java.net.UnknownHostException}; inject that to verify the application returns a meaningful
+ *       user-facing error rather than a raw stack trace.
  * </ul>
  *
  * <h2>Deep technical dive</h2>
  *
  * <p>The exception injection translator uses {@code Class.forName(exceptionClassName)} on the
- * agent's class loader, then instantiates the exception via the single-argument
- * {@code (String message)} constructor. If the class is not found or lacks that constructor, the
- * agent falls back to wrapping a {@code RuntimeException} and logs a warning — the fault still
- * fires, but with a different type than requested. Always verify the injected type at test
- * authoring time.
+ * agent's class loader, then instantiates the exception via the single-argument {@code (String
+ * message)} constructor. If the class is not found or lacks that constructor, the agent falls back
+ * to wrapping a {@code RuntimeException} and logs a warning — the fault still fires, but with a
+ * different type than requested. Always verify the injected type at test authoring time.
  *
  * <p>The interception point is the same {@code jdk.internal.net.http.HttpClientImpl#send} entry
  * used by all HTTP_CLIENT_SEND rules. Because the throw happens before any socket work, the
@@ -67,13 +66,13 @@ import com.macstab.chaos.jvm.api.OperationType;
  * bytecode level when thrown through Byte Buddy's intercept mechanism).
  *
  * <p>The difference between this annotation and {@link ChaosHttpClientSendReject} is precision:
- * {@code Reject} always uses {@code IOException} (matching the JDK's declared throws), while
- * {@code InjectException} accepts any class including {@code HttpTimeoutException},
- * {@code SSLHandshakeException}, or application-specific unchecked exceptions.
+ * {@code Reject} always uses {@code IOException} (matching the JDK's declared throws), while {@code
+ * InjectException} accepts any class including {@code HttpTimeoutException}, {@code
+ * SSLHandshakeException}, or application-specific unchecked exceptions.
  *
- * <p>For testing SSL handshake failures specifically, inject
- * {@code javax.net.ssl.SSLHandshakeException}; this exercises the branch in application code that
- * handles certificate errors, which is distinct from the branch that handles connection refused.
+ * <p>For testing SSL handshake failures specifically, inject {@code
+ * javax.net.ssl.SSLHandshakeException}; this exercises the branch in application code that handles
+ * certificate errors, which is distinct from the branch that handles connection refused.
  *
  * <p>When combined with method-scope, you can inject the fault for a single {@code @Test} and
  * verify that exactly one retry is attempted by counting mock invocations before and after the
@@ -100,8 +99,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

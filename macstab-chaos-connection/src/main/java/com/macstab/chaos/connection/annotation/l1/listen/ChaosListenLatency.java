@@ -20,8 +20,8 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * <h2>What this annotation is</h2>
  *
  * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code LISTEN}, effect = LATENCY)
- * tuple. Unlike errno variants, the latency primitive always delegates to the real kernel call after
- * the configured extra delay — the accept queue is created and the socket transitions to the
+ * tuple. Unlike errno variants, the latency primitive always delegates to the real kernel call
+ * after the configured extra delay — the accept queue is created and the socket transitions to the
  * listening state normally. A Bernoulli trial with probability {@link #toxicity} gates whether the
  * delay fires on each call. No runtime operation-effect validation is needed.
  *
@@ -29,14 +29,14 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
- *       extension to upload {@code libchaos-net.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
- *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
- *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
- *       {@code poll} at the dynamic-linker level.
- *   <li>On each intercepted {@code listen} call a Bernoulli trial with probability {@link #toxicity}
- *       is conducted; when it fires the interposer sleeps for {@link #delayMs} ms before issuing
- *       the real kernel call.
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket}, {@code
+ *       bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and {@code poll} at
+ *       the dynamic-linker level.
+ *   <li>On each intercepted {@code listen} call a Bernoulli trial with probability {@link
+ *       #toxicity} is conducted; when it fires the interposer sleeps for {@link #delayMs} ms before
+ *       issuing the real kernel call.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -48,12 +48,12 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *   <li>Services that bind and listen on many ports simultaneously (HTTP + HTTPS + metrics + admin)
  *       accumulate per-listen delays; assert that the total startup budget covers all listen calls.
  *   <li>The delay fires before the kernel call, so during the delay the socket is in a bound but
- *       not listening state; clients that attempt to connect during the delay will receive
- *       {@code ECONNREFUSED} because no accept queue exists yet. Assert that clients handle the
- *       pre-listen connection refused correctly.
- *   <li>Assert that the startup sequence does not proceed to serving requests until all listen calls
- *       complete, so that the service's health check endpoint is not reachable before the main
- *       listening port is ready.
+ *       not listening state; clients that attempt to connect during the delay will receive {@code
+ *       ECONNREFUSED} because no accept queue exists yet. Assert that clients handle the pre-listen
+ *       connection refused correctly.
+ *   <li>Assert that the startup sequence does not proceed to serving requests until all listen
+ *       calls complete, so that the service's health check endpoint is not reachable before the
+ *       main listening port is ready.
  * </ul>
  *
  * <p>In production, slow {@code listen} calls occur under severe kernel memory pressure when the
@@ -63,21 +63,21 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * <h2>Deep technical dive</h2>
  *
  * <p>{@code listen(2)} is normally one of the fastest socket setup calls — it allocates the accept
- * queue (a pair of queues: the SYN backlog queue for half-open connections, and the accept queue for
- * completed connections) and marks the socket as passive. Under normal conditions it completes in
- * microseconds. The delay injected by this annotation is therefore larger than real-world listen
+ * queue (a pair of queues: the SYN backlog queue for half-open connections, and the accept queue
+ * for completed connections) and marks the socket as passive. Under normal conditions it completes
+ * in microseconds. The delay injected by this annotation is therefore larger than real-world listen
  * latency in the vast majority of cases; its value is to expose startup timeout assumptions and
  * readiness probe configurations that do not account for any latency in the socket setup phase.
  *
  * <p>The relationship between backlog size and memory allocation is relevant here: a large backlog
- * value passed to {@code listen} causes the kernel to pre-allocate more memory for the accept queue.
- * On memory-constrained systems this allocation can stall. This injection simulates that stall
- * without requiring actual memory pressure.
+ * value passed to {@code listen} causes the kernel to pre-allocate more memory for the accept
+ * queue. On memory-constrained systems this allocation can stall. This injection simulates that
+ * stall without requiring actual memory pressure.
  *
  * <p>Combined with {@link ChaosBindLatency}, this injection simulates a slow full socket setup
  * sequence: bind assigns the local address (slow), listen creates the accept queue (slow); both
- * must complete before clients can connect. Injecting delay into both operations reveals whether the
- * startup timeout covers the complete socket initialisation sequence.
+ * must complete before clients can connect. Injecting delay into both operations reveals whether
+ * the startup timeout covers the complete socket initialisation sequence.
  *
  * <h2>Example</h2>
  *

@@ -20,24 +20,24 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code BIND}, errno =
- * {@code EADDRNOTAVAIL}) tuple. A Bernoulli trial with probability {@link #toxicity} is run on each
- * intercepted {@code bind} call; when it fires the interposer returns {@code -1} with
- * {@code errno = EADDRNOTAVAIL} without performing any real kernel operation. No runtime
- * operation-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code BIND}, errno = {@code
+ * EADDRNOTAVAIL}) tuple. A Bernoulli trial with probability {@link #toxicity} is run on each
+ * intercepted {@code bind} call; when it fires the interposer returns {@code -1} with {@code errno
+ * = EADDRNOTAVAIL} without performing any real kernel operation. No runtime operation-errno
+ * validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
- *       extension to upload {@code libchaos-net.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
- *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
- *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
- *       {@code poll} at the dynamic-linker level.
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket}, {@code
+ *       bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and {@code poll} at
+ *       the dynamic-linker level.
  *   <li>On each intercepted {@code bind} call a Bernoulli trial with probability {@link #toxicity}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = EADDRNOTAVAIL}.
+ *       is conducted; when it fires the interposer returns {@code -1} and sets {@code errno =
+ *       EADDRNOTAVAIL}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -47,34 +47,35 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *       not present on any local interface; assert that the startup log identifies the missing
  *       address rather than reporting a generic bind failure.
  *   <li>Services configured to bind to a specific container IP address will fail after a container
- *       restart if the IP address assignment changes; assert that the service detects this condition
- *       and refreshes its address configuration rather than entering a crash loop.
+ *       restart if the IP address assignment changes; assert that the service detects this
+ *       condition and refreshes its address configuration rather than entering a crash loop.
  *   <li>Distinguish {@code EADDRNOTAVAIL} (address not on any interface) from {@code EADDRINUSE}
  *       (address exists but is already bound); assert that the application applies different
  *       recovery strategies: waiting for a conflict to resolve versus reconfiguring the address.
- *   <li>Assert that monitoring alerts fire when the service fails to bind to its configured address,
- *       since this typically indicates a network provisioning problem rather than an application bug.
+ *   <li>Assert that monitoring alerts fire when the service fails to bind to its configured
+ *       address, since this typically indicates a network provisioning problem rather than an
+ *       application bug.
  * </ul>
  *
  * <p>In production, {@code EADDRNOTAVAIL} on {@code bind} occurs when a service is configured to
  * bind to a specific IP address that has been removed from the interface (e.g., during floating-IP
- * failover, network reconfiguration, or container re-scheduling to a host with a different IP range),
- * or when the service configuration specifies an address on a VLAN that the container's network
- * namespace does not include.
+ * failover, network reconfiguration, or container re-scheduling to a host with a different IP
+ * range), or when the service configuration specifies an address on a VLAN that the container's
+ * network namespace does not include.
  *
  * <h2>Deep technical dive</h2>
  *
  * <p>The kernel returns {@code EADDRNOTAVAIL} from {@code bind} when the {@code sin_addr} field of
- * the address structure specifies an IP address that is not assigned to any network interface in the
- * process's network namespace. Binding to {@code INADDR_ANY} (0.0.0.0) or {@code IN6ADDR_ANY_INIT}
- * (::) always succeeds because the kernel selects the source address at connection time; only
- * explicit IP addresses trigger this check.
+ * the address structure specifies an IP address that is not assigned to any network interface in
+ * the process's network namespace. Binding to {@code INADDR_ANY} (0.0.0.0) or {@code
+ * IN6ADDR_ANY_INIT} (::) always succeeds because the kernel selects the source address at
+ * connection time; only explicit IP addresses trigger this check.
  *
- * <p>Container orchestration systems assign IP addresses dynamically; a service that stores its bind
- * address in a configuration file or environment variable will fail after re-scheduling to a host
- * with a different subnet. This is particularly common in Kubernetes when a pod with
- * {@code hostNetwork: true} is moved to a different node. The pod's configuration specifies the
- * previous node's IP, which is not available on the new node.
+ * <p>Container orchestration systems assign IP addresses dynamically; a service that stores its
+ * bind address in a configuration file or environment variable will fail after re-scheduling to a
+ * host with a different subnet. This is particularly common in Kubernetes when a pod with {@code
+ * hostNetwork: true} is moved to a different node. The pod's configuration specifies the previous
+ * node's IP, which is not available on the new node.
  *
  * <p>Java's {@code ServerSocket} maps {@code EADDRNOTAVAIL} to a {@code BindException} with the
  * message "Cannot assign requested address". Applications that catch {@code BindException} and

@@ -19,65 +19,69 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * the process image.
  *
  * <h2>What this annotation is</h2>
+ *
  * L1 libchaos-process primitive — one (selector = {@code EXECVE}, errno = {@code ENFILE}) tuple.
- * The {@code EXECVE} selector intercepts {@code execve} calls only, leaving {@code fork},
- * {@code pthread_create}, {@code posix_spawn}, {@code posix_spawnp}, {@code execveat}, and
- * {@code waitpid} unaffected. Compile-time safety: invalid selector/errno combinations have no
- * annotation class.
+ * The {@code EXECVE} selector intercepts {@code execve} calls only, leaving {@code fork}, {@code
+ * pthread_create}, {@code posix_spawn}, {@code posix_spawnp}, {@code execveat}, and {@code waitpid}
+ * unaffected. Compile-time safety: invalid selector/errno combinations have no annotation class.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
- *       interposing the libc {@code execve} wrapper at the dynamic-linker level.</li>
- *   <li>On each {@code execve} call the interposer runs a Bernoulli trial with probability
- *       {@link #probability}.</li>
+ *       interposing the libc {@code execve} wrapper at the dynamic-linker level.
+ *   <li>On each {@code execve} call the interposer runs a Bernoulli trial with probability {@link
+ *       #probability}.
  *   <li>When the trial fires, the interposer sets {@code errno = ENFILE} and returns {@code -1}
- *       without issuing the real kernel call.</li>
- *   <li>The calling code receives: {@code -1} return, {@code errno} 23,
- *       {@code strerror}: "Too many open files in system"; no new process image is loaded.</li>
+ *       without issuing the real kernel call.
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 23, {@code strerror}: "Too many
+ *       open files in system"; no new process image is loaded.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
  *   <li>{@code execve} returns {@code -1}; {@code errno = ENFILE} (23); the kernel's global file
  *       table ({@code fs.file-max}) is exhausted — no process on the system can open any new file
- *       until existing files are closed.</li>
- *   <li>Unlike {@code EMFILE} (per-process limit, fixable in-process), {@code ENFILE} indicates
- *       a system-wide exhaustion that cannot be resolved by the affected process — assert that the
+ *       until existing files are closed.
+ *   <li>Unlike {@code EMFILE} (per-process limit, fixable in-process), {@code ENFILE} indicates a
+ *       system-wide exhaustion that cannot be resolved by the affected process — assert that the
  *       application reports {@code ENFILE} with a clear diagnostic that distinguishes it from
- *       {@code EMFILE} and instructs operators to check the platform's file handle limits.</li>
- *   <li>Assert that the application does not retry immediately on {@code ENFILE} — retrying in
- *       a tight loop when the system-wide file table is exhausted will not help and will
- *       saturate the call path; the correct response is to fail the request and surface a
- *       platform-capacity alert.</li>
+ *       {@code EMFILE} and instructs operators to check the platform's file handle limits.
+ *   <li>Assert that the application does not retry immediately on {@code ENFILE} — retrying in a
+ *       tight loop when the system-wide file table is exhausted will not help and will saturate the
+ *       call path; the correct response is to fail the request and surface a platform-capacity
+ *       alert.
  * </ul>
+ *
  * Production failure mode: a high-density Kubernetes node runs dozens of containers each with
- * thousands of open files; the kernel's {@code fs.file-max} limit is reached by the aggregate
- * file usage; any process on the node that attempts to open a new file (including via
- * {@code execve}) receives {@code ENFILE}, causing cascading failures across all containers on
- * the node simultaneously — a cross-tenant incident triggered by the aggregate file handle usage
- * of unrelated workloads.
+ * thousands of open files; the kernel's {@code fs.file-max} limit is reached by the aggregate file
+ * usage; any process on the node that attempts to open a new file (including via {@code execve})
+ * receives {@code ENFILE}, causing cascading failures across all containers on the node
+ * simultaneously — a cross-tenant incident triggered by the aggregate file handle usage of
+ * unrelated workloads.
  *
  * <h2>Deep technical dive</h2>
+ *
  * <p>POSIX specifies {@code ENFILE} for {@code execve} when the kernel's system-wide file table
- * would be exceeded by opening the binary. The system-wide limit is governed by
- * {@code /proc/sys/fs/file-max} (tunable via {@code sysctl fs.file-max}). When this limit is
- * reached, every open operation by every process on the system fails with {@code ENFILE} until
- * files are closed system-wide. The exec path must open the binary as a file; if the global
- * table is full, this open returns {@code ENFILE} and the exec fails before any image loading.
+ * would be exceeded by opening the binary. The system-wide limit is governed by {@code
+ * /proc/sys/fs/file-max} (tunable via {@code sysctl fs.file-max}). When this limit is reached,
+ * every open operation by every process on the system fails with {@code ENFILE} until files are
+ * closed system-wide. The exec path must open the binary as a file; if the global table is full,
+ * this open returns {@code ENFILE} and the exec fails before any image loading.
  *
  * <p>The multi-tenant exhaustion scenario is particularly significant: in a shared Kubernetes
- * cluster, {@code fs.file-max} is a node-level resource not subject to per-pod cgroup limits.
- * A single noisy-neighbour pod with a file descriptor leak can exhaust the system-wide limit,
- * causing {@code ENFILE} errors in unrelated pods on the same node. This failure mode is invisible
- * in per-pod resource accounting and requires node-level monitoring of the file handle count
- * (via {@code /proc/sys/fs/file-nr}) to detect.
+ * cluster, {@code fs.file-max} is a node-level resource not subject to per-pod cgroup limits. A
+ * single noisy-neighbour pod with a file descriptor leak can exhaust the system-wide limit, causing
+ * {@code ENFILE} errors in unrelated pods on the same node. This failure mode is invisible in
+ * per-pod resource accounting and requires node-level monitoring of the file handle count (via
+ * {@code /proc/sys/fs/file-nr}) to detect.
  *
  * <p>Compared with {@code EMFILE}: {@code EMFILE} indicates the per-process {@code RLIMIT_NOFILE}
  * is exhausted (fixable by the application closing leaked fds or raising its own soft limit);
  * {@code ENFILE} indicates the system-wide kernel file table is exhausted (requires platform-level
- * remediation — either reducing aggregate fd usage or raising {@code fs.file-max}). Runbooks
- * for these two errors are completely different and applications must distinguish them explicitly.
+ * remediation — either reducing aggregate fd usage or raising {@code fs.file-max}). Runbooks for
+ * these two errors are completely different and applications must distinguish them explicitly.
  *
  * <h2>Example</h2>
  *
@@ -96,9 +100,10 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; system-wide fd exhaustion is a
  * multi-tenant event that is rare per container but high-impact when it occurs; any non-zero
  * probability exercises the dormant error path.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every process-chaos-capable container
- * in the test class.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container in
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ProcessErrnoBinding

@@ -14,23 +14,24 @@ import com.macstab.chaos.time.model.TimeErrno;
 import com.macstab.chaos.time.model.TimeSelector;
 
 /**
- * Injects {@code EAGAIN} into every interposed time syscall ({@code clock_gettime}, {@code nanosleep},
- * {@code usleep}), causing each to return {@code -1} with {@code errno = EAGAIN} as if a temporary
- * resource constraint prevented the operation.
+ * Injects {@code EAGAIN} into every interposed time syscall ({@code clock_gettime}, {@code
+ * nanosleep}, {@code usleep}), causing each to return {@code -1} with {@code errno = EAGAIN} as if
+ * a temporary resource constraint prevented the operation.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code WILDCARD}, errno = {@code EAGAIN})
- * tuple. The {@code WILDCARD} selector matches all three interposed time syscalls simultaneously —
- * equivalent to applying {@link ChaosClockGettimeEagain}, {@link ChaosNanosleepEagain}, and
- * {@link ChaosUsleepEagain} in a single annotation. No runtime selector-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code WILDCARD}, errno = {@code
+ * EAGAIN}) tuple. The {@code WILDCARD} selector matches all three interposed time syscalls
+ * simultaneously — equivalent to applying {@link ChaosClockGettimeEagain}, {@link
+ * ChaosNanosleepEagain}, and {@link ChaosUsleepEagain} in a single annotation. No runtime
+ * selector-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
- *       extension to upload {@code libchaos-time.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
  *       at the dynamic-linker level.
  *   <li>On every intercepted call to any of the three syscalls a Bernoulli trial with probability
@@ -42,9 +43,9 @@ import com.macstab.chaos.time.model.TimeSelector;
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>{@code EAGAIN} is not a documented POSIX result of {@code clock_gettime} or
- *       {@code nanosleep}; applications that check only for {@code EINTR} or {@code EINVAL} will
- *       treat this as an unexpected error, exercising their default error-handling branch.
+ *   <li>{@code EAGAIN} is not a documented POSIX result of {@code clock_gettime} or {@code
+ *       nanosleep}; applications that check only for {@code EINTR} or {@code EINVAL} will treat
+ *       this as an unexpected error, exercising their default error-handling branch.
  *   <li>Applications that blindly loop on any non-zero return from time syscalls will busy-spin
  *       indefinitely under this injection, revealing the absence of a proper error-code check.
  *   <li>Assert that the application treats unrecognised errno values from time syscalls as fatal
@@ -58,12 +59,11 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>{@code EAGAIN} is normally associated with non-blocking I/O and resource limits
- * ({@code RLIMIT_NPROC}, futex contention) rather than time syscalls. Neither {@code clock_gettime}
- * nor {@code nanosleep} nor {@code usleep} returns {@code EAGAIN} in any standard Linux kernel
- * code path. This injection therefore exercises the "unknown errno" handling posture of the
- * application — the path that executes when an error is received that the developer never
- * anticipated.
+ * <p>{@code EAGAIN} is normally associated with non-blocking I/O and resource limits ({@code
+ * RLIMIT_NPROC}, futex contention) rather than time syscalls. Neither {@code clock_gettime} nor
+ * {@code nanosleep} nor {@code usleep} returns {@code EAGAIN} in any standard Linux kernel code
+ * path. This injection therefore exercises the "unknown errno" handling posture of the application
+ * — the path that executes when an error is received that the developer never anticipated.
  *
  * <p>Some seccomp-bpf policies are configured to return {@code EAGAIN} for all unrecognised syscall
  * numbers as a denial strategy that appears less suspicious than {@code ENOSYS}. A process running
@@ -76,9 +76,9 @@ import com.macstab.chaos.time.model.TimeSelector;
  * that catches {@code EAGAIN} on {@code nanosleep} and retries via {@code usleep} will encounter
  * the same error, fully exercising the no-fallback-available code path.
  *
- * <p>Sibling per-syscall annotations ({@link ChaosClockGettimeEagain}, {@link ChaosNanosleepEagain},
- * {@link ChaosUsleepEagain}) allow targeted injection to a single syscall when a narrower test
- * scope is needed.
+ * <p>Sibling per-syscall annotations ({@link ChaosClockGettimeEagain}, {@link
+ * ChaosNanosleepEagain}, {@link ChaosUsleepEagain}) allow targeted injection to a single syscall
+ * when a narrower test scope is needed.
  *
  * <h2>Example</h2>
  *

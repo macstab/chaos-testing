@@ -77,7 +77,8 @@ class L1ProcessAnnotationEndToEndTest {
 
   @ParameterizedTest
   @ValueSource(strings = {DEBIAN, ALPINE})
-  @DisplayName("@ChaosPthreadCreateEagain writes pthread_create:ERRNO:EAGAIN to config and removes cleanly")
+  @DisplayName(
+      "@ChaosPthreadCreateEagain writes pthread_create:ERRNO:EAGAIN to config and removes cleanly")
   void pthreadCreateEagainWrittenAndRemoved(final String image) throws Exception {
     try (final GenericContainer<?> container = prepared(image)) {
       final var handles = containers(container);
@@ -101,7 +102,8 @@ class L1ProcessAnnotationEndToEndTest {
 
   @ParameterizedTest
   @ValueSource(strings = {DEBIAN, ALPINE})
-  @DisplayName("@ChaosWildcardEacces writes wildcard (*):ERRNO:EACCES to config and removes cleanly")
+  @DisplayName(
+      "@ChaosWildcardEacces writes wildcard (*):ERRNO:EACCES to config and removes cleanly")
   void wildcardEaccesWrittenAndRemoved(final String image) throws Exception {
     try (final GenericContainer<?> container = prepared(image)) {
       final var handles = containers(container);

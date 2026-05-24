@@ -28,9 +28,9 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
@@ -45,8 +45,8 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *       files in a tight loop (cleanup after batch processing, log archival deletion) will see
  *       increased cleanup latency. Assert that the cleanup operation's timeout accounts for the
  *       accumulated delay across all deleted files.
- *   <li>Applications that delete a file and then immediately create a new file at the same path
- *       (a "recreate" pattern) will see the window between deletion and creation extended by the
+ *   <li>Applications that delete a file and then immediately create a new file at the same path (a
+ *       "recreate" pattern) will see the window between deletion and creation extended by the
  *       injected delay; assert that the application handles concurrent access during this window
  *       rather than assuming the deletion is instantaneous.
  *   <li>Log rotation implementations that delete expired archive files may accumulate significant
@@ -57,29 +57,29 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *       hold any lock that the request processing path needs.
  * </ul>
  *
- * <p>In production, slow {@code unlink} calls occur on network filesystems (NFS, CIFS) where
- * the server must acknowledge the deletion before the client-side unlink returns, on HDD-backed
+ * <p>In production, slow {@code unlink} calls occur on network filesystems (NFS, CIFS) where the
+ * server must acknowledge the deletion before the client-side unlink returns, on HDD-backed
  * filesystems when the directory's data blocks must be read into the page cache before the entry
- * can be removed, and when the filesystem's free block bitmap must be updated for a large file
- * and the bitmap blocks are not cached.
+ * can be removed, and when the filesystem's free block bitmap must be updated for a large file and
+ * the bitmap blocks are not cached.
  *
  * <h2>Deep technical dive</h2>
  *
  * <p>{@code unlink(2)} removes a directory entry and decrements the inode's link count. The
- * directory modification requires writing the parent directory's data blocks (to remove the
- * entry) and updating the inode's metadata. For journalled filesystems, this also requires
- * writing a journal transaction. On a warm cache with a small directory, the operation completes
- * in microseconds. On a cold cache with a large directory (many entries per block), the operation
+ * directory modification requires writing the parent directory's data blocks (to remove the entry)
+ * and updating the inode's metadata. For journalled filesystems, this also requires writing a
+ * journal transaction. On a warm cache with a small directory, the operation completes in
+ * microseconds. On a cold cache with a large directory (many entries per block), the operation
  * requires reading and writing directory blocks.
  *
- * <p>For a file with a single link (the common case), the inode and data blocks are freed after
- * the unlink if no file descriptors are open. Freeing large files requires walking and freeing
- * many data blocks, indirect blocks, and double-indirect blocks. This "deferred free" work can
- * make unlink slow for large files on filesystems without delayed deallocation.
+ * <p>For a file with a single link (the common case), the inode and data blocks are freed after the
+ * unlink if no file descriptors are open. Freeing large files requires walking and freeing many
+ * data blocks, indirect blocks, and double-indirect blocks. This "deferred free" work can make
+ * unlink slow for large files on filesystems without delayed deallocation.
  *
- * <p>Java's {@code Files.delete(Path)} and {@code File.delete()} both call {@code unlink(2)}.
- * The delay applies before the kernel call, so the calling thread blocks for the duration of the
- * delay plus the actual kernel operation time.
+ * <p>Java's {@code Files.delete(Path)} and {@code File.delete()} both call {@code unlink(2)}. The
+ * delay applies before the kernel call, so the calling thread blocks for the duration of the delay
+ * plus the actual kernel operation time.
  *
  * <h2>Example</h2>
  *

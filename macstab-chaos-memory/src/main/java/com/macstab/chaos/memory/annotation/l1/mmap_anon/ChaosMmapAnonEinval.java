@@ -18,50 +18,54 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * causing the calling code to observe an invalid-argument failure from anonymous memory allocation.
  *
  * <h2>What this annotation is</h2>
+ *
  * L1 libchaos-memory primitive — one (selector = {@code MMAP_ANON}, errno = {@code EINVAL}) tuple.
  * Compile-time safety: this annotation exists only because {@code EINVAL} is a defined POSIX result
  * for {@code mmap}; invalid combinations have no annotation class and cannot be expressed.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
- *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.
  *   <li>On each {@code mmap(MAP_ANONYMOUS)} call the interposer runs a Bernoulli trial with
- *       probability {@link #probability}.</li>
- *   <li>When the trial fires, the interposer sets {@code errno = EINVAL} and returns
- *       {@code MAP_FAILED} without issuing the real kernel call.</li>
- *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 22,
- *       {@code strerror}: "Invalid argument".</li>
+ *       probability {@link #probability}.
+ *   <li>When the trial fires, the interposer sets {@code errno = EINVAL} and returns {@code
+ *       MAP_FAILED} without issuing the real kernel call.
+ *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 22, {@code strerror}:
+ *       "Invalid argument".
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
  *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = EINVAL} (22); the application
- *       should treat this as a programming error and surface a diagnostic.</li>
- *   <li>glibc {@code malloc} propagates {@code NULL}; JVM direct allocators raise
- *       {@code OutOfMemoryError}. Native frameworks that pass explicit flags or alignment hints
- *       to {@code mmap} may produce richer error messages distinguishing {@code EINVAL}.</li>
+ *       should treat this as a programming error and surface a diagnostic.
+ *   <li>glibc {@code malloc} propagates {@code NULL}; JVM direct allocators raise {@code
+ *       OutOfMemoryError}. Native frameworks that pass explicit flags or alignment hints to {@code
+ *       mmap} may produce richer error messages distinguishing {@code EINVAL}.
  *   <li>Assert that the application logs or reports the error rather than silently producing
- *       incorrect results from a null pointer.</li>
+ *       incorrect results from a null pointer.
  * </ul>
+ *
  * Production failure mode: kernel version upgrades occasionally tighten argument validation in
- * {@code do_mmap}: a flag combination accepted on kernel 4.x may return {@code EINVAL} on
- * kernel 5.x or 6.x, silently breaking applications that never exercised this code path in CI.
+ * {@code do_mmap}: a flag combination accepted on kernel 4.x may return {@code EINVAL} on kernel
+ * 5.x or 6.x, silently breaking applications that never exercised this code path in CI.
  *
  * <h2>Deep technical dive</h2>
- * <p>POSIX specifies {@code EINVAL} for {@code mmap} when: the requested length is zero, the
- * length overflows the address-space limit, the protection flags are invalid, the combination of
- * flags is illegal (e.g. {@code MAP_PRIVATE | MAP_SHARED}), or the offset is not page-aligned.
- * For anonymous mappings the most common real-world trigger is a zero-length request, which glibc
- * itself never generates for normal {@code malloc} but which native extension code occasionally
- * produces through arithmetic underflow.
  *
- * <p>The Linux kernel validates arguments in {@code do_mmap_pgoff} before any resource
- * allocation. {@code EINVAL} is returned before any memory is reserved, so there is no partial
- * state to clean up. This makes it a "programmer error" errno — the caller must fix the arguments,
- * not retry the call. However, many allocator wrappers do not distinguish {@code EINVAL} from
- * {@code ENOMEM} and simply propagate a generic "allocation failed" error upward, hiding the root
- * cause.
+ * <p>POSIX specifies {@code EINVAL} for {@code mmap} when: the requested length is zero, the length
+ * overflows the address-space limit, the protection flags are invalid, the combination of flags is
+ * illegal (e.g. {@code MAP_PRIVATE | MAP_SHARED}), or the offset is not page-aligned. For anonymous
+ * mappings the most common real-world trigger is a zero-length request, which glibc itself never
+ * generates for normal {@code malloc} but which native extension code occasionally produces through
+ * arithmetic underflow.
+ *
+ * <p>The Linux kernel validates arguments in {@code do_mmap_pgoff} before any resource allocation.
+ * {@code EINVAL} is returned before any memory is reserved, so there is no partial state to clean
+ * up. This makes it a "programmer error" errno — the caller must fix the arguments, not retry the
+ * call. However, many allocator wrappers do not distinguish {@code EINVAL} from {@code ENOMEM} and
+ * simply propagate a generic "allocation failed" error upward, hiding the root cause.
  *
  * <p>glibc's internal {@code mmap} call for anonymous allocations always uses a non-zero,
  * page-aligned length and valid flags, so normal {@code malloc} will never encounter {@code EINVAL}
@@ -91,6 +95,7 @@ import com.macstab.chaos.memory.model.MmapErrno;
  *
  * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2; {@code EINVAL} at high probability will
  * block all mapped I/O and crash the JVM or any process that relies on {@code mmap} for startup.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
  * the test class.

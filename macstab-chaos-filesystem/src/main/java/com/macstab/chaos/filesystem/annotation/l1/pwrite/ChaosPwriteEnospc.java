@@ -14,29 +14,30 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code ENOSPC} into {@code pwrite(2)}, causing the call to return {@code -1} with
- * {@code errno = ENOSPC} as if the kernel could not allocate additional data blocks for the
- * positional write because the filesystem has no free blocks remaining.
+ * Injects {@code ENOSPC} into {@code pwrite(2)}, causing the call to return {@code -1} with {@code
+ * errno = ENOSPC} as if the kernel could not allocate additional data blocks for the positional
+ * write because the filesystem has no free blocks remaining.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code PWRITE}, errno = {@code ENOSPC})
- * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
- * {@code pwrite} call; when it fires the interposer returns {@code -1} with {@code errno = ENOSPC}
- * without performing any real kernel operation. No runtime operation-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code PWRITE}, errno = {@code
+ * ENOSPC}) tuple. A Bernoulli trial with probability {@link #probability} is run on each
+ * intercepted {@code pwrite} call; when it fires the interposer returns {@code -1} with {@code
+ * errno = ENOSPC} without performing any real kernel operation. No runtime operation-errno
+ * validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
- *   <li>On each intercepted {@code pwrite} call a Bernoulli trial with probability {@link #probability}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = ENOSPC}.
+ *   <li>On each intercepted {@code pwrite} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = ENOSPC}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -52,8 +53,8 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *       transitions to a "disk full" state that prevents new write transactions from starting.
  *   <li>Applications that pre-allocate file space via {@code fallocate} to avoid {@code ENOSPC}
  *       during writes should be tested with this annotation to verify the pre-allocation is always
- *       performed before the first write; assert that {@code pwrite} never encounters {@code ENOSPC}
- *       when writing within the pre-allocated region.
+ *       performed before the first write; assert that {@code pwrite} never encounters {@code
+ *       ENOSPC} when writing within the pre-allocated region.
  *   <li>Assert that the application emits a "disk full" alert with the affected mount point,
  *       enabling operators to take corrective action before the database becomes completely
  *       unavailable.
@@ -69,22 +70,22 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *
  * <p>{@code pwrite(2)} writes to a caller-specified offset without modifying the file's current
  * position. When the write extends the file beyond its current size, the kernel must allocate new
- * data blocks. When the write falls within the file's current size but targets a sparse (unallocated)
- * region, the kernel must also allocate data blocks to back the sparse region. In both cases,
- * block exhaustion causes {@code ENOSPC}. Overwriting existing allocated blocks never causes
- * {@code ENOSPC} because no new allocation is needed.
+ * data blocks. When the write falls within the file's current size but targets a sparse
+ * (unallocated) region, the kernel must also allocate data blocks to back the sparse region. In
+ * both cases, block exhaustion causes {@code ENOSPC}. Overwriting existing allocated blocks never
+ * causes {@code ENOSPC} because no new allocation is needed.
  *
  * <p>Database storage engines use {@code pwrite} for in-place page updates (updating an existing
  * B-tree page at its known file offset). These writes overwrite existing blocks and should not
- * normally encounter {@code ENOSPC}. However, engines that use shadow-paging (writing new pages
- * to new offsets and updating a page table) do require block allocation and can encounter
- * {@code ENOSPC}. This annotation exercises the disk-full handling in both patterns.
+ * normally encounter {@code ENOSPC}. However, engines that use shadow-paging (writing new pages to
+ * new offsets and updating a page table) do require block allocation and can encounter {@code
+ * ENOSPC}. This annotation exercises the disk-full handling in both patterns.
  *
  * <p>Java's {@code FileChannel.write(ByteBuffer, long)} maps to {@code pwrite(2)} on Linux. When
  * the underlying call returns {@code ENOSPC}, the JVM throws an {@code IOException} with the
- * message "No space left on device". Application code that catches this exception should distinguish
- * it from {@code EDQUOT} ("Disk quota exceeded") and {@code EIO} ("Input/output error") to apply
- * the correct remediation.
+ * message "No space left on device". Application code that catches this exception should
+ * distinguish it from {@code EDQUOT} ("Disk quota exceeded") and {@code EIO} ("Input/output error")
+ * to apply the correct remediation.
  *
  * <h2>Example</h2>
  *

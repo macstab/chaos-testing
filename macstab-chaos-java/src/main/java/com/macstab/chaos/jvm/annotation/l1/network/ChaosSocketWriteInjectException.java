@@ -16,8 +16,8 @@ import com.macstab.chaos.jvm.api.OperationType;
 /**
  * Intercepts {@code SocketOutputStream.write()} and throws the configured exception before any
  * bytes are written to the kernel send buffer, simulating a broken-pipe failure mid-request for
- * blocking socket clients such as JDBC drivers dispatching queries or legacy HTTP clients
- * streaming request bodies.
+ * blocking socket clients such as JDBC drivers dispatching queries or legacy HTTP clients streaming
+ * request bodies.
  *
  * <h2>What this annotation is</h2>
  *
@@ -29,13 +29,13 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>Before every call to {@code java.net.SocketOutputStream#write(byte[], int, int)} inside
- *       the target container's JVM, the chaos agent intercepts the calling thread.
+ *   <li>Before every call to {@code java.net.SocketOutputStream#write(byte[], int, int)} inside the
+ *       target container's JVM, the chaos agent intercepts the calling thread.
  *   <li>The agent reflectively instantiates the class named by {@link #exceptionClassName()} with
- *       the message from {@link #message()} and throws it; no bytes are written to the kernel
- *       send buffer.
- *   <li>The exception propagates to the caller — JDBC driver, HTTP client, or raw socket user —
- *       as if the OS returned an error from the {@code send(2)} syscall (e.g. {@code EPIPE}).
+ *       the message from {@link #message()} and throws it; no bytes are written to the kernel send
+ *       buffer.
+ *   <li>The exception propagates to the caller — JDBC driver, HTTP client, or raw socket user — as
+ *       if the OS returned an error from the {@code send(2)} syscall (e.g. {@code EPIPE}).
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -49,28 +49,28 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       connection between two consecutive requests on a keep-alive HTTP connection; Apache
  *       HttpClient 4.x will retry the request once on a new connection if the request is
  *       idempotent; assert that non-idempotent requests are not retried.
- *   <li>PostgreSQL JDBC wraps the write exception as {@code PSQLException} with SQL state
- *       {@code 08006} (connection failure); Spring's {@code SQLExceptionTranslator} maps this to
- *       {@code DataAccessResourceFailureException}; assert that the application's service layer
- *       handles this as a transient error and triggers a retry.
- *   <li><strong>Production failure mode:</strong> a load balancer terminates idle connections
- *       with no TCP FIN (hard RST) after its idle timeout; the JDBC connection pool has not
- *       validated the connection because the pool's {@code keepaliveTime} is longer than the load
- *       balancer's idle timeout; the next query write to the dead connection throws
- *       {@code IOException: Broken pipe}; the pool evicts the connection and creates a new one
- *       to bypass the load balancer; applications without pool-level keepalive see periodic
- *       {@code DataAccessResourceFailureException} on the first query after an idle period.
+ *   <li>PostgreSQL JDBC wraps the write exception as {@code PSQLException} with SQL state {@code
+ *       08006} (connection failure); Spring's {@code SQLExceptionTranslator} maps this to {@code
+ *       DataAccessResourceFailureException}; assert that the application's service layer handles
+ *       this as a transient error and triggers a retry.
+ *   <li><strong>Production failure mode:</strong> a load balancer terminates idle connections with
+ *       no TCP FIN (hard RST) after its idle timeout; the JDBC connection pool has not validated
+ *       the connection because the pool's {@code keepaliveTime} is longer than the load balancer's
+ *       idle timeout; the next query write to the dead connection throws {@code IOException: Broken
+ *       pipe}; the pool evicts the connection and creates a new one to bypass the load balancer;
+ *       applications without pool-level keepalive see periodic {@code
+ *       DataAccessResourceFailureException} on the first query after an idle period.
  * </ul>
  *
  * <h2>Deep technical dive</h2>
  *
  * <p>The interception targets {@code java.net.SocketOutputStream#write(byte[], int, int)}.
- * PostgreSQL JDBC's {@code PGStream.flush()} buffers protocol bytes in a
- * {@code BufferedOutputStream} and calls {@code flush()} which calls the underlying
- * {@code SocketOutputStream.write()} with the accumulated buffer. The chaos exception fires on
- * the write call, causing the buffered query bytes to not reach the database. The driver's
- * exception handler in {@code QueryExecutorImpl} closes the physical connection and the logical
- * {@code Connection} object transitions to a closed state.
+ * PostgreSQL JDBC's {@code PGStream.flush()} buffers protocol bytes in a {@code
+ * BufferedOutputStream} and calls {@code flush()} which calls the underlying {@code
+ * SocketOutputStream.write()} with the accumulated buffer. The chaos exception fires on the write
+ * call, causing the buffered query bytes to not reach the database. The driver's exception handler
+ * in {@code QueryExecutorImpl} closes the physical connection and the logical {@code Connection}
+ * object transitions to a closed state.
  *
  * <p>The distinction from {@link ChaosSocketReadInjectException} is timing: a write exception
  * occurs before the query reaches the database (the query is lost); a read exception occurs after
@@ -78,12 +78,11 @@ import com.macstab.chaos.jvm.api.OperationType;
  * are always safe to retry from a data-consistency standpoint (the database never saw the query);
  * read failures may not be (the database may have committed before the exception).
  *
- * <p>HTTP clients that send chunked request bodies write multiple chunks via multiple
- * {@code write()} calls; the exception fires on the first call, before the first chunk reaches
- * the server; the server sees a broken connection before receiving the complete request body.
- * Servers using request body buffering will discard the partial request; servers streaming the
- * body may process a partial body, which can cause data corruption if the application does not
- * validate completeness.
+ * <p>HTTP clients that send chunked request bodies write multiple chunks via multiple {@code
+ * write()} calls; the exception fires on the first call, before the first chunk reaches the server;
+ * the server sees a broken connection before receiving the complete request body. Servers using
+ * request body buffering will discard the partial request; servers streaming the body may process a
+ * partial body, which can cause data corruption if the application does not validate completeness.
  *
  * <h2>Example</h2>
  *
@@ -106,8 +105,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

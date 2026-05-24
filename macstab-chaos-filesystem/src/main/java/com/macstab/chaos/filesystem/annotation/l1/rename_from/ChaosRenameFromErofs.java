@@ -14,32 +14,32 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code EROFS} into {@code rename(2)} as observed from the source (old) path, causing
- * the call to return {@code -1} with {@code errno = EROFS} as if the filesystem containing the
- * source directory entry has been remounted read-only and the kernel cannot remove that entry.
+ * Injects {@code EROFS} into {@code rename(2)} as observed from the source (old) path, causing the
+ * call to return {@code -1} with {@code errno = EROFS} as if the filesystem containing the source
+ * directory entry has been remounted read-only and the kernel cannot remove that entry.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code RENAME_FROM}, errno =
- * {@code EROFS}) tuple. The {@code RENAME_FROM} operation models the source-path permission check
- * of {@code rename(2)}: the VFS must be able to remove the old directory entry, which requires
- * write access to the source directory — impossible on a read-only filesystem. A Bernoulli trial
- * with probability {@link #probability} is run on each intercepted {@code rename} call; when it
- * fires the interposer returns {@code -1} with {@code errno = EROFS} without performing any real
- * kernel operation.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code RENAME_FROM}, errno = {@code
+ * EROFS}) tuple. The {@code RENAME_FROM} operation models the source-path permission check of
+ * {@code rename(2)}: the VFS must be able to remove the old directory entry, which requires write
+ * access to the source directory — impossible on a read-only filesystem. A Bernoulli trial with
+ * probability {@link #probability} is run on each intercepted {@code rename} call; when it fires
+ * the interposer returns {@code -1} with {@code errno = EROFS} without performing any real kernel
+ * operation.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
- *   <li>On each intercepted {@code rename} call a Bernoulli trial with probability {@link #probability}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = EROFS}, simulating a read-only filesystem blocking the source-path unlink.
+ *   <li>On each intercepted {@code rename} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = EROFS}, simulating a read-only filesystem blocking the source-path unlink.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -49,22 +49,22 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *       read-only; no directory modification operations can succeed until the filesystem is
  *       repaired and remounted read-write. Assert that the application detects this as a
  *       filesystem-level error rather than a file-specific permission error.
- *   <li>The "write-to-temporary-then-rename" atomic update pattern relies on rename to make the
- *       new file visible; an {@code EROFS} on the source path means the entire atomic update
- *       failed and the target is unchanged. Assert that the application discards the temporary
- *       file without re-attempting (which would also fail) and alerts operators.
- *   <li>Log rotation that renames the current log file to an archive name must handle
- *       {@code EROFS}; assert that the rotation aborts and the application continues writing
- *       to the original log file rather than crashing or losing subsequent log lines.
- *   <li>Assert that the application's health check detects the read-only condition and returns
- *       a degraded status that distinguishes it from a permission-denied failure.
+ *   <li>The "write-to-temporary-then-rename" atomic update pattern relies on rename to make the new
+ *       file visible; an {@code EROFS} on the source path means the entire atomic update failed and
+ *       the target is unchanged. Assert that the application discards the temporary file without
+ *       re-attempting (which would also fail) and alerts operators.
+ *   <li>Log rotation that renames the current log file to an archive name must handle {@code
+ *       EROFS}; assert that the rotation aborts and the application continues writing to the
+ *       original log file rather than crashing or losing subsequent log lines.
+ *   <li>Assert that the application's health check detects the read-only condition and returns a
+ *       degraded status that distinguishes it from a permission-denied failure.
  * </ul>
  *
  * <p>In production, {@code EROFS} from {@code rename} on the source path occurs when the kernel
  * remounts the filesystem read-only after detecting unrecoverable write errors during journalling,
  * typically visible in {@code dmesg} as "EXT4-fs error ... remounting filesystem read-only". Once
- * remounted, all directory-modification operations — rename, unlink, mkdir — fail with {@code EROFS}
- * until the filesystem is repaired with {@code fsck} and explicitly remounted read-write.
+ * remounted, all directory-modification operations — rename, unlink, mkdir — fail with {@code
+ * EROFS} until the filesystem is repaired with {@code fsck} and explicitly remounted read-write.
  *
  * <h2>Deep technical dive</h2>
  *
@@ -75,24 +75,24 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * succeed. On a read-only filesystem the VFS layer rejects the source-directory modification before
  * even attempting the destination, returning {@code EROFS} immediately.
  *
- * <p>The read-only remount propagates across the entire filesystem: every file and directory on
- * the same block device (or overlay layer) becomes read-only simultaneously. This means that a
- * single {@code rename} returning {@code EROFS} is diagnostic of the entire storage subsystem,
- * not just the one path involved in the rename. Applications that issue {@code rename} and receive
- * {@code EROFS} must assume that subsequent writes, fsyncs, unlinks, and renames on the same
- * filesystem will all fail with {@code EROFS}.
+ * <p>The read-only remount propagates across the entire filesystem: every file and directory on the
+ * same block device (or overlay layer) becomes read-only simultaneously. This means that a single
+ * {@code rename} returning {@code EROFS} is diagnostic of the entire storage subsystem, not just
+ * the one path involved in the rename. Applications that issue {@code rename} and receive {@code
+ * EROFS} must assume that subsequent writes, fsyncs, unlinks, and renames on the same filesystem
+ * will all fail with {@code EROFS}.
  *
- * <p>Java's {@code Files.move(Path, Path, CopyOption...)} with {@code ATOMIC_MOVE} calls
- * {@code rename(2)} and throws an {@code IOException} with the message "Read-only file system"
- * when it returns {@code EROFS}. Unlike {@code EACCES} (which might be resolvable by changing
- * permissions), {@code EROFS} is a hardware-level condition — no change to file permissions or
- * security policies will allow the rename until the filesystem is remounted read-write.
+ * <p>Java's {@code Files.move(Path, Path, CopyOption...)} with {@code ATOMIC_MOVE} calls {@code
+ * rename(2)} and throws an {@code IOException} with the message "Read-only file system" when it
+ * returns {@code EROFS}. Unlike {@code EACCES} (which might be resolvable by changing permissions),
+ * {@code EROFS} is a hardware-level condition — no change to file permissions or security policies
+ * will allow the rename until the filesystem is remounted read-write.
  *
  * <p>Compared with {@link ChaosRenameFromEacces}: {@code EROFS} simulates the entire filesystem
- * being read-only (no writes of any kind succeed); {@code EACCES} simulates a targeted
- * permission denial on a specific directory entry (other directories may still be writable).
- * Use {@code EROFS} to test the global read-only degradation path; use {@code EACCES} to test
- * per-path permission handling.
+ * being read-only (no writes of any kind succeed); {@code EACCES} simulates a targeted permission
+ * denial on a specific directory entry (other directories may still be writable). Use {@code EROFS}
+ * to test the global read-only degradation path; use {@code EACCES} to test per-path permission
+ * handling.
  *
  * <h2>Example</h2>
  *

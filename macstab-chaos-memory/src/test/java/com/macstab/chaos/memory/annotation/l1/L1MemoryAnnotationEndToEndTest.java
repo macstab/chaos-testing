@@ -3,7 +3,6 @@ package com.macstab.chaos.memory.annotation.l1;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.jupiter.api.DisplayName;
@@ -31,8 +30,8 @@ import com.macstab.chaos.memory.annotation.l1.mprotect.ChaosMprotectEacces;
  * post-remove cleanup, on both glibc and musl base images.
  *
  * <p>This complements {@code LibchaosMemoryChaosIntegrationTest} (which tests the strategy layer
- * imperatively) by exercising the annotation-driven path that {@code ChaosTestingExtension} uses
- * at runtime.
+ * imperatively) by exercising the annotation-driven path that {@code ChaosTestingExtension} uses at
+ * runtime.
  *
  * @author Christian Schnapka - Macstab GmbH
  */

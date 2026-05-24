@@ -14,14 +14,14 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code EAGAIN} into {@code accept(2)}, causing the call to return {@code -1} with
- * {@code errno = EAGAIN} as if the listening socket is non-blocking and no connection is currently
- * waiting to be accepted.
+ * Injects {@code EAGAIN} into {@code accept(2)}, causing the call to return {@code -1} with {@code
+ * errno = EAGAIN} as if the listening socket is non-blocking and no connection is currently waiting
+ * to be accepted.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code ACCEPT}, errno = {@code EAGAIN})
- * tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code ACCEPT}, errno = {@code
+ * EAGAIN}) tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted
  * {@code accept} call; when it fires the interposer returns {@code -1} with {@code errno = EAGAIN}
  * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
@@ -29,25 +29,25 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
- *       extension to upload {@code libchaos-net.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
- *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
- *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
- *       {@code poll} at the dynamic-linker level.
- *   <li>On every intercepted {@code accept} call a Bernoulli trial with probability
- *       {@link #toxicity} is conducted; when it fires the interposer returns {@code -1} and
- *       sets {@code errno = EAGAIN}.
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket}, {@code
+ *       bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and {@code poll} at
+ *       the dynamic-linker level.
+ *   <li>On every intercepted {@code accept} call a Bernoulli trial with probability {@link
+ *       #toxicity} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = EAGAIN}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>Server-side accept loops must handle {@code EAGAIN} correctly — typically by returning
- *       to the event loop and re-registering the listening socket for readability rather than
- *       treating it as a fatal error.
+ *   <li>Server-side accept loops must handle {@code EAGAIN} correctly — typically by returning to
+ *       the event loop and re-registering the listening socket for readability rather than treating
+ *       it as a fatal error.
  *   <li>Blocking-mode servers that call {@code accept} without {@code O_NONBLOCK} should not
- *       receive {@code EAGAIN} in production; the injection surfaces the assumption that
- *       {@code accept} only fails with {@code EAGAIN} on non-blocking sockets.
+ *       receive {@code EAGAIN} in production; the injection surfaces the assumption that {@code
+ *       accept} only fails with {@code EAGAIN} on non-blocking sockets.
  *   <li>Accept loops that retry on all non-zero returns without limit will spin under this
  *       injection, revealing the absence of a back-off or error-checking guard.
  *   <li>Assert that the server correctly handles spurious {@code EAGAIN} results and continues
@@ -60,25 +60,24 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>POSIX specifies that {@code accept(2)} on a non-blocking socket returns {@code EAGAIN} (or
- * the equivalent {@code EWOULDBLOCK}) when no connections are pending. Event-driven server
- * frameworks (Netty, Vert.x, libuv) rely on this behaviour: they call {@code accept} in a loop
- * until {@code EAGAIN} is received, which signals that the accept queue is drained for this
- * epoll event cycle. Injecting {@code EAGAIN} mid-loop tests whether the loop exits cleanly
- * without logging spurious errors or leaving accepted fds unclosed.
+ * <p>POSIX specifies that {@code accept(2)} on a non-blocking socket returns {@code EAGAIN} (or the
+ * equivalent {@code EWOULDBLOCK}) when no connections are pending. Event-driven server frameworks
+ * (Netty, Vert.x, libuv) rely on this behaviour: they call {@code accept} in a loop until {@code
+ * EAGAIN} is received, which signals that the accept queue is drained for this epoll event cycle.
+ * Injecting {@code EAGAIN} mid-loop tests whether the loop exits cleanly without logging spurious
+ * errors or leaving accepted fds unclosed.
  *
- * <p>Blocking-mode servers that use a thread-per-connection model typically call {@code accept}
- * on a blocking socket; they should never receive {@code EAGAIN} in normal operation. When this
+ * <p>Blocking-mode servers that use a thread-per-connection model typically call {@code accept} on
+ * a blocking socket; they should never receive {@code EAGAIN} in normal operation. When this
  * injection fires against such a server, the application's handling of an unexpected {@code EAGAIN}
  * is exercised — most implementations treat it as a warning and retry, but some incorrectly treat
  * it as a fatal error and shut down the accept loop.
  *
- * <p>Java's {@code ServerSocketChannel} in blocking mode wraps {@code accept} and converts
- * {@code EAGAIN} to a null return (no connection available). In non-blocking mode it throws
- * {@code SocketTimeoutException} or returns null. Application code that inspects the return value
- * rather than catching exceptions will silently discard the connection attempt, which this
- * injection makes visible by observing that the accept loop does not increment its connection
- * counter.
+ * <p>Java's {@code ServerSocketChannel} in blocking mode wraps {@code accept} and converts {@code
+ * EAGAIN} to a null return (no connection available). In non-blocking mode it throws {@code
+ * SocketTimeoutException} or returns null. Application code that inspects the return value rather
+ * than catching exceptions will silently discard the connection attempt, which this injection makes
+ * visible by observing that the accept loop does not increment its connection counter.
  *
  * <h2>Example</h2>
  *

@@ -17,21 +17,21 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * <h2>What this annotation is</h2>
  *
  * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code CLOCK_GETTIME}, effect = OFFSET)
- * tuple. Unlike errno variants the call succeeds (returns 0); the interposer modifies the
- * {@code timespec} struct in-place by adding {@link #deltaMs} to the nanosecond fields before
- * returning it to the caller. No runtime selector-effect validation is needed.
+ * tuple. Unlike errno variants the call succeeds (returns 0); the interposer modifies the {@code
+ * timespec} struct in-place by adding {@link #deltaMs} to the nanosecond fields before returning it
+ * to the caller. No runtime selector-effect validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
- *       extension to upload {@code libchaos-time.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
  *       at the dynamic-linker level.
  *   <li>On every intercepted {@code clock_gettime} call, after the real kernel call succeeds, the
- *       interposer adds {@link #deltaMs} milliseconds to the returned {@code tv_sec} / {@code tv_nsec}
- *       fields (carrying nanoseconds correctly into seconds).
+ *       interposer adds {@link #deltaMs} milliseconds to the returned {@code tv_sec} / {@code
+ *       tv_nsec} fields (carrying nanoseconds correctly into seconds).
  *   <li>The modified {@code timespec} is returned to the application with a {@code 0} return value.
  * </ol>
  *
@@ -40,17 +40,17 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * <ul>
  *   <li>A negative {@link #deltaMs} rewinds the clock — deadlines that were in the future suddenly
  *       appear to be in the past, causing premature expiry of leases, tokens, and TTLs.
- *   <li>A positive {@link #deltaMs} advances the clock — heartbeats appear to have been sent far
- *       in the future, which can cause Raft followers to grant elections to the wrong node.
+ *   <li>A positive {@link #deltaMs} advances the clock — heartbeats appear to have been sent far in
+ *       the future, which can cause Raft followers to grant elections to the wrong node.
  *   <li>Distributed locking implementations (Redission, etcd leases) are the primary targets:
  *       assert that the lock is not released prematurely and that the fencing token is still valid.
  *   <li>JWT expiry, certificate validity windows, and signed-URL expiry are also affected by
  *       wall-clock skew; assert that these checks account for configurable clock drift tolerance.
  * </ul>
  *
- * <p>In production, clock skew between nodes is a real operational hazard: NTP re-sync can jump
- * the wall clock by seconds; PTP hardware timestamps drift when the NIC clock diverges from the
- * CPU TSC; VM live migrations may introduce a burst of skew during the migration pause.
+ * <p>In production, clock skew between nodes is a real operational hazard: NTP re-sync can jump the
+ * wall clock by seconds; PTP hardware timestamps drift when the NIC clock diverges from the CPU
+ * TSC; VM live migrations may introduce a burst of skew during the migration pause.
  *
  * <h2>Deep technical dive</h2>
  *
@@ -60,14 +60,15 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * the actual elapsed time, triggering a spurious leader election. A positive offset on the leader
  * causes it to believe its heartbeat is ahead of schedule and may delay sending the next one.
  *
- * <p>Distributed locks backed by Redis (SET with EX) use wall-clock time for TTL computation.
- * If the client clock is rewound by even 1 second, a lock acquired with a 2-second TTL may
- * already appear expired before the application has had a chance to use it. The
- * {@code defaultValue} of {@code -60_000L} (−60 s) exercises this class of bugs in an obvious way.
+ * <p>Distributed locks backed by Redis (SET with EX) use wall-clock time for TTL computation. If
+ * the client clock is rewound by even 1 second, a lock acquired with a 2-second TTL may already
+ * appear expired before the application has had a chance to use it. The {@code defaultValue} of
+ * {@code -60_000L} (−60 s) exercises this class of bugs in an obvious way.
  *
- * <p>Java's {@code System.currentTimeMillis()} reads {@code CLOCK_REALTIME}; {@code System.nanoTime()}
- * reads {@code CLOCK_MONOTONIC}. Both are affected by this annotation because the interposer
- * applies to all {@code clock_gettime} variants regardless of which clock id is passed.
+ * <p>Java's {@code System.currentTimeMillis()} reads {@code CLOCK_REALTIME}; {@code
+ * System.nanoTime()} reads {@code CLOCK_MONOTONIC}. Both are affected by this annotation because
+ * the interposer applies to all {@code clock_gettime} variants regardless of which clock id is
+ * passed.
  *
  * <p>Sibling annotation: {@link ChaosClockGettimeLatency} increases the cost of reading the clock
  * without changing the value; useful for testing timeout over-runs rather than clock drift.

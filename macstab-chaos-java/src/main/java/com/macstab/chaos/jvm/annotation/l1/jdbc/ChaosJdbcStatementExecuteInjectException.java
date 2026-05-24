@@ -28,9 +28,9 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>Before every call to {@code java.sql.Statement#execute(String)},
- *       {@code executeQuery(String)}, or {@code executeUpdate(String)} inside the target
- *       container's JVM, the chaos agent intercepts the calling thread.
+ *   <li>Before every call to {@code java.sql.Statement#execute(String)}, {@code
+ *       executeQuery(String)}, or {@code executeUpdate(String)} inside the target container's JVM,
+ *       the chaos agent intercepts the calling thread.
  *   <li>The agent reflectively instantiates the class named by {@link #exceptionClassName()} with
  *       the message from {@link #message()} and throws it immediately.
  *   <li>No SQL is sent to the database; no JDBC network activity occurs; the connection remains
@@ -41,16 +41,16 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>Every statement execute throws the configured exception; Spring's {@code JdbcTemplate}
- *       translates it via {@code SQLExceptionTranslator} — assert that the correct
- *       {@code DataAccessException} subtype is produced.
+ *       translates it via {@code SQLExceptionTranslator} — assert that the correct {@code
+ *       DataAccessException} subtype is produced.
  *   <li>JPA/Hibernate: an exception during flush causes the persistence context to be marked
  *       invalid; assert that the entity manager is closed and not reused.
- *   <li>Inject {@code java.sql.SQLTimeoutException} to test query-timeout handling without
- *       waiting for a real slow query; assert that the application increments a timeout counter.
- *   <li><strong>Production failure mode:</strong> a database schema migration runs
- *       {@code ALTER TABLE} acquiring an exclusive lock; concurrent application queries receive
- *       {@code com.mysql.cj.jdbc.exceptions.MySQLTimeoutException}; the application must
- *       return 503 and not leave open transactions that hold row locks themselves.
+ *   <li>Inject {@code java.sql.SQLTimeoutException} to test query-timeout handling without waiting
+ *       for a real slow query; assert that the application increments a timeout counter.
+ *   <li><strong>Production failure mode:</strong> a database schema migration runs {@code ALTER
+ *       TABLE} acquiring an exclusive lock; concurrent application queries receive {@code
+ *       com.mysql.cj.jdbc.exceptions.MySQLTimeoutException}; the application must return 503 and
+ *       not leave open transactions that hold row locks themselves.
  * </ul>
  *
  * <h2>Deep technical dive</h2>
@@ -67,11 +67,11 @@ import com.macstab.chaos.jvm.api.OperationType;
  * database-resource errors on DB2, or vendor-specific codes. The injected message can carry a
  * synthetic SQL state if the exception class exposes a {@code getSQLState()} method.
  *
- * <p>Hibernate's {@code SessionImpl#flush()} catches {@code HibernateException} but allows
- * {@code SQLException} to propagate (wrapped in a {@code JDBCException}); the persistence context
- * is then in an indeterminate state. Injecting {@code java.sql.SQLException} during flush
- * exercises the code paths that handle dirty session state, including whether the application
- * correctly evicts the session from the session factory's cache.
+ * <p>Hibernate's {@code SessionImpl#flush()} catches {@code HibernateException} but allows {@code
+ * SQLException} to propagate (wrapped in a {@code JDBCException}); the persistence context is then
+ * in an indeterminate state. Injecting {@code java.sql.SQLException} during flush exercises the
+ * code paths that handle dirty session state, including whether the application correctly evicts
+ * the session from the session factory's cache.
  *
  * <p>When combined with a probability modifier, sporadic statement failures simulate transient
  * database errors. Frameworks using Spring Retry will retry {@code TransientDataAccessException}
@@ -104,8 +104,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

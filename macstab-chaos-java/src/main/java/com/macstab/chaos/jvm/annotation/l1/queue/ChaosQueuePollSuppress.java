@@ -20,15 +20,16 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <h2>What this annotation is</h2>
  *
- * <p>An L1 JVM chaos primitive in the {@code QUEUE} selector family targeting the {@code QUEUE_POLL}
- * operation with the {@code suppress} effect. It intercepts every non-blocking {@code poll()} call
- * on {@code BlockingQueue} implementations in the container JVM and short-circuits the operation,
- * returning {@code null} to the caller as if the queue were empty. No item is removed from the
- * queue; no lock is acquired; no queue state changes. The queue's actual occupancy is unchanged.
+ * <p>An L1 JVM chaos primitive in the {@code QUEUE} selector family targeting the {@code
+ * QUEUE_POLL} operation with the {@code suppress} effect. It intercepts every non-blocking {@code
+ * poll()} call on {@code BlockingQueue} implementations in the container JVM and short-circuits the
+ * operation, returning {@code null} to the caller as if the queue were empty. No item is removed
+ * from the queue; no lock is acquired; no queue state changes. The queue's actual occupancy is
+ * unchanged.
  *
- * <p>This directly replicates the normal empty-queue return from {@code poll()} — the same
- * {@code null} a consumer sees when no items are available — without requiring the queue to
- * actually be empty.
+ * <p>This directly replicates the normal empty-queue return from {@code poll()} — the same {@code
+ * null} a consumer sees when no items are available — without requiring the queue to actually be
+ * empty.
  *
  * <h2>What chaos this applies</h2>
  *
@@ -54,8 +55,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       on every iteration, effectively becoming a no-op consumer.
  *   <li>Consumer code that treats {@code null} as "no work available" and spins will busy-spin at
  *       maximum CPU rate without processing any items.
- *   <li>Producers blocked on a full-queue {@code put} continue to block — the consumer's
- *       suppressed poll frees no space.
+ *   <li>Producers blocked on a full-queue {@code put} continue to block — the consumer's suppressed
+ *       poll frees no space.
  * </ul>
  *
  * <p><strong>Production failure mode:</strong> a polling consumer reads from an in-memory queue
@@ -72,19 +73,19 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p><strong>Queue growth dynamics.</strong> With all {@code poll} calls suppressed and producers
  * still running, a bounded queue will fill at the producer's rate. Once full, producers calling
- * {@code offer} will receive {@code false} and producers calling {@code put} will block. This
- * turns the suppress into a secondary stress on the offer/put paths — tests should verify
- * producer back-pressure handling as well.
+ * {@code offer} will receive {@code false} and producers calling {@code put} will block. This turns
+ * the suppress into a secondary stress on the offer/put paths — tests should verify producer
+ * back-pressure handling as well.
  *
- * <p><strong>Interaction with timed poll.</strong> The timed variant {@code poll(timeout, unit)}
- * is also suppressed — it returns {@code null} without waiting for the timeout and without
- * removing any item.
+ * <p><strong>Interaction with timed poll.</strong> The timed variant {@code poll(timeout, unit)} is
+ * also suppressed — it returns {@code null} without waiting for the timeout and without removing
+ * any item.
  *
- * <p><strong>Distinguishing from siblings.</strong> {@link ChaosQueuePollDelay} allows the poll
- * to succeed or return {@code null} naturally, just later. {@link ChaosQueueTakeGate} blocks the
- * consumer on the blocking {@code take} path until explicitly released. This annotation is the
- * only one that makes the consumer believe the queue is empty when it is not — suitable for
- * testing empty-return handling without actually draining the queue.
+ * <p><strong>Distinguishing from siblings.</strong> {@link ChaosQueuePollDelay} allows the poll to
+ * succeed or return {@code null} naturally, just later. {@link ChaosQueueTakeGate} blocks the
+ * consumer on the blocking {@code take} path until explicitly released. This annotation is the only
+ * one that makes the consumer believe the queue is empty when it is not — suitable for testing
+ * empty-return handling without actually draining the queue.
  *
  * <h2>Example</h2>
  *
@@ -106,7 +107,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java container image — the container must run a JVM process.
  * </ul>

@@ -24,17 +24,17 @@ import com.macstab.chaos.jvm.api.OperationType;
  * their return value at exit — one typed annotation per (selector family, operation type, effect)
  * tuple. It is the return-value counterpart to {@link ChaosMethodEnterInjectException}: where that
  * annotation aborts the call with an exception, this one lets the method run to completion and then
- * silently substitutes the real return value with a synthetic one chosen by the configured
- * {@link com.macstab.chaos.jvm.api.ChaosEffect.ReturnValueStrategy}. Declared on a test class or
- * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until
- * {@code afterAll}/{@code afterEach} respectively.
+ * silently substitutes the real return value with a synthetic one chosen by the configured {@link
+ * com.macstab.chaos.jvm.api.ChaosEffect.ReturnValueStrategy}. Declared on a test class or
+ * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until {@code
+ * afterAll}/{@code afterEach} respectively.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>The chaos agent scans every class loaded by the target JVM whose binary name starts with
- *       {@link #classPattern()} and instruments every method whose name starts with
- *       {@link #methodNamePattern()}.
+ *       {@link #classPattern()} and instruments every method whose name starts with {@link
+ *       #methodNamePattern()}.
  *   <li>The method body executes normally — all side effects, database writes, and state mutations
  *       take place as usual.
  *   <li>At the instrumented method exit — immediately before the return value is handed back to the
@@ -58,17 +58,17 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li><strong>Null pointer propagation.</strong> When {@code NULL} is applied to a method that
- *       returns an object, every caller that dereferences the result without a null check will throw
- *       {@code NullPointerException}; assert that the NPE is caught at a boundary and converted to
- *       a safe error response rather than propagating to the client.
+ *       returns an object, every caller that dereferences the result without a null check will
+ *       throw {@code NullPointerException}; assert that the NPE is caught at a boundary and
+ *       converted to a safe error response rather than propagating to the client.
  *   <li><strong>Numeric overflow or underflow.</strong> {@code BOUNDARY_MAX}/{@code BOUNDARY_MIN}
  *       applied to a method that returns a count, index, or price exposes arithmetic assumptions;
  *       assert that the consumer of that value guards against overflow (e.g. that a shopping-cart
  *       total does not silently wrap around to a negative price).
  *   <li><strong>Empty collection starvation.</strong> Returning an empty list from a data-fetching
  *       method causes any loop or stream over the result to short-circuit immediately; assert that
- *       the UI or downstream processor handles zero-result responses rather than displaying a
- *       blank page without explanation.
+ *       the UI or downstream processor handles zero-result responses rather than displaying a blank
+ *       page without explanation.
  *   <li><strong>Silent data loss.</strong> The method body ran and committed state (e.g. a database
  *       write succeeded), but the caller received {@code null}; assert that the caller does not
  *       assume failure and retry the write, causing a duplicate.
@@ -99,10 +99,10 @@ import com.macstab.chaos.jvm.api.OperationType;
  * this is the key difference from an exception-injection scenario and makes this annotation
  * particularly useful for testing idempotency and at-most-once delivery guarantees.
  *
- * <p>Pattern matching uses prefix semantics identical to
- * {@link ChaosMethodEnterInjectException}: {@code classPattern = "com.example.repo"} matches all
- * classes in that package and its sub-packages. Both patterns must be set carefully to avoid
- * corrupting framework-internal methods that share the package prefix.
+ * <p>Pattern matching uses prefix semantics identical to {@link ChaosMethodEnterInjectException}:
+ * {@code classPattern = "com.example.repo"} matches all classes in that package and its
+ * sub-packages. Both patterns must be set carefully to avoid corrupting framework-internal methods
+ * that share the package prefix.
  *
  * <p>Combining a return-corruption rule with a heap or GC pressure stressor on the same test class
  * is valid; the agent merges all active rules into a single {@code ChaosPlan}. The combination
@@ -126,8 +126,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
- *       agent before the container JVM starts; omitting it causes an
- *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       agent before the container JVM starts; omitting it causes an {@code
+ *       ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
  *       {@code @JvmAgentChaos}.
  *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the

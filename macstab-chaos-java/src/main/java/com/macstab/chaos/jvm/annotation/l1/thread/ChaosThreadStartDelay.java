@@ -15,8 +15,8 @@ import com.macstab.chaos.jvm.api.OperationType;
 
 /**
  * Parks the calling thread inside {@link Thread#start()} for the configured number of milliseconds
- * before the new thread enters the runnable state — every thread launch takes at least
- * {@code delayMs} longer than normal.
+ * before the new thread enters the runnable state — every thread launch takes at least {@code
+ * delayMs} longer than normal.
  *
  * <h2>What this annotation is</h2>
  *
@@ -25,8 +25,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  * to transition a {@code Thread} object from the NEW state to the RUNNABLE state and artificially
  * inflates the latency of that transition. The annotation is declared on the test class or method
  * alongside a container annotation and is active for the lifetime of the annotated scope
- * (class-scope: {@code beforeAll} to {@code afterAll}; method-scope: {@code beforeEach} to
- * {@code afterEach}).
+ * (class-scope: {@code beforeAll} to {@code afterAll}; method-scope: {@code beforeEach} to {@code
+ * afterEach}).
  *
  * <h2>What chaos this applies</h2>
  *
@@ -36,8 +36,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <ol>
  *   <li>Execution is captured before the native {@code start0()} call that hands the thread to the
  *       OS scheduler.
- *   <li>The delay effect calls {@code LockSupport.parkNanos} on the <em>calling</em> thread
- *       (the thread invoking {@code start()}) for the configured duration in milliseconds.
+ *   <li>The delay effect calls {@code LockSupport.parkNanos} on the <em>calling</em> thread (the
+ *       thread invoking {@code start()}) for the configured duration in milliseconds.
  *   <li>After the park returns, control falls through to the real {@code start0()} call and the new
  *       thread enters the runnable state normally.
  * </ol>
@@ -52,8 +52,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *   <li>The newly started thread itself runs normally once the delay elapses; assert that the
  *       thread's work eventually completes to distinguish this from a reject.
  *   <li>Timeout-guarded thread-creation paths (e.g. connection pool warm-up) may time out before
- *       {@code start()} returns; assert that a {@code TimeoutException} is raised, not a
- *       {@code NullPointerException} from a thread that never started.
+ *       {@code start()} returns; assert that a {@code TimeoutException} is raised, not a {@code
+ *       NullPointerException} from a thread that never started.
  * </ul>
  *
  * <p><strong>Production failure mode this simulates:</strong> a heavily loaded Linux kernel where
@@ -73,16 +73,16 @@ import com.macstab.chaos.jvm.api.OperationType;
  * which may trigger pool-size checks or rejection policies if the pool's task queue fills during
  * the delay window.
  *
- * <p><strong>Distinction from {@code ChaosThreadStartReject}.</strong> The delay effect always
- * lets the thread start eventually. The reject effect throws before {@code start0()} executes, so
- * the thread never enters the runnable state. Use delay to test latency tolerance; use reject to
- * test error handling in the thread-creation path.
+ * <p><strong>Distinction from {@code ChaosThreadStartReject}.</strong> The delay effect always lets
+ * the thread start eventually. The reject effect throws before {@code start0()} executes, so the
+ * thread never enters the runnable state. Use delay to test latency tolerance; use reject to test
+ * error handling in the thread-creation path.
  *
- * <p><strong>Interaction with virtual threads.</strong> This annotation targets
- * {@code java.lang.Thread#start()} and therefore also fires for virtual threads created via
- * {@code Thread.ofVirtual().start(runnable)} on JDK 21+, because virtual thread launch goes
- * through the same {@code start()} method. Use {@code @ChaosVirtualThreadStartDelay} to target
- * only virtual threads without affecting platform threads.
+ * <p><strong>Interaction with virtual threads.</strong> This annotation targets {@code
+ * java.lang.Thread#start()} and therefore also fires for virtual threads created via {@code
+ * Thread.ofVirtual().start(runnable)} on JDK 21+, because virtual thread launch goes through the
+ * same {@code start()} method. Use {@code @ChaosVirtualThreadStartDelay} to target only virtual
+ * threads without affecting platform threads.
  *
  * <p><strong>Cascading effects on thread pools.</strong> An {@code Executors.newCachedThreadPool()}
  * spawns a new thread per submitted task when all existing workers are busy. With a 200 ms start
@@ -112,7 +112,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java container image — the container must run a JVM process.
  * </ul>

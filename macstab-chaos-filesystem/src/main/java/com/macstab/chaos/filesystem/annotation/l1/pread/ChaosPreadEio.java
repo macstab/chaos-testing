@@ -14,30 +14,30 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code EIO} into {@code pread(2)}, causing the call to return {@code -1} with
- * {@code errno = EIO} as if the storage device returned a hardware I/O error while reading the
- * data blocks at the requested file offset — indicating a bad sector, storage controller failure,
- * or network filesystem backend read error.
+ * Injects {@code EIO} into {@code pread(2)}, causing the call to return {@code -1} with {@code
+ * errno = EIO} as if the storage device returned a hardware I/O error while reading the data blocks
+ * at the requested file offset — indicating a bad sector, storage controller failure, or network
+ * filesystem backend read error.
  *
  * <h2>What this annotation is</h2>
  *
  * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code PREAD}, errno = {@code EIO})
- * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
- * {@code pread} call; when it fires the interposer returns {@code -1} with {@code errno = EIO}
- * without performing any real kernel operation. No runtime operation-errno validation is needed.
+ * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted {@code
+ * pread} call; when it fires the interposer returns {@code -1} with {@code errno = EIO} without
+ * performing any real kernel operation. No runtime operation-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
- *   <li>On each intercepted {@code pread} call a Bernoulli trial with probability {@link #probability}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = EIO}.
+ *   <li>On each intercepted {@code pread} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = EIO}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -64,17 +64,17 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * <p>In production, {@code EIO} from {@code pread} occurs when a disk sector has been marked
  * reallocated and the spare sector pool is exhausted (the SMART reallocated sectors count reaches
  * the drive's limit), when an NFS server returns a read error and the client propagates it as
- * {@code EIO}, and when a RAID array loses enough members that a stripe cannot be reconstructed
- * and the kernel returns {@code EIO} to the reader.
+ * {@code EIO}, and when a RAID array loses enough members that a stripe cannot be reconstructed and
+ * the kernel returns {@code EIO} to the reader.
  *
  * <h2>Deep technical dive</h2>
  *
  * <p>{@code pread(2)} is the positional variant of {@code read(2)}: it reads from a caller-supplied
  * offset rather than the file's current position, and does not modify the file position. This makes
  * it safe for concurrent use by multiple threads reading from different parts of the same file
- * without locking around the {@code lseek}/{@code read} pair. Database storage engines use
- * {@code pread} to issue concurrent page reads from multiple worker threads, each specifying the
- * page's exact file offset.
+ * without locking around the {@code lseek}/{@code read} pair. Database storage engines use {@code
+ * pread} to issue concurrent page reads from multiple worker threads, each specifying the page's
+ * exact file offset.
  *
  * <p>When the block device reports a medium error for the physical sectors that back the requested
  * file offset, the kernel's block I/O layer propagates the error to the filesystem layer, which

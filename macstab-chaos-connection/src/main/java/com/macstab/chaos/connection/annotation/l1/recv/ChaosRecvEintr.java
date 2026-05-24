@@ -14,41 +14,41 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code EINTR} into {@code recv(2)}, causing the call to return {@code -1} with
- * {@code errno = EINTR} as if a signal was delivered to the thread while it was waiting for data,
+ * Injects {@code EINTR} into {@code recv(2)}, causing the call to return {@code -1} with {@code
+ * errno = EINTR} as if a signal was delivered to the thread while it was waiting for data,
  * interrupting the blocking receive before any data was transferred.
  *
  * <h2>What this annotation is</h2>
  *
  * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code RECV}, errno = {@code EINTR})
- * tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted
- * {@code recv} call; when it fires the interposer returns {@code -1} with {@code errno = EINTR}
- * without performing any real kernel operation. No runtime operation-errno validation is needed.
+ * tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted {@code
+ * recv} call; when it fires the interposer returns {@code -1} with {@code errno = EINTR} without
+ * performing any real kernel operation. No runtime operation-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
- *       extension to upload {@code libchaos-net.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
- *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
- *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
- *       {@code poll} at the dynamic-linker level.
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket}, {@code
+ *       bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and {@code poll} at
+ *       the dynamic-linker level.
  *   <li>On each intercepted {@code recv} call a Bernoulli trial with probability {@link #toxicity}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = EINTR}.
+ *       is conducted; when it fires the interposer returns {@code -1} and sets {@code errno =
+ *       EINTR}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
  *   <li>{@code EINTR} is a retriable interrupt — the connection is not affected and no data was
- *       transferred; the application must retry the {@code recv} call immediately. Assert that
- *       the retry loop is unconditional and does not count EINTR against any retry budget.
+ *       transferred; the application must retry the {@code recv} call immediately. Assert that the
+ *       retry loop is unconditional and does not count EINTR against any retry budget.
  *   <li>Native C libraries that use glibc's {@code SA_RESTART} flag handle {@code EINTR}
  *       transparently by restarting the syscall; Java's runtime sets {@code SA_RESTART} for most
- *       signals, so Java applications rarely see {@code EINTR} from {@code recv} in practice.
- *       This injection tests the case where a signal handler installs without {@code SA_RESTART}.
+ *       signals, so Java applications rarely see {@code EINTR} from {@code recv} in practice. This
+ *       injection tests the case where a signal handler installs without {@code SA_RESTART}.
  *   <li>Assert that the application's I/O timeout accounting correctly subtracts elapsed time when
  *       retrying after {@code EINTR}, so that a burst of EINTR interruptions does not cause the
  *       overall operation to succeed despite consuming the timeout budget.
@@ -57,8 +57,8 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *       after an EINTR from recv.
  * </ul>
  *
- * <p>In production, {@code EINTR} from {@code recv} occurs when signals are delivered frequently
- * to the blocking thread — common in processes that use SIGALRM for internal timers, SIGCHLD from
+ * <p>In production, {@code EINTR} from {@code recv} occurs when signals are delivered frequently to
+ * the blocking thread — common in processes that use SIGALRM for internal timers, SIGCHLD from
  * child process exits, or SIGUSR1/SIGUSR2 for custom notifications. JVM processes that use signals
  * for garbage collection pauses (G1GC) and safepoints also generate signal traffic that can
  * interrupt blocking syscalls.
@@ -66,20 +66,22 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * <h2>Deep technical dive</h2>
  *
  * <p>POSIX specifies that a blocking {@code recv} interrupted by a signal shall return {@code -1}
- * with {@code errno = EINTR} if no data has been transferred. Unlike other error codes, {@code EINTR}
- * does not indicate a problem with the socket or the connection; it is simply a notification that a
- * signal was handled while the thread was waiting. The canonical response is to check whether the
- * application is shutting down (via a volatile flag) and, if not, restart the {@code recv} call.
+ * with {@code errno = EINTR} if no data has been transferred. Unlike other error codes, {@code
+ * EINTR} does not indicate a problem with the socket or the connection; it is simply a notification
+ * that a signal was handled while the thread was waiting. The canonical response is to check
+ * whether the application is shutting down (via a volatile flag) and, if not, restart the {@code
+ * recv} call.
  *
  * <p>Glibc automatically restarts syscalls interrupted by signals when the signal action was
  * installed with {@code SA_RESTART}. However, signals installed without {@code SA_RESTART} (or
- * POSIX signals like {@code SIGALRM} that clear the restart flag) will cause the interrupted
- * {@code recv} to return {@code EINTR} even through glibc. The JVM uses {@code SA_RESTART} for most
+ * POSIX signals like {@code SIGALRM} that clear the restart flag) will cause the interrupted {@code
+ * recv} to return {@code EINTR} even through glibc. The JVM uses {@code SA_RESTART} for most
  * internal signals but GC-related signals may interrupt syscalls on some JVM configurations.
  *
- * <p>Java wraps native {@code recv} calls in a loop that retries on {@code EINTR}; application-level
- * Java code therefore rarely sees {@code EINTR} propagated through the Java I/O API. This injection
- * is primarily relevant for JNI code or native agents that call {@code recv} directly.
+ * <p>Java wraps native {@code recv} calls in a loop that retries on {@code EINTR};
+ * application-level Java code therefore rarely sees {@code EINTR} propagated through the Java I/O
+ * API. This injection is primarily relevant for JNI code or native agents that call {@code recv}
+ * directly.
  *
  * <h2>Example</h2>
  *

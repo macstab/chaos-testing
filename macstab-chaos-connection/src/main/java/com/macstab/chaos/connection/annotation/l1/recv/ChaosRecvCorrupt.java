@@ -18,21 +18,21 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * <h2>What this annotation is</h2>
  *
  * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code RECV}, effect = CORRUPTION)
- * tuple. The injection operates at two granularities: a Bernoulli trial with probability
- * {@link #toxicity} gates whether any corruption is applied to the current {@code recv} call; when
- * it fires, each byte in the returned buffer is independently subjected to a bit-flip with
- * probability {@link #rate}. The corruption occurs after the real kernel call has returned
- * successfully — the byte count is not changed, only the content.
+ * tuple. The injection operates at two granularities: a Bernoulli trial with probability {@link
+ * #toxicity} gates whether any corruption is applied to the current {@code recv} call; when it
+ * fires, each byte in the returned buffer is independently subjected to a bit-flip with probability
+ * {@link #rate}. The corruption occurs after the real kernel call has returned successfully — the
+ * byte count is not changed, only the content.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
- *       extension to upload {@code libchaos-net.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
- *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
- *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
- *       {@code poll} at the dynamic-linker level.
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket}, {@code
+ *       bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and {@code poll} at
+ *       the dynamic-linker level.
  *   <li>On each intercepted {@code recv} call a Bernoulli trial with probability {@link #toxicity}
  *       is conducted; when it fires, each byte in the returned buffer is independently flipped with
  *       probability {@link #rate} before being returned to the caller.
@@ -55,19 +55,20 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *       repeated corruption triggers a circuit-breaker or connection replacement.
  * </ul>
  *
- * <p>In production, byte-level corruption occurs on faulty network hardware (NIC buffers,
- * switch fabrics, cable connections) and on storage devices used for network packet buffering.
- * While TCP's 16-bit checksum catches most corruption, it has a non-trivial false-negative rate
- * for multi-bit errors; this injection simulates corruption that passes TCP's checksum and reaches
- * the application.
+ * <p>In production, byte-level corruption occurs on faulty network hardware (NIC buffers, switch
+ * fabrics, cable connections) and on storage devices used for network packet buffering. While TCP's
+ * 16-bit checksum catches most corruption, it has a non-trivial false-negative rate for multi-bit
+ * errors; this injection simulates corruption that passes TCP's checksum and reaches the
+ * application.
  *
  * <h2>Deep technical dive</h2>
  *
  * <p>TCP provides a 16-bit one's complement checksum over the pseudo-header, TCP header, and data.
  * The probability that a burst of bit errors passes TCP's checksum undetected is approximately
  * 1/65536 for random independent errors; structured errors (e.g., swapped bytes, inverted words)
- * can pass with much higher probability. This injection simulates corruption that has already passed
- * the TCP checksum, representing the subset of real-world corruption events that TCP does not catch.
+ * can pass with much higher probability. This injection simulates corruption that has already
+ * passed the TCP checksum, representing the subset of real-world corruption events that TCP does
+ * not catch.
  *
  * <p>Application-layer framing protocols are the primary defence: Redis RESP uses {@code \r\n}
  * delimiters and integer length prefixes that are likely to be corrupted by byte flips; HTTP/2 uses
@@ -77,8 +78,8 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * does not cause crashes, memory overreads, or data loss.
  *
  * <p>The two-level probability model ({@link #toxicity} per-call, {@link #rate} per-byte) allows
- * independent control of how frequently corruption events occur and how severe each event is.
- * A low toxicity (e.g., 0.01) with moderate rate (e.g., 0.01) produces infrequent but noticeable
+ * independent control of how frequently corruption events occur and how severe each event is. A low
+ * toxicity (e.g., 0.01) with moderate rate (e.g., 0.01) produces infrequent but noticeable
  * corruption; a high toxicity with very low rate (e.g., 0.001) produces frequent events with
  * typically one corrupted byte per event.
  *

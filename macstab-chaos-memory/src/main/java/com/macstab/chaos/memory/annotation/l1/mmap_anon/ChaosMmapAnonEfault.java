@@ -18,40 +18,45 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * causing the calling code to observe a bad-address failure from anonymous memory allocation.
  *
  * <h2>What this annotation is</h2>
+ *
  * L1 libchaos-memory primitive — one (selector = {@code MMAP_ANON}, errno = {@code EFAULT}) tuple.
  * Compile-time safety: this annotation exists only because {@code EFAULT} is a defined POSIX result
  * for {@code mmap}; invalid combinations have no annotation class and cannot be expressed.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
- *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.
  *   <li>On each {@code mmap(MAP_ANONYMOUS)} call the interposer runs a Bernoulli trial with
- *       probability {@link #probability}.</li>
- *   <li>When the trial fires, the interposer sets {@code errno = EFAULT} and returns
- *       {@code MAP_FAILED} without issuing the real kernel call.</li>
- *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 14,
- *       {@code strerror}: "Bad address".</li>
+ *       probability {@link #probability}.
+ *   <li>When the trial fires, the interposer sets {@code errno = EFAULT} and returns {@code
+ *       MAP_FAILED} without issuing the real kernel call.
+ *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 14, {@code strerror}:
+ *       "Bad address".
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
  *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = EFAULT} (14); callers that do not
- *       check the return value will dereference {@code MAP_FAILED} and receive {@code SIGSEGV}.</li>
+ *       check the return value will dereference {@code MAP_FAILED} and receive {@code SIGSEGV}.
  *   <li>glibc {@code malloc} and JVM allocators treat this identically to {@code ENOMEM} —
- *       allocation fails, {@code NULL} or {@code OutOfMemoryError} is propagated.</li>
+ *       allocation fails, {@code NULL} or {@code OutOfMemoryError} is propagated.
  *   <li>Assert that the application does not segfault: verify a clean error log or error response
- *       is produced rather than an unexpected process crash.</li>
+ *       is produced rather than an unexpected process crash.
  * </ul>
+ *
  * Production failure mode: JIT-compiled code or native extensions passing a stale or
- * garbage-collected pointer as the {@code addr} hint to {@code mmap} can trigger a real
- * {@code EFAULT} from the kernel — a latent bug that is nearly impossible to reproduce without
- * fault injection.
+ * garbage-collected pointer as the {@code addr} hint to {@code mmap} can trigger a real {@code
+ * EFAULT} from the kernel — a latent bug that is nearly impossible to reproduce without fault
+ * injection.
  *
  * <h2>Deep technical dive</h2>
+ *
  * <p>POSIX specifies {@code EFAULT} for {@code mmap} when the {@code addr} argument references an
- * address outside the process's accessible address space. For anonymous mappings with a {@code NULL}
- * hint (the overwhelmingly common case), the kernel never raises {@code EFAULT} — the hint is
+ * address outside the process's accessible address space. For anonymous mappings with a {@code
+ * NULL} hint (the overwhelmingly common case), the kernel never raises {@code EFAULT} — the hint is
  * simply ignored. Real {@code EFAULT} on anonymous mappings occurs only when caller-supplied hints
  * point into kernel-space or into unmapped regions, which indicates a programmer error rather than
  * a resource limit.
@@ -63,16 +68,16 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * during integration testing without causing persistent test failures.
  *
  * <p>The JVM wraps its internal {@code mmap} calls inside native helper functions that translate
- * all {@code MAP_FAILED} returns into a single {@code OutOfMemoryError} without distinguishing
- * the specific errno. For JVM targets the observable difference from {@code ENOMEM} is therefore
- * only in native/JVM-internal crash logs. For C/C++ targets the distinction is significant:
+ * all {@code MAP_FAILED} returns into a single {@code OutOfMemoryError} without distinguishing the
+ * specific errno. For JVM targets the observable difference from {@code ENOMEM} is therefore only
+ * in native/JVM-internal crash logs. For C/C++ targets the distinction is significant:
  * POSIX-correct code should handle {@code EFAULT} as an unrecoverable programmer error, not as a
  * transient resource shortage.
  *
  * <p>Compared with siblings: {@code EFAULT} signals an addressing error (process state is suspect);
  * {@code ENOMEM} signals resource exhaustion (retry after freeing memory may help); {@code EINVAL}
- * signals an argument error (a specific argument violates constraints). {@code EFAULT} is the
- * most severe — if a real {@code EFAULT} occurs, the process may already be in a corrupt state.
+ * signals an argument error (a specific argument violates constraints). {@code EFAULT} is the most
+ * severe — if a real {@code EFAULT} occurs, the process may already be in a corrupt state.
  *
  * <h2>Example</h2>
  *
@@ -91,6 +96,7 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * <p><strong>Probability guidance:</strong> very low rates (1e-5 to 1e-4); {@code EFAULT} at high
  * probability will cause the container process to crash with {@code SIGSEGV} if any code path
  * dereferences {@code MAP_FAILED}.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
  * the test class.

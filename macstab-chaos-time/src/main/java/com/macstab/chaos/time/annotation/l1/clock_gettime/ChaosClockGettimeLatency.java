@@ -20,15 +20,15 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code CLOCK_GETTIME}, effect =
  * LATENCY) tuple. Unlike errno variants, the latency primitive always invokes the real kernel call
- * after the configured delay — the timespec is correctly populated and the return value is 0.
- * No runtime selector-effect validation is needed.
+ * after the configured delay — the timespec is correctly populated and the return value is 0. No
+ * runtime selector-effect validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
- *       extension to upload {@code libchaos-time.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
  *       at the dynamic-linker level.
  *   <li>On every intercepted {@code clock_gettime} call the interposer sleeps for {@link #delayMs}
@@ -51,8 +51,8 @@ import com.macstab.chaos.time.model.TimeSelector;
  * </ul>
  *
  * <p>In production, elevated latency in {@code clock_gettime} is caused by vDSO unavailability
- * (e.g. inside a VM with broken TSC calibration, forcing a real syscall), kernel scheduling
- * jitter under memory pressure, or CPU frequency scaling that slows the TSC counter.
+ * (e.g. inside a VM with broken TSC calibration, forcing a real syscall), kernel scheduling jitter
+ * under memory pressure, or CPU frequency scaling that slows the TSC counter.
  *
  * <h2>Deep technical dive</h2>
  *
@@ -62,15 +62,15 @@ import com.macstab.chaos.time.model.TimeSelector;
  * scheduler contention (a fully saturated CFS runqueue) the latency can reach hundreds of
  * microseconds.
  *
- * <p>{@code libchaos-time.so} injects the delay at the C library wrapper level, uniformly
- * affecting both the vDSO fast path and the real-syscall fallback. Values of 10–200 ms correspond
- * to the wall-clock cost of a context switch storm or a page fault cascade; values above 1 s
- * simulate a frozen clock (e.g. a VM pause or a live-migration hiccup).
+ * <p>{@code libchaos-time.so} injects the delay at the C library wrapper level, uniformly affecting
+ * both the vDSO fast path and the real-syscall fallback. Values of 10–200 ms correspond to the
+ * wall-clock cost of a context switch storm or a page fault cascade; values above 1 s simulate a
+ * frozen clock (e.g. a VM pause or a live-migration hiccup).
  *
- * <p>Frameworks most sensitive to {@code clock_gettime} latency: Caffeine's window-TinyLFU
- * expiry (samples the clock on every cache access), Micrometer's {@code Timer} (records wall-clock
- * on every observation), Netty's {@code HashedWheelTimer} (advances the wheel on every tick),
- * Redis client socket timeout computation, and JVM GC safepoint bias calculations.
+ * <p>Frameworks most sensitive to {@code clock_gettime} latency: Caffeine's window-TinyLFU expiry
+ * (samples the clock on every cache access), Micrometer's {@code Timer} (records wall-clock on
+ * every observation), Netty's {@code HashedWheelTimer} (advances the wheel on every tick), Redis
+ * client socket timeout computation, and JVM GC safepoint bias calculations.
  *
  * <p>Sibling annotation: {@link ChaosClockGettimeOffset} skews the returned timestamp by a fixed
  * delta instead of slowing the call; useful for simulating clock drift between cluster nodes.

@@ -14,9 +14,9 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Intercepts {@code HttpClient.sendAsync()} and delays the completion of the returned
- * {@code CompletableFuture} by {@link #delayMs()} milliseconds, inflating async HTTP latency
- * without blocking the calling thread.
+ * Intercepts {@code HttpClient.sendAsync()} and delays the completion of the returned {@code
+ * CompletableFuture} by {@link #delayMs()} milliseconds, inflating async HTTP latency without
+ * blocking the calling thread.
  *
  * <h2>What this annotation is</h2>
  *
@@ -31,11 +31,11 @@ import com.macstab.chaos.jvm.api.OperationType;
  *   <li>Before every call to {@code java.net.http.HttpClient#sendAsync(HttpRequest,
  *       HttpResponse.BodyHandler)} inside the target container's JVM, the chaos agent intercepts
  *       the call on the calling thread.
- *   <li>The interceptor sleeps for a duration drawn from [{@link #delayMs()},
- *       {@link #maxDelayMs()}] on the calling thread before {@code sendAsync} is invoked, so the
- *       delay is observable as time-to-{@code CompletableFuture} rather than time-to-completion.
- *   <li>The HTTP I/O then proceeds normally on the JDK's internal async I/O threads; the
- *       {@code CompletableFuture} completes when the response arrives.
+ *   <li>The interceptor sleeps for a duration drawn from [{@link #delayMs()}, {@link
+ *       #maxDelayMs()}] on the calling thread before {@code sendAsync} is invoked, so the delay is
+ *       observable as time-to-{@code CompletableFuture} rather than time-to-completion.
+ *   <li>The HTTP I/O then proceeds normally on the JDK's internal async I/O threads; the {@code
+ *       CompletableFuture} completes when the response arrives.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -43,10 +43,10 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <ul>
  *   <li>The {@code CompletableFuture} returned by {@code sendAsync()} is obtained later than
  *       expected; reactive pipelines chained to it are delayed by the injected amount.
- *   <li>Timeout stages in reactive pipelines ({@code orTimeout()}, {@code completeOnTimeout()})
- *       may fire; assert that the application handles {@code TimeoutException} from these stages.
- *   <li>Caller threads are blocked during the pre-send delay, so executor queues grow if many
- *       async sends are dispatched simultaneously — assert that bounded executors do not starve.
+ *   <li>Timeout stages in reactive pipelines ({@code orTimeout()}, {@code completeOnTimeout()}) may
+ *       fire; assert that the application handles {@code TimeoutException} from these stages.
+ *   <li>Caller threads are blocked during the pre-send delay, so executor queues grow if many async
+ *       sends are dispatched simultaneously — assert that bounded executors do not starve.
  *   <li><strong>Production failure mode:</strong> a reactive microservice fans out 20 async HTTP
  *       calls per request; with 3 s of injected delay each, all 20 futures complete late,
  *       triggering a cascade of {@code orTimeout()} completions and filling dead-letter queues.
@@ -54,12 +54,12 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>{@code HttpClient.sendAsync()} in {@code jdk.internal.net.http.HttpClientImpl} submits work
- * to the client's internal executor and returns a {@code MinimalFuture} immediately. The chaos
- * agent intercepts the public {@code sendAsync} method before the submission, sleeping on the
- * calling thread so that the delay appears as latency in obtaining the future rather than latency
- * in the future's completion. This distinction matters for reactive frameworks that start
- * timeout clocks at future-acquisition time.
+ * <p>{@code HttpClient.sendAsync()} in {@code jdk.internal.net.http.HttpClientImpl} submits work to
+ * the client's internal executor and returns a {@code MinimalFuture} immediately. The chaos agent
+ * intercepts the public {@code sendAsync} method before the submission, sleeping on the calling
+ * thread so that the delay appears as latency in obtaining the future rather than latency in the
+ * future's completion. This distinction matters for reactive frameworks that start timeout clocks
+ * at future-acquisition time.
  *
  * <p>Because the sleep occurs before the executor submission, the JDK's HTTP/2 multiplexer and
  * async read pipeline are unaffected during the sleep — only the moment of submission is delayed.
@@ -69,8 +69,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <p>The difference between {@link ChaosHttpClientSendDelay} and this annotation is the threading
  * model: {@code Send} blocks the caller synchronously, while {@code SendAsync} blocks only until
  * the future is returned, after which the caller thread is free. When measuring impact on
- * reactive-pipeline throughput, {@code SendAsync} delay is the correct primitive because it
- * matches how production code uses {@code sendAsync()}.
+ * reactive-pipeline throughput, {@code SendAsync} delay is the correct primitive because it matches
+ * how production code uses {@code sendAsync()}.
  *
  * <p>Combining this with {@link ChaosHttpClientSendAsyncReject} in separate test methods allows
  * verification of both slow-response and no-response paths through the same application code.
@@ -98,8 +98,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

@@ -15,30 +15,30 @@ import com.macstab.chaos.jvm.api.OperationType;
 
 /**
  * Intercepts every {@link java.util.concurrent.locks.LockSupport#park(Object)} call and holds the
- * calling thread on a test-controlled latch indefinitely — every AQS lock acquisition,
- * {@code CompletableFuture.get()}, and {@code BlockingQueue.take()} stalls until the test releases
- * the gate or {@code maxBlockMs} elapses.
+ * calling thread on a test-controlled latch indefinitely — every AQS lock acquisition, {@code
+ * CompletableFuture.get()}, and {@code BlockingQueue.take()} stalls until the test releases the
+ * gate or {@code maxBlockMs} elapses.
  *
  * <h2>What this annotation is</h2>
  *
  * <p>An L1 JVM chaos primitive targeting the {@code MONITOR} selector family with the {@code gate}
- * effect applied to the {@code THREAD_PARK} operation. It intercepts
- * {@code LockSupport.park(Object)} — the single primitive underlying all JUC concurrency — and
- * parks the calling thread on an agent-managed latch that the test controls externally. The
- * annotation is declared on the test class or method alongside a container annotation and is active
- * for the lifetime of the annotated scope.
+ * effect applied to the {@code THREAD_PARK} operation. It intercepts {@code
+ * LockSupport.park(Object)} — the single primitive underlying all JUC concurrency — and parks the
+ * calling thread on an agent-managed latch that the test controls externally. The annotation is
+ * declared on the test class or method alongside a container annotation and is active for the
+ * lifetime of the annotated scope.
  *
  * <h2>What chaos this applies</h2>
  *
- * <p>The JVM agent installs a Byte Buddy interceptor on {@code LockSupport.park(Object)} and
- * {@code LockSupport.parkNanos(Object, long)}. When the interceptor fires:
+ * <p>The JVM agent installs a Byte Buddy interceptor on {@code LockSupport.park(Object)} and {@code
+ * LockSupport.parkNanos(Object, long)}. When the interceptor fires:
  *
  * <ol>
  *   <li>Execution is captured before the native park stub executes.
- *   <li>The gate effect parks the current thread on the agent's internal gate latch
- *       ({@code LockSupport.park(gateObject)}).
- *   <li>The thread remains parked until the test calls the gate release API, or until the
- *       {@code maxBlockMs} safety timeout fires — whichever comes first.
+ *   <li>The gate effect parks the current thread on the agent's internal gate latch ({@code
+ *       LockSupport.park(gateObject)}).
+ *   <li>The thread remains parked until the test calls the gate release API, or until the {@code
+ *       maxBlockMs} safety timeout fires — whichever comes first.
  *   <li>After gate release, the real {@code LockSupport.park} or {@code parkNanos} executes with
  *       the original arguments, allowing the JUC operation to proceed normally.
  * </ol>
@@ -46,11 +46,11 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>All threads that call {@code LockSupport.park} are stalled — assert that
- *       {@code future.get(500, MILLISECONDS)} throws {@code TimeoutException} while the gate is
- *       held.
+ *   <li>All threads that call {@code LockSupport.park} are stalled — assert that {@code
+ *       future.get(500, MILLISECONDS)} throws {@code TimeoutException} while the gate is held.
  *   <li>Thread dumps show application threads in {@code WAITING (parking)} state with the gate
- *       object as the blocker — assert via {@code ThreadMXBean.getThreadInfo(...).getBlockedCount()}.
+ *       object as the blocker — assert via {@code
+ *       ThreadMXBean.getThreadInfo(...).getBlockedCount()}.
  *   <li>After gate release, all parked threads unblock and their operations complete — assert
  *       successful completion within a short window after release.
  *   <li>AQS-based operations that have a timed variant (e.g. {@code tryLock(timeout)}) exhaust
@@ -58,26 +58,26 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       needing the gate to be released.
  * </ul>
  *
- * <p><strong>Production failure mode this simulates:</strong> a global JVM pause caused by a
- * long GC cycle or Kubernetes node pressure freeze — all application threads that attempt to
- * acquire locks or await futures stop making progress simultaneously, causing HTTP request queues
- * to fill, health-check endpoints to time out, and the orchestrator to restart the pod before
- * the freeze ends.
+ * <p><strong>Production failure mode this simulates:</strong> a global JVM pause caused by a long
+ * GC cycle or Kubernetes node pressure freeze — all application threads that attempt to acquire
+ * locks or await futures stop making progress simultaneously, causing HTTP request queues to fill,
+ * health-check endpoints to time out, and the orchestrator to restart the pod before the freeze
+ * ends.
  *
  * <h2>Deep technical dive</h2>
  *
  * <p><strong>Interception point.</strong> {@code LockSupport.park} is the single choke point for
  * all JUC blocking. The gate interceptor replaces the original park with a park on the gate's
  * internal latch object. This means the thread's blocker object (visible in thread dumps as the
- * {@code "waiting on"} address) is the gate latch rather than the original AQS node or
- * {@code CompletableFuture} — diagnostics must account for this substitution.
+ * {@code "waiting on"} address) is the gate latch rather than the original AQS node or {@code
+ * CompletableFuture} — diagnostics must account for this substitution.
  *
- * <p><strong>Gate release broadcast.</strong> The test calls the gate release API (over the
- * agent's HTTP management endpoint). The agent iterates all threads currently parked on the gate
- * latch and calls {@code LockSupport.unpark} on each one. Unparks are broadcast — all waiting
- * threads are released simultaneously, unlike a real monitor where threads are released one at a
- * time. After release, each thread re-enters the real {@code LockSupport.park}, which may itself
- * block if the AQS predecessor has not yet released the lock.
+ * <p><strong>Gate release broadcast.</strong> The test calls the gate release API (over the agent's
+ * HTTP management endpoint). The agent iterates all threads currently parked on the gate latch and
+ * calls {@code LockSupport.unpark} on each one. Unparks are broadcast — all waiting threads are
+ * released simultaneously, unlike a real monitor where threads are released one at a time. After
+ * release, each thread re-enters the real {@code LockSupport.park}, which may itself block if the
+ * AQS predecessor has not yet released the lock.
  *
  * <p><strong>Distinction from {@code ChaosThreadParkDelay}.</strong> The delay effect adds a
  * fixed-duration pre-park and then continues normally. The gate effect holds threads indefinitely
@@ -86,15 +86,15 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p><strong>Timed-park override.</strong> {@code parkNanos(blocker, nanos)} is also intercepted.
  * The gate substitutes an untimed park on the gate latch; the original {@code nanos} deadline is
- * discarded during the gate hold. After the gate releases, the original timed park is invoked —
- * but if the deadline has already elapsed, the timed park returns immediately (the thread observes
- * a spurious wakeup from its AQS perspective).
+ * discarded during the gate hold. After the gate releases, the original timed park is invoked — but
+ * if the deadline has already elapsed, the timed park returns immediately (the thread observes a
+ * spurious wakeup from its AQS perspective).
  *
  * <p><strong>Impact on virtual threads.</strong> Virtual threads park by yielding their carrier.
- * Gate-parking a virtual thread holds the carrier occupied (pinned, if the virtual thread is
- * inside a {@code synchronized} block) until the gate releases. With many virtual threads all
- * hitting the gate simultaneously, the carrier pool can be fully occupied by pinned virtual
- * threads, blocking all other virtual-thread scheduling.
+ * Gate-parking a virtual thread holds the carrier occupied (pinned, if the virtual thread is inside
+ * a {@code synchronized} block) until the gate releases. With many virtual threads all hitting the
+ * gate simultaneously, the carrier pool can be fully occupied by pinned virtual threads, blocking
+ * all other virtual-thread scheduling.
  *
  * <h2>Example</h2>
  *
@@ -120,7 +120,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java container image — the container must run a JVM process.
  * </ul>

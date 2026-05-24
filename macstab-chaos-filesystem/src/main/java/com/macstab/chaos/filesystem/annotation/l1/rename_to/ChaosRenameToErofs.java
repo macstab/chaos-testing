@@ -14,34 +14,33 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code EROFS} into {@code rename(2)} as observed from the destination (new) path,
- * causing the call to return {@code -1} with {@code errno = EROFS} as if the filesystem containing
- * the destination directory has been remounted read-only and the kernel cannot create the new
- * directory entry.
+ * Injects {@code EROFS} into {@code rename(2)} as observed from the destination (new) path, causing
+ * the call to return {@code -1} with {@code errno = EROFS} as if the filesystem containing the
+ * destination directory has been remounted read-only and the kernel cannot create the new directory
+ * entry.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code RENAME_TO}, errno =
- * {@code EROFS}) tuple. The {@code RENAME_TO} operation models the destination-path permission
- * check of {@code rename(2)}: the VFS must be able to add the new name to the destination
- * directory, which requires write access to that directory — impossible on a read-only filesystem.
- * A Bernoulli trial with probability {@link #probability} is run on each intercepted {@code rename}
- * call; when it fires the interposer returns {@code -1} with {@code errno = EROFS} without
- * performing any real kernel operation.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code RENAME_TO}, errno = {@code
+ * EROFS}) tuple. The {@code RENAME_TO} operation models the destination-path permission check of
+ * {@code rename(2)}: the VFS must be able to add the new name to the destination directory, which
+ * requires write access to that directory — impossible on a read-only filesystem. A Bernoulli trial
+ * with probability {@link #probability} is run on each intercepted {@code rename} call; when it
+ * fires the interposer returns {@code -1} with {@code errno = EROFS} without performing any real
+ * kernel operation.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
- *   <li>On each intercepted {@code rename} call a Bernoulli trial with probability {@link #probability}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = EROFS}, simulating a read-only filesystem blocking the destination-directory
- *       write.
+ *   <li>On each intercepted {@code rename} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = EROFS}, simulating a read-only filesystem blocking the destination-directory write.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -55,45 +54,44 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *       destination directory is on a read-only filesystem; the source (temporary) file still
  *       exists and the destination is unchanged. Assert that the application cleans up the
  *       temporary file and alerts operators rather than leaving orphan temporaries.
- *   <li>Applications that move completed work files from a staging directory to an output
- *       directory must handle {@code EROFS} on the output directory; assert that the staging
- *       file is preserved (not deleted) and that a health-check or metrics endpoint reflects
- *       the degraded write capability.
+ *   <li>Applications that move completed work files from a staging directory to an output directory
+ *       must handle {@code EROFS} on the output directory; assert that the staging file is
+ *       preserved (not deleted) and that a health-check or metrics endpoint reflects the degraded
+ *       write capability.
  *   <li>Assert that the error path identifies the destination filesystem as the failing component
  *       and does not misattribute the failure to the source file or a permission policy.
  * </ul>
  *
- * <p>In production, {@code EROFS} from {@code rename} on the destination path is identical in
- * cause to the source-path variant: the kernel has remounted the filesystem read-only after
- * detecting write errors. The distinction between {@code RENAME_FROM} and {@code RENAME_TO}
- * matters only when source and destination are on different filesystems (cross-device rename,
- * which fails with {@code EXDEV} in normal operation) — on the same filesystem both checks
- * occur atomically within a single VFS transaction.
+ * <p>In production, {@code EROFS} from {@code rename} on the destination path is identical in cause
+ * to the source-path variant: the kernel has remounted the filesystem read-only after detecting
+ * write errors. The distinction between {@code RENAME_FROM} and {@code RENAME_TO} matters only when
+ * source and destination are on different filesystems (cross-device rename, which fails with {@code
+ * EXDEV} in normal operation) — on the same filesystem both checks occur atomically within a single
+ * VFS transaction.
  *
  * <h2>Deep technical dive</h2>
  *
  * <p>{@code rename(2)} within a single filesystem is a single atomic VFS transaction that removes
  * the source name and installs the destination name in a single journal commit. The kernel checks
  * writability of both the source directory (to remove the old entry) and the destination directory
- * (to add the new entry) before committing the transaction. If either check fails with {@code EROFS},
- * the entire rename fails atomically — no partial state is possible.
+ * (to add the new entry) before committing the transaction. If either check fails with {@code
+ * EROFS}, the entire rename fails atomically — no partial state is possible.
  *
- * <p>When source and destination are on different filesystems {@code rename(2)} fails with
- * {@code EXDEV}; applications using the write-temporary-then-rename pattern must handle both
- * {@code EROFS} and {@code EXDEV} on the rename call, as well as the cleanup of the temporary
- * file in both cases.
+ * <p>When source and destination are on different filesystems {@code rename(2)} fails with {@code
+ * EXDEV}; applications using the write-temporary-then-rename pattern must handle both {@code EROFS}
+ * and {@code EXDEV} on the rename call, as well as the cleanup of the temporary file in both cases.
  *
- * <p>Java's {@code Files.move(Path, Path, ATOMIC_MOVE)} wraps {@code rename(2)} and throws
- * {@code AtomicMoveNotSupportedException} for {@code EXDEV} but {@code IOException("Read-only
- * file system")} for {@code EROFS}. Application code that catches {@code IOException} from
- * {@code Files.move} must inspect the cause to distinguish a read-only filesystem (requires
- * operator intervention) from a transient I/O error (may be retried).
+ * <p>Java's {@code Files.move(Path, Path, ATOMIC_MOVE)} wraps {@code rename(2)} and throws {@code
+ * AtomicMoveNotSupportedException} for {@code EXDEV} but {@code IOException("Read-only file
+ * system")} for {@code EROFS}. Application code that catches {@code IOException} from {@code
+ * Files.move} must inspect the cause to distinguish a read-only filesystem (requires operator
+ * intervention) from a transient I/O error (may be retried).
  *
  * <p>Compared with {@link ChaosRenameToEacces}: {@code EROFS} signals that the entire destination
  * filesystem is read-only (structural failure); {@code EACCES} signals that the specific
  * destination directory denied write access (policy failure, potentially fixable by changing
- * permissions). Use {@code EROFS} to test the global degradation path; use {@code EACCES} to
- * test per-directory ACL handling.
+ * permissions). Use {@code EROFS} to test the global degradation path; use {@code EACCES} to test
+ * per-directory ACL handling.
  *
  * <h2>Example</h2>
  *

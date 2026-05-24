@@ -15,71 +15,75 @@ import com.macstab.chaos.memory.model.MmapErrno;
 
 /**
  * Injects {@code EPERM} into {@code madvise} calls intercepted by libchaos-memory, causing the
- * calling code to observe an operation-not-permitted failure when providing a memory usage hint
- * to the kernel.
+ * calling code to observe an operation-not-permitted failure when providing a memory usage hint to
+ * the kernel.
  *
  * <h2>What this annotation is</h2>
- * L1 libchaos-memory primitive — one (selector = {@code MADVISE}, errno = {@code EPERM})
- * tuple. The {@code MADVISE} selector intercepts {@code madvise} calls only, leaving
- * {@code mmap}, {@code munmap}, and {@code mprotect} unaffected. Compile-time safety: invalid
- * selector/errno combinations have no annotation class.
+ *
+ * L1 libchaos-memory primitive — one (selector = {@code MADVISE}, errno = {@code EPERM}) tuple. The
+ * {@code MADVISE} selector intercepts {@code madvise} calls only, leaving {@code mmap}, {@code
+ * munmap}, and {@code mprotect} unaffected. Compile-time safety: invalid selector/errno
+ * combinations have no annotation class.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
- *       interposing the libc {@code madvise} wrapper at the dynamic-linker level.</li>
- *   <li>On each {@code madvise} call the interposer runs a Bernoulli trial with probability
- *       {@link #probability}.</li>
+ *       interposing the libc {@code madvise} wrapper at the dynamic-linker level.
+ *   <li>On each {@code madvise} call the interposer runs a Bernoulli trial with probability {@link
+ *       #probability}.
  *   <li>When the trial fires, the interposer sets {@code errno = EPERM} and returns {@code -1}
- *       without issuing the real kernel call.</li>
- *   <li>The calling code receives: {@code -1} return, {@code errno} 1,
- *       {@code strerror}: "Operation not permitted"; the hint is not applied.</li>
+ *       without issuing the real kernel call.
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 1, {@code strerror}: "Operation
+ *       not permitted"; the hint is not applied.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
- *   <li>{@code madvise} returns {@code -1}; {@code errno = EPERM} (1); the operation class
- *       is structurally disallowed for this process — retrying without a privilege change
- *       will not succeed.</li>
- *   <li>Applications that use {@code madvise(MADV_HWPOISON)} for memory fault testing must
- *       only call this from privileged processes; assert that an {@code EPERM} response is
- *       handled gracefully and the test is skipped or reported as unsupported rather than
- *       causing a test assertion failure.</li>
+ *   <li>{@code madvise} returns {@code -1}; {@code errno = EPERM} (1); the operation class is
+ *       structurally disallowed for this process — retrying without a privilege change will not
+ *       succeed.
+ *   <li>Applications that use {@code madvise(MADV_HWPOISON)} for memory fault testing must only
+ *       call this from privileged processes; assert that an {@code EPERM} response is handled
+ *       gracefully and the test is skipped or reported as unsupported rather than causing a test
+ *       assertion failure.
  *   <li>Assert that the application distinguishes {@code EPERM} from {@code EACCES} in its
  *       diagnostic — {@code EPERM} indicates the operation class is denied for this process
- *       (requires policy change); {@code EACCES} indicates credentials or LSM policy on a
- *       specific target (may be fixable with different credentials).</li>
+ *       (requires policy change); {@code EACCES} indicates credentials or LSM policy on a specific
+ *       target (may be fixable with different credentials).
  * </ul>
- * Production failure mode: a Kubernetes pod drops capabilities (e.g. removing all capabilities
- * with {@code securityContext.capabilities.drop: ALL}) that are required for privileged
- * {@code madvise} operations such as {@code MADV_HWPOISON}; the application's memory-fault
- * testing subsystem silently fails to inject faults, causing fault-injection tests to always
- * pass (false positives) rather than reporting an unsupported operation.
+ *
+ * Production failure mode: a Kubernetes pod drops capabilities (e.g. removing all capabilities with
+ * {@code securityContext.capabilities.drop: ALL}) that are required for privileged {@code madvise}
+ * operations such as {@code MADV_HWPOISON}; the application's memory-fault testing subsystem
+ * silently fails to inject faults, causing fault-injection tests to always pass (false positives)
+ * rather than reporting an unsupported operation.
  *
  * <h2>Deep technical dive</h2>
- * <p>POSIX specifies {@code EPERM} for {@code madvise} when the process does not have the
- * required privilege for the requested operation. On Linux, the primary case is
- * {@code MADV_HWPOISON}: this advice asks the kernel to simulate hardware memory poisoning
- * of the specified pages — a destructive operation that requires {@code CAP_SYS_ADMIN}.
- * Without the capability, the kernel returns {@code -EPERM} immediately without modifying
- * any page state.
  *
- * <p>A second source of {@code EPERM} is the {@code MADV_GUARD_INSTALL} advice added in
- * Linux 6.13 (experimental), which installs guard regions to detect buffer overflows; this
- * operation may require specific capabilities or seccomp-filter permissions on hardened
- * deployments. Future advice values that require privilege escalation will return
- * {@code EPERM} on processes that lack the required capabilities.
+ * <p>POSIX specifies {@code EPERM} for {@code madvise} when the process does not have the required
+ * privilege for the requested operation. On Linux, the primary case is {@code MADV_HWPOISON}: this
+ * advice asks the kernel to simulate hardware memory poisoning of the specified pages — a
+ * destructive operation that requires {@code CAP_SYS_ADMIN}. Without the capability, the kernel
+ * returns {@code -EPERM} immediately without modifying any page state.
  *
- * <p>Unlike other {@code madvise} failures, {@code EPERM} for privileged operations is a
- * permanent denial for the current process class — no retry with the same arguments will
- * succeed. Applications that probe for capability availability at startup using
- * {@code madvise(MADV_HWPOISON)}  must cache the {@code EPERM} result and skip the
- * privileged memory-fault-injection path for the lifetime of the process.
+ * <p>A second source of {@code EPERM} is the {@code MADV_GUARD_INSTALL} advice added in Linux 6.13
+ * (experimental), which installs guard regions to detect buffer overflows; this operation may
+ * require specific capabilities or seccomp-filter permissions on hardened deployments. Future
+ * advice values that require privilege escalation will return {@code EPERM} on processes that lack
+ * the required capabilities.
  *
- * <p>Compared with {@code EACCES}: {@code EPERM} is a capability check (the process class
- * is not permitted to issue this type of advice regardless of the target); {@code EACCES}
- * is a credentials/policy check against a specific target. Both are non-fatal for advisory
- * hints; the distinction is operationally significant for runbooks and for capability audits.
+ * <p>Unlike other {@code madvise} failures, {@code EPERM} for privileged operations is a permanent
+ * denial for the current process class — no retry with the same arguments will succeed.
+ * Applications that probe for capability availability at startup using {@code
+ * madvise(MADV_HWPOISON)} must cache the {@code EPERM} result and skip the privileged
+ * memory-fault-injection path for the lifetime of the process.
+ *
+ * <p>Compared with {@code EACCES}: {@code EPERM} is a capability check (the process class is not
+ * permitted to issue this type of advice regardless of the target); {@code EACCES} is a
+ * credentials/policy check against a specific target. Both are non-fatal for advisory hints; the
+ * distinction is operationally significant for runbooks and for capability audits.
  *
  * <h2>Example</h2>
  *
@@ -95,62 +99,12 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1.0 for capability-probe tests (to always exercise
- * the EPERM path); 1e-3 to 1e-2 for steady-state resilience coverage.
+ * <p><strong>Probability guidance:</strong> 1.0 for capability-probe tests (to always exercise the
+ * EPERM path); 1e-3 to 1e-2 for steady-state resilience coverage.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
  * the test class.
- *
- * @author Christian Schnapka - Macstab GmbH
- * @see MemoryErrnoBinding
- * @see com.macstab.chaos.memory.model.MemoryRule#errno(MemorySelector, MmapErrno, double)
- */
- *
- * <p><strong>How this occurs (mechanism):</strong> the
- * {@code @SyscallLevelChaos(LibchaosLib.MEMORY)} annotation on the container declaration causes
- * {@code ChaosTestingExtension} to upload {@code libchaos-memory.so} into the container and prepend
- * it to {@code LD_PRELOAD} before the container process starts. The shared library interposes the
- * libc wrappers for {@code mmap}, {@code munmap}, {@code mprotect}, and {@code madvise} at the
- * dynamic-linker level. This annotation then installs a rule via {@code
- * AdvancedMemoryChaos.apply(container, rule)} that configures the interposer with the selector and
- * probability you specify.
- *
- * <p><strong>What is required:</strong>
- *
- * <ul>
- *   <li><strong>Linux host</strong> — libchaos uses {@code LD_PRELOAD} which does not apply on
- *       macOS or Windows containers; annotate the test class with {@code @DisabledOnOs(OS.WINDOWS)}
- *       and be aware of macOS Docker limitations.
- *   <li><strong>{@code @SyscallLevelChaos(LibchaosLib.MEMORY)}</strong> on the container annotation
- *       (e.g. {@code @RedisStandalone}) — this installs the shared library before container start;
- *       omitting it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
- *   <li><strong>glibc-based container image</strong> — musl-based images (Alpine default) do not
- *       honour {@code LD_PRELOAD} for statically-linked binaries; use a glibc variant or the
- *       Debian-slim image instead.
- *   <li><strong>{@code macstab-chaos-memory} on the test classpath</strong> — without it the
- *       translator class cannot be loaded and {@code ChaosTestingExtension} throws {@code
- *       ClassNotFoundException} wrapped in {@code ExtensionConfigurationException}.
- * </ul>
- *
- * <h2>Example</h2>
- *
- * <pre>{@code
- * @RedisStandalone
- * @SyscallLevelChaos(LibchaosLib.MEMORY)
- * @ChaosMadviseEperm(probability = 0.001)
- * class MemoryFaultTest {
- *   @Test
- *   void appHandlesEpermOnAlloc(RedisConnectionInfo info) { ... }
- * }
- * }</pre>
- *
- * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2; privilege faults surface rarely in
- * production but are hard to test.
- *
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
- * the test class. Use the repeatable form ({@code @ChaosMadviseEperms}) to bind different
- * probabilities to different containers simultaneously.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see MemoryErrnoBinding

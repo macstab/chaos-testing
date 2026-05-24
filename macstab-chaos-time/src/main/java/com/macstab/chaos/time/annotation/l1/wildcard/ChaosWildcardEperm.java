@@ -14,23 +14,24 @@ import com.macstab.chaos.time.model.TimeErrno;
 import com.macstab.chaos.time.model.TimeSelector;
 
 /**
- * Injects {@code EPERM} into every interposed time syscall ({@code clock_gettime}, {@code nanosleep},
- * {@code usleep}), causing each to return {@code -1} with {@code errno = EPERM} as if the process
- * lacked permission to perform the time operation.
+ * Injects {@code EPERM} into every interposed time syscall ({@code clock_gettime}, {@code
+ * nanosleep}, {@code usleep}), causing each to return {@code -1} with {@code errno = EPERM} as if
+ * the process lacked permission to perform the time operation.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code WILDCARD}, errno = {@code EPERM})
- * tuple. The {@code WILDCARD} selector matches all three interposed time syscalls simultaneously —
- * equivalent to applying {@link ChaosClockGettimeEperm}, {@link ChaosNanosleepEperm}, and
- * {@link ChaosUsleepEperm} in a single annotation. No runtime selector-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code WILDCARD}, errno = {@code
+ * EPERM}) tuple. The {@code WILDCARD} selector matches all three interposed time syscalls
+ * simultaneously — equivalent to applying {@link ChaosClockGettimeEperm}, {@link
+ * ChaosNanosleepEperm}, and {@link ChaosUsleepEperm} in a single annotation. No runtime
+ * selector-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
- *       extension to upload {@code libchaos-time.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
  *       at the dynamic-linker level.
  *   <li>On every intercepted call to any of the three syscalls a Bernoulli trial with probability
@@ -44,14 +45,14 @@ import com.macstab.chaos.time.model.TimeSelector;
  * <ul>
  *   <li>Every time-related call may return {@code EPERM}; the application must treat it as a
  *       non-retriable capability failure and degrade gracefully.
- *   <li>Profiling agents, metrics collectors, and APM tracers that rely on high-resolution time
- *       may disable themselves when all time syscalls fail with permission denied.
+ *   <li>Profiling agents, metrics collectors, and APM tracers that rely on high-resolution time may
+ *       disable themselves when all time syscalls fail with permission denied.
  *   <li>Assert that the application detects the capability failure at startup or on first use,
  *       selects a fallback behavior, and does not crash or busy-spin.
  * </ul>
  *
- * <p>In production, simultaneous {@code EPERM} across all time syscalls signals a severely
- * hardened seccomp profile that blocks all time-related operations — unusual but possible in
+ * <p>In production, simultaneous {@code EPERM} across all time syscalls signals a severely hardened
+ * seccomp profile that blocks all time-related operations — unusual but possible in
  * ultra-locked-down container environments.
  *
  * <h2>Deep technical dive</h2>
@@ -59,12 +60,12 @@ import com.macstab.chaos.time.model.TimeSelector;
  * <p>The {@code EPERM} wildcard simulates the scenario of a container that has had all time
  * syscalls removed from its seccomp allowlist. This is an extreme hardening posture that some
  * security-sensitive workloads apply (e.g. cryptographic operations that must not rely on system
- * time to avoid timing side channels). In this environment, any time-dependent logic must either
- * be removed or receive time from a privileged sidecar process.
+ * time to avoid timing side channels). In this environment, any time-dependent logic must either be
+ * removed or receive time from a privileged sidecar process.
  *
  * <p>Injecting {@code EPERM} across all three time calls exercises the capability-detection paths
- * of all time-using libraries simultaneously. A JVM that cannot read the clock will typically
- * fall back to a lower-resolution OS interface; profilers that cannot sleep will either stop or
+ * of all time-using libraries simultaneously. A JVM that cannot read the clock will typically fall
+ * back to a lower-resolution OS interface; profilers that cannot sleep will either stop or
  * busy-poll. Testing this scenario prevents production regressions when the seccomp profile is
  * tightened.
  *

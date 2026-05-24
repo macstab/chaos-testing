@@ -19,21 +19,21 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code CLOCK_GETTIME}, errno =
- * {@code EAGAIN}) tuple. The tuple is safe by construction — {@code EAGAIN} is a valid transient
- * POSIX result indicating resource temporarily unavailable. No runtime selector-errno validation is
+ * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code CLOCK_GETTIME}, errno = {@code
+ * EAGAIN}) tuple. The tuple is safe by construction — {@code EAGAIN} is a valid transient POSIX
+ * result indicating resource temporarily unavailable. No runtime selector-errno validation is
  * needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
- *       extension to upload {@code libchaos-time.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
  *       at the dynamic-linker level.
- *   <li>On every intercepted {@code clock_gettime} call a Bernoulli trial with probability
- *       {@link #probability} is conducted.
+ *   <li>On every intercepted {@code clock_gettime} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted.
  *   <li>When the trial fires the interposer returns {@code -1} and sets {@code errno = EAGAIN}
  *       without invoking the real kernel call — the application sees a transient kernel failure.
  * </ol>
@@ -52,25 +52,25 @@ import com.macstab.chaos.time.model.TimeSelector;
  * </ul>
  *
  * <p>In production, {@code EAGAIN} from {@code clock_gettime} is an extremely unusual signal
- * primarily seen in severely resource-constrained kernels or exotic POSIX emulation layers;
- * it is more common in {@code nanosleep} and {@code usleep} under signal pressure.
+ * primarily seen in severely resource-constrained kernels or exotic POSIX emulation layers; it is
+ * more common in {@code nanosleep} and {@code usleep} under signal pressure.
  *
  * <h2>Deep technical dive</h2>
  *
  * <p>Standard Linux kernels do not return {@code EAGAIN} from {@code clock_gettime} under normal
- * conditions; the call is synchronous and does not queue work. Injecting it via
- * {@code libchaos-time.so} therefore exercises defensive code paths that application developers
- * write to handle any possible {@code -1} return — regardless of whether the specific errno is
- * expected in this context.
+ * conditions; the call is synchronous and does not queue work. Injecting it via {@code
+ * libchaos-time.so} therefore exercises defensive code paths that application developers write to
+ * handle any possible {@code -1} return — regardless of whether the specific errno is expected in
+ * this context.
  *
  * <p>This is particularly valuable for verifying that generated gRPC stubs, ORM layers, and
- * framework internals do not hard-code the assumption that {@code clock_gettime} always succeeds.
- * A surprising number of production bugs occur when an unconditionally assumed syscall fails for
- * the first time on a degraded host.
+ * framework internals do not hard-code the assumption that {@code clock_gettime} always succeeds. A
+ * surprising number of production bugs occur when an unconditionally assumed syscall fails for the
+ * first time on a degraded host.
  *
- * <p>Sibling annotations: {@link ChaosClockGettimeEinval} targets invalid clock ids;
- * {@link ChaosClockGettimeEintr} (via wildcard) targets signal interruption;
- * {@link ChaosClockGettimeLatency} injects delay without error, surfacing timeout violations.
+ * <p>Sibling annotations: {@link ChaosClockGettimeEinval} targets invalid clock ids; {@link
+ * ChaosClockGettimeEintr} (via wildcard) targets signal interruption; {@link
+ * ChaosClockGettimeLatency} injects delay without error, surfacing timeout violations.
  *
  * <h2>Example</h2>
  *

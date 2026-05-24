@@ -15,30 +15,30 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
  * Injects {@code EAFNOSUPPORT} into {@code socket(2)}, causing the call to return {@code -1} with
- * {@code errno = EAFNOSUPPORT} as if the requested address family ({@code AF_INET6}, {@code AF_UNIX},
- * etc.) is not compiled into the kernel or is disabled on the host, preventing the socket from
- * being created.
+ * {@code errno = EAFNOSUPPORT} as if the requested address family ({@code AF_INET6}, {@code
+ * AF_UNIX}, etc.) is not compiled into the kernel or is disabled on the host, preventing the socket
+ * from being created.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code SOCKET}, errno = {@code EAFNOSUPPORT})
- * tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted
- * {@code socket} call; when it fires the interposer returns {@code -1} with
- * {@code errno = EAFNOSUPPORT} without performing any real kernel operation. No runtime
- * operation-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code SOCKET}, errno = {@code
+ * EAFNOSUPPORT}) tuple. A Bernoulli trial with probability {@link #toxicity} is run on each
+ * intercepted {@code socket} call; when it fires the interposer returns {@code -1} with {@code
+ * errno = EAFNOSUPPORT} without performing any real kernel operation. No runtime operation-errno
+ * validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
- *       extension to upload {@code libchaos-net.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
- *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
- *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
- *       {@code poll} at the dynamic-linker level.
- *   <li>On each intercepted {@code socket} call a Bernoulli trial with probability {@link #toxicity}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = EAFNOSUPPORT}.
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket}, {@code
+ *       bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and {@code poll} at
+ *       the dynamic-linker level.
+ *   <li>On each intercepted {@code socket} call a Bernoulli trial with probability {@link
+ *       #toxicity} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = EAFNOSUPPORT}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -54,9 +54,10 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *   <li>Assert that the application does not propagate {@code EAFNOSUPPORT} as a generic
  *       "connection failed" error — the distinction between "address family not supported" and
  *       "connection refused" has operational significance for diagnostics.
- *   <li>Container environments that disable IPv6 via {@code sysctl net.ipv6.conf.all.disable_ipv6=1}
- *       will cause {@code socket(AF_INET6)} to return {@code EAFNOSUPPORT}; assert that the
- *       application is configured to tolerate IPv6-disabled environments.
+ *   <li>Container environments that disable IPv6 via {@code sysctl
+ *       net.ipv6.conf.all.disable_ipv6=1} will cause {@code socket(AF_INET6)} to return {@code
+ *       EAFNOSUPPORT}; assert that the application is configured to tolerate IPv6-disabled
+ *       environments.
  * </ul>
  *
  * <p>In production, {@code EAFNOSUPPORT} from {@code socket} occurs when a container or host is
@@ -69,24 +70,25 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <p>The kernel's {@code socket(2)} implementation looks up the requested address family in its
  * protocol family table. If the family (e.g., {@code AF_INET6 = 10}) is not registered — either
- * because the corresponding kernel module ({@code ipv6.ko}) is not loaded or because the kernel
- * was compiled without support — the kernel returns {@code EAFNOSUPPORT}. The error is distinct
- * from {@code EPROTONOSUPPORT}: {@code EAFNOSUPPORT} means the address family itself is unknown,
- * while {@code EPROTONOSUPPORT} means the address family is known but the requested protocol
- * within it is not supported.
+ * because the corresponding kernel module ({@code ipv6.ko}) is not loaded or because the kernel was
+ * compiled without support — the kernel returns {@code EAFNOSUPPORT}. The error is distinct from
+ * {@code EPROTONOSUPPORT}: {@code EAFNOSUPPORT} means the address family itself is unknown, while
+ * {@code EPROTONOSUPPORT} means the address family is known but the requested protocol within it is
+ * not supported.
  *
- * <p>The Happy Eyeballs algorithm (RFC 8305) attempts {@code socket(AF_INET6)} first and falls
- * back to {@code socket(AF_INET)} when the IPv6 attempt fails. If {@code EAFNOSUPPORT} is returned
- * on the IPv6 socket call, a correct implementation should immediately fall back to IPv4 rather
- * than racing the two connections. Many JVM networking libraries implement Happy Eyeballs
- * implicitly through {@code InetAddress.getByName} resolution order; the address family preference
- * is controlled by JVM flags like {@code java.net.preferIPv4Stack} and {@code java.net.preferIPv6Addresses}.
+ * <p>The Happy Eyeballs algorithm (RFC 8305) attempts {@code socket(AF_INET6)} first and falls back
+ * to {@code socket(AF_INET)} when the IPv6 attempt fails. If {@code EAFNOSUPPORT} is returned on
+ * the IPv6 socket call, a correct implementation should immediately fall back to IPv4 rather than
+ * racing the two connections. Many JVM networking libraries implement Happy Eyeballs implicitly
+ * through {@code InetAddress.getByName} resolution order; the address family preference is
+ * controlled by JVM flags like {@code java.net.preferIPv4Stack} and {@code
+ * java.net.preferIPv6Addresses}.
  *
  * <p>Java maps {@code EAFNOSUPPORT} from {@code socket} to a {@code SocketException} with the
- * message "Protocol family unavailable" (glibc) or "Address family not supported by protocol"
- * (on some platforms). Application code that inspects the message text should be aware of this
- * platform variation; inspecting the exception type ({@code SocketException}) and using the
- * address-family context from the connection attempt is more reliable.
+ * message "Protocol family unavailable" (glibc) or "Address family not supported by protocol" (on
+ * some platforms). Application code that inspects the message text should be aware of this platform
+ * variation; inspecting the exception type ({@code SocketException}) and using the address-family
+ * context from the connection attempt is more reliable.
  *
  * <h2>Example</h2>
  *

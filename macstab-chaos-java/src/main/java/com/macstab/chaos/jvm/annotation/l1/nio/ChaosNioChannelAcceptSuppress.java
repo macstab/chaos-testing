@@ -41,25 +41,25 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>The kernel backlog fills as completed TCP handshakes accumulate without being dequeued;
- *       once the backlog is exhausted, the kernel drops SYN packets or sends RST to new
- *       connecting clients; assert that connecting clients observe {@code Connection refused}
- *       errors or connection timeouts depending on kernel configuration.
+ *       once the backlog is exhausted, the kernel drops SYN packets or sends RST to new connecting
+ *       clients; assert that connecting clients observe {@code Connection refused} errors or
+ *       connection timeouts depending on kernel configuration.
  *   <li>Existing established connections are not affected by this annotation; only new inbound
- *       connections are suppressed; assert that already-connected clients continue to exchange
- *       data normally while new clients cannot connect.
- *   <li>The {@code OP_ACCEPT} readiness bit remains set in the selector's ready set; the boss
- *       event loop continues calling {@code accept()} on each selector loop iteration, receiving
- *       {@code null} each time; assert that the boss loop does not spin at 100% CPU in response
- *       to persistent spurious accept readiness signals.
+ *       connections are suppressed; assert that already-connected clients continue to exchange data
+ *       normally while new clients cannot connect.
+ *   <li>The {@code OP_ACCEPT} readiness bit remains set in the selector's ready set; the boss event
+ *       loop continues calling {@code accept()} on each selector loop iteration, receiving {@code
+ *       null} each time; assert that the boss loop does not spin at 100% CPU in response to
+ *       persistent spurious accept readiness signals.
  *   <li>After the fault window closes, the suppressed connections in the kernel backlog are
  *       accepted normally; assert that applications recover gracefully and process the backlogged
  *       connections without dropping them.
  *   <li><strong>Production failure mode:</strong> a thread-pool deadlock inside the Netty
- *       child-channel initializer ({@code channelInitializer.initChannel()}) causes the boss
- *       group to block; from the kernel's perspective, {@code accept()} is not being called; the
- *       listen backlog fills silently; health checks that open new TCP connections report the
- *       server as down while existing long-lived connections continue to work — misleading
- *       operators into thinking there is a network problem rather than an application deadlock.
+ *       child-channel initializer ({@code channelInitializer.initChannel()}) causes the boss group
+ *       to block; from the kernel's perspective, {@code accept()} is not being called; the listen
+ *       backlog fills silently; health checks that open new TCP connections report the server as
+ *       down while existing long-lived connections continue to work — misleading operators into
+ *       thinking there is a network problem rather than an application deadlock.
  * </ul>
  *
  * <h2>Deep technical dive</h2>
@@ -74,23 +74,23 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <p>The kernel's TCP accept queue has two stages: the SYN queue (incomplete handshakes) and the
  * accept queue (completed three-way handshakes). {@code SO_BACKLOG} controls the maximum size of
  * the accept queue on Linux (via {@code /proc/sys/net/core/somaxconn} as an upper bound). When the
- * accept queue is full, the kernel's behaviour is controlled by
- * {@code /proc/sys/net/ipv4/tcp_abort_on_overflow}: if {@code 0}, the kernel drops SYN packets
- * and the client retransmits (apparent timeout); if {@code 1}, the kernel sends RST and the client
- * gets an immediate connection refused.
+ * accept queue is full, the kernel's behaviour is controlled by {@code
+ * /proc/sys/net/ipv4/tcp_abort_on_overflow}: if {@code 0}, the kernel drops SYN packets and the
+ * client retransmits (apparent timeout); if {@code 1}, the kernel sends RST and the client gets an
+ * immediate connection refused.
  *
  * <p>Netty's boss group calls {@code doReadMessages()} from the event loop after the selector
- * signals {@code OP_ACCEPT}. The method loops calling {@code accept()} until it returns
- * {@code null} (meaning the accept queue is drained) or the configured {@code maxMessagesPerRead}
- * is reached. With the suppress effect, every iteration returns {@code null} immediately, so the
- * loop exits after zero messages, but the selector will signal {@code OP_ACCEPT} again on the very
- * next {@code select()} call since connections remain in the queue. This creates a tight
+ * signals {@code OP_ACCEPT}. The method loops calling {@code accept()} until it returns {@code
+ * null} (meaning the accept queue is drained) or the configured {@code maxMessagesPerRead} is
+ * reached. With the suppress effect, every iteration returns {@code null} immediately, so the loop
+ * exits after zero messages, but the selector will signal {@code OP_ACCEPT} again on the very next
+ * {@code select()} call since connections remain in the queue. This creates a tight
  * select-suppress-return loop that, while CPU-cheap, never makes progress.
  *
- * <p>Unlike {@link ChaosNioChannelAcceptDelay} which slows the accept rate, this annotation
- * halts it entirely. The distinction is important for testing: a delay allows recovery tests
- * (connections eventually get through), while suppress models a complete listen-path failure
- * with no recovery until the annotation is removed.
+ * <p>Unlike {@link ChaosNioChannelAcceptDelay} which slows the accept rate, this annotation halts
+ * it entirely. The distinction is important for testing: a delay allows recovery tests (connections
+ * eventually get through), while suppress models a complete listen-path failure with no recovery
+ * until the annotation is removed.
  *
  * <h2>Example</h2>
  *
@@ -112,8 +112,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

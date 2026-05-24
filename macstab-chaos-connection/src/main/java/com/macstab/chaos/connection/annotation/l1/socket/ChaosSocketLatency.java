@@ -29,39 +29,38 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
- *       extension to upload {@code libchaos-net.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
- *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
- *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
- *       {@code poll} at the dynamic-linker level.
- *   <li>On each intercepted {@code socket} call a Bernoulli trial with probability {@link #toxicity}
- *       is conducted; when it fires the interposer sleeps for {@link #delayMs} ms before issuing
- *       the real kernel call.
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket}, {@code
+ *       bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and {@code poll} at
+ *       the dynamic-linker level.
+ *   <li>On each intercepted {@code socket} call a Bernoulli trial with probability {@link
+ *       #toxicity} is conducted; when it fires the interposer sleeps for {@link #delayMs} ms before
+ *       issuing the real kernel call.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
  *   <li>Connection establishment takes longer: because {@code socket} is the first step in
- *       establishing a connection, the injected delay adds directly to the total connection
- *       latency before {@code connect} is even called. Assert that the application's connection
- *       timeout encompasses both socket creation time and the subsequent TCP handshake.
+ *       establishing a connection, the injected delay adds directly to the total connection latency
+ *       before {@code connect} is even called. Assert that the application's connection timeout
+ *       encompasses both socket creation time and the subsequent TCP handshake.
  *   <li>Connection pools that create sockets on demand under load will see increased connection
  *       acquisition latency during pool expansion; assert that the pool's connection acquisition
  *       timeout is calibrated to accommodate slow socket creation.
- *   <li>Server-side accept paths that call {@code socket} to create new client sockets (less
- *       common — typically the kernel creates sockets via {@code accept}) are not affected;
- *       the injection targets the explicit {@code socket(2)} calls used for outbound connections.
+ *   <li>Server-side accept paths that call {@code socket} to create new client sockets (less common
+ *       — typically the kernel creates sockets via {@code accept}) are not affected; the injection
+ *       targets the explicit {@code socket(2)} calls used for outbound connections.
  *   <li>Assert that the application does not time out socket creation in isolation — few
  *       applications set a timeout specifically on the {@code socket} call, so the delay will
  *       typically accumulate into the broader connection timeout.
  * </ul>
  *
  * <p>In production, slow {@code socket} calls occur when the process is CPU throttled by cgroups
- * and waits to be scheduled before entering the kernel, when the kernel's slab allocator for
- * socket structures is under memory pressure and must reclaim pages before satisfying the
- * allocation, and when a seccomp filter applies complex rules that add filtering latency to each
- * syscall.
+ * and waits to be scheduled before entering the kernel, when the kernel's slab allocator for socket
+ * structures is under memory pressure and must reclaim pages before satisfying the allocation, and
+ * when a seccomp filter applies complex rules that add filtering latency to each syscall.
  *
  * <h2>Deep technical dive</h2>
  *
@@ -72,17 +71,17 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * socket creation time observed by the caller is {@link #delayMs} plus the actual kernel allocation
  * time.
  *
- * <p>The primary use case for this injection is to test connection pool behavior during slow
- * socket creation: when the pool needs to expand to handle a traffic burst, all new connection
- * creation paths are delayed by the injected amount. This can cause connection acquisition
- * timeouts before connections are established, and can reveal whether the pool correctly
- * differentiates between "socket creation is slow" and "the server is unreachable".
+ * <p>The primary use case for this injection is to test connection pool behavior during slow socket
+ * creation: when the pool needs to expand to handle a traffic burst, all new connection creation
+ * paths are delayed by the injected amount. This can cause connection acquisition timeouts before
+ * connections are established, and can reveal whether the pool correctly differentiates between
+ * "socket creation is slow" and "the server is unreachable".
  *
- * <p>Java's {@code Socket} constructor calls {@code socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)}
- * (or the IPv6 equivalent) internally. For NIO, {@code SocketChannel.open()} calls the same
- * syscall. Both paths are intercepted by libchaos-net. The delay is imperceptible in normal
- * unit tests where connections are established once at setup time, but becomes significant in
- * tests that create many short-lived connections or that measure connection establishment time.
+ * <p>Java's {@code Socket} constructor calls {@code socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)} (or
+ * the IPv6 equivalent) internally. For NIO, {@code SocketChannel.open()} calls the same syscall.
+ * Both paths are intercepted by libchaos-net. The delay is imperceptible in normal unit tests where
+ * connections are established once at setup time, but becomes significant in tests that create many
+ * short-lived connections or that measure connection establishment time.
  *
  * <h2>Example</h2>
  *

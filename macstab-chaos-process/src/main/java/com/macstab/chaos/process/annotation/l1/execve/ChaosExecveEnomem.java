@@ -18,64 +18,67 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * calling code to observe an out-of-memory failure when attempting to replace the process image.
  *
  * <h2>What this annotation is</h2>
+ *
  * L1 libchaos-process primitive — one (selector = {@code EXECVE}, errno = {@code ENOMEM}) tuple.
- * The {@code EXECVE} selector intercepts {@code execve} calls only, leaving {@code fork},
- * {@code pthread_create}, {@code posix_spawn}, {@code posix_spawnp}, {@code execveat}, and
- * {@code waitpid} unaffected. Compile-time safety: invalid selector/errno combinations have no
- * annotation class.
+ * The {@code EXECVE} selector intercepts {@code execve} calls only, leaving {@code fork}, {@code
+ * pthread_create}, {@code posix_spawn}, {@code posix_spawnp}, {@code execveat}, and {@code waitpid}
+ * unaffected. Compile-time safety: invalid selector/errno combinations have no annotation class.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
- *       interposing the libc {@code execve} wrapper at the dynamic-linker level.</li>
- *   <li>On each {@code execve} call the interposer runs a Bernoulli trial with probability
- *       {@link #probability}.</li>
+ *       interposing the libc {@code execve} wrapper at the dynamic-linker level.
+ *   <li>On each {@code execve} call the interposer runs a Bernoulli trial with probability {@link
+ *       #probability}.
  *   <li>When the trial fires, the interposer sets {@code errno = ENOMEM} and returns {@code -1}
- *       without issuing the real kernel call.</li>
- *   <li>The calling code receives: {@code -1} return, {@code errno} 12,
- *       {@code strerror}: "Out of memory"; no new process image is loaded and the calling
- *       process remains unchanged.</li>
+ *       without issuing the real kernel call.
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 12, {@code strerror}: "Out of
+ *       memory"; no new process image is loaded and the calling process remains unchanged.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
  *   <li>{@code execve} returns {@code -1}; {@code errno = ENOMEM} (12); the kernel cannot allocate
  *       the memory structures needed to set up the new process image — the calling process remains
- *       in its current state (unlike a successful exec, which replaces the image non-atomically).</li>
- *   <li>Process launchers and shell interpreters must handle {@code ENOMEM} from {@code execve}
- *       as a transient condition — assert that the launcher retries the exec after a brief delay
- *       or reports the failure to the orchestrator for rescheduling rather than treating it as a
- *       permanent binary-not-found error.</li>
- *   <li>Assert that the application correctly preserves all pre-exec state on {@code ENOMEM}:
- *       file descriptors, signal dispositions, and memory mappings remain from the calling process
- *       since the exec failed before the kernel committed to replacing the image.</li>
+ *       in its current state (unlike a successful exec, which replaces the image non-atomically).
+ *   <li>Process launchers and shell interpreters must handle {@code ENOMEM} from {@code execve} as
+ *       a transient condition — assert that the launcher retries the exec after a brief delay or
+ *       reports the failure to the orchestrator for rescheduling rather than treating it as a
+ *       permanent binary-not-found error.
+ *   <li>Assert that the application correctly preserves all pre-exec state on {@code ENOMEM}: file
+ *       descriptors, signal dispositions, and memory mappings remain from the calling process since
+ *       the exec failed before the kernel committed to replacing the image.
  * </ul>
+ *
  * Production failure mode: a Kubernetes node approaches its memory limit during a rolling
- * deployment; the orchestrator launches new pod instances while old ones are still running —
- * the combination of existing processes and the exec overhead (kernel allocating argument pages,
- * stack, and binfmt setup) pushes the node's committed memory above the OOM threshold; new
- * process images fail to load with {@code ENOMEM}, causing a wave of pod startup failures that
- * the orchestrator retries, further increasing memory pressure.
+ * deployment; the orchestrator launches new pod instances while old ones are still running — the
+ * combination of existing processes and the exec overhead (kernel allocating argument pages, stack,
+ * and binfmt setup) pushes the node's committed memory above the OOM threshold; new process images
+ * fail to load with {@code ENOMEM}, causing a wave of pod startup failures that the orchestrator
+ * retries, further increasing memory pressure.
  *
  * <h2>Deep technical dive</h2>
- * <p>POSIX specifies {@code ENOMEM} for {@code execve} when there is insufficient memory to set
- * up the new process image. On Linux, the kernel's exec path allocates several structures before
- * committing to the new image: the argument page array ({@code bprm->page}), a new stack,
- * and VMA structures for the text, data, BSS, and stack segments. If any of these allocations
- * fail, the kernel returns {@code -ENOMEM} and the calling process image is left unchanged.
+ *
+ * <p>POSIX specifies {@code ENOMEM} for {@code execve} when there is insufficient memory to set up
+ * the new process image. On Linux, the kernel's exec path allocates several structures before
+ * committing to the new image: the argument page array ({@code bprm->page}), a new stack, and VMA
+ * structures for the text, data, BSS, and stack segments. If any of these allocations fail, the
+ * kernel returns {@code -ENOMEM} and the calling process image is left unchanged.
  *
  * <p>The exec-ENOMEM scenario is asymmetric with fork-ENOMEM: a failed {@code fork} produces no
  * child process and the parent continues normally; a failed {@code execve} leaves the calling
  * process in its current state, which is the correct recovery path — the caller can retry, use a
- * different binary, or propagate the error upstream. Applications that assume {@code execve}
- * either succeeds or is non-recoverable will not correctly handle the ENOMEM case.
+ * different binary, or propagate the error upstream. Applications that assume {@code execve} either
+ * succeeds or is non-recoverable will not correctly handle the ENOMEM case.
  *
- * <p>A nuance specific to Linux: if the application uses {@code fork} + {@code execve} (the
- * classic process-spawn pattern), and the {@code execve} in the child fails with {@code ENOMEM},
- * the child is still alive in the parent's image state. The child must exit (ideally with a
- * specific exit code that the parent detects via {@code waitpid}) rather than continuing execution
- * in the parent's image; applications that ignore the {@code execve} return value in the
- * fork+exec idiom will create a zombie child that continues executing the parent's code.
+ * <p>A nuance specific to Linux: if the application uses {@code fork} + {@code execve} (the classic
+ * process-spawn pattern), and the {@code execve} in the child fails with {@code ENOMEM}, the child
+ * is still alive in the parent's image state. The child must exit (ideally with a specific exit
+ * code that the parent detects via {@code waitpid}) rather than continuing execution in the
+ * parent's image; applications that ignore the {@code execve} return value in the fork+exec idiom
+ * will create a zombie child that continues executing the parent's code.
  *
  * <h2>Example</h2>
  *
@@ -92,11 +95,12 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * }</pre>
  *
  * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; exec-ENOMEM is a rare event in
- * well-provisioned environments but the fork+exec zombie risk makes even low-probability
- * coverage valuable.
+ * well-provisioned environments but the fork+exec zombie risk makes even low-probability coverage
+ * valuable.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every process-chaos-capable container
- * in the test class.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container in
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ProcessErrnoBinding

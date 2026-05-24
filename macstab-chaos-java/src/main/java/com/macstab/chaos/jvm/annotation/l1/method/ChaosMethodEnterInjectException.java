@@ -26,22 +26,22 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p>Unlike the {@link com.macstab.chaos.jvm.annotation.l1.JvmInterceptorBinding}-based annotations
  * (which target a fixed, named JDK interception point such as {@code ByteBuffer.allocateDirect()}
- * or {@code MBeanServer.invoke()}), this annotation uses a
- * {@link com.macstab.chaos.jvm.annotation.l1.JvmMethodBinding} with {@link #classPattern()} and
- * {@link #methodNamePattern()}: the agent intercepts every method whose declaring class name starts
- * with {@code classPattern} and whose simple name starts with {@code methodNamePattern}. Both
- * patterns are prefix-matched against the binary class name and the method name respectively; empty
- * string matches everything.
+ * or {@code MBeanServer.invoke()}), this annotation uses a {@link
+ * com.macstab.chaos.jvm.annotation.l1.JvmMethodBinding} with {@link #classPattern()} and {@link
+ * #methodNamePattern()}: the agent intercepts every method whose declaring class name starts with
+ * {@code classPattern} and whose simple name starts with {@code methodNamePattern}. Both patterns
+ * are prefix-matched against the binary class name and the method name respectively; empty string
+ * matches everything.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>The chaos agent scans every class loaded by the target JVM whose binary name starts with
- *       {@link #classPattern()} and instruments every method whose name starts with
- *       {@link #methodNamePattern()}.
+ *       {@link #classPattern()} and instruments every method whose name starts with {@link
+ *       #methodNamePattern()}.
  *   <li>At each instrumented method entry — before the first bytecode of the method body executes —
- *       the interceptor instantiates the exception class named by {@link #exceptionClassName()} with
- *       {@link #message()} as the detail message and throws it.
+ *       the interceptor instantiates the exception class named by {@link #exceptionClassName()}
+ *       with {@link #message()} as the detail message and throws it.
  *   <li>The calling thread unwinds from the throw site; the method body never runs.
  * </ol>
  *
@@ -52,16 +52,16 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       will throw on every call; assert that the caller (e.g. a REST controller, a service
  *       orchestrator) handles the exception without leaking internal state to the client.
  *   <li><strong>Repository / DAO failures.</strong> Targeting a repository prefix forces every
- *       database interaction to fail; assert that the service layer rolls back correctly and returns
- *       a meaningful error response rather than a partial write or a hung transaction.
+ *       database interaction to fail; assert that the service layer rolls back correctly and
+ *       returns a meaningful error response rather than a partial write or a hung transaction.
  *   <li><strong>Framework callback failures.</strong> Injecting into lifecycle callbacks (e.g. a
  *       Spring {@code @PostConstruct} method) lets you verify that the container handles
  *       initialisation failures gracefully — for example, by marking the bean as unavailable or
  *       restarting the application context.
  *   <li><strong>Production failure mode:</strong> a transient dependency failure (network, disk,
  *       external API) manifests as an exception thrown from the first method that tries to contact
- *       the dependency; this annotation simulates exactly that entry-point failure without requiring
- *       the dependency to actually be broken.
+ *       the dependency; this annotation simulates exactly that entry-point failure without
+ *       requiring the dependency to actually be broken.
  * </ul>
  *
  * <h2>Deep technical dive</h2>
@@ -116,8 +116,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
- *       agent before the container JVM starts; omitting it causes an
- *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       agent before the container JVM starts; omitting it causes an {@code
+ *       ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
  *       {@code @JvmAgentChaos}.
  *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the

@@ -14,8 +14,8 @@ import com.macstab.chaos.time.model.TimeErrno;
 import com.macstab.chaos.time.model.TimeSelector;
 
 /**
- * Injects {@code EFAULT} into {@code usleep(3)}, causing the call to return {@code -1} with
- * {@code errno = EFAULT} as if the underlying sleep mechanism received an invalid address argument.
+ * Injects {@code EFAULT} into {@code usleep(3)}, causing the call to return {@code -1} with {@code
+ * errno = EFAULT} as if the underlying sleep mechanism received an invalid address argument.
  *
  * <h2>What this annotation is</h2>
  *
@@ -27,12 +27,12 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
- *       extension to upload {@code libchaos-time.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
  *       at the dynamic-linker level.
- *   <li>On every intercepted {@code usleep} call a Bernoulli trial with probability
- *       {@link #probability} is conducted.
+ *   <li>On every intercepted {@code usleep} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted.
  *   <li>When the trial fires the interposer returns {@code -1} and sets {@code errno = EFAULT}
  *       without sleeping — the sleep is aborted immediately.
  * </ol>
@@ -40,8 +40,8 @@ import com.macstab.chaos.time.model.TimeSelector;
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>The sleep is skipped; callers that proceed without checking the return value will not
- *       apply the intended back-off delay, potentially causing excessive retry rates.
+ *   <li>The sleep is skipped; callers that proceed without checking the return value will not apply
+ *       the intended back-off delay, potentially causing excessive retry rates.
  *   <li>Embedded C libraries using {@code usleep} in retry loops that do not guard against any
  *       non-zero return will busy-spin under this injection.
  *   <li>Assert that the application treats unexpected errors from {@code usleep} as non-retriable
@@ -49,24 +49,24 @@ import com.macstab.chaos.time.model.TimeSelector;
  * </ul>
  *
  * <p>In production, {@code EFAULT} from {@code usleep} indicates stack corruption or an invalid
- * internal pointer in the glibc wrapper's transition to {@code nanosleep}. It is extremely rare
- * on healthy systems and is primarily useful for testing defensive code paths.
+ * internal pointer in the glibc wrapper's transition to {@code nanosleep}. It is extremely rare on
+ * healthy systems and is primarily useful for testing defensive code paths.
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>The glibc implementation of {@code usleep(3)} converts the microsecond argument to a
- * {@code timespec} on the stack and calls {@code nanosleep}. Because the {@code timespec} is a
- * stack-allocated struct, {@code EFAULT} can only arise if the stack itself is inaccessible —
- * a near-crash condition. {@code libchaos-time.so} injects the error synthetically, allowing
- * tests to cover the error-handling path without corrupting the process state.
+ * <p>The glibc implementation of {@code usleep(3)} converts the microsecond argument to a {@code
+ * timespec} on the stack and calls {@code nanosleep}. Because the {@code timespec} is a
+ * stack-allocated struct, {@code EFAULT} can only arise if the stack itself is inaccessible — a
+ * near-crash condition. {@code libchaos-time.so} injects the error synthetically, allowing tests to
+ * cover the error-handling path without corrupting the process state.
  *
  * <p>This annotation is most useful when testing native JNI shims that call {@code usleep}
- * indirectly, or C shared libraries where the {@code usleep} call may occur with an unusual
- * stack layout (e.g. a thread with a very small stack size that has nearly exhausted its space).
+ * indirectly, or C shared libraries where the {@code usleep} call may occur with an unusual stack
+ * layout (e.g. a thread with a very small stack size that has nearly exhausted its space).
  *
  * <p>Sibling annotations: {@link ChaosUsleepEintr} targets signal interruption — the far more
- * common case; {@link ChaosNanosleepEfault} applies the equivalent injection to the modern
- * {@code nanosleep} interface.
+ * common case; {@link ChaosNanosleepEfault} applies the equivalent injection to the modern {@code
+ * nanosleep} interface.
  *
  * <h2>Example</h2>
  *

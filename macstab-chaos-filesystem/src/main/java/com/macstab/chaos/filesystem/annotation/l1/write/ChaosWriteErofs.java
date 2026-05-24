@@ -14,29 +14,29 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code EROFS} into {@code write(2)}, causing the call to return {@code -1} with
- * {@code errno = EROFS} as if the file's filesystem has been remounted read-only and the kernel
- * cannot accept the write because no modifications are permitted on a read-only filesystem.
+ * Injects {@code EROFS} into {@code write(2)}, causing the call to return {@code -1} with {@code
+ * errno = EROFS} as if the file's filesystem has been remounted read-only and the kernel cannot
+ * accept the write because no modifications are permitted on a read-only filesystem.
  *
  * <h2>What this annotation is</h2>
  *
  * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code WRITE}, errno = {@code EROFS})
- * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
- * {@code write} call; when it fires the interposer returns {@code -1} with {@code errno = EROFS}
- * without performing any real kernel operation. No runtime operation-errno validation is needed.
+ * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted {@code
+ * write} call; when it fires the interposer returns {@code -1} with {@code errno = EROFS} without
+ * performing any real kernel operation. No runtime operation-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
- *   <li>On each intercepted {@code write} call a Bernoulli trial with probability {@link #probability}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = EROFS}.
+ *   <li>On each intercepted {@code write} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = EROFS}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -46,16 +46,16 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *       filesystem was remounted read-only, typically due to disk errors detected by the kernel.
  *       Assert that the application detects this condition and triggers an immediate alert rather
  *       than silently failing writes.
- *   <li>Applications that open files for writing without {@code O_RDONLY} will receive {@code EROFS}
- *       on the first write after the filesystem is remounted read-only, even though the file was
- *       successfully opened before the remount. Assert that the application handles this mid-stream
- *       write failure without crashing or losing buffered data.
+ *   <li>Applications that open files for writing without {@code O_RDONLY} will receive {@code
+ *       EROFS} on the first write after the filesystem is remounted read-only, even though the file
+ *       was successfully opened before the remount. Assert that the application handles this
+ *       mid-stream write failure without crashing or losing buffered data.
  *   <li>WAL implementations that write sequentially to a log file must detect {@code EROFS} on the
  *       write path and abort all in-flight transactions; assert that the WAL writer transitions to
  *       an error state that prevents new transactions from starting.
  *   <li>Assert that the application's health check detects write failures and returns a degraded
- *       status, enabling load balancers to redirect traffic away from the instance with a
- *       read-only filesystem.
+ *       status, enabling load balancers to redirect traffic away from the instance with a read-only
+ *       filesystem.
  * </ul>
  *
  * <p>In production, {@code EROFS} from {@code write} occurs when the kernel remounts a filesystem
@@ -66,8 +66,8 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>The kernel's ext4 and XFS filesystems monitor the success of write operations and track
- * error counts in the filesystem's superblock. When a write fails due to a storage error and the
+ * <p>The kernel's ext4 and XFS filesystems monitor the success of write operations and track error
+ * counts in the filesystem's superblock. When a write fails due to a storage error and the
  * filesystem is configured with the {@code errors=remount-ro} mount option (the default for ext4),
  * the kernel automatically remounts the filesystem read-only to prevent further corruption.
  * Subsequent write calls are immediately rejected with {@code EROFS} without reaching the storage
@@ -79,10 +79,10 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * from the storage device may also fail with {@code EIO} if the storage device itself is failing.
  *
  * <p>Java maps {@code EROFS} from {@code write} to an {@code IOException} with the message
- * "Read-only file system". The same message is produced for {@code EROFS} from {@code open};
- * the only difference is the operation context. Application code that catches {@code IOException}
- * and checks the message text should be aware that the message text varies across platforms
- * (glibc, musl, macOS) and JVM implementations.
+ * "Read-only file system". The same message is produced for {@code EROFS} from {@code open}; the
+ * only difference is the operation context. Application code that catches {@code IOException} and
+ * checks the message text should be aware that the message text varies across platforms (glibc,
+ * musl, macOS) and JVM implementations.
  *
  * <h2>Example</h2>
  *

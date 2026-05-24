@@ -14,29 +14,29 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code EROFS} into {@code unlink(2)}, causing the call to return {@code -1} with
- * {@code errno = EROFS} as if the file's filesystem has been remounted read-only and the kernel
- * cannot remove the directory entry because no modifications are permitted on a read-only filesystem.
+ * Injects {@code EROFS} into {@code unlink(2)}, causing the call to return {@code -1} with {@code
+ * errno = EROFS} as if the file's filesystem has been remounted read-only and the kernel cannot
+ * remove the directory entry because no modifications are permitted on a read-only filesystem.
  *
  * <h2>What this annotation is</h2>
  *
  * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code UNLINK}, errno = {@code EROFS})
- * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
- * {@code unlink} call; when it fires the interposer returns {@code -1} with {@code errno = EROFS}
- * without performing any real kernel operation. No runtime operation-errno validation is needed.
+ * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted {@code
+ * unlink} call; when it fires the interposer returns {@code -1} with {@code errno = EROFS} without
+ * performing any real kernel operation. No runtime operation-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
- *   <li>On each intercepted {@code unlink} call a Bernoulli trial with probability {@link #probability}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = EROFS}.
+ *   <li>On each intercepted {@code unlink} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = EROFS}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -44,16 +44,16 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * <ul>
  *   <li>{@code EROFS} from {@code unlink} indicates the filesystem was remounted read-only; no
  *       directory modification operations (unlink, rename, mkdir) can succeed until the filesystem
- *       is repaired and remounted read-write. Assert that the application detects this condition
- *       as a filesystem-level error rather than a file-specific permission error and alerts
- *       operators with the filesystem state.
+ *       is repaired and remounted read-write. Assert that the application detects this condition as
+ *       a filesystem-level error rather than a file-specific permission error and alerts operators
+ *       with the filesystem state.
  *   <li>Temporary file cleanup paths that delete work files on completion must handle {@code EROFS}
  *       by logging the failure and reporting the filesystem state rather than retrying the deletion
  *       (which will continue to fail); assert that the application does not enter an infinite
  *       cleanup retry loop on a read-only filesystem.
- *   <li>Applications that implement "delete old logs on rotation" must handle {@code EROFS} on
- *       the deletion step; assert that the rotation aborts gracefully and the log writer continues
- *       in append mode (reads still succeed on a read-only filesystem).
+ *   <li>Applications that implement "delete old logs on rotation" must handle {@code EROFS} on the
+ *       deletion step; assert that the rotation aborts gracefully and the log writer continues in
+ *       append mode (reads still succeed on a read-only filesystem).
  *   <li>Assert that the application's health check detects the read-only filesystem condition and
  *       returns a degraded status, distinguishing it from a normal "file not found" condition.
  * </ul>
@@ -67,18 +67,18 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *
  * <p>{@code unlink(2)} removes a directory entry, which requires modifying the parent directory's
  * data blocks. On a read-only filesystem, the VFS layer rejects this modification before reaching
- * the filesystem-specific code, returning {@code EROFS} immediately. The check occurs regardless
- * of the process's permissions — even root cannot unlink a file on a read-only filesystem.
+ * the filesystem-specific code, returning {@code EROFS} immediately. The check occurs regardless of
+ * the process's permissions — even root cannot unlink a file on a read-only filesystem.
  *
  * <p>A read-only remount is typically triggered by the filesystem detecting a journal commit error
  * or a data write error, causing the ext4 or XFS filesystem code to call {@code remount_ro()} to
- * prevent further corruption. After a read-only remount, reads from pages already in the page
- * cache continue to succeed (the cache is not cleared), but reads that require fetching new pages
- * may also fail with {@code EIO} if the storage device itself is failing.
+ * prevent further corruption. After a read-only remount, reads from pages already in the page cache
+ * continue to succeed (the cache is not cleared), but reads that require fetching new pages may
+ * also fail with {@code EIO} if the storage device itself is failing.
  *
  * <p>Java's {@code Files.delete(Path)} throws an {@code IOException} with the message "Read-only
- * file system" when the underlying {@code unlink} call returns {@code EROFS}. Application code
- * that catches this exception must distinguish it from a {@code NoSuchFileException} or a plain
+ * file system" when the underlying {@code unlink} call returns {@code EROFS}. Application code that
+ * catches this exception must distinguish it from a {@code NoSuchFileException} or a plain
  * permission-denied exception to apply the correct operator alert.
  *
  * <h2>Example</h2>

@@ -14,21 +14,21 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Throws the configured exception (default: {@link java.io.IOException}) inside
- * {@link java.net.InetAddress#getByName(String) InetAddress.getByName()} before the JVM's DNS
- * resolver is consulted — every hostname lookup fails immediately with the injected exception,
- * making all new outbound connections by hostname impossible.
+ * Throws the configured exception (default: {@link java.io.IOException}) inside {@link
+ * java.net.InetAddress#getByName(String) InetAddress.getByName()} before the JVM's DNS resolver is
+ * consulted — every hostname lookup fails immediately with the injected exception, making all new
+ * outbound connections by hostname impossible.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>An L1 JVM chaos primitive targeting the {@code DNS} selector family with the
- * {@code injectException} effect applied to the {@code DNS_RESOLVE} operation. It intercepts
- * {@code InetAddress.getByName(String)} and {@code InetAddress.getAllByName(String)} at the JVM
- * level and throws before the JVM's name-service chain is consulted. This is distinct from the
- * libchaos DNS module, which operates at the native {@code getaddrinfo} level; this annotation
- * affects only JVM-level hostname resolution and not native processes in the same container. The
- * annotation is declared on the test class or method alongside a container annotation and is
- * active for the lifetime of the annotated scope.
+ * <p>An L1 JVM chaos primitive targeting the {@code DNS} selector family with the {@code
+ * injectException} effect applied to the {@code DNS_RESOLVE} operation. It intercepts {@code
+ * InetAddress.getByName(String)} and {@code InetAddress.getAllByName(String)} at the JVM level and
+ * throws before the JVM's name-service chain is consulted. This is distinct from the libchaos DNS
+ * module, which operates at the native {@code getaddrinfo} level; this annotation affects only
+ * JVM-level hostname resolution and not native processes in the same container. The annotation is
+ * declared on the test class or method alongside a container annotation and is active for the
+ * lifetime of the annotated scope.
  *
  * <h2>What chaos this applies</h2>
  *
@@ -36,13 +36,13 @@ import com.macstab.chaos.jvm.api.OperationType;
  * {@code InetAddress.getAllByName(String)}. When the interceptor fires:
  *
  * <ol>
- *   <li>Execution is captured before the JVM's positive DNS cache is checked and before the
- *       {@code NameService} SPI is consulted.
+ *   <li>Execution is captured before the JVM's positive DNS cache is checked and before the {@code
+ *       NameService} SPI is consulted.
  *   <li>The exception injection effect constructs and throws an instance of the configured
  *       exception class (default: {@code java.io.IOException} with the configured message).
  *   <li>The exception propagates up the call stack to the first handler — typically the networking
- *       layer wrapping {@code getByName} in a {@code Socket} or HTTP client, which converts it to
- *       a {@code ConnectException} or {@code UnknownHostException} as appropriate.
+ *       layer wrapping {@code getByName} in a {@code Socket} or HTTP client, which converts it to a
+ *       {@code ConnectException} or {@code UnknownHostException} as appropriate.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -54,16 +54,16 @@ import com.macstab.chaos.jvm.api.OperationType;
  *   <li>Connection pools that resolve hostnames on checkout (rather than at creation time) fail
  *       checkout with the injected exception — assert that the pool's error handler increments a
  *       failure metric.
- *   <li>IP-literal addresses (e.g. {@code "192.168.1.1"}) bypass {@code getByName} resolution
- *       and are not affected — assert that direct-IP connections continue to work while
- *       hostname-based connections fail.
+ *   <li>IP-literal addresses (e.g. {@code "192.168.1.1"}) bypass {@code getByName} resolution and
+ *       are not affected — assert that direct-IP connections continue to work while hostname-based
+ *       connections fail.
  *   <li>Service-discovery clients that fall back to a cached address list on resolution failure
  *       activate their fallback — assert that the fallback address is used.
  * </ul>
  *
  * <p><strong>Production failure mode this simulates:</strong> a corporate DNS server that becomes
- * unreachable mid-operation, causing the OS resolver to return SERVFAIL for every query — the
- * JVM wraps each SERVFAIL as an {@code UnknownHostException}, all outbound service calls fail
+ * unreachable mid-operation, causing the OS resolver to return SERVFAIL for every query — the JVM
+ * wraps each SERVFAIL as an {@code UnknownHostException}, all outbound service calls fail
  * immediately, and the application's circuit breaker opens within one polling interval, rejecting
  * all requests until DNS is restored.
  *
@@ -74,12 +74,12 @@ import com.macstab.chaos.jvm.api.OperationType;
  * positive or negative cache lookup — even hostnames that were successfully resolved in the past
  * and whose cache entry is still valid fail under this annotation.
  *
- * <p><strong>Exception type selection.</strong> {@code InetAddress.getByName} declares
- * {@code throws UnknownHostException}. Callers compile against this signature and typically catch
- * {@code UnknownHostException} or its parent {@code IOException}. Configure
- * {@code exceptionClassName = "java.net.UnknownHostException"} to inject the exact type that
- * callers expect and exercise their specific catch blocks. Injecting a {@code RuntimeException}
- * instead tests whether callers have forgotten to handle the checked exception path.
+ * <p><strong>Exception type selection.</strong> {@code InetAddress.getByName} declares {@code
+ * throws UnknownHostException}. Callers compile against this signature and typically catch {@code
+ * UnknownHostException} or its parent {@code IOException}. Configure {@code exceptionClassName =
+ * "java.net.UnknownHostException"} to inject the exact type that callers expect and exercise their
+ * specific catch blocks. Injecting a {@code RuntimeException} instead tests whether callers have
+ * forgotten to handle the checked exception path.
  *
  * <p><strong>JVM DNS cache bypass.</strong> The JVM's positive and negative caches are consulted
  * inside the real {@code getByName} implementation. Because the inject-exception effect throws
@@ -95,9 +95,9 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p><strong>Custom name services.</strong> A custom {@code sun.net.spi.nameservice.NameService}
  * installed by the application (e.g. for Consul service discovery) is never reached when this
- * annotation is active — the exception fires before the SPI chain is consulted. If the
- * application has a secondary lookup path that does not use {@code InetAddress}, that path is
- * also not affected.
+ * annotation is active — the exception fires before the SPI chain is consulted. If the application
+ * has a secondary lookup path that does not use {@code InetAddress}, that path is also not
+ * affected.
  *
  * <h2>Example</h2>
  *
@@ -124,7 +124,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java container image — the container must run a JVM process.
  * </ul>

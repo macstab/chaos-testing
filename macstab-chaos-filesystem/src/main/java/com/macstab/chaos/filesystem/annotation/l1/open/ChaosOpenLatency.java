@@ -27,9 +27,9 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
@@ -44,16 +44,16 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *       paths (configuration reload, credential refresh, log file rotation) will see increased
  *       latency on those paths. Assert that the application's timeout configuration accounts for
  *       slow file opens.
- *   <li>Applications that open and close files on every request (file-based session stores, per-request
- *       logging to separate files) accumulate the injected delay on each request; assert that request
- *       latency SLOs tolerate this additional overhead or that the application caches open file
- *       descriptors.
+ *   <li>Applications that open and close files on every request (file-based session stores,
+ *       per-request logging to separate files) accumulate the injected delay on each request;
+ *       assert that request latency SLOs tolerate this additional overhead or that the application
+ *       caches open file descriptors.
  *   <li>Startup sequences that open many files (configuration, certificates, shared libraries)
  *       accumulate the delay across all opens; assert that the startup timeout is calibrated for
  *       the worst-case number of open calls at startup.
  *   <li>Assert that the application does not interpret slow file open as a failure — the open
- *       succeeds, just slowly, and any retry-on-timeout logic must distinguish a timeout from
- *       an actual open failure.
+ *       succeeds, just slowly, and any retry-on-timeout logic must distinguish a timeout from an
+ *       actual open failure.
  * </ul>
  *
  * <p>In production, slow {@code open} calls occur when the filesystem's directory entry cache
@@ -66,15 +66,14 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *
  * <p>The {@code open(2)} syscall resolves the pathname using the kernel's VFS layer, which walks
  * the dentry cache to find each path component's inode. Cache hits are fast (nanoseconds); cache
- * misses require reading directory blocks from disk or from the network filesystem backend.
- * For NFS mounts, each pathname component requires a separate RPC to the NFS server's metadata
- * path; a path with N components requires N round trips. This injection simulates the aggregate
- * cost of these operations without requiring an actual slow storage backend.
+ * misses require reading directory blocks from disk or from the network filesystem backend. For NFS
+ * mounts, each pathname component requires a separate RPC to the NFS server's metadata path; a path
+ * with N components requires N round trips. This injection simulates the aggregate cost of these
+ * operations without requiring an actual slow storage backend.
  *
- * <p>Applications that perform health checks by opening and immediately closing a file (a
- * "canary file" pattern) will see increased health check latency under this injection; assert
- * that the health check timeout is calibrated to accommodate slow filesystem opens in stressed
- * environments.
+ * <p>Applications that perform health checks by opening and immediately closing a file (a "canary
+ * file" pattern) will see increased health check latency under this injection; assert that the
+ * health check timeout is calibrated to accommodate slow filesystem opens in stressed environments.
  *
  * <h2>Example</h2>
  *

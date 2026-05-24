@@ -25,9 +25,9 @@ import com.macstab.chaos.core.syscall.LibchaosTransport;
  * End-to-end integration test for the connection L1 annotation path.
  *
  * <p>Exercises the full chain: L1 annotation on a fixture class → {@link L1AnnotationProcessor}
- * reflective dispatch → {@code ConnectionErrnoTranslator} → {@code LibchaosNetConnectionChaos.apply()}
- * → config-file write inside a real running container. Verifies both class-scope application and
- * post-remove cleanup, on both glibc and musl base images.
+ * reflective dispatch → {@code ConnectionErrnoTranslator} → {@code
+ * LibchaosNetConnectionChaos.apply()} → config-file write inside a real running container. Verifies
+ * both class-scope application and post-remove cleanup, on both glibc and musl base images.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -53,7 +53,8 @@ class L1ConnectionAnnotationEndToEndTest {
 
   @ParameterizedTest
   @ValueSource(strings = {DEBIAN, ALPINE})
-  @DisplayName("@ChaosConnectEconnrefused writes connect:ERRNO:ECONNREFUSED to config and removes cleanly")
+  @DisplayName(
+      "@ChaosConnectEconnrefused writes connect:ERRNO:ECONNREFUSED to config and removes cleanly")
   void connectEconnrefusedWrittenAndRemoved(final String image) throws Exception {
     try (final GenericContainer<?> container = prepared(image)) {
       final var handles = containers(container);

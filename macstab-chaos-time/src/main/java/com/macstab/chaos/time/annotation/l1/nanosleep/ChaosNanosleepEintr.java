@@ -19,22 +19,22 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code NANOSLEEP}, errno = {@code EINTR})
- * tuple. The tuple is safe by construction — {@code EINTR} is the primary documented POSIX result of
- * {@code nanosleep(2)}: when a signal is delivered to the thread during the sleep, the call returns
- * immediately with {@code EINTR} and writes the remaining sleep time into the {@code rem} argument.
- * No runtime selector-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code NANOSLEEP}, errno = {@code
+ * EINTR}) tuple. The tuple is safe by construction — {@code EINTR} is the primary documented POSIX
+ * result of {@code nanosleep(2)}: when a signal is delivered to the thread during the sleep, the
+ * call returns immediately with {@code EINTR} and writes the remaining sleep time into the {@code
+ * rem} argument. No runtime selector-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
- *       extension to upload {@code libchaos-time.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
  *       at the dynamic-linker level.
- *   <li>On every intercepted {@code nanosleep} call a Bernoulli trial with probability
- *       {@link #probability} is conducted.
+ *   <li>On every intercepted {@code nanosleep} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted.
  *   <li>When the trial fires the interposer returns {@code -1} and sets {@code errno = EINTR}
  *       without waiting — the application's sleep is cut short with a partial-sleep indication.
  * </ol>
@@ -43,18 +43,18 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * <ul>
  *   <li>The sleep returns immediately with {@code EINTR}; correct code reads the remaining time
- *       from the {@code rem} argument and restarts the sleep, iterating until the full duration
- *       has elapsed.
+ *       from the {@code rem} argument and restarts the sleep, iterating until the full duration has
+ *       elapsed.
  *   <li>Code that treats any {@code nanosleep} failure as fatal will exit event loops prematurely,
  *       causing reconnect storms or missed heartbeats.
- *   <li>Retry loops with a hard maximum iteration count may underslept significantly if many
- *       {@code EINTR} signals arrive during a single intended sleep interval.
- *   <li>Assert that the cumulative sleep duration is at least as long as the requested interval
- *       and that no connection or heartbeat is prematurely abandoned.
+ *   <li>Retry loops with a hard maximum iteration count may underslept significantly if many {@code
+ *       EINTR} signals arrive during a single intended sleep interval.
+ *   <li>Assert that the cumulative sleep duration is at least as long as the requested interval and
+ *       that no connection or heartbeat is prematurely abandoned.
  * </ul>
  *
- * <p>In production, {@code EINTR} from {@code nanosleep} is a common production failure mode:
- * any process that registers signal handlers with {@code SA_RESTART} absent will receive {@code EINTR}
+ * <p>In production, {@code EINTR} from {@code nanosleep} is a common production failure mode: any
+ * process that registers signal handlers with {@code SA_RESTART} absent will receive {@code EINTR}
  * whenever a signal fires during a sleep — monitoring agents, GC safepoints, and JVM signal
  * handlers all trigger this on busy systems.
  *
@@ -63,11 +63,11 @@ import com.macstab.chaos.time.model.TimeSelector;
  * <p>POSIX requires that when a signal interrupts {@code nanosleep}, the call writes the remaining
  * sleep duration (the time not yet slept) to the {@code rem} argument if the pointer is non-null.
  * The canonical restart idiom is: {@code while (nanosleep(&req, &req) == -1 && errno == EINTR) {}}.
- * Failing to implement this idiom results in sleeping less than intended, which is a latent bug
- * in any back-pressure or rate-limiting loop.
+ * Failing to implement this idiom results in sleeping less than intended, which is a latent bug in
+ * any back-pressure or rate-limiting loop.
  *
- * <p>The glibc wrapper for {@code nanosleep} does not restart automatically because the semantic
- * of a partial sleep is meaningful (the application may want to handle the signal first). This
+ * <p>The glibc wrapper for {@code nanosleep} does not restart automatically because the semantic of
+ * a partial sleep is meaningful (the application may want to handle the signal first). This
  * contrasts with most other syscalls where glibc sets {@code SA_RESTART}.
  *
  * <p>{@code libchaos-time.so} injects {@code EINTR} at the C library wrapper level; the {@code rem}

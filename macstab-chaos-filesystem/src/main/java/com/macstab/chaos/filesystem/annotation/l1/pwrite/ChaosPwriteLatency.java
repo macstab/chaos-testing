@@ -28,9 +28,9 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
@@ -41,11 +41,11 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>Positional file write operations take longer than normal; applications that use
- *       {@code pwrite} for random-access page writes (B-tree page updates, WAL record placement,
- *       heap file page writes) will see increased latency per write. Assert that the application's
- *       transaction commit deadline accounts for the accumulated delay across all page writes
- *       in the transaction.
+ *   <li>Positional file write operations take longer than normal; applications that use {@code
+ *       pwrite} for random-access page writes (B-tree page updates, WAL record placement, heap file
+ *       page writes) will see increased latency per write. Assert that the application's
+ *       transaction commit deadline accounts for the accumulated delay across all page writes in
+ *       the transaction.
  *   <li>Database engines that write to multiple pages per transaction using concurrent worker
  *       threads each incur the delay independently; a transaction that modifies N pages from N
  *       writer threads accumulates N × {@link #delayMs} of total wait time. Assert that the
@@ -55,14 +55,15 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *       timeout is longer than the maximum expected {@code pwrite} latency under slow storage, and
  *       that the lock holder releases it correctly even when writes are slow.
  *   <li>Assert that slow {@code pwrite} calls do not cause the WAL checkpointer to time out,
- *       leaving stale WAL entries that prevent log truncation and cause the WAL to grow unboundedly.
+ *       leaving stale WAL entries that prevent log truncation and cause the WAL to grow
+ *       unboundedly.
  * </ul>
  *
- * <p>In production, slow {@code pwrite} calls occur when cgroup I/O bandwidth throttling limits
- * the process's write rate and each write must wait for its I/O token budget to replenish, when
- * the storage device's write cache is full and subsequent writes must wait for the device to flush
- * its internal buffer, and when a network filesystem introduces per-RPC latency due to server load
- * or network congestion.
+ * <p>In production, slow {@code pwrite} calls occur when cgroup I/O bandwidth throttling limits the
+ * process's write rate and each write must wait for its I/O token budget to replenish, when the
+ * storage device's write cache is full and subsequent writes must wait for the device to flush its
+ * internal buffer, and when a network filesystem introduces per-RPC latency due to server load or
+ * network congestion.
  *
  * <h2>Deep technical dive</h2>
  *
@@ -74,8 +75,8 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * ({@code O_DIRECT}), the write waits for the storage device to acknowledge the write, making the
  * latency proportional to the device's write latency.
  *
- * <p>This injection adds the delay before the kernel call, simulating the scheduling stall and
- * I/O queue depth that occurs under write pressure without requiring actual slow storage. The delay
+ * <p>This injection adds the delay before the kernel call, simulating the scheduling stall and I/O
+ * queue depth that occurs under write pressure without requiring actual slow storage. The delay
  * fires on every {@code pwrite} call regardless of whether the write hits an existing page or
  * allocates new blocks; on a fast system with low write pressure this makes the injection more
  * severe than real slow storage (where only allocation-heavy writes are slow).

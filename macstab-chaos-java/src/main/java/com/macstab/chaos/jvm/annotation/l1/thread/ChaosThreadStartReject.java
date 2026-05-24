@@ -14,9 +14,9 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Throws a {@link java.lang.OutOfMemoryError} (or configured exception) inside {@link Thread#start()}
- * before the native {@code start0()} call executes — the new thread never enters the runnable
- * state and the caller receives an exception instead of a live thread.
+ * Throws a {@link java.lang.OutOfMemoryError} (or configured exception) inside {@link
+ * Thread#start()} before the native {@code start0()} call executes — the new thread never enters
+ * the runnable state and the caller receives an exception instead of a live thread.
  *
  * <h2>What this annotation is</h2>
  *
@@ -34,9 +34,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ol>
  *   <li>Execution is captured before the native {@code start0()} call.
- *   <li>The reject effect constructs and throws the configured exception (default:
- *       {@link java.lang.OutOfMemoryError} with the configured message) from within the
- *       interceptor body.
+ *   <li>The reject effect constructs and throws the configured exception (default: {@link
+ *       java.lang.OutOfMemoryError} with the configured message) from within the interceptor body.
  *   <li>The exception propagates up the stack to the caller of {@code thread.start()} — the thread
  *       object remains in the NEW state, its {@code run()} method is never invoked, and no OS
  *       thread is created.
@@ -49,9 +48,9 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       application code catches or propagates it correctly.
  *   <li>{@code thread.getState()} returns {@code Thread.State.NEW} after the failed start — the
  *       thread object is reusable (though most code does not attempt to restart a thread).
- *   <li>Thread pools that create workers on demand ({@code ThreadPoolExecutor}) propagate the
- *       error to the pool's {@code ThreadFactory} handler; assert that the pool's
- *       {@code rejectedExecutionHandler} is invoked rather than silently losing the task.
+ *   <li>Thread pools that create workers on demand ({@code ThreadPoolExecutor}) propagate the error
+ *       to the pool's {@code ThreadFactory} handler; assert that the pool's {@code
+ *       rejectedExecutionHandler} is invoked rather than silently losing the task.
  *   <li>Frameworks that start background threads during application bootstrap (e.g. Spring's
  *       scheduler executor) throw before the bean is fully initialised; assert that the application
  *       context fails to start with a descriptive error rather than hanging.
@@ -59,36 +58,35 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p><strong>Production failure mode this simulates:</strong> a JVM that has exhausted its native
  * thread limit (typically controlled by {@code /proc/sys/kernel/threads-max} or the container's
- * {@code pids} cgroup limit), causing every new {@code Thread.start()} to throw
- * {@link java.lang.OutOfMemoryError}: unable to create native thread — thread pools fail to
- * expand, scheduled tasks queue up indefinitely, and the application degrades to partial
- * availability before the operator notices the OOM entries in the application log.
+ * {@code pids} cgroup limit), causing every new {@code Thread.start()} to throw {@link
+ * java.lang.OutOfMemoryError}: unable to create native thread — thread pools fail to expand,
+ * scheduled tasks queue up indefinitely, and the application degrades to partial availability
+ * before the operator notices the OOM entries in the application log.
  *
  * <h2>Deep technical dive</h2>
  *
  * <p><strong>Interception point.</strong> The agent retransforms {@code java.lang.Thread} via the
  * bootstrap class loader's instrumentation channel. The interceptor is installed on the public
- * {@code start()} method; the private native {@code start0()} is not touched. Because the
- * exception is thrown from Java bytecode (not from native), the JVM's thread bookkeeping tables are
- * never updated — {@code Thread.activeCount()} does not increase, and thread-dump tools show no
- * trace of the attempted thread.
+ * {@code start()} method; the private native {@code start0()} is not touched. Because the exception
+ * is thrown from Java bytecode (not from native), the JVM's thread bookkeeping tables are never
+ * updated — {@code Thread.activeCount()} does not increase, and thread-dump tools show no trace of
+ * the attempted thread.
  *
  * <p><strong>Error type and the ThreadFactory contract.</strong> {@link java.lang.OutOfMemoryError}
  * is the correct production error for thread-limit exhaustion. Many thread-pool implementations
- * catch {@link java.lang.Error} in their worker-spawn path and invoke the
- * {@code RejectedExecutionHandler}; well-written handlers log and enqueue the task for retry.
- * Injecting this error in tests validates that path without requiring a system-wide thread-limit
- * change.
+ * catch {@link java.lang.Error} in their worker-spawn path and invoke the {@code
+ * RejectedExecutionHandler}; well-written handlers log and enqueue the task for retry. Injecting
+ * this error in tests validates that path without requiring a system-wide thread-limit change.
  *
  * <p><strong>Distinction from {@code ChaosThreadStartDelay}.</strong> The delay effect lets the
- * thread start eventually (after a park). The reject effect is terminal for that particular
- * {@code start()} call. Use reject to exercise error-handling and fallback logic; use delay to
- * exercise latency tolerance.
+ * thread start eventually (after a park). The reject effect is terminal for that particular {@code
+ * start()} call. Use reject to exercise error-handling and fallback logic; use delay to exercise
+ * latency tolerance.
  *
  * <p><strong>Interaction with virtual threads.</strong> {@code Thread.ofVirtual().start(runnable)}
  * routes through the same {@code Thread.start()} entrypoint, so this annotation also fires for
- * virtual thread starts on JDK 21+. Use {@code @ChaosVirtualThreadStartReject} to isolate the
- * fault to virtual threads only.
+ * virtual thread starts on JDK 21+. Use {@code @ChaosVirtualThreadStartReject} to isolate the fault
+ * to virtual threads only.
  *
  * <p><strong>Cascading effects on application startup.</strong> Many frameworks (Spring Boot,
  * Quarkus) launch background threads during the context-refresh phase. Rejecting those starts
@@ -115,7 +113,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java container image — the container must run a JVM process.
  * </ul>

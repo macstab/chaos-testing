@@ -31,43 +31,43 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <ol>
  *   <li>Before every call to {@code java.lang.ClassLoader#loadClass(String)} inside the target
  *       container's JVM, the chaos agent intercepts the calling thread.
- *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()},
- *       {@link #maxDelayMs()}]; equal values produce a deterministic delay.
- *   <li>Control returns and the underlying {@code loadClass()} executes normally, delegating to
- *       the parent class loader (delegation model) or searching the class loader's own resources.
+ *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()}, {@link
+ *       #maxDelayMs()}]; equal values produce a deterministic delay.
+ *   <li>Control returns and the underlying {@code loadClass()} executes normally, delegating to the
+ *       parent class loader (delegation model) or searching the class loader's own resources.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>Spring's application context refresh resolves hundreds of bean classes via
- *       {@code Class.forName()} which calls {@code ClassLoader.loadClass()}; the delay inflates
- *       the context startup time; assert that the application's startup probe has sufficient
+ *   <li>Spring's application context refresh resolves hundreds of bean classes via {@code
+ *       Class.forName()} which calls {@code ClassLoader.loadClass()}; the delay inflates the
+ *       context startup time; assert that the application's startup probe has sufficient
  *       initialPeriodSeconds to tolerate slow class loading.
  *   <li>{@code ClassLoader.loadClass()} holds a lock on the {@code ClassLoader} object during
- *       loading (the JVM's parallel class loading does not fully eliminate lock contention);
- *       with a delay, multiple threads trying to load different classes through the same class
- *       loader serialise; assert that the application does not deadlock under concurrent class
- *       loading with the delay applied.
+ *       loading (the JVM's parallel class loading does not fully eliminate lock contention); with a
+ *       delay, multiple threads trying to load different classes through the same class loader
+ *       serialise; assert that the application does not deadlock under concurrent class loading
+ *       with the delay applied.
  *   <li>Frameworks that use lazy class loading for bean definitions (Spring's lazy init, CDI's
- *       normal scope proxies) will incur the delay on first use of each lazily loaded bean;
- *       assert that the first-request latency spike is bounded and does not exceed SLO limits.
- *   <li><strong>Production failure mode:</strong> a class loader leak causes the JVM's metaspace
- *       to fill; the GC spends increasing time sweeping metaspace for unreachable classes; each
- *       {@code loadClass()} call takes longer because the class loader hierarchy is deeper due
- *       to accumulated leaked class loaders; new class loads begin failing with
- *       {@code OutOfMemoryError: Metaspace}; this annotation models the slow-loadClass symptom
- *       without requiring an actual metaspace leak.
+ *       normal scope proxies) will incur the delay on first use of each lazily loaded bean; assert
+ *       that the first-request latency spike is bounded and does not exceed SLO limits.
+ *   <li><strong>Production failure mode:</strong> a class loader leak causes the JVM's metaspace to
+ *       fill; the GC spends increasing time sweeping metaspace for unreachable classes; each {@code
+ *       loadClass()} call takes longer because the class loader hierarchy is deeper due to
+ *       accumulated leaked class loaders; new class loads begin failing with {@code
+ *       OutOfMemoryError: Metaspace}; this annotation models the slow-loadClass symptom without
+ *       requiring an actual metaspace leak.
  * </ul>
  *
  * <h2>Deep technical dive</h2>
  *
  * <p>The interception targets {@code java.lang.ClassLoader#loadClass(String, boolean)}, the
- * protected method that implements the class loading protocol. The public
- * {@code ClassLoader.loadClass(String)} delegates to this method with {@code resolve = false}.
- * JVM class loading follows the delegation model: a class loader first delegates to its parent;
- * only if the parent cannot load the class does it attempt loading itself. The chaos delay fires
- * before the parent delegation call, adding to the total time for the entire delegation chain.
+ * protected method that implements the class loading protocol. The public {@code
+ * ClassLoader.loadClass(String)} delegates to this method with {@code resolve = false}. JVM class
+ * loading follows the delegation model: a class loader first delegates to its parent; only if the
+ * parent cannot load the class does it attempt loading itself. The chaos delay fires before the
+ * parent delegation call, adding to the total time for the entire delegation chain.
  *
  * <p>Parallel class loading (enabled via {@code ClassLoader.registerAsParallelCapable()}) allows
  * multiple threads to load different classes from the same class loader concurrently by using
@@ -76,16 +76,16 @@ import com.macstab.chaos.jvm.api.OperationType;
  * per-name lock. If many classes are loaded concurrently and all are delayed, the total class
  * loading time grows linearly with the number of distinct class names being loaded.
  *
- * <p>Spring's {@code ClassPathBeanDefinitionScanner} uses {@code ClassLoader.loadClass()} to
- * load candidate bean classes for inspection during component scanning. On a large classpath with
- * many {@code @Component}-annotated classes, this is called hundreds of times during startup.
- * The chaos delay applies to each call, multiplying the startup time by the number of scanned
- * classes divided by any parallelism in the scanning process.
+ * <p>Spring's {@code ClassPathBeanDefinitionScanner} uses {@code ClassLoader.loadClass()} to load
+ * candidate bean classes for inspection during component scanning. On a large classpath with many
+ * {@code @Component}-annotated classes, this is called hundreds of times during startup. The chaos
+ * delay applies to each call, multiplying the startup time by the number of scanned classes divided
+ * by any parallelism in the scanning process.
  *
- * <p>Groovy, JRuby, and other dynamic JVM languages generate classes at runtime using
- * {@code ClassLoader.defineClass()} (see {@link ChaosClassDefineDelay}); their script loading
- * also calls {@code loadClass()} to resolve referenced types. The delay applies to both the
- * generated classes and the referenced standard library classes.
+ * <p>Groovy, JRuby, and other dynamic JVM languages generate classes at runtime using {@code
+ * ClassLoader.defineClass()} (see {@link ChaosClassDefineDelay}); their script loading also calls
+ * {@code loadClass()} to resolve referenced types. The delay applies to both the generated classes
+ * and the referenced standard library classes.
  *
  * <h2>Example</h2>
  *
@@ -106,8 +106,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

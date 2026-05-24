@@ -15,9 +15,9 @@ import com.macstab.chaos.jvm.api.OperationType;
 
 /**
  * Makes {@link java.util.concurrent.CompletableFuture#completeExceptionally
- * CompletableFuture.completeExceptionally(ex)} silently return {@code false} without delivering
- * the exception signal — the future remains permanently pending even though the producing code
- * believes it has reported a failure.
+ * CompletableFuture.completeExceptionally(ex)} silently return {@code false} without delivering the
+ * exception signal — the future remains permanently pending even though the producing code believes
+ * it has reported a failure.
  *
  * <h2>What this annotation is</h2>
  *
@@ -29,22 +29,22 @@ import com.macstab.chaos.jvm.api.OperationType;
  * thread blocked on {@code get()} or {@code join()} hangs indefinitely.
  *
  * <p>This is the exceptional-completion analogue of {@link ChaosAsyncCompleteSuppress}. Where that
- * annotation hides a successful result, this one hides a failure signal — leaving consumers
- * waiting for an error that never arrives.
+ * annotation hides a successful result, this one hides a failure signal — leaving consumers waiting
+ * for an error that never arrives.
  *
  * <h2>What chaos this applies</h2>
  *
- * <p>The JVM agent installs a Byte Buddy interceptor on {@code CompletableFuture.completeExceptionally}.
- * When the interceptor fires:
+ * <p>The JVM agent installs a Byte Buddy interceptor on {@code
+ * CompletableFuture.completeExceptionally}. When the interceptor fires:
  *
  * <ol>
  *   <li>The interceptor is entered before {@code completeExceptionally}'s CAS on the result field.
- *   <li>The suppress effect short-circuits the method: the exception is discarded and the CAS
- *       never runs.
+ *   <li>The suppress effect short-circuits the method: the exception is discarded and the CAS never
+ *       runs.
  *   <li>{@code completeExceptionally} returns {@code false} to the caller, as if the future had
  *       already been completed by another thread.
- *   <li>The future remains in the {@code PENDING} state. No exception is stored, no callbacks
- *       fire, no waiting threads are unparked.
+ *   <li>The future remains in the {@code PENDING} state. No exception is stored, no callbacks fire,
+ *       no waiting threads are unparked.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -54,8 +54,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       silently dropped.
  *   <li>{@code cf.isCompletedExceptionally()} returns {@code false}.
  *   <li>{@code cf.isDone()} returns {@code false} — the future is still pending.
- *   <li>{@code cf.get(1, TimeUnit.SECONDS)} throws {@link java.util.concurrent.TimeoutException}
- *       — the future never becomes done.
+ *   <li>{@code cf.get(1, TimeUnit.SECONDS)} throws {@link java.util.concurrent.TimeoutException} —
+ *       the future never becomes done.
  *   <li>Error-handling stages registered via {@code exceptionally} and {@code handle} are never
  *       invoked; neither are normal {@code thenApply} stages.
  * </ul>
@@ -67,8 +67,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <h2>Deep technical dive</h2>
  *
- * <p><strong>Interception point.</strong> The agent targets
- * {@code java.util.concurrent.CompletableFuture#completeExceptionally(Throwable)} via Byte Buddy
+ * <p><strong>Interception point.</strong> The agent targets {@code
+ * java.util.concurrent.CompletableFuture#completeExceptionally(Throwable)} via Byte Buddy
  * retransformation of the bootstrap-loaded {@code CompletableFuture} class. The interceptor is
  * entered on the thread that called {@code completeExceptionally} — typically a worker or error
  * handler — before the method's internal CAS on the {@code result} field.
@@ -86,8 +86,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <p><strong>Interaction with error-propagation patterns.</strong> Application code that uses
  * {@code completeExceptionally} as a signalling mechanism (e.g., a single error-future shared
  * across multiple stages) will find that the signal never propagates, making this annotation
- * effective at testing whether the application has backup mechanisms — watchdog timeouts,
- * heartbeat checks — to detect a stuck pipeline.
+ * effective at testing whether the application has backup mechanisms — watchdog timeouts, heartbeat
+ * checks — to detect a stuck pipeline.
  *
  * <p><strong>Distinguishing from siblings.</strong> {@link ChaosAsyncCompleteSuppress} suppresses
  * the normal (non-exceptional) completion path. {@link ChaosAsyncCompleteExceptionalCompletion}
@@ -116,7 +116,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java container image — the container must run a JVM process.
  * </ul>

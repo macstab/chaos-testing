@@ -14,9 +14,9 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Parks every executor worker thread for {@link #delayMs} to {@link #maxDelayMs} milliseconds
- * when it picks up a task to execute — slowing down task throughput without affecting task
- * submission or preventing any task from eventually running.
+ * Parks every executor worker thread for {@link #delayMs} to {@link #maxDelayMs} milliseconds when
+ * it picks up a task to execute — slowing down task throughput without affecting task submission or
+ * preventing any task from eventually running.
  *
  * <h2>What this annotation is</h2>
  *
@@ -33,13 +33,13 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>What chaos this applies</h2>
  *
  * <p>The JVM agent installs a Byte Buddy interceptor on the worker thread's task-dispatch entry
- * point inside {@code ThreadPoolExecutor} (specifically around the {@code runWorker} loop's call
- * to {@code task.run()}). When the interceptor fires:
+ * point inside {@code ThreadPoolExecutor} (specifically around the {@code runWorker} loop's call to
+ * {@code task.run()}). When the interceptor fires:
  *
  * <ol>
  *   <li>The interceptor fires on the worker thread after the task has been dequeued.
- *   <li>The delay effect calls {@code Thread.sleep(delayMs)} (or a random value in {@code
- *       [delayMs, maxDelayMs]}), parking the worker thread for the configured duration.
+ *   <li>The delay effect calls {@code Thread.sleep(delayMs)} (or a random value in {@code [delayMs,
+ *       maxDelayMs]}), parking the worker thread for the configured duration.
  *   <li>After the sleep, {@code task.run()} executes normally. The task completes and the worker
  *       loops back to dequeue the next task.
  * </ol>
@@ -49,8 +49,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <ul>
  *   <li>{@code future.get()} eventually returns the correct value — the task does run; it just
  *       takes at least {@link #delayMs} ms longer to start.
- *   <li>Task throughput (tasks completed per second) drops proportionally to the sleep duration
- *       and the pool size — each worker sleeps before each task.
+ *   <li>Task throughput (tasks completed per second) drops proportionally to the sleep duration and
+ *       the pool size — each worker sleeps before each task.
  *   <li>{@code future.get(timeout, unit)} throws {@link java.util.concurrent.TimeoutException} if
  *       {@link #delayMs} exceeds the caller's wait budget.
  *   <li>Monitoring dashboards will show executor queue depth growing as tasks back up while workers
@@ -65,10 +65,10 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Deep technical dive</h2>
  *
  * <p><strong>Interception point.</strong> The agent targets the task-execution entry point inside
- * {@code java.util.concurrent.ThreadPoolExecutor}'s {@code runWorker} loop — specifically the
- * call site that invokes {@code task.run()} (where {@code task} is the {@code Runnable} or
- * {@code FutureTask} dequeued from the work queue). This is a JDK internal method, intercepted via
- * Byte Buddy retransformation of the bootstrap-loaded class.
+ * {@code java.util.concurrent.ThreadPoolExecutor}'s {@code runWorker} loop — specifically the call
+ * site that invokes {@code task.run()} (where {@code task} is the {@code Runnable} or {@code
+ * FutureTask} dequeued from the work queue). This is a JDK internal method, intercepted via Byte
+ * Buddy retransformation of the bootstrap-loaded class.
  *
  * <p><strong>Worker thread semantics.</strong> During the sleep, the worker thread does not hold
  * the executor's main lock; the lock was released when the task was dequeued. Other workers
@@ -76,16 +76,16 @@ import com.macstab.chaos.jvm.api.OperationType;
  * {@code D} ms, the effective task completion rate drops to approximately {@code N / D} tasks per
  * second (ignoring task run time).
  *
- * <p><strong>Interaction with ForkJoinPool.</strong> {@code ForkJoinPool} workers use
- * {@code ForkJoinTask.doExec()} rather than a simple {@code Runnable.run()} call. The
- * {@code FORK_JOIN_TASK_RUN} operation (covered by {@link ChaosForkJoinTaskRunDelay}) targets that
- * path. Use {@code ChaosExecutorWorkerRunDelay} for traditional {@code ThreadPoolExecutor}-based
- * pools; use {@link ChaosForkJoinTaskRunDelay} for {@code ForkJoinPool} tasks.
+ * <p><strong>Interaction with ForkJoinPool.</strong> {@code ForkJoinPool} workers use {@code
+ * ForkJoinTask.doExec()} rather than a simple {@code Runnable.run()} call. The {@code
+ * FORK_JOIN_TASK_RUN} operation (covered by {@link ChaosForkJoinTaskRunDelay}) targets that path.
+ * Use {@code ChaosExecutorWorkerRunDelay} for traditional {@code ThreadPoolExecutor}-based pools;
+ * use {@link ChaosForkJoinTaskRunDelay} for {@code ForkJoinPool} tasks.
  *
- * <p><strong>Cascading effects.</strong> With all workers sleeping before every task, any
- * component that waits on a pool-backed {@code Future} within a request deadline will time out.
- * Retry logic that resubmits on timeout may cause queue runaway: each timed-out retry adds a new
- * task that also sleeps, worsening the backlog.
+ * <p><strong>Cascading effects.</strong> With all workers sleeping before every task, any component
+ * that waits on a pool-backed {@code Future} within a request deadline will time out. Retry logic
+ * that resubmits on timeout may cause queue runaway: each timed-out retry adds a new task that also
+ * sleeps, worsening the backlog.
  *
  * <p><strong>Distinguishing from siblings.</strong> {@link ChaosExecutorSubmitDelay} slows the
  * submitter; this annotation slows the worker. {@link ChaosExecutorWorkerRunReject} throws an
@@ -113,7 +113,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java container image — the container must run a JVM process.
  * </ul>

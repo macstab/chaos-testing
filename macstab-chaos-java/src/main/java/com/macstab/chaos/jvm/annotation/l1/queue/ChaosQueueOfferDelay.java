@@ -16,22 +16,22 @@ import com.macstab.chaos.jvm.api.OperationType;
 /**
  * Parks the calling thread for {@link #delayMs} to {@link #maxDelayMs} milliseconds before every
  * {@link java.util.concurrent.BlockingQueue#offer(Object) BlockingQueue.offer(item)} call,
- * stretching the time of non-blocking enqueue attempts without suppressing them or causing them
- * to return {@code false}.
+ * stretching the time of non-blocking enqueue attempts without suppressing them or causing them to
+ * return {@code false}.
  *
  * <h2>What this annotation is</h2>
  *
  * <p>An L1 JVM chaos primitive in the {@code QUEUE} selector family targeting the {@code
  * QUEUE_OFFER} operation with the {@code delay} effect. It intercepts every {@code offer(item)}
- * call on {@code BlockingQueue} implementations ({@code LinkedBlockingQueue},
- * {@code ArrayBlockingQueue}, {@code LinkedTransferQueue}, etc.) and parks the calling thread for
- * the configured duration before allowing the offer to attempt to enqueue the item. The offer
- * itself proceeds normally after the sleep — it returns {@code true} if space was available or
- * {@code false} if the queue was full at that moment.
+ * call on {@code BlockingQueue} implementations ({@code LinkedBlockingQueue}, {@code
+ * ArrayBlockingQueue}, {@code LinkedTransferQueue}, etc.) and parks the calling thread for the
+ * configured duration before allowing the offer to attempt to enqueue the item. The offer itself
+ * proceeds normally after the sleep — it returns {@code true} if space was available or {@code
+ * false} if the queue was full at that moment.
  *
  * <p>This differs from {@link ChaosQueueOfferSuppress}, which always returns {@code false} and
- * discards the item. Here the item may still be enqueued — the delay only stretches the time
- * before the offer is attempted.
+ * discards the item. Here the item may still be enqueued — the delay only stretches the time before
+ * the offer is attempted.
  *
  * <h2>What chaos this applies</h2>
  *
@@ -41,10 +41,10 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <ol>
  *   <li>The interceptor is entered on the calling thread before the queue's internal lock is
  *       acquired.
- *   <li>The delay effect calls {@code Thread.sleep(delayMs)} (or a random value in {@code
- *       [delayMs, maxDelayMs]}), parking the calling thread.
- *   <li>After the sleep, the original {@code offer} body executes: the lock is acquired, space
- *       is checked, and the item is enqueued (or not) according to the queue's current state.
+ *   <li>The delay effect calls {@code Thread.sleep(delayMs)} (or a random value in {@code [delayMs,
+ *       maxDelayMs]}), parking the calling thread.
+ *   <li>After the sleep, the original {@code offer} body executes: the lock is acquired, space is
+ *       checked, and the item is enqueued (or not) according to the queue's current state.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -57,8 +57,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       down by {@link #delayMs} per item, reducing throughput proportionally.
  *   <li>Time-sensitive offer-with-timeout calls may see their deadline expire during the delay,
  *       causing them to return {@code false} even if queue space would have been available.
- *   <li>Consumer threads that were racing for space in the queue have more time to drain during
- *       the delay, potentially making the offer succeed more often than it would without chaos.
+ *   <li>Consumer threads that were racing for space in the queue have more time to drain during the
+ *       delay, potentially making the offer succeed more often than it would without chaos.
  * </ul>
  *
  * <p><strong>Production failure mode:</strong> a producer microservice offers events to a bounded
@@ -68,25 +68,25 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <h2>Deep technical dive</h2>
  *
- * <p><strong>Interception point.</strong> The agent targets {@code BlockingQueue#offer(Object)}
- * and {@code BlockingQueue#offer(Object, long, TimeUnit)} via Byte Buddy retransformation of the
- * JDK's {@code java.util.concurrent} classes. Concrete implementations are intercepted via their
+ * <p><strong>Interception point.</strong> The agent targets {@code BlockingQueue#offer(Object)} and
+ * {@code BlockingQueue#offer(Object, long, TimeUnit)} via Byte Buddy retransformation of the JDK's
+ * {@code java.util.concurrent} classes. Concrete implementations are intercepted via their
  * overriding methods.
  *
- * <p><strong>Lock acquisition timing.</strong> The delay fires before the queue's internal
- * {@code ReentrantLock} (for {@code LinkedBlockingQueue} / {@code ArrayBlockingQueue}) or CAS
- * loop (for {@code ConcurrentLinkedQueue}) is entered. During the sleep, no queue lock is held by
- * the sleeping thread — other threads can freely enqueue or dequeue items, changing the queue's
- * state during the delay window.
+ * <p><strong>Lock acquisition timing.</strong> The delay fires before the queue's internal {@code
+ * ReentrantLock} (for {@code LinkedBlockingQueue} / {@code ArrayBlockingQueue}) or CAS loop (for
+ * {@code ConcurrentLinkedQueue}) is entered. During the sleep, no queue lock is held by the
+ * sleeping thread — other threads can freely enqueue or dequeue items, changing the queue's state
+ * during the delay window.
  *
  * <p><strong>Timed offer interaction.</strong> For the timed variant, the remaining timeout passed
  * to the underlying park is not reduced by the delay — the delay is additive. An offer called with
  * {@code offer(item, 100, MILLIS)} may block for up to {@code delayMs + 100} ms in total.
  *
  * <p><strong>Distinguishing from siblings.</strong> {@link ChaosQueueOfferSuppress} always returns
- * {@code false} and never enqueues the item. {@link ChaosQueuePutDelay} targets the blocking
- * {@code put} path (which never returns false). This annotation targets the non-blocking
- * {@code offer} path and preserves its correctness while stretching its timing.
+ * {@code false} and never enqueues the item. {@link ChaosQueuePutDelay} targets the blocking {@code
+ * put} path (which never returns false). This annotation targets the non-blocking {@code offer}
+ * path and preserves its correctness while stretching its timing.
  *
  * <h2>Example</h2>
  *
@@ -110,7 +110,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java container image — the container must run a JVM process.
  * </ul>

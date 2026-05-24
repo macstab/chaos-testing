@@ -20,32 +20,33 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code TRUNCATE}, errno = {@code EACCES})
- * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
- * {@code truncate} call; when it fires the interposer returns {@code -1} with {@code errno = EACCES}
- * without performing any real kernel operation. No runtime operation-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code TRUNCATE}, errno = {@code
+ * EACCES}) tuple. A Bernoulli trial with probability {@link #probability} is run on each
+ * intercepted {@code truncate} call; when it fires the interposer returns {@code -1} with {@code
+ * errno = EACCES} without performing any real kernel operation. No runtime operation-errno
+ * validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
- *   <li>On each intercepted {@code truncate} call a Bernoulli trial with probability {@link #probability}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = EACCES}.
+ *   <li>On each intercepted {@code truncate} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = EACCES}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>{@code EACCES} from {@code truncate} means the process cannot change the file's size due
- *       to a permission check failure; the file's contents are unchanged. Assert that the
- *       application handles this as a permission error rather than a disk error, and that the
- *       error message includes the file path to aid operator diagnosis.
+ *   <li>{@code EACCES} from {@code truncate} means the process cannot change the file's size due to
+ *       a permission check failure; the file's contents are unchanged. Assert that the application
+ *       handles this as a permission error rather than a disk error, and that the error message
+ *       includes the file path to aid operator diagnosis.
  *   <li>Log rotation implementations that use {@code truncate} to reset log file size after
  *       archiving must handle {@code EACCES} if the running process does not have write permission
  *       on the log file (e.g., after a configuration change drops the log file's write permission).
@@ -55,15 +56,16 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *       assert that the application retries the operation with appropriate error recovery rather
  *       than silently operating on an unsized file.
  *   <li>Assert that the application's error path on truncate permission failure correctly
- *       distinguishes between "file not found" ({@code ENOENT}), "permission denied" ({@code EACCES}),
- *       and "read-only filesystem" ({@code EROFS}) and applies the appropriate remediation.
+ *       distinguishes between "file not found" ({@code ENOENT}), "permission denied" ({@code
+ *       EACCES}), and "read-only filesystem" ({@code EROFS}) and applies the appropriate
+ *       remediation.
  * </ul>
  *
- * <p>In production, {@code EACCES} from {@code truncate} occurs when a container's security
- * policy (SELinux context, AppArmor profile, capability restriction) prevents the process from
- * modifying a file's size even though the file's DAC permissions would otherwise allow it, and
- * when a file's permissions are changed by an external process between the time the application
- * opens the directory and the time it calls {@code truncate}.
+ * <p>In production, {@code EACCES} from {@code truncate} occurs when a container's security policy
+ * (SELinux context, AppArmor profile, capability restriction) prevents the process from modifying a
+ * file's size even though the file's DAC permissions would otherwise allow it, and when a file's
+ * permissions are changed by an external process between the time the application opens the
+ * directory and the time it calls {@code truncate}.
  *
  * <h2>Deep technical dive</h2>
  *
@@ -71,17 +73,17 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * length, unlike {@code ftruncate(2)} which takes an open file descriptor. Because {@code truncate}
  * accesses the file by path, it performs the full VFS permission check: DAC check on each path
  * component (execute permission required for directory traversal), write permission check on the
- * file's inode, and LSM (SELinux, AppArmor) policy check. A failure at any of these levels
- * returns {@code EACCES}.
+ * file's inode, and LSM (SELinux, AppArmor) policy check. A failure at any of these levels returns
+ * {@code EACCES}.
  *
  * <p>The path-based permission check in {@code truncate} is subject to TOCTOU (time-of-check,
- * time-of-use) races: a directory's permissions may change between the application's {@code access()}
- * check and the subsequent {@code truncate} call. This injection simulates the race outcome
- * without requiring an actual concurrent permission change.
+ * time-of-use) races: a directory's permissions may change between the application's {@code
+ * access()} check and the subsequent {@code truncate} call. This injection simulates the race
+ * outcome without requiring an actual concurrent permission change.
  *
  * <p>Java's {@code FileChannel.truncate(long)} uses {@code ftruncate(2)} (the fd-based variant)
- * rather than {@code truncate(2)}, so it is not affected by this annotation. Applications that
- * call the path-based truncate through JNI or through a native wrapper are affected.
+ * rather than {@code truncate(2)}, so it is not affected by this annotation. Applications that call
+ * the path-based truncate through JNI or through a native wrapper are affected.
  *
  * <h2>Example</h2>
  *

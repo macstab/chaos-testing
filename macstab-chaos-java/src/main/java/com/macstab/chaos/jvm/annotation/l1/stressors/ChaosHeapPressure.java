@@ -17,8 +17,8 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <h2>What this annotation is</h2>
  *
- * <p>A JVM agent stressor L1 primitive. Unlike interceptor primitives, stressors do not intercept
- * a specific JVM operation — they spawn a self-driving background routine that runs from activation
+ * <p>A JVM agent stressor L1 primitive. Unlike interceptor primitives, stressors do not intercept a
+ * specific JVM operation — they spawn a self-driving background routine that runs from activation
  * ({@code beforeAll} or {@code beforeEach}) until cleanup ({@code afterAll} or {@code afterEach}).
  * The stressor allocates {@link #bytes()} of heap memory in {@link #chunkSizeBytes()}-sized byte
  * arrays and holds strong references to all of them for the duration of the rule, preventing GC
@@ -29,15 +29,15 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * <ol>
  *   <li>The agent computes the number of chunks needed: {@code bytes / chunkSizeBytes}. It
  *       allocates each chunk as a {@code byte[chunkSizeBytes]} and stores all chunks in a
- *       stressor-owned list.</li>
+ *       stressor-owned list.
  *   <li>The retained chunks are live objects. The GC must treat them as part of the live set and
- *       cannot reclaim them. This reduces the effective free heap by {@link #bytes()} bytes.</li>
+ *       cannot reclaim them. This reduces the effective free heap by {@link #bytes()} bytes.
  *   <li>If the sum of the retained heap and the application's own live set exceeds the configured
- *       heap size ({@code -Xmx}), the GC frequency increases and eventually the JVM throws
- *       {@code OutOfMemoryError: Java heap space}.</li>
+ *       heap size ({@code -Xmx}), the GC frequency increases and eventually the JVM throws {@code
+ *       OutOfMemoryError: Java heap space}.
  *   <li>At cleanup (rule removal), the stressor drops all references, making all chunks eligible
  *       for GC. The next minor or major GC will reclaim the retained memory and restore the
- *       effective heap to its original size.</li>
+ *       effective heap to its original size.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -50,10 +50,10 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *   <li><strong>Increased major-GC frequency.</strong> With a smaller effective free heap, old-gen
  *       fills faster; major GC pauses (which stop the world for longer than minor GCs) occur more
  *       often; assert that the application's latency SLA is met even during old-gen collection.
- *   <li><strong>OOM on over-retention.</strong> Setting {@code bytes} close to or exceeding
- *       {@code -Xmx} minus the application's own live set will cause an OOM; assert that the
- *       OOM handler (UncaughtExceptionHandler, a JVM crash dump, or a Kubernetes OOM kill) is
- *       configured and produces a useful diagnostic artefact.
+ *   <li><strong>OOM on over-retention.</strong> Setting {@code bytes} close to or exceeding {@code
+ *       -Xmx} minus the application's own live set will cause an OOM; assert that the OOM handler
+ *       (UncaughtExceptionHandler, a JVM crash dump, or a Kubernetes OOM kill) is configured and
+ *       produces a useful diagnostic artefact.
  *   <li><strong>GC pause-time SLA breach.</strong> A heap that is mostly full causes the GC to do
  *       more work per cycle (fewer free regions to compact into in G1, longer mark phases); assert
  *       that pause-time targets ({@code -XX:MaxGCPauseMillis}) are met or that the application
@@ -69,16 +69,15 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <p>The stressor retains memory in the old generation (tenured space) because the chunks are
  * allocated, immediately promoted by the stressor's background thread (if it outlives one or two
- * minor GC cycles), and held strongly. Unlike {@link ChaosGcPressure}, which generates
- * short-lived garbage to stress the young-generation collector, this stressor creates long-lived
- * retained objects that stress the old-generation collector and the heap's free-space invariants.
+ * minor GC cycles), and held strongly. Unlike {@link ChaosGcPressure}, which generates short-lived
+ * garbage to stress the young-generation collector, this stressor creates long-lived retained
+ * objects that stress the old-generation collector and the heap's free-space invariants.
  *
- * <p>The {@link #chunkSizeBytes()} parameter controls the chunk granularity. Larger chunks
- * (e.g. 32 MB) allocate faster and are retained in fewer GC regions, which is representative of
- * large object allocations (LOBs) that skip the young generation in G1 (Humongous Objects).
- * Smaller chunks (e.g. 1 MB) are retained in many GC regions, which is more representative of
- * normal application object retention and gives the GC finer-grained control over which regions
- * to select for collection.
+ * <p>The {@link #chunkSizeBytes()} parameter controls the chunk granularity. Larger chunks (e.g. 32
+ * MB) allocate faster and are retained in fewer GC regions, which is representative of large object
+ * allocations (LOBs) that skip the young generation in G1 (Humongous Objects). Smaller chunks (e.g.
+ * 1 MB) are retained in many GC regions, which is more representative of normal application object
+ * retention and gives the GC finer-grained control over which regions to select for collection.
  *
  * <p>Combining this stressor with {@link ChaosGcPressure} produces a compound scenario: high
  * allocation rate (from {@code ChaosGcPressure}) combined with reduced effective free heap (from
@@ -101,8 +100,8 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <ul>
  *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
- *       agent before the container JVM starts; omitting it causes an
- *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       agent before the container JVM starts; omitting it causes an {@code
+ *       ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
  *       {@code @JvmAgentChaos}.
  *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the

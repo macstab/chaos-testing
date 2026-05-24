@@ -20,24 +20,24 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code CONNECT}, errno =
- * {@code ENETUNREACH}) tuple. A Bernoulli trial with probability {@link #toxicity} is run on each
- * intercepted {@code connect} call; when it fires the interposer returns {@code -1} with
- * {@code errno = ENETUNREACH} without performing any real kernel operation. No runtime
- * operation-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code CONNECT}, errno = {@code
+ * ENETUNREACH}) tuple. A Bernoulli trial with probability {@link #toxicity} is run on each
+ * intercepted {@code connect} call; when it fires the interposer returns {@code -1} with {@code
+ * errno = ENETUNREACH} without performing any real kernel operation. No runtime operation-errno
+ * validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
- *       extension to upload {@code libchaos-net.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
- *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
- *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
- *       {@code poll} at the dynamic-linker level.
- *   <li>On each intercepted {@code connect} call a Bernoulli trial with probability {@link #toxicity}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = ENETUNREACH}.
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket}, {@code
+ *       bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and {@code poll} at
+ *       the dynamic-linker level.
+ *   <li>On each intercepted {@code connect} call a Bernoulli trial with probability {@link
+ *       #toxicity} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = ENETUNREACH}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -49,9 +49,9 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *   <li>Assert that the application's connection pool quarantines the affected remote endpoint and
  *       does not retry immediately; routing convergence after a partition event typically takes
  *       several seconds to minutes, making fast retry wasteful.
- *   <li>Multi-datacenter services that maintain connections to remote clusters must detect
- *       {@code ENETUNREACH} and activate their inter-datacenter failover path; assert that the
- *       failover activates within the configured detection timeout.
+ *   <li>Multi-datacenter services that maintain connections to remote clusters must detect {@code
+ *       ENETUNREACH} and activate their inter-datacenter failover path; assert that the failover
+ *       activates within the configured detection timeout.
  *   <li>Assert that the application reports the network-partition condition at an appropriate
  *       severity level so that on-call engineers are paged rather than the error being silently
  *       counted in a low-priority metric.
@@ -66,28 +66,27 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <p>The kernel returns {@code ENETUNREACH} from {@code connect} when the routing lookup for the
  * destination address returns a "no route" result — neither the main routing table nor the policy
- * routing tables contain an entry for the destination network. This differs from {@code EHOSTUNREACH}
- * in that {@code ENETUNREACH} does not involve sending any packet at all; the failure is purely
- * local (routing table lookup) rather than involving ICMP responses from a remote router.
+ * routing tables contain an entry for the destination network. This differs from {@code
+ * EHOSTUNREACH} in that {@code ENETUNREACH} does not involve sending any packet at all; the failure
+ * is purely local (routing table lookup) rather than involving ICMP responses from a remote router.
  *
  * <p>In Linux's routing model, a missing route typically means neither a specific route for the
  * destination prefix nor a default route (0.0.0.0/0) exists. Container network plugins (Flannel,
  * Calico, Cilium) install routes to pod CIDRs in the host kernel's routing table; when a network
- * plugin crashes or a route advertisement is withdrawn, connections to pods on other nodes fail with
- * {@code ENETUNREACH}. This is a common failure mode in Kubernetes during CNI plugin upgrades.
+ * plugin crashes or a route advertisement is withdrawn, connections to pods on other nodes fail
+ * with {@code ENETUNREACH}. This is a common failure mode in Kubernetes during CNI plugin upgrades.
  *
- * <p>Java maps {@code ENETUNREACH} to a {@code NoRouteToHostException} with the message
- * "Network is unreachable". Note that Java uses the same exception class for both
- * {@code ENETUNREACH} and {@code EHOSTUNREACH}; application code that catches
- * {@code NoRouteToHostException} cannot distinguish between the two based on the exception type
- * alone. For production diagnostics, the errno value from the underlying native call must be
- * captured via JNA or a native agent.
+ * <p>Java maps {@code ENETUNREACH} to a {@code NoRouteToHostException} with the message "Network is
+ * unreachable". Note that Java uses the same exception class for both {@code ENETUNREACH} and
+ * {@code EHOSTUNREACH}; application code that catches {@code NoRouteToHostException} cannot
+ * distinguish between the two based on the exception type alone. For production diagnostics, the
+ * errno value from the underlying native call must be captured via JNA or a native agent.
  *
  * <p>The behaviour of connection pools on {@code ENETUNREACH} varies: HikariCP will attempt to
- * reconnect using its {@code connectionTimeout} and {@code keepaliveTime} settings; Lettuce
- * (Redis client) will trigger its reconnect handler with exponential back-off. This injection verifies
- * that these reconnect strategies are configured with delays long enough to allow routing convergence
- * without causing excessive connection-creation load.
+ * reconnect using its {@code connectionTimeout} and {@code keepaliveTime} settings; Lettuce (Redis
+ * client) will trigger its reconnect handler with exponential back-off. This injection verifies
+ * that these reconnect strategies are configured with delays long enough to allow routing
+ * convergence without causing excessive connection-creation load.
  *
  * <h2>Example</h2>
  *

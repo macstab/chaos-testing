@@ -19,54 +19,58 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * image.
  *
  * <h2>What this annotation is</h2>
- * L1 libchaos-process primitive — one (selector = {@code EXECVE}, errno = {@code E2BIG}) tuple.
- * The {@code EXECVE} selector intercepts {@code execve} calls only, leaving {@code fork},
- * {@code pthread_create}, {@code posix_spawn}, {@code posix_spawnp}, {@code execveat}, and
- * {@code waitpid} unaffected. Compile-time safety: invalid selector/errno combinations have no
- * annotation class.
+ *
+ * L1 libchaos-process primitive — one (selector = {@code EXECVE}, errno = {@code E2BIG}) tuple. The
+ * {@code EXECVE} selector intercepts {@code execve} calls only, leaving {@code fork}, {@code
+ * pthread_create}, {@code posix_spawn}, {@code posix_spawnp}, {@code execveat}, and {@code waitpid}
+ * unaffected. Compile-time safety: invalid selector/errno combinations have no annotation class.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
- *       interposing the libc {@code execve} wrapper at the dynamic-linker level.</li>
- *   <li>On each {@code execve} call the interposer runs a Bernoulli trial with probability
- *       {@link #probability}.</li>
+ *       interposing the libc {@code execve} wrapper at the dynamic-linker level.
+ *   <li>On each {@code execve} call the interposer runs a Bernoulli trial with probability {@link
+ *       #probability}.
  *   <li>When the trial fires, the interposer sets {@code errno = E2BIG} and returns {@code -1}
- *       without issuing the real kernel call.</li>
- *   <li>The calling code receives: {@code -1} return, {@code errno} 7,
- *       {@code strerror}: "Argument list too long"; no new process image is loaded.</li>
+ *       without issuing the real kernel call.
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 7, {@code strerror}: "Argument
+ *       list too long"; no new process image is loaded.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
  *   <li>{@code execve} returns {@code -1}; {@code errno = E2BIG} (7); the argument vector or
- *       environment vector exceeds the kernel's {@code ARG_MAX} limit — the application must
- *       handle the failure without leaking pre-exec file descriptors or locks.</li>
+ *       environment vector exceeds the kernel's {@code ARG_MAX} limit — the application must handle
+ *       the failure without leaking pre-exec file descriptors or locks.
  *   <li>Build systems, shell interpreters, and container runtimes that construct command lines
  *       programmatically must handle {@code E2BIG} by breaking long argument lists into shorter
  *       chunks (using {@code xargs}-style batching) or by writing arguments to a file and passing
  *       the file path; assert that the application uses this fallback rather than propagating the
- *       failure to the caller as an unrecoverable error.</li>
+ *       failure to the caller as an unrecoverable error.
  *   <li>Assert that the application does not leak pre-exec state — file descriptors opened before
- *       the failed {@code execve}, shared-memory mappings, and POSIX semaphores must be cleaned
- *       up correctly when the exec fails, since the process image has not been replaced and all
- *       resources remain open.</li>
+ *       the failed {@code execve}, shared-memory mappings, and POSIX semaphores must be cleaned up
+ *       correctly when the exec fails, since the process image has not been replaced and all
+ *       resources remain open.
  * </ul>
+ *
  * Production failure mode: a CI orchestrator or container scheduler accumulates environment
- * variables across multiple script layers (Docker {@code ENV}, Kubernetes {@code env},
- * Helm chart values) until the total environment size exceeds {@code ARG_MAX} (128 KiB on most
- * Linux kernels); the {@code execve} that launches the application binary fails with {@code E2BIG}
- * at container startup and the container enters a crash-loop without a useful error message.
+ * variables across multiple script layers (Docker {@code ENV}, Kubernetes {@code env}, Helm chart
+ * values) until the total environment size exceeds {@code ARG_MAX} (128 KiB on most Linux kernels);
+ * the {@code execve} that launches the application binary fails with {@code E2BIG} at container
+ * startup and the container enters a crash-loop without a useful error message.
  *
  * <h2>Deep technical dive</h2>
+ *
  * <p>POSIX specifies that {@code execve} returns {@code E2BIG} when the sum of the argument list
  * and environment list sizes exceeds the system's {@code ARG_MAX} limit. On Linux, {@code ARG_MAX}
  * is defined as {@code MAX_ARG_STRLEN * MAX_ARG_STRINGS} but in practice the effective limit is
  * {@code 1/4} of the stack size (default 8 MiB), yielding approximately 2 MiB per exec call.
  * Individual strings are limited to {@code MAX_ARG_STRLEN = 131072} bytes (128 KiB).
  *
- * <p>The most common production scenario for {@code E2BIG} is environment inflation: each layer
- * of the CI/CD pipeline adds environment variables (base image, CI framework, secrets management,
+ * <p>The most common production scenario for {@code E2BIG} is environment inflation: each layer of
+ * the CI/CD pipeline adds environment variables (base image, CI framework, secrets management,
  * application configuration) and the total grows silently until a deployment to a new environment
  * or a new variable pushes it over the limit. The failure is especially difficult to diagnose
  * because it occurs at {@code execve} time — the container process may log nothing before the
@@ -75,13 +79,13 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * <p>A second source is programmatic argument construction: applications that pass file paths,
  * configuration values, or user-provided input as command-line arguments to child processes may
  * construct argument vectors that exceed {@code ARG_MAX} when input data is large. The correct
- * pattern is to check the total argument size before calling {@code execve} or to use
- * {@code /proc/sys/kernel/arg-max} (Linux-specific) to retrieve the current limit at runtime.
+ * pattern is to check the total argument size before calling {@code execve} or to use {@code
+ * /proc/sys/kernel/arg-max} (Linux-specific) to retrieve the current limit at runtime.
  *
  * <p>Compared with {@code ENOENT}: {@code E2BIG} indicates the binary was found but the argument
- * list is too large; {@code ENOENT} indicates the binary path does not exist. Both prevent the
- * new process image from loading, but the remediation is entirely different — {@code E2BIG}
- * requires argument reduction; {@code ENOENT} requires path correction.
+ * list is too large; {@code ENOENT} indicates the binary path does not exist. Both prevent the new
+ * process image from loading, but the remediation is entirely different — {@code E2BIG} requires
+ * argument reduction; {@code ENOENT} requires path correction.
  *
  * <h2>Example</h2>
  *
@@ -100,9 +104,10 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2; {@code execve} is typically called
  * infrequently (at process startup and for each child spawn), so even moderate probabilities
  * exercise the error path without excessive disruption.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every process-chaos-capable container
- * in the test class.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container in
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ProcessErrnoBinding

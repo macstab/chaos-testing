@@ -15,8 +15,8 @@ import com.macstab.chaos.jvm.api.OperationType;
 
 /**
  * Parks the calling thread inside the virtual-thread start path for the configured number of
- * milliseconds before the virtual thread is submitted to its carrier-thread pool — every
- * {@code Thread.ofVirtual().start()} call takes at least {@code delayMs} longer than normal.
+ * milliseconds before the virtual thread is submitted to its carrier-thread pool — every {@code
+ * Thread.ofVirtual().start()} call takes at least {@code delayMs} longer than normal.
  *
  * <h2>What this annotation is</h2>
  *
@@ -40,8 +40,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <ol>
  *   <li>Execution is captured before the virtual thread's {@code Runnable} is submitted to the
  *       carrier fork-join pool.
- *   <li>The delay effect calls {@code LockSupport.parkNanos} on the <em>calling</em> thread for
- *       the configured duration in milliseconds.
+ *   <li>The delay effect calls {@code LockSupport.parkNanos} on the <em>calling</em> thread for the
+ *       configured duration in milliseconds.
  *   <li>After the park returns, the virtual thread is submitted to the pool normally and begins
  *       mounting on the next available carrier.
  * </ol>
@@ -52,9 +52,9 @@ import com.macstab.chaos.jvm.api.OperationType;
  *   <li>Wall-clock time between calling {@code Thread.ofVirtual().start(task)} and the virtual
  *       thread's first instruction is at least {@code delayMs} — assert with a timestamp taken
  *       inside the task runnable.
- *   <li>Frameworks that spawn one virtual thread per incoming request (e.g. Project Loom-based
- *       HTTP servers) exhibit elevated request-latency p99 by at least {@code delayMs} — assert
- *       via client-side timing.
+ *   <li>Frameworks that spawn one virtual thread per incoming request (e.g. Project Loom-based HTTP
+ *       servers) exhibit elevated request-latency p99 by at least {@code delayMs} — assert via
+ *       client-side timing.
  *   <li>The virtual thread eventually runs its {@code Runnable} normally after the delay; assert
  *       that results are produced to distinguish from a reject.
  *   <li>Structured-concurrency scopes ({@code StructuredTaskScope}) that fork many virtual threads
@@ -71,11 +71,11 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Deep technical dive</h2>
  *
  * <p><strong>Interception point.</strong> Virtual thread creation in JDK 21+ ultimately calls
- * {@code VirtualThread#start()} (package-private in {@code java.lang}) which submits a
- * {@code Continuation} to the carrier fork-join pool. The agent targets this internal
- * {@code start()} override on the {@code VirtualThread} subclass, distinct from the public
- * {@code Thread.start()} used by platform threads. The bootstrap class loader channel is required
- * because {@code VirtualThread} is a JDK-internal class.
+ * {@code VirtualThread#start()} (package-private in {@code java.lang}) which submits a {@code
+ * Continuation} to the carrier fork-join pool. The agent targets this internal {@code start()}
+ * override on the {@code VirtualThread} subclass, distinct from the public {@code Thread.start()}
+ * used by platform threads. The bootstrap class loader channel is required because {@code
+ * VirtualThread} is a JDK-internal class.
  *
  * <p><strong>Who parks.</strong> The park applies to the calling (launching) thread. In a
  * request-per-virtual-thread server this is typically an I/O thread dispatching accepted
@@ -120,7 +120,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java 21+ container image — virtual threads require JDK 21 or later.
  * </ul>

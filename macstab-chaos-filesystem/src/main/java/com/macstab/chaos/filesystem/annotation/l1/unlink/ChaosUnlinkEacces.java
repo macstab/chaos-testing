@@ -14,29 +14,31 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code EACCES} into {@code unlink(2)}, causing the call to return {@code -1} with
- * {@code errno = EACCES} as if the calling process does not have write permission on the directory
- * containing the file, or a path component requires search permission that the process does not have.
+ * Injects {@code EACCES} into {@code unlink(2)}, causing the call to return {@code -1} with {@code
+ * errno = EACCES} as if the calling process does not have write permission on the directory
+ * containing the file, or a path component requires search permission that the process does not
+ * have.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code UNLINK}, errno = {@code EACCES})
- * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
- * {@code unlink} call; when it fires the interposer returns {@code -1} with {@code errno = EACCES}
- * without performing any real kernel operation. No runtime operation-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code UNLINK}, errno = {@code
+ * EACCES}) tuple. A Bernoulli trial with probability {@link #probability} is run on each
+ * intercepted {@code unlink} call; when it fires the interposer returns {@code -1} with {@code
+ * errno = EACCES} without performing any real kernel operation. No runtime operation-errno
+ * validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
- *   <li>On each intercepted {@code unlink} call a Bernoulli trial with probability {@link #probability}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = EACCES}.
+ *   <li>On each intercepted {@code unlink} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = EACCES}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -50,33 +52,33 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *       handle {@code EACCES} if the temporary directory's permissions are changed by an external
  *       process; assert that the cleanup failure is logged and the temporary file is tracked for
  *       later cleanup rather than silently leaked.
- *   <li>Log rotation implementations that remove archived log files after the retention period
- *       must handle {@code EACCES} if the log directory's write permission is revoked; assert that
- *       the rotation reports the failure and continues with the remaining rotation steps rather
- *       than stopping at the first deletion failure.
+ *   <li>Log rotation implementations that remove archived log files after the retention period must
+ *       handle {@code EACCES} if the log directory's write permission is revoked; assert that the
+ *       rotation reports the failure and continues with the remaining rotation steps rather than
+ *       stopping at the first deletion failure.
  *   <li>Assert that the application's cleanup path on {@code EACCES} from unlink does not loop
  *       indefinitely retrying a permission-denied deletion, as the permission error will persist
  *       until an operator intervenes.
  * </ul>
  *
  * <p>In production, {@code EACCES} from {@code unlink} occurs when a security policy (SELinux
- * context, AppArmor profile, filesystem ACL) prevents the process from modifying the directory
- * that contains the file, even though the file itself is owned by the process, and when a
- * container's root filesystem is mounted read-only and the process attempts to delete a file.
+ * context, AppArmor profile, filesystem ACL) prevents the process from modifying the directory that
+ * contains the file, even though the file itself is owned by the process, and when a container's
+ * root filesystem is mounted read-only and the process attempts to delete a file.
  *
  * <h2>Deep technical dive</h2>
  *
  * <p>{@code unlink(2)} removes a directory entry — it requires write permission on the parent
  * directory, not on the file itself. A process that owns a file but does not have write permission
- * on the file's parent directory will receive {@code EACCES} from {@code unlink}. This is a
- * common source of confusion: the process can read and write the file's data (it owns the file)
- * but cannot remove the file's directory entry (it lacks write on the directory).
+ * on the file's parent directory will receive {@code EACCES} from {@code unlink}. This is a common
+ * source of confusion: the process can read and write the file's data (it owns the file) but cannot
+ * remove the file's directory entry (it lacks write on the directory).
  *
- * <p>The sticky bit ({@code chmod o+t /tmp}) modifies this rule: when set on a directory, only
- * the file's owner, the directory's owner, or the superuser can unlink files in the directory.
- * Other processes receive {@code EACCES} even if they have write permission on the directory.
- * This injection simulates the outcome of these permission scenarios without requiring actual
- * permission changes.
+ * <p>The sticky bit ({@code chmod o+t /tmp}) modifies this rule: when set on a directory, only the
+ * file's owner, the directory's owner, or the superuser can unlink files in the directory. Other
+ * processes receive {@code EACCES} even if they have write permission on the directory. This
+ * injection simulates the outcome of these permission scenarios without requiring actual permission
+ * changes.
  *
  * <p>Java's {@code Files.delete(Path)} and {@code File.delete()} both call {@code unlink(2)} and
  * throw an {@code IOException} with the message "Permission denied" when the underlying call

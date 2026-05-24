@@ -20,60 +20,65 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * process-management operations after N successful ones.
  *
  * <h2>What this annotation is</h2>
- * L1 libchaos-process primitive — one (selector = {@code WILDCARD}, errno = {@code EACCES},
- * effect = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N intercepted
+ *
+ * L1 libchaos-process primitive — one (selector = {@code WILDCARD}, errno = {@code EACCES}, effect
+ * = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N intercepted
  * process-management calls (across all families — fork, execve, posix_spawn, pthread_create,
  * waitpid) succeed, then the counter trips permanently and every subsequent call returns the error
  * code until the rule is removed. Compile-time safety: invalid selector/errno/effect combinations
  * have no annotation class.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
- *       interposing every process-management libc wrapper at the dynamic-linker level.</li>
+ *       interposing every process-management libc wrapper at the dynamic-linker level.
  *   <li>The interposer maintains a per-rule success counter shared across all intercepted syscall
  *       families; the counter does not reset automatically between test methods when the annotation
- *       is at class scope.</li>
+ *       is at class scope.
  *   <li>Once the counter reaches zero it trips permanently: every subsequent process-management
  *       call returns {@code -1} (or the errno value directly for pthread_create and posix_spawn)
- *       with {@code errno = EACCES}.</li>
- *   <li>The calling code receives: {@code fork()}/{@code execve()} return {@code -1} with
- *       {@code errno = EACCES} (13); {@code posix_spawn}/{@code pthread_create} return
- *       {@code EACCES} directly; {@code strerror(EACCES)}: "Permission denied".</li>
+ *       with {@code errno = EACCES}.
+ *   <li>The calling code receives: {@code fork()}/{@code execve()} return {@code -1} with {@code
+ *       errno = EACCES} (13); {@code posix_spawn}/{@code pthread_create} return {@code EACCES}
+ *       directly; {@code strerror(EACCES)}: "Permission denied".
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
  *   <li>The first {@link #successesBeforeFailure} process-management calls proceed normally; all
- *       subsequent calls return EACCES permanently; assert that the application treats EACCES as
- *       a non-retryable security policy failure and escalates to operators rather than retrying
- *       — MAC policy denials are permanent for the lifetime of the security context.</li>
+ *       subsequent calls return EACCES permanently; assert that the application treats EACCES as a
+ *       non-retryable security policy failure and escalates to operators rather than retrying — MAC
+ *       policy denials are permanent for the lifetime of the security context.
  *   <li>FAIL_AFTER models a MAC policy tightening event: N process-management calls succeed under
  *       the old policy; a new SELinux/AppArmor profile is applied; all subsequent calls return
  *       EACCES — assert that the application detects the onset of EACCES and sends a security
- *       policy change alert rather than treating it as a transient error.</li>
- *   <li>Assert that the application's generic process-management error handler correctly
- *       propagates EACCES from all call sites — not just the specific one that was tested in
- *       isolation — since the wildcard fires EACCES across all families simultaneously.</li>
+ *       policy change alert rather than treating it as a transient error.
+ *   <li>Assert that the application's generic process-management error handler correctly propagates
+ *       EACCES from all call sites — not just the specific one that was tested in isolation — since
+ *       the wildcard fires EACCES across all families simultaneously.
  * </ul>
- * Production failure mode: a Kubernetes operator applies a new SELinux policy that denies fork
- * and clone for a running container; the application starts receiving EACCES from all process
- * and thread creation attempts; it treats EACCES as EAGAIN and applies a retry loop with back-off;
- * the retry loop consumes CPU and the security alert is never sent; operators are not notified
- * that the security policy changed until the container stops serving requests.
+ *
+ * Production failure mode: a Kubernetes operator applies a new SELinux policy that denies fork and
+ * clone for a running container; the application starts receiving EACCES from all process and
+ * thread creation attempts; it treats EACCES as EAGAIN and applies a retry loop with back-off; the
+ * retry loop consumes CPU and the security alert is never sent; operators are not notified that the
+ * security policy changed until the container stops serving requests.
  *
  * <h2>Deep technical dive</h2>
+ *
  * <p>EACCES from process-management syscalls arises exclusively from MAC policy enforcement
  * (SELinux type enforcement, AppArmor confinement, TOMOYO path rules). Unlike EPERM which can
  * sometimes be resolved by dropping capabilities, EACCES from MAC cannot be resolved by the
- * application — it requires a security policy change by an operator. The FAIL_AFTER variant
- * models the hot policy change scenario: N calls succeed before the policy is applied, then
- * all subsequent calls fail permanently until the container is restarted with a compatible policy.
+ * application — it requires a security policy change by an operator. The FAIL_AFTER variant models
+ * the hot policy change scenario: N calls succeed before the policy is applied, then all subsequent
+ * calls fail permanently until the container is restarted with a compatible policy.
  *
- * <p>The WILDCARD FAIL_AFTER counter is shared across all intercepted syscall families. The
- * EACCES phase begins as soon as the counter is exhausted by the combined call traffic from
- * all families. For sequenced testing, set {@link #successesBeforeFailure} to the expected total
- * call count across all families during the pre-restriction phase.
+ * <p>The WILDCARD FAIL_AFTER counter is shared across all intercepted syscall families. The EACCES
+ * phase begins as soon as the counter is exhausted by the combined call traffic from all families.
+ * For sequenced testing, set {@link #successesBeforeFailure} to the expected total call count
+ * across all families during the pre-restriction phase.
  *
  * <p>The counter does not reset between test methods when the annotation is at class scope. The
  * first test method exercises the pre-restriction phase (N calls succeed); subsequent test methods
@@ -99,9 +104,10 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * of process-management calls the application makes before the policy tightening scenario occurs;
  * values 10–200 cover typical init + steady-state phases; 0 means the policy is applied before
  * startup.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every process-chaos-capable container
- * in the test class.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container in
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ProcessFailAfterBinding

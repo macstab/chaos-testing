@@ -19,70 +19,76 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * on the critical path.
  *
  * <h2>What this annotation is</h2>
+ *
  * L1 libchaos-process primitive — one (selector = {@code PTHREAD_CREATE}, effect = {@code LATENCY})
  * tuple. Unlike errno annotations, the latency primitive always delegates to the real kernel after
  * the delay — no thread creation is suppressed, no errno is injected. Compile-time safety: invalid
  * selector/effect combinations have no annotation class.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
- *       interposing the libc {@code pthread_create} wrapper at the dynamic-linker level.</li>
+ *       interposing the libc {@code pthread_create} wrapper at the dynamic-linker level.
  *   <li>On each {@code pthread_create} call the interposer sleeps for {@link #delayMs} milliseconds
- *       before issuing the real kernel call.</li>
- *   <li>The real {@code pthread_create} executes normally after the delay: thread stack is allocated,
- *       the new thread is scheduled, and the thread function begins executing.</li>
+ *       before issuing the real kernel call.
+ *   <li>The real {@code pthread_create} executes normally after the delay: thread stack is
+ *       allocated, the new thread is scheduled, and the thread function begins executing.
  *   <li>The calling code receives a return value of 0 (success) and a valid thread id, but the
- *       elapsed wall-clock time is increased by {@link #delayMs} ms on every create call.</li>
+ *       elapsed wall-clock time is increased by {@link #delayMs} ms on every create call.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
  *   <li>Each {@code pthread_create} call succeeds but takes at least {@link #delayMs} ms; assert
  *       that the application's thread-creation timeout budget accounts for kernel scheduling stall
  *       cost — applications that set thread-creation timeouts based on nominal workloads will fail
- *       under realistic memory and scheduler pressure.</li>
+ *       under realistic memory and scheduler pressure.
  *   <li>Applications that create threads on the critical path (e.g. request-handler thread creation
  *       in the hot path of a server) accumulate latency: N creates × {@link #delayMs} ms; assert
  *       that request latency SLOs account for thread-creation cost, not only for the handler
- *       execution time after the thread starts.</li>
+ *       execution time after the thread starts.
  *   <li>Assert that the application measures thread readiness from the moment the thread starts
  *       executing (when the thread function is invoked), not from the moment pthread_create is
  *       called — the delay occurs before the kernel fork, so the thread does not start executing
- *       until after the full delay elapses.</li>
+ *       until after the full delay elapses.
  * </ul>
+ *
  * Production failure mode: a thread-per-connection server creates a new handler thread for each
- * accepted connection; under high load the kernel scheduler stalls thread stack allocation by
- * tens of milliseconds; connection handling latency increases by the create stall on every
- * request; the latency budget is calibrated only against handler execution time and does not
- * account for the create stall, causing SLO breaches that cannot be traced to slow handlers
- * because the handlers themselves complete on time.
+ * accepted connection; under high load the kernel scheduler stalls thread stack allocation by tens
+ * of milliseconds; connection handling latency increases by the create stall on every request; the
+ * latency budget is calibrated only against handler execution time and does not account for the
+ * create stall, causing SLO breaches that cannot be traced to slow handlers because the handlers
+ * themselves complete on time.
  *
  * <h2>Deep technical dive</h2>
+ *
  * <p>pthread_create latency in production originates from three sources this annotation models in
- * aggregate: (1) NPTL stack allocation — when the stack cache is empty, glibc calls {@code mmap}
- * to allocate a new stack; under memory pressure, the page fault handling and CoW setup for the
- * new stack can take tens of milliseconds; (2) kernel task_struct and kernel stack allocation —
- * the clone syscall allocates kernel data structures from the slab allocator; under slab memory
+ * aggregate: (1) NPTL stack allocation — when the stack cache is empty, glibc calls {@code mmap} to
+ * allocate a new stack; under memory pressure, the page fault handling and CoW setup for the new
+ * stack can take tens of milliseconds; (2) kernel task_struct and kernel stack allocation — the
+ * clone syscall allocates kernel data structures from the slab allocator; under slab memory
  * pressure this adds latency; (3) scheduler registration — the kernel adds the new thread to the
- * run queue; under high thread counts and real-time priority inversion, this registration can stall.
+ * run queue; under high thread counts and real-time priority inversion, this registration can
+ * stall.
  *
  * <p>The delay fires on every {@code pthread_create} call, not at a configurable probability. This
  * makes latency injection deterministic and simplifies timeout budget calculations: if N threads
- * are created during pool startup, the total startup latency includes N × {@link #delayMs} ms
- * from create stalls alone. Thread pools with eager thread creation (all threads at startup) are
- * more sensitive to create latency than lazy pools (threads created on demand).
+ * are created during pool startup, the total startup latency includes N × {@link #delayMs} ms from
+ * create stalls alone. Thread pools with eager thread creation (all threads at startup) are more
+ * sensitive to create latency than lazy pools (threads created on demand).
  *
  * <p>Unlike errno injection, the latency primitive allows the thread to start and run normally.
- * Tests using this annotation can assert on both the latency overhead (pthread_create call duration)
- * and on correct thread behaviour (function execution, shared state access, condition variable
- * waits). This is particularly useful for testing that the application does not hold locks across
- * pthread_create calls — holding a lock during a delayed create causes all other threads waiting
- * on that lock to stall for {@link #delayMs} ms.
+ * Tests using this annotation can assert on both the latency overhead (pthread_create call
+ * duration) and on correct thread behaviour (function execution, shared state access, condition
+ * variable waits). This is particularly useful for testing that the application does not hold locks
+ * across pthread_create calls — holding a lock during a delayed create causes all other threads
+ * waiting on that lock to stall for {@link #delayMs} ms.
  *
  * <p>Thread pool implementations that create replacement threads synchronously (on a thread exit
- * callback while holding the pool lock) are especially sensitive to pthread_create latency:
- * the pool lock is held for the duration of the create plus the delay, blocking all pool operations
+ * callback while holding the pool lock) are especially sensitive to pthread_create latency: the
+ * pool lock is held for the duration of the create plus the delay, blocking all pool operations
  * during this window. Applications should create replacement threads asynchronously or without
  * holding the pool lock.
  *
@@ -105,9 +111,10 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * <p><strong>Delay guidance:</strong> 50–200 ms simulates realistic kernel stack allocation stall
  * under memory pressure; values larger than the application's thread-creation timeout will cause
  * all creates to appear timed out, which may be intentional for testing timeout escalation paths.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every process-chaos-capable container
- * in the test class.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container in
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ProcessLatencyBinding

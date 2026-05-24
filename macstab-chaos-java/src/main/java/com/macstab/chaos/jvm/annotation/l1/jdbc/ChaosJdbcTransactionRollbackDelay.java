@@ -30,8 +30,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <ol>
  *   <li>Before every call to {@code java.sql.Connection#rollback()} inside the target container's
  *       JVM, the chaos agent intercepts the calling thread.
- *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()},
- *       {@link #maxDelayMs()}]; equal values produce a deterministic delay.
+ *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()}, {@link
+ *       #maxDelayMs()}]; equal values produce a deterministic delay.
  *   <li>Control returns and the underlying {@code rollback()} executes normally; the database
  *       writes undo records and releases row-level locks.
  * </ol>
@@ -43,44 +43,44 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       locks are still held at the database, blocking other transactions that want those rows.
  *   <li>JDBC connection pools mark connections as returned only after rollback completes; a slow
  *       rollback delays connection return to the pool, effectively reducing pool throughput.
- *   <li>Error-handling code paths that call rollback (typically in {@code catch} or
- *       {@code finally} blocks) will block for the duration; assert that the application does
- *       not hold additional locks (e.g. Java-level locks) during this period.
- *   <li><strong>Production failure mode:</strong> a long-running transaction is rolled back due
- *       to a serialization failure; the rollback itself takes 12 s because the undo log is large
- *       and the database I/O is saturated; the connection is held, the pool slot is unavailable,
- *       and the service effectively has one fewer worker thread for 12 s per rollback.
+ *   <li>Error-handling code paths that call rollback (typically in {@code catch} or {@code finally}
+ *       blocks) will block for the duration; assert that the application does not hold additional
+ *       locks (e.g. Java-level locks) during this period.
+ *   <li><strong>Production failure mode:</strong> a long-running transaction is rolled back due to
+ *       a serialization failure; the rollback itself takes 12 s because the undo log is large and
+ *       the database I/O is saturated; the connection is held, the pool slot is unavailable, and
+ *       the service effectively has one fewer worker thread for 12 s per rollback.
  * </ul>
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>The interception targets {@code java.sql.Connection#rollback()} at the interface level.
- * In a database like PostgreSQL, rollback requires writing an {@code ABORT} record to the WAL
- * and updating the transaction's commit status in the CLOG. Under heavy write load the WAL
- * writer may be backlogged; injecting rollback delay simulates this without needing to generate
- * actual WAL pressure.
+ * <p>The interception targets {@code java.sql.Connection#rollback()} at the interface level. In a
+ * database like PostgreSQL, rollback requires writing an {@code ABORT} record to the WAL and
+ * updating the transaction's commit status in the CLOG. Under heavy write load the WAL writer may
+ * be backlogged; injecting rollback delay simulates this without needing to generate actual WAL
+ * pressure.
  *
- * <p>Spring's {@code DataSourceTransactionManager.doRollback()} calls this method in its
- * rollback path, which is invoked from the transaction proxy when the {@code @Transactional}
- * method throws an exception. The rollback delay therefore inflates the total time between the
- * business exception being thrown and the caller receiving the response — a hidden cost that is
- * rarely measured in synthetic load tests.
+ * <p>Spring's {@code DataSourceTransactionManager.doRollback()} calls this method in its rollback
+ * path, which is invoked from the transaction proxy when the {@code @Transactional} method throws
+ * an exception. The rollback delay therefore inflates the total time between the business exception
+ * being thrown and the caller receiving the response — a hidden cost that is rarely measured in
+ * synthetic load tests.
  *
  * <p>HikariCP marks a connection as "not in transaction" only after {@code rollback()} returns.
- * During the chaos sleep, the connection is counted as "in use" by the pool, meaning the pool
- * may appear to have fewer available connections than it actually does. Combine with a short pool
- * timeout to expose pool-exhaustion conditions that occur specifically during rollback storms
- * (high error rates causing many concurrent rollbacks).
+ * During the chaos sleep, the connection is counted as "in use" by the pool, meaning the pool may
+ * appear to have fewer available connections than it actually does. Combine with a short pool
+ * timeout to expose pool-exhaustion conditions that occur specifically during rollback storms (high
+ * error rates causing many concurrent rollbacks).
  *
- * <p>The delay fires before the network write of the rollback command. Row locks are released
- * only after the rollback ACK is received from the database; during the sleep, the database is
- * still waiting for the rollback command and the locks remain held. This is different from a
- * network partition (where the connection drops and the database automatically rolls back after
- * detecting the lost connection via TCP keepalives).
+ * <p>The delay fires before the network write of the rollback command. Row locks are released only
+ * after the rollback ACK is received from the database; during the sleep, the database is still
+ * waiting for the rollback command and the locks remain held. This is different from a network
+ * partition (where the connection drops and the database automatically rolls back after detecting
+ * the lost connection via TCP keepalives).
  *
  * <p>Combining with {@link ChaosJdbcTransactionCommitDelay} models a database under storage
- * pressure where both commit and rollback are slow — the pathological case of a database with
- * a full transaction log or saturated storage subsystem.
+ * pressure where both commit and rollback are slow — the pathological case of a database with a
+ * full transaction log or saturated storage subsystem.
  *
  * <h2>Example</h2>
  *
@@ -101,8 +101,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

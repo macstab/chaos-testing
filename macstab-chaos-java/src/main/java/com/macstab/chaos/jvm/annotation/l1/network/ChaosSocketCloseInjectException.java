@@ -29,8 +29,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>Before every call to {@code java.net.Socket#close()} inside the target container's JVM,
- *       the chaos agent intercepts the calling thread.
+ *   <li>Before every call to {@code java.net.Socket#close()} inside the target container's JVM, the
+ *       chaos agent intercepts the calling thread.
  *   <li>The agent reflectively instantiates the class named by {@link #exceptionClassName()} with
  *       the message from {@link #message()} and throws it; the real {@code close()} is not called;
  *       the file descriptor is not released and the TCP connection remains open.
@@ -45,48 +45,47 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       sockets fail to close, the application's file descriptor count grows; assert that the
  *       application's monitoring detects the file descriptor leak and that an alert fires before
  *       the OS limit is reached.
- *   <li>JDBC drivers' {@code java.sql.Connection.close()} implementations typically call
- *       {@code socket.close()} in a try-catch or finally block; if the close throws, the driver
- *       may swallow the exception or propagate it to the pool; HikariCP's eviction path catches
- *       exceptions from {@code close()} and logs them but does not retry — assert that the pool
- *       log captures the close failure and that the pool does not attempt to reuse the unclosed
+ *   <li>JDBC drivers' {@code java.sql.Connection.close()} implementations typically call {@code
+ *       socket.close()} in a try-catch or finally block; if the close throws, the driver may
+ *       swallow the exception or propagate it to the pool; HikariCP's eviction path catches
+ *       exceptions from {@code close()} and logs them but does not retry — assert that the pool log
+ *       captures the close failure and that the pool does not attempt to reuse the unclosed
  *       connection.
  *   <li>Applications that close connections in finally blocks will have the close exception
  *       propagate out of the finally block, potentially masking the original exception that caused
  *       the finally block to execute; assert that both the original exception and the close
  *       exception are logged and neither is silently lost.
- *   <li><strong>Production failure mode:</strong> a JVM run at the OS file descriptor limit
- *       ({@code ulimit -n}) combined with a connection pool that evicts connections and fails to
- *       close them causes the file descriptor count to grow monotonically; new connection attempts
- *       fail with {@code IOException: Too many open files}; the pool cannot create new connections;
- *       the application appears healthy (it is running) but cannot process any new requests that
+ *   <li><strong>Production failure mode:</strong> a JVM run at the OS file descriptor limit ({@code
+ *       ulimit -n}) combined with a connection pool that evicts connections and fails to close them
+ *       causes the file descriptor count to grow monotonically; new connection attempts fail with
+ *       {@code IOException: Too many open files}; the pool cannot create new connections; the
+ *       application appears healthy (it is running) but cannot process any new requests that
  *       require database access.
  * </ul>
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>The interception targets {@code java.net.Socket#close()} via Byte Buddy. In the JVM,
- * {@code Socket.close()} calls {@code impl.close()}, which calls {@code socketClose()}, which
- * issues {@code close(2)} on the file descriptor. The chaos exception fires before any of this
- * occurs; the underlying OS socket remains open and the file descriptor is unreleased.
+ * <p>The interception targets {@code java.net.Socket#close()} via Byte Buddy. In the JVM, {@code
+ * Socket.close()} calls {@code impl.close()}, which calls {@code socketClose()}, which issues
+ * {@code close(2)} on the file descriptor. The chaos exception fires before any of this occurs; the
+ * underlying OS socket remains open and the file descriptor is unreleased.
  *
- * <p>PostgreSQL JDBC's {@code AbstractJdbc2Connection.close()} calls
- * {@code protoConnection.close()} which eventually calls {@code pgStream.close()} and then
- * {@code socket.close()}. If the socket close throws, the JDBC connection object transitions to
- * a closed state internally (it sets {@code openStackTrace = null} and similar flags) even though
- * the underlying OS socket is not closed. This creates a split state: the JVM considers the
- * connection closed but the OS has an open socket with pending data in its send buffer.
+ * <p>PostgreSQL JDBC's {@code AbstractJdbc2Connection.close()} calls {@code
+ * protoConnection.close()} which eventually calls {@code pgStream.close()} and then {@code
+ * socket.close()}. If the socket close throws, the JDBC connection object transitions to a closed
+ * state internally (it sets {@code openStackTrace = null} and similar flags) even though the
+ * underlying OS socket is not closed. This creates a split state: the JVM considers the connection
+ * closed but the OS has an open socket with pending data in its send buffer.
  *
- * <p>HikariCP's {@code PoolBase.quietlyCloseConnection()} wraps the close in a try-catch,
- * logs the exception at WARN level, and does not propagate it. The pool's internal state is
- * updated to remove the connection from its tracking structures. Because the OS socket is still
- * open, the remote database server still holds the connection open; the database's
- * {@code max_connections} is not freed until the database's idle timeout fires and closes the
- * socket from the server side.
+ * <p>HikariCP's {@code PoolBase.quietlyCloseConnection()} wraps the close in a try-catch, logs the
+ * exception at WARN level, and does not propagate it. The pool's internal state is updated to
+ * remove the connection from its tracking structures. Because the OS socket is still open, the
+ * remote database server still holds the connection open; the database's {@code max_connections} is
+ * not freed until the database's idle timeout fires and closes the socket from the server side.
  *
- * <p>This is one of the most difficult failure modes to test without chaos tooling because
- * {@code Socket.close()} almost never throws in production; its failure requires either kernel
- * errors or driver bugs. This annotation makes it reproducible and testable.
+ * <p>This is one of the most difficult failure modes to test without chaos tooling because {@code
+ * Socket.close()} almost never throws in production; its failure requires either kernel errors or
+ * driver bugs. This annotation makes it reproducible and testable.
  *
  * <h2>Example</h2>
  *
@@ -109,8 +108,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

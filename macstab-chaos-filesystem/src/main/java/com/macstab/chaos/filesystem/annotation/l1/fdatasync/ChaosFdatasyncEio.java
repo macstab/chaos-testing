@@ -14,29 +14,29 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code EIO} into {@code fdatasync(2)}, causing the call to return {@code -1} with
- * {@code errno = EIO} as if the kernel could not flush the file's dirty data pages to the storage
- * device because the device returned a hardware I/O error during the data flush operation.
+ * Injects {@code EIO} into {@code fdatasync(2)}, causing the call to return {@code -1} with {@code
+ * errno = EIO} as if the kernel could not flush the file's dirty data pages to the storage device
+ * because the device returned a hardware I/O error during the data flush operation.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code FDATASYNC}, errno = {@code EIO})
- * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code FDATASYNC}, errno = {@code
+ * EIO}) tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
  * {@code fdatasync} call; when it fires the interposer returns {@code -1} with {@code errno = EIO}
  * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
- *   <li>On each intercepted {@code fdatasync} call a Bernoulli trial with probability {@link #probability}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = EIO}.
+ *   <li>On each intercepted {@code fdatasync} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = EIO}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -59,30 +59,29 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *       the appropriate remediation.
  * </ul>
  *
- * <p>In production, {@code EIO} from {@code fdatasync} occurs under the same conditions as
- * {@code EIO} from {@code fsync} — bad sectors, storage controller failures, and NFS backend
- * errors — but only for the data pages, not the metadata. On a filesystem that is otherwise
- * healthy, {@code fdatasync} {@code EIO} indicates that a specific data region has a persistent
- * write error.
+ * <p>In production, {@code EIO} from {@code fdatasync} occurs under the same conditions as {@code
+ * EIO} from {@code fsync} — bad sectors, storage controller failures, and NFS backend errors — but
+ * only for the data pages, not the metadata. On a filesystem that is otherwise healthy, {@code
+ * fdatasync} {@code EIO} indicates that a specific data region has a persistent write error.
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>{@code fdatasync(2)} is like {@code fsync(2)} but only flushes the file's data pages and
- * the minimum metadata needed to access the data (specifically the file size if it changed);
- * it does not flush metadata that is not strictly necessary for data access (modification time,
- * access time). This makes {@code fdatasync} faster than {@code fsync} on journalled filesystems
- * because the journal does not need to be committed for metadata-only changes.
+ * <p>{@code fdatasync(2)} is like {@code fsync(2)} but only flushes the file's data pages and the
+ * minimum metadata needed to access the data (specifically the file size if it changed); it does
+ * not flush metadata that is not strictly necessary for data access (modification time, access
+ * time). This makes {@code fdatasync} faster than {@code fsync} on journalled filesystems because
+ * the journal does not need to be committed for metadata-only changes.
  *
  * <p>Database engines that pre-allocate WAL file space using {@code fallocate} at startup use
- * {@code fdatasync} rather than {@code fsync} for WAL record commits because the file size does
- * not change on each commit (only data is written within the pre-allocated region). {@code fsync}
- * would also flush the journal commit block for the metadata, adding unnecessary overhead.
- * {@code fdatasync} provides the same data durability guarantee at lower cost.
+ * {@code fdatasync} rather than {@code fsync} for WAL record commits because the file size does not
+ * change on each commit (only data is written within the pre-allocated region). {@code fsync} would
+ * also flush the journal commit block for the metadata, adding unnecessary overhead. {@code
+ * fdatasync} provides the same data durability guarantee at lower cost.
  *
- * <p>Java's {@code FileChannel.force(false)} calls {@code fdatasync(2)} on Linux; {@code force(true)}
- * calls {@code fsync(2)}. When {@code force(false)} fails with {@code EIO}, Java throws an
- * {@code IOException} with the message "Input/output error". Application code must propagate
- * this exception to the transaction layer rather than catching and suppressing it.
+ * <p>Java's {@code FileChannel.force(false)} calls {@code fdatasync(2)} on Linux; {@code
+ * force(true)} calls {@code fsync(2)}. When {@code force(false)} fails with {@code EIO}, Java
+ * throws an {@code IOException} with the message "Input/output error". Application code must
+ * propagate this exception to the transaction layer rather than catching and suppressing it.
  *
  * <h2>Example</h2>
  *

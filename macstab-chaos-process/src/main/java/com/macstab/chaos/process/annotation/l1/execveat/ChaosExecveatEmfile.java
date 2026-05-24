@@ -19,58 +19,63 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * the process image relative to a directory file descriptor.
  *
  * <h2>What this annotation is</h2>
+ *
  * L1 libchaos-process primitive — one (selector = {@code EXECVEAT}, errno = {@code EMFILE}) tuple.
  * The {@code EXECVEAT} selector intercepts {@code execveat} calls only (the Linux-specific
  * directory-relative exec syscall), leaving {@code execve} and all other process syscalls
  * unaffected. Compile-time safety: invalid selector/errno combinations have no annotation class.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
- *       interposing the libc {@code execveat} wrapper at the dynamic-linker level.</li>
- *   <li>On each {@code execveat} call the interposer runs a Bernoulli trial with probability
- *       {@link #probability}.</li>
+ *       interposing the libc {@code execveat} wrapper at the dynamic-linker level.
+ *   <li>On each {@code execveat} call the interposer runs a Bernoulli trial with probability {@link
+ *       #probability}.
  *   <li>When the trial fires, the interposer sets {@code errno = EMFILE} and returns {@code -1}
- *       without issuing the real kernel call.</li>
- *   <li>The calling code receives: {@code -1} return, {@code errno} 24,
- *       {@code strerror}: "Too many open files"; no new process image is loaded.</li>
+ *       without issuing the real kernel call.
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 24, {@code strerror}: "Too many
+ *       open files"; no new process image is loaded.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
  *   <li>{@code execveat} returns {@code -1}; {@code errno = EMFILE} (24); the process's fd table
  *       has reached {@code RLIMIT_NOFILE} — the exec cannot open the binary internally and fails
- *       before the image-replacement phase begins.</li>
+ *       before the image-replacement phase begins.
  *   <li>When using {@code execveat} with {@code AT_EMPTY_PATH}, the fd table exhaustion is
- *       compounded: the application must have already opened the {@code dirfd} before calling
- *       exec, consuming one fd slot; if the exec fails with {@code EMFILE}, the {@code dirfd}
- *       must be explicitly closed — assert that the application closes the {@code dirfd} on
- *       {@code EMFILE} failure rather than leaking it, which would worsen the exhaustion.</li>
- *   <li>Assert that the application's diagnostic message for exec-EMFILE distinguishes the
- *       "fd table full" scenario from "binary not found" — the two errors require completely
- *       different operator actions (close leaked fds vs. check deployment).</li>
+ *       compounded: the application must have already opened the {@code dirfd} before calling exec,
+ *       consuming one fd slot; if the exec fails with {@code EMFILE}, the {@code dirfd} must be
+ *       explicitly closed — assert that the application closes the {@code dirfd} on {@code EMFILE}
+ *       failure rather than leaking it, which would worsen the exhaustion.
+ *   <li>Assert that the application's diagnostic message for exec-EMFILE distinguishes the "fd
+ *       table full" scenario from "binary not found" — the two errors require completely different
+ *       operator actions (close leaked fds vs. check deployment).
  * </ul>
- * Production failure mode: a container runtime opens the entrypoint binary fd for
- * {@code execveat(AT_EMPTY_PATH)} exec; the process's fd table is approaching {@code RLIMIT_NOFILE}
- * due to leaks from previous request processing; the exec fails with {@code EMFILE}; the runtime
- * leaks the {@code dirfd} it opened for the exec attempt, further worsening the fd exhaustion —
- * creating a self-reinforcing failure cascade.
+ *
+ * Production failure mode: a container runtime opens the entrypoint binary fd for {@code
+ * execveat(AT_EMPTY_PATH)} exec; the process's fd table is approaching {@code RLIMIT_NOFILE} due to
+ * leaks from previous request processing; the exec fails with {@code EMFILE}; the runtime leaks the
+ * {@code dirfd} it opened for the exec attempt, further worsening the fd exhaustion — creating a
+ * self-reinforcing failure cascade.
  *
  * <h2>Deep technical dive</h2>
- * <p>The {@code EMFILE} interaction with {@code execveat} has an important nuance: the
- * {@code AT_EMPTY_PATH} pattern requires an open fd ({@code dirfd}) before exec is attempted.
- * This means the application must allocate an fd slot just to set up the exec call; if the
- * table is full, the open fails before exec is reached. However, if the open succeeds (the
- * application opened the dirfd when the table had one slot free) and then the exec path
- * internally needs another fd slot, the exec may fail with {@code EMFILE}. The application
- * must handle failure at either point and ensure the dirfd is closed in both cases.
+ *
+ * <p>The {@code EMFILE} interaction with {@code execveat} has an important nuance: the {@code
+ * AT_EMPTY_PATH} pattern requires an open fd ({@code dirfd}) before exec is attempted. This means
+ * the application must allocate an fd slot just to set up the exec call; if the table is full, the
+ * open fails before exec is reached. However, if the open succeeds (the application opened the
+ * dirfd when the table had one slot free) and then the exec path internally needs another fd slot,
+ * the exec may fail with {@code EMFILE}. The application must handle failure at either point and
+ * ensure the dirfd is closed in both cases.
  *
  * <p>The dirfd leak risk is unique to {@code execveat} compared with {@code execve}: in a
  * successful exec, the kernel closes the dirfd if it has {@code FD_CLOEXEC} set (which is
  * recommended for all dirfds); in a failed exec, no close-on-exec processing occurs and the
- * application must close the fd manually in its error handling path. Applications that copy
- * the happy path fd lifecycle to the error path without adding an explicit close will leak
- * the dirfd on every exec failure.
+ * application must close the fd manually in its error handling path. Applications that copy the
+ * happy path fd lifecycle to the error path without adding an explicit close will leak the dirfd on
+ * every exec failure.
  *
  * <h2>Example</h2>
  *
@@ -86,11 +91,12 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; fd exhaustion is a gradual process;
- * any non-zero probability exercises the dirfd-close-on-error path.
+ * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; fd exhaustion is a gradual process; any
+ * non-zero probability exercises the dirfd-close-on-error path.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every process-chaos-capable container
- * in the test class.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container in
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ProcessErrnoBinding

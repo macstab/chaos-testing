@@ -22,15 +22,15 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p>A JVM agent L1 chaos primitive targeting the {@code JMX_INVOKE} operation — one typed
  * annotation per (selector family, operation type, effect) tuple. Declared on a test class or
- * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until
- * {@code afterAll}/{@code afterEach} respectively.
+ * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until {@code
+ * afterAll}/{@code afterEach} respectively.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>The chaos agent intercepts every call to
- *       {@code javax.management.MBeanServer.invoke(ObjectName, String, Object[], String[])} in the
- *       target container's JVM.
+ *   <li>The chaos agent intercepts every call to {@code
+ *       javax.management.MBeanServer.invoke(ObjectName, String, Object[], String[])} in the target
+ *       container's JVM.
  *   <li>Before forwarding the call to the MBean, the interceptor parks the calling thread for a
  *       duration sampled uniformly between {@link #delayMs()} and {@link #maxDelayMs()}
  *       milliseconds.
@@ -41,8 +41,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Hot-reload operations slow.</strong> JMX-triggered operations such as
- *       {@code reloadConfiguration} or {@code resetStatistics} will complete late; assert that the
+ *   <li><strong>Hot-reload operations slow.</strong> JMX-triggered operations such as {@code
+ *       reloadConfiguration} or {@code resetStatistics} will complete late; assert that the
  *       management client (CLI, admin console) handles the delay gracefully and does not time out.
  *   <li><strong>Connection pool management delayed.</strong> Frameworks that expose pool-resize
  *       operations via JMX will apply the resize after the injected delay; assert that the pool's
@@ -64,15 +64,15 @@ import com.macstab.chaos.jvm.api.OperationType;
  * registry resolves the target MBean. The delay fires on the thread that issued the invoke, which
  * may be a JMX connector thread (for remote callers) or the application's own management thread.
  *
- * <p>Unlike attribute reads, MBean operations are often side-effecting (they change state,
- * trigger actions, or produce side effects). A delay therefore means those side effects are
- * delayed, not that they are repeated. Tests that assert "the cache was flushed" must allow for
- * the full delay before making the assertion.
+ * <p>Unlike attribute reads, MBean operations are often side-effecting (they change state, trigger
+ * actions, or produce side effects). A delay therefore means those side effects are delayed, not
+ * that they are repeated. Tests that assert "the cache was flushed" must allow for the full delay
+ * before making the assertion.
  *
- * <p>The delay interacts with JMX connector timeouts: a remote JMX client (e.g. JConsole, a
- * custom management script) will time out if the invoke takes longer than the client's configured
- * request timeout. Tests can use this to validate that the management tooling handles server-side
- * slowness correctly — for example by displaying a "request timed out" message rather than hanging
+ * <p>The delay interacts with JMX connector timeouts: a remote JMX client (e.g. JConsole, a custom
+ * management script) will time out if the invoke takes longer than the client's configured request
+ * timeout. Tests can use this to validate that the management tooling handles server-side slowness
+ * correctly — for example by displaying a "request timed out" message rather than hanging
  * indefinitely.
  *
  * <h2>Example</h2>
@@ -89,8 +89,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
- *       agent before the container JVM starts; omitting it causes an
- *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       agent before the container JVM starts; omitting it causes an {@code
+ *       ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
  *       {@code @JvmAgentChaos}.
  *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the

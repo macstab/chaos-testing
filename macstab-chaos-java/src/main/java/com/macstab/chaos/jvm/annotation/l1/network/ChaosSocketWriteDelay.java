@@ -14,10 +14,10 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Intercepts {@code SocketOutputStream.write()} and holds the calling thread for
- * {@link #delayMs()} milliseconds before bytes are written to the kernel send buffer, simulating
- * a saturated outbound path or a slow network interface for blocking socket clients such as JDBC
- * drivers sending queries or legacy HTTP clients sending request bodies.
+ * Intercepts {@code SocketOutputStream.write()} and holds the calling thread for {@link #delayMs()}
+ * milliseconds before bytes are written to the kernel send buffer, simulating a saturated outbound
+ * path or a slow network interface for blocking socket clients such as JDBC drivers sending queries
+ * or legacy HTTP clients sending request bodies.
  *
  * <h2>What this annotation is</h2>
  *
@@ -29,10 +29,10 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>Before every call to {@code java.net.SocketOutputStream#write(byte[], int, int)} inside
- *       the target container's JVM, the chaos agent intercepts the calling thread.
- *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()},
- *       {@link #maxDelayMs()}]; equal values produce a deterministic delay.
+ *   <li>Before every call to {@code java.net.SocketOutputStream#write(byte[], int, int)} inside the
+ *       target container's JVM, the chaos agent intercepts the calling thread.
+ *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()}, {@link
+ *       #maxDelayMs()}]; equal values produce a deterministic delay.
  *   <li>Control returns and the underlying {@code write()} executes normally, flushing bytes from
  *       the caller's byte array into the kernel TCP send buffer.
  * </ol>
@@ -43,14 +43,14 @@ import com.macstab.chaos.jvm.api.OperationType;
  *   <li>The calling thread is blocked during the delay; for thread-per-connection servers, this
  *       holds the thread occupied; assert that the thread pool queue grows if requests arrive
  *       during the fault window and that the pool's queue capacity is not exceeded.
- *   <li>JDBC drivers write query packets via the socket output stream; the delay inflates the
- *       time from JDBC {@code execute()} being called to the query text arriving at the database;
- *       assert that query-level timeout tracking starts at the JDBC call, not at the socket write,
- *       to ensure the timeout budget is correctly accounted.
- *   <li>Apache HttpClient 4.x writes the HTTP request line, headers, and body through
- *       {@code SocketOutputStream.write()}; a write delay inflates the time-to-first-byte of the
- *       request; assert that server-side read timeouts do not fire before the full request is
- *       sent if the delay is shorter than the server's read timeout.
+ *   <li>JDBC drivers write query packets via the socket output stream; the delay inflates the time
+ *       from JDBC {@code execute()} being called to the query text arriving at the database; assert
+ *       that query-level timeout tracking starts at the JDBC call, not at the socket write, to
+ *       ensure the timeout budget is correctly accounted.
+ *   <li>Apache HttpClient 4.x writes the HTTP request line, headers, and body through {@code
+ *       SocketOutputStream.write()}; a write delay inflates the time-to-first-byte of the request;
+ *       assert that server-side read timeouts do not fire before the full request is sent if the
+ *       delay is shorter than the server's read timeout.
  *   <li><strong>Production failure mode:</strong> a network interface on the database client host
  *       becomes saturated due to a co-located background replication job; every outbound TCP write
  *       blocks in the kernel while the send buffer drains; JDBC query dispatch is inflated by the
@@ -64,26 +64,25 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p>The interception targets {@code java.net.SocketOutputStream#write(byte[], int, int)}, the
  * internal output stream returned by {@code Socket.getOutputStream()}. This path is used
- * exclusively by blocking socket clients; NIO-based frameworks use
- * {@code SocketChannel.write(ByteBuffer)} (see {@link ChaosNioChannelWriteDelay}).
+ * exclusively by blocking socket clients; NIO-based frameworks use {@code
+ * SocketChannel.write(ByteBuffer)} (see {@link ChaosNioChannelWriteDelay}).
  *
  * <p>In blocking mode, {@code SocketOutputStream.write()} issues a {@code send(2)} syscall that
- * blocks until all bytes are copied to the kernel send buffer or an error occurs. The kernel
- * send buffer size is controlled by {@code SO_SNDBUF}; if the buffer is full (because the
- * receiver's TCP window is closed), the {@code send(2)} call blocks until space becomes available.
- * The chaos delay fires before this syscall, adding to the time before any bytes enter the kernel
- * send buffer.
+ * blocks until all bytes are copied to the kernel send buffer or an error occurs. The kernel send
+ * buffer size is controlled by {@code SO_SNDBUF}; if the buffer is full (because the receiver's TCP
+ * window is closed), the {@code send(2)} call blocks until space becomes available. The chaos delay
+ * fires before this syscall, adding to the time before any bytes enter the kernel send buffer.
  *
  * <p>PostgreSQL JDBC sends query packets via {@code org.postgresql.core.PGStream.flush()}, which
- * calls {@code SocketOutputStream.write()} to send the buffered protocol bytes. The delay fires
- * on each write call within the flush; for large queries split across multiple writes, the total
- * delay is multiplied. The JDBC login timeout does not apply to individual write calls — only to
- * the initial connection establishment — so a long write delay can cause the query to take
- * arbitrarily longer than the configured statement timeout.
+ * calls {@code SocketOutputStream.write()} to send the buffered protocol bytes. The delay fires on
+ * each write call within the flush; for large queries split across multiple writes, the total delay
+ * is multiplied. The JDBC login timeout does not apply to individual write calls — only to the
+ * initial connection establishment — so a long write delay can cause the query to take arbitrarily
+ * longer than the configured statement timeout.
  *
- * <p>Combining this with {@link ChaosSocketReadDelay} creates a fully symmetric slow-link model
- * for blocking socket clients, equivalent to the NIO combination of
- * {@link ChaosNioChannelWriteDelay} and {@link ChaosNioChannelReadDelay}.
+ * <p>Combining this with {@link ChaosSocketReadDelay} creates a fully symmetric slow-link model for
+ * blocking socket clients, equivalent to the NIO combination of {@link ChaosNioChannelWriteDelay}
+ * and {@link ChaosNioChannelReadDelay}.
  *
  * <h2>Example</h2>
  *
@@ -104,8 +103,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

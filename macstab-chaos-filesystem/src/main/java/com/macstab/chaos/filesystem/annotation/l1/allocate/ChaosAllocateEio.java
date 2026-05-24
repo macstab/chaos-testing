@@ -14,29 +14,29 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code EIO} into {@code fallocate(2)}, causing the call to return {@code -1} with
- * {@code errno = EIO} as if the storage device returned an I/O error while the kernel attempted to
+ * Injects {@code EIO} into {@code fallocate(2)}, causing the call to return {@code -1} with {@code
+ * errno = EIO} as if the storage device returned an I/O error while the kernel attempted to
  * allocate and record disk blocks for the file's pre-allocated region.
  *
  * <h2>What this annotation is</h2>
  *
  * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code ALLOCATE}, errno = {@code EIO})
- * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
- * {@code fallocate} call; when it fires the interposer returns {@code -1} with {@code errno = EIO}
- * without performing any real kernel operation. No runtime operation-errno validation is needed.
+ * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted {@code
+ * fallocate} call; when it fires the interposer returns {@code -1} with {@code errno = EIO} without
+ * performing any real kernel operation. No runtime operation-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
- *   <li>On each intercepted {@code fallocate} call a Bernoulli trial with probability {@link #probability}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = EIO}, simulating a storage device error during block pre-allocation.
+ *   <li>On each intercepted {@code fallocate} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = EIO}, simulating a storage device error during block pre-allocation.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -50,12 +50,12 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *       {@code EIO} at segment creation time; assert that the failure causes the database to retry
  *       with a fallback allocation strategy (write zeroes instead of fallocate) or to abort the
  *       segment creation and report a fatal storage error.
- *   <li>Applications that pre-allocate large output files before writing must treat {@code EIO}
- *       as a hardware failure indication; assert that the application propagates this as a fatal
- *       error rather than silently proceeding without pre-allocation.
- *   <li>Assert that {@code EIO} from {@code fallocate} triggers the same storage-failure handler
- *       as {@code EIO} from write or fsync — all three indicate the same underlying hardware
- *       problem and should produce consistent operator alerts.
+ *   <li>Applications that pre-allocate large output files before writing must treat {@code EIO} as
+ *       a hardware failure indication; assert that the application propagates this as a fatal error
+ *       rather than silently proceeding without pre-allocation.
+ *   <li>Assert that {@code EIO} from {@code fallocate} triggers the same storage-failure handler as
+ *       {@code EIO} from write or fsync — all three indicate the same underlying hardware problem
+ *       and should produce consistent operator alerts.
  * </ul>
  *
  * <p>In production, {@code EIO} from {@code fallocate} occurs when the storage device returns a

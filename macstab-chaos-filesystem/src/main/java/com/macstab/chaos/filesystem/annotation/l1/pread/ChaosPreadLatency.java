@@ -21,30 +21,30 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *
  * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code PREAD}, effect = LATENCY)
  * tuple. Unlike errno variants, the latency primitive always delegates to the real kernel call
- * after the configured extra delay — the data is read normally. No probability gate is applied;
- * the delay fires on every intercepted {@code pread} call. No runtime operation-effect validation
- * is needed.
+ * after the configured extra delay — the data is read normally. No probability gate is applied; the
+ * delay fires on every intercepted {@code pread} call. No runtime operation-effect validation is
+ * needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
- *   <li>On each intercepted {@code pread} call the interposer sleeps for {@link #delayMs} ms
- *       before issuing the real kernel call.
+ *   <li>On each intercepted {@code pread} call the interposer sleeps for {@link #delayMs} ms before
+ *       issuing the real kernel call.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>Positional file read operations take longer than normal; applications that use
- *       {@code pread} for random-access page reads (database B-tree traversal, index lookups,
- *       heap file scans) will see increased latency per page. Assert that the application's
- *       query timeout accounts for the accumulated delay across all page reads in the query plan.
+ *   <li>Positional file read operations take longer than normal; applications that use {@code
+ *       pread} for random-access page reads (database B-tree traversal, index lookups, heap file
+ *       scans) will see increased latency per page. Assert that the application's query timeout
+ *       accounts for the accumulated delay across all page reads in the query plan.
  *   <li>Database engines that issue concurrent {@code pread} calls from multiple worker threads
  *       each incur the delay independently; a query that requires reading N pages from N worker
  *       threads accumulates N × {@link #delayMs} of total wait time across the thread pool. Assert
@@ -54,15 +54,15 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *       access pattern will find that prefetching no longer hides the I/O latency because the
  *       injected delay is added before the kernel call. Assert that the application degrades
  *       gracefully when prefetching is ineffective rather than timing out on the prefetch thread.
- *   <li>Assert that slow {@code pread} calls on index pages do not cause a query to return
- *       partial results by timing out mid-traversal — the application must either complete the
- *       traversal or return an error, not a partial result set.
+ *   <li>Assert that slow {@code pread} calls on index pages do not cause a query to return partial
+ *       results by timing out mid-traversal — the application must either complete the traversal or
+ *       return an error, not a partial result set.
  * </ul>
  *
  * <p>In production, slow {@code pread} calls occur when the page cache is cold after a process
  * restart and each read triggers a synchronous disk access, when cgroup I/O bandwidth throttling
- * ({@code blkio.throttle.read_bps_device}) limits the process's read throughput and causes reads
- * to queue behind the throttle, and when network filesystems (NFS, CIFS) are under load and the
+ * ({@code blkio.throttle.read_bps_device}) limits the process's read throughput and causes reads to
+ * queue behind the throttle, and when network filesystems (NFS, CIFS) are under load and the
  * server's response time exceeds the client's expected latency.
  *
  * <h2>Deep technical dive</h2>
@@ -71,14 +71,14 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * current position, making it the preferred I/O primitive for multi-threaded random-access
  * workloads. Database storage engines use it exclusively for page I/O because it allows multiple
  * threads to read from different offsets concurrently without locking the file position. The
- * kernel's page cache services cache hits in microseconds; cache misses require a synchronous
- * block device read and take milliseconds to tens of milliseconds depending on the storage type.
+ * kernel's page cache services cache hits in microseconds; cache misses require a synchronous block
+ * device read and take milliseconds to tens of milliseconds depending on the storage type.
  *
- * <p>This injection adds the delay before the kernel call, simulating scheduling stalls and
- * I/O queue latency without requiring actual slow storage. The delay fires on every {@code pread}
- * call regardless of whether the page is in the cache; on a warm cache this makes the injection
- * more severe than real slow storage (where cache hits are fast), which is intentional — it tests
- * the application's timeout handling rather than its cache efficiency.
+ * <p>This injection adds the delay before the kernel call, simulating scheduling stalls and I/O
+ * queue latency without requiring actual slow storage. The delay fires on every {@code pread} call
+ * regardless of whether the page is in the cache; on a warm cache this makes the injection more
+ * severe than real slow storage (where cache hits are fast), which is intentional — it tests the
+ * application's timeout handling rather than its cache efficiency.
  *
  * <p>Java's {@code FileChannel.read(ByteBuffer, long)} maps to {@code pread(2)} on Linux. When
  * multiple threads call {@code channel.read(buf, offset)} concurrently, each call independently

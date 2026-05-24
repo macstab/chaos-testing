@@ -27,9 +27,9 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
@@ -42,38 +42,38 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * <ul>
  *   <li>File read operations take longer than normal; applications that read files on request
  *       critical paths (config parsing, credential loading, data file access) will see increased
- *       latency. Assert that the application's read timeout or operation deadline accounts for
- *       the injected delay.
+ *       latency. Assert that the application's read timeout or operation deadline accounts for the
+ *       injected delay.
  *   <li>Applications that perform many small reads per request (reading a binary format header,
  *       then record by record) accumulate the delay across all read calls; assert that the total
  *       request timeout is calibrated for the worst-case number of reads per request.
  *   <li>Streaming file parsers (XML, JSON stream parsers, CSV readers) that issue one read per
  *       token or line will be severely impacted by per-read latency; assert that the application
  *       uses a buffered reader to minimize the number of underlying read calls.
- *   <li>Assert that the application does not treat slow reads as read errors — a delayed read
- *       still returns data, and any timeout logic must not conflate a delayed read with an
- *       {@code EIO} or EOF condition.
+ *   <li>Assert that the application does not treat slow reads as read errors — a delayed read still
+ *       returns data, and any timeout logic must not conflate a delayed read with an {@code EIO} or
+ *       EOF condition.
  * </ul>
  *
  * <p>In production, slow {@code read} calls occur when the page cache is cold after a process
- * restart and each read results in a disk access (page fault into kernel page cache), when
- * network filesystems (NFS, CIFS) are under load and I/O requests are queued behind other
- * outstanding requests, and when cgroup I/O bandwidth throttling ({@code blkio.throttle}) limits
- * the process's storage throughput.
+ * restart and each read results in a disk access (page fault into kernel page cache), when network
+ * filesystems (NFS, CIFS) are under load and I/O requests are queued behind other outstanding
+ * requests, and when cgroup I/O bandwidth throttling ({@code blkio.throttle}) limits the process's
+ * storage throughput.
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>The {@code read(2)} syscall copies data from the kernel's page cache to the user-space
- * buffer. If the data is in the page cache (a cache hit), the copy is fast (limited by memory
- * bandwidth). If the data is not in the page cache (a cache miss), the kernel must read it from
- * the storage device, which adds the device's latency to the read. This injection simulates the
- * miss-path latency without requiring actual disk I/O.
+ * <p>The {@code read(2)} syscall copies data from the kernel's page cache to the user-space buffer.
+ * If the data is in the page cache (a cache hit), the copy is fast (limited by memory bandwidth).
+ * If the data is not in the page cache (a cache miss), the kernel must read it from the storage
+ * device, which adds the device's latency to the read. This injection simulates the miss-path
+ * latency without requiring actual disk I/O.
  *
  * <p>Applications that read large files sequentially benefit from the kernel's read-ahead
- * mechanism, which prefetches upcoming pages into the cache. Read-ahead reduces per-read latency
- * by overlapping I/O with processing time. This injection adds delay before the read call, which
- * occurs after the read-ahead has already prefetched the data; the injection therefore measures
- * the process scheduling cost rather than storage latency.
+ * mechanism, which prefetches upcoming pages into the cache. Read-ahead reduces per-read latency by
+ * overlapping I/O with processing time. This injection adds delay before the read call, which
+ * occurs after the read-ahead has already prefetched the data; the injection therefore measures the
+ * process scheduling cost rather than storage latency.
  *
  * <h2>Example</h2>
  *

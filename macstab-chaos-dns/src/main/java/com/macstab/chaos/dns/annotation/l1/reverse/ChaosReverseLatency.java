@@ -28,8 +28,8 @@ import com.macstab.chaos.dns.annotation.l1.DnsSelectorKind;
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.DNS)} on the container definition causes the
- *       extension to upload {@code libchaos-dns.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-dns.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code getaddrinfo(3)} and {@code getnameinfo(3)} at the
  *       dynamic-linker level.
  *   <li>On every intercepted {@code getnameinfo} call the interposer first sleeps for an additional
@@ -61,10 +61,10 @@ import com.macstab.chaos.dns.annotation.l1.DnsSelectorKind;
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>{@code getnameinfo(3)} with the {@code NI_NAMEREQD} flag sends a PTR query to the resolver
- * and blocks until the response arrives. Without {@code NI_NAMEREQD}, the function can return a
- * numeric address string immediately without making any DNS query — in which case the latency
- * injection still fires but merely delays an operation that would otherwise be instant.
+ * <p>{@code getnameinfo(3)} with the {@code NI_NAMEREQD} flag sends a PTR query to the resolver and
+ * blocks until the response arrives. Without {@code NI_NAMEREQD}, the function can return a numeric
+ * address string immediately without making any DNS query — in which case the latency injection
+ * still fires but merely delays an operation that would otherwise be instant.
  *
  * <p>Many applications call {@code getnameinfo} in a fire-and-forget background thread to enrich
  * log entries without blocking request processing. The injected latency delays only the background
@@ -74,8 +74,8 @@ import com.macstab.chaos.dns.annotation.l1.DnsSelectorKind;
  *
  * <p>Reverse DNS is frequently called at much lower frequency than forward DNS, because most
  * applications resolve service hostnames at startup (forward) but look up peer hostnames only for
- * each inbound connection (reverse). A large {@link #delayMs} on reverse lookups specifically
- * tests the per-connection overhead rather than the startup overhead.
+ * each inbound connection (reverse). A large {@link #delayMs} on reverse lookups specifically tests
+ * the per-connection overhead rather than the startup overhead.
  *
  * <h2>Example</h2>
  *

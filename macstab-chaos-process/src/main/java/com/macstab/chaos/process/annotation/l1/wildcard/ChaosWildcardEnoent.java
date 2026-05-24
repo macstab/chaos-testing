@@ -15,56 +15,60 @@ import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
  * Injects {@code ENOENT} ("No such file or directory") into every process-management syscall
- * intercepted by libchaos-process — {@code execve}, {@code posix_spawn}, {@code posix_spawnp},
- * and their variants — simultaneously, gated by {@link #probability}, modelling binary-not-found
- * conditions that can affect any process launch operation during rolling deployments or
- * filesystem disruptions.
+ * intercepted by libchaos-process — {@code execve}, {@code posix_spawn}, {@code posix_spawnp}, and
+ * their variants — simultaneously, gated by {@link #probability}, modelling binary-not-found
+ * conditions that can affect any process launch operation during rolling deployments or filesystem
+ * disruptions.
  *
  * <h2>What this annotation is</h2>
+ *
  * L1 libchaos-process primitive — one (selector = {@code WILDCARD}, errno = {@code ENOENT}) tuple.
  * The {@code WILDCARD} selector intercepts every process-management syscall family simultaneously:
  * fork, execve, execveat, posix_spawn, posix_spawnp, pthread_create, and waitpid. Compile-time
  * safety: invalid selector/errno combinations have no annotation class.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
- *       interposing every process-management libc wrapper at the dynamic-linker level.</li>
- *   <li>On each intercepted syscall, a Bernoulli trial with probability {@link #probability}
- *       runs.</li>
- *   <li>When the trial fires, the interposer sets {@code errno = ENOENT} and returns {@code -1}
- *       (or the errno value directly for pthread_create and POSIX spawn functions) before the
- *       real kernel call executes.</li>
- *   <li>The calling code receives: {@code execve()}/{@code fork()} return {@code -1} with
- *       {@code errno = ENOENT} (2); {@code posix_spawn}/{@code posix_spawnp} return {@code ENOENT}
- *       directly; {@code strerror(ENOENT)}: "No such file or directory".</li>
+ *       interposing every process-management libc wrapper at the dynamic-linker level.
+ *   <li>On each intercepted syscall, a Bernoulli trial with probability {@link #probability} runs.
+ *   <li>When the trial fires, the interposer sets {@code errno = ENOENT} and returns {@code -1} (or
+ *       the errno value directly for pthread_create and POSIX spawn functions) before the real
+ *       kernel call executes.
+ *   <li>The calling code receives: {@code execve()}/{@code fork()} return {@code -1} with {@code
+ *       errno = ENOENT} (2); {@code posix_spawn}/{@code posix_spawnp} return {@code ENOENT}
+ *       directly; {@code strerror(ENOENT)}: "No such file or directory".
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
  *   <li>{@code execve()}/{@code execveat()} return {@code -1} with {@code errno = ENOENT}; the
- *       executable binary was not found at the specified path; assert that the application logs
- *       the full binary path and does not retry without verifying the path exists — ENOENT from
- *       exec is a deployment error that retrying will not resolve.</li>
+ *       executable binary was not found at the specified path; assert that the application logs the
+ *       full binary path and does not retry without verifying the path exists — ENOENT from exec is
+ *       a deployment error that retrying will not resolve.
  *   <li>{@code posix_spawn}/{@code posix_spawnp} return {@code ENOENT} directly; assert that the
  *       calling code checks {@code if (ret != 0)} rather than {@code if (ret == -1)}; assert that
- *       the application does not call {@code waitpid} on an uninitialised pid — the child was
- *       never created.</li>
+ *       the application does not call {@code waitpid} on an uninitialised pid — the child was never
+ *       created.
  *   <li>For {@code posix_spawnp}, ENOENT means the binary name was not found in any PATH directory;
  *       for {@code posix_spawn}, ENOENT means the specific explicit path did not exist; assert that
  *       the application logs the binary name and the PATH value to help operators diagnose which
- *       deployment step failed.</li>
+ *       deployment step failed.
  *   <li>Assert that ENOENT from thread creation or waitpid (from the wildcard) is logged with the
  *       syscall name — ENOENT from those paths indicates a wildcard rule is active and should be
- *       surfaced for diagnostic purposes.</li>
+ *       surfaced for diagnostic purposes.
  * </ul>
- * Production failure mode: a rolling deployment replaces a binary; during the window between
- * the old binary being removed and the new binary being installed, an exec call returns ENOENT;
- * the process supervisor does not log the binary path and retries immediately; the rapid retry
- * loop fills the process table; the deployment window extends due to spawner load; the supervisor
- * cannot recover because it has no fallback path configured.
+ *
+ * Production failure mode: a rolling deployment replaces a binary; during the window between the
+ * old binary being removed and the new binary being installed, an exec call returns ENOENT; the
+ * process supervisor does not log the binary path and retries immediately; the rapid retry loop
+ * fills the process table; the deployment window extends due to spawner load; the supervisor cannot
+ * recover because it has no fallback path configured.
  *
  * <h2>Deep technical dive</h2>
+ *
  * <p>{@code ENOENT} from {@code execve}/{@code execveat} has two primary sources: the executable
  * binary file does not exist at the specified path (most common), or the shebang interpreter
  * ({@code #!/path/to/interpreter}) in a script does not exist at its specified path. The wildcard
@@ -74,12 +78,12 @@ import com.macstab.chaos.process.model.ProcessSelector;
  *
  * <p>The distinction between posix_spawn and posix_spawnp ENOENT: posix_spawn takes an explicit
  * path and ENOENT means that exact path does not exist; posix_spawnp takes a binary name and
- * searches PATH directories, returning ENOENT if the binary is not found in any directory.
- * For spawnp, logging the $PATH value alongside the binary name is essential — the binary may
- * exist but not in a directory in $PATH.
+ * searches PATH directories, returning ENOENT if the binary is not found in any directory. For
+ * spawnp, logging the $PATH value alongside the binary name is essential — the binary may exist but
+ * not in a directory in $PATH.
  *
- * <p>ENOENT from process management is non-retryable with the same arguments — the binary path
- * or binary name will not appear between calls unless a deployment action places it there. The
+ * <p>ENOENT from process management is non-retryable with the same arguments — the binary path or
+ * binary name will not appear between calls unless a deployment action places it there. The
  * application must log the missing path, alert the deployment system, and wait for the deployment
  * to complete before retrying. Retry loops that do not verify path existence before retrying will
  * produce sustained ENOENT failures during the deployment window.
@@ -109,9 +113,10 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * <p><strong>Probability guidance:</strong> 1e-3 to 5e-3; ENOENT from spawn is non-retryable so
  * even low rates produce user-visible errors — start with 1e-3 to validate diagnostic logging;
  * values above 0.1 will prevent the container from launching any subprocesses during startup.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every process-chaos-capable container
- * in the test class.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container in
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ProcessErrnoBinding

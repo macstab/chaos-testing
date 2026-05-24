@@ -22,8 +22,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p>A JVM agent L1 chaos primitive targeting the {@code REFLECTION_INVOKE} operation — one typed
  * annotation per (selector family, operation type, effect) tuple. Declared on a test class or
- * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until
- * {@code afterAll}/{@code afterEach} respectively.
+ * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until {@code
+ * afterAll}/{@code afterEach} respectively.
  *
  * <h2>What chaos this applies</h2>
  *
@@ -31,8 +31,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *   <li>The chaos agent intercepts every call to {@code java.lang.reflect.Method.invoke()} in the
  *       target container's JVM.
  *   <li>Before forwarding the invocation to the real method, the interceptor parks the calling
- *       thread for a duration sampled uniformly between {@link #delayMs()} and
- *       {@link #maxDelayMs()} milliseconds.
+ *       thread for a duration sampled uniformly between {@link #delayMs()} and {@link
+ *       #maxDelayMs()} milliseconds.
  *   <li>After the delay, the real {@code Method.invoke()} executes and the result is returned
  *       normally to the caller.
  * </ol>
@@ -40,10 +40,10 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Dependency injection startup slow.</strong> Spring, CDI, and Guice use
- *       {@code Method.invoke()} extensively during context startup (post-construct callbacks,
- *       factory methods, event listeners); assert that context initialisation completes within the
- *       pod readiness probe timeout.
+ *   <li><strong>Dependency injection startup slow.</strong> Spring, CDI, and Guice use {@code
+ *       Method.invoke()} extensively during context startup (post-construct callbacks, factory
+ *       methods, event listeners); assert that context initialisation completes within the pod
+ *       readiness probe timeout.
  *   <li><strong>Serialisation frameworks time out.</strong> Jackson, Gson, and similar libraries
  *       use reflection to access fields and getters; assert that serialisation operations time out
  *       with a meaningful error rather than blocking a thread indefinitely.
@@ -59,10 +59,10 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Deep technical dive</h2>
  *
  * <p>{@code Method.invoke()} is implemented in Java as a delegation to a dynamically generated
- * accessor stub (the "inflation" mechanism), or, before inflation, as a native call via
- * {@code sun.reflect.NativeMethodAccessorImpl}. The agent intercepts at the
- * {@code java.lang.reflect.Method.invoke(Object, Object...)} level — the public API — so all
- * reflective invocations regardless of accessor type are delayed.
+ * accessor stub (the "inflation" mechanism), or, before inflation, as a native call via {@code
+ * sun.reflect.NativeMethodAccessorImpl}. The agent intercepts at the {@code
+ * java.lang.reflect.Method.invoke(Object, Object...)} level — the public API — so all reflective
+ * invocations regardless of accessor type are delayed.
  *
  * <p>The delay fires on the thread that issues the {@code Method.invoke()} call. Because the
  * underlying method has not yet been called, the delay adds to the total latency of the operation,
@@ -70,16 +70,16 @@ import com.macstab.chaos.jvm.api.OperationType;
  * that maintain their own per-operation timeout budgets: the injected delay consumes budget before
  * the actual work even starts.
  *
- * <p>This annotation is particularly useful for testing Spring Boot applications, where
- * {@code Method.invoke()} appears in request mapping dispatch, {@code @Scheduled} task invocation,
+ * <p>This annotation is particularly useful for testing Spring Boot applications, where {@code
+ * Method.invoke()} appears in request mapping dispatch, {@code @Scheduled} task invocation,
  * {@code @EventListener} dispatch, and {@code @Async} method proxying. Each of these code paths
  * runs on a different thread pool, so a flat delay per invoke can expose which pool is most
  * sensitive to slow reflective dispatch.
  *
- * <p>The delay does not wrap the full method body — only the hand-off from the caller to
- * {@code Method.invoke()}. If the reflected method itself blocks, the total wall time will be
- * delay + method execution time. Tests should be designed accordingly and not assume that the
- * delay alone determines latency.
+ * <p>The delay does not wrap the full method body — only the hand-off from the caller to {@code
+ * Method.invoke()}. If the reflected method itself blocks, the total wall time will be delay +
+ * method execution time. Tests should be designed accordingly and not assume that the delay alone
+ * determines latency.
  *
  * <h2>Example</h2>
  *
@@ -95,8 +95,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
- *       agent before the container JVM starts; omitting it causes an
- *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       agent before the container JVM starts; omitting it causes an {@code
+ *       ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
  *       {@code @JvmAgentChaos}.
  *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the

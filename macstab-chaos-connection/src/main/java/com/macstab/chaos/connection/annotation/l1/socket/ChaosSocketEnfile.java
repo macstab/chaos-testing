@@ -14,15 +14,14 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code ENFILE} into {@code socket(2)}, causing the call to return {@code -1} with
- * {@code errno = ENFILE} as if the system-wide open file count has reached the kernel's global
- * limit ({@code fs.file-max}) and no new file descriptors can be allocated by any process on
- * the host.
+ * Injects {@code ENFILE} into {@code socket(2)}, causing the call to return {@code -1} with {@code
+ * errno = ENFILE} as if the system-wide open file count has reached the kernel's global limit
+ * ({@code fs.file-max}) and no new file descriptors can be allocated by any process on the host.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code SOCKET}, errno = {@code ENFILE})
- * tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code SOCKET}, errno = {@code
+ * ENFILE}) tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted
  * {@code socket} call; when it fires the interposer returns {@code -1} with {@code errno = ENFILE}
  * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
@@ -30,14 +29,14 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
- *       extension to upload {@code libchaos-net.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
- *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
- *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
- *       {@code poll} at the dynamic-linker level.
- *   <li>On each intercepted {@code socket} call a Bernoulli trial with probability {@link #toxicity}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = ENFILE}.
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket}, {@code
+ *       bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and {@code poll} at
+ *       the dynamic-linker level.
+ *   <li>On each intercepted {@code socket} call a Bernoulli trial with probability {@link
+ *       #toxicity} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = ENFILE}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -49,22 +48,22 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *       the application treats {@code ENFILE} as a temporary, host-wide resource shortage and backs
  *       off rather than failing permanently.
  *   <li>Connection pools that receive {@code ENFILE} cannot grow and must either queue requests
- *       (backpressure) or return an error; assert that the pool does not throw an uncaught exception
- *       or leave the caller hanging indefinitely.
+ *       (backpressure) or return an error; assert that the pool does not throw an uncaught
+ *       exception or leave the caller hanging indefinitely.
  *   <li>Assert that the application logs a clear "system file descriptor limit reached" message
  *       that distinguishes {@code ENFILE} from {@code EMFILE}, enabling operators to identify that
  *       the host-level {@code fs.file-max} tuning is required rather than a per-process ulimit
  *       change.
- *   <li>Assert that the application's retry strategy for {@code ENFILE} includes a meaningful
- *       delay before retrying, since the system-wide limit will not recover unless other processes
- *       close their file descriptors.
+ *   <li>Assert that the application's retry strategy for {@code ENFILE} includes a meaningful delay
+ *       before retrying, since the system-wide limit will not recover unless other processes close
+ *       their file descriptors.
  * </ul>
  *
  * <p>In production, {@code ENFILE} from {@code socket} occurs on heavily loaded Kubernetes nodes
  * where multiple containers collectively exhaust the host's {@code fs.file-max} limit. It is
  * distinct from per-container or per-process limits: the kernel's global file table is shared
- * across all cgroups on the host, and a traffic spike on one tenant can cause {@code ENFILE}
- * for unrelated workloads on the same node.
+ * across all cgroups on the host, and a traffic spike on one tenant can cause {@code ENFILE} for
+ * unrelated workloads on the same node.
  *
  * <h2>Deep technical dive</h2>
  *
@@ -78,15 +77,15 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * the process's {@code RLIMIT_NOFILE} soft limit (visible in {@code /proc/self/limits}), while
  * {@code ENFILE} is checked against the system-wide {@code fs.file-max} limit. Both errors present
  * identically from the application's perspective (cannot create new socket), but require different
- * remediation: {@code EMFILE} → increase the process's ulimit; {@code ENFILE} → increase
- * {@code sysctl fs.file-max} on the host.
+ * remediation: {@code EMFILE} → increase the process's ulimit; {@code ENFILE} → increase {@code
+ * sysctl fs.file-max} on the host.
  *
  * <p>Java maps {@code ENFILE} from {@code socket} to a {@code SocketException} with the message
  * "Too many open files in system" (glibc's {@code strerror(ENFILE)}). This message is
  * distinguishable from the {@code EMFILE} message "Too many open files" and should be logged with
- * enough context (hostname, file-max value from {@code /proc/sys/fs/file-max}) for operators to
- * act on it. The JVM does not map this to an {@code OutOfMemoryError}; it surfaces as a checked
- * {@code SocketException}.
+ * enough context (hostname, file-max value from {@code /proc/sys/fs/file-max}) for operators to act
+ * on it. The JVM does not map this to an {@code OutOfMemoryError}; it surfaces as a checked {@code
+ * SocketException}.
  *
  * <h2>Example</h2>
  *

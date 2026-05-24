@@ -29,11 +29,11 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
- *       extension to upload {@code libchaos-net.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
- *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
- *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
- *       {@code poll} at the dynamic-linker level.
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket}, {@code
+ *       bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and {@code poll} at
+ *       the dynamic-linker level.
  *   <li>On each intercepted {@code recv} call a Bernoulli trial with probability {@link #toxicity}
  *       is conducted; when it fires the interposer sleeps for {@link #delayMs} ms before issuing
  *       the real kernel call.
@@ -52,30 +52,30 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *       thread sleeps for {@link #delayMs} before entering the kernel's blocking wait; the actual
  *       data arrival is not affected by the injection.
  *   <li>Assert that the server's read timeout begins from the time the recv call is issued, not
- *       from when data arrives at the kernel; this ensures that slow recv consumers are detected
- *       by the timeout even when data is available in the kernel buffer.
+ *       from when data arrives at the kernel; this ensures that slow recv consumers are detected by
+ *       the timeout even when data is available in the kernel buffer.
  * </ul>
  *
- * <p>In production, slow {@code recv} calls occur when the process is CPU throttled by cgroups
- * and spends extended time waiting to be scheduled after a system call, when NUMA topology causes
- * the process to run on a CPU distant from the NIC's memory domain, and when the kernel's socket
- * buffer is fragmented and the memcpy from kernel to user space is slower than normal.
+ * <p>In production, slow {@code recv} calls occur when the process is CPU throttled by cgroups and
+ * spends extended time waiting to be scheduled after a system call, when NUMA topology causes the
+ * process to run on a CPU distant from the NIC's memory domain, and when the kernel's socket buffer
+ * is fragmented and the memcpy from kernel to user space is slower than normal.
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>The {@code recv} syscall typically returns in time proportional to the network round-trip
- * time plus the server's processing time. The injected delay is added before the syscall, so the
- * total receive time observed by the caller is {@link #delayMs} plus the time for data to arrive
- * in the kernel's receive buffer. If data is already buffered when {@code recv} is called (common
- * in pipelined protocols), the total time is approximately {@link #delayMs} — dominated by the
+ * <p>The {@code recv} syscall typically returns in time proportional to the network round-trip time
+ * plus the server's processing time. The injected delay is added before the syscall, so the total
+ * receive time observed by the caller is {@link #delayMs} plus the time for data to arrive in the
+ * kernel's receive buffer. If data is already buffered when {@code recv} is called (common in
+ * pipelined protocols), the total time is approximately {@link #delayMs} — dominated by the
  * injection.
  *
  * <p>This injection is particularly effective for testing request timeout configurations in
  * pipelined or streaming protocols where multiple recv calls are needed per request: a delay on
  * each recv call accumulates across the full request pipeline. For a protocol that requires N recv
- * calls to complete one request, the effective per-request latency increase is N × {@link #delayMs}.
- * This helps reveal whether timeout configurations are calibrated for the worst-case number of recv
- * calls per request.
+ * calls to complete one request, the effective per-request latency increase is N × {@link
+ * #delayMs}. This helps reveal whether timeout configurations are calibrated for the worst-case
+ * number of recv calls per request.
  *
  * <h2>Example</h2>
  *

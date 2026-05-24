@@ -14,29 +14,30 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code ETIMEDOUT} into {@code recv(2)}, causing the call to return {@code -1} with
- * {@code errno = ETIMEDOUT} as if the TCP keep-alive probing mechanism determined that the remote
- * peer is no longer reachable after the keep-alive retransmission limit was exceeded.
+ * Injects {@code ETIMEDOUT} into {@code recv(2)}, causing the call to return {@code -1} with {@code
+ * errno = ETIMEDOUT} as if the TCP keep-alive probing mechanism determined that the remote peer is
+ * no longer reachable after the keep-alive retransmission limit was exceeded.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code RECV}, errno = {@code ETIMEDOUT})
- * tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted
- * {@code recv} call; when it fires the interposer returns {@code -1} with {@code errno = ETIMEDOUT}
- * without performing any real kernel operation. No runtime operation-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code RECV}, errno = {@code
+ * ETIMEDOUT}) tuple. A Bernoulli trial with probability {@link #toxicity} is run on each
+ * intercepted {@code recv} call; when it fires the interposer returns {@code -1} with {@code errno
+ * = ETIMEDOUT} without performing any real kernel operation. No runtime operation-errno validation
+ * is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
- *       extension to upload {@code libchaos-net.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
- *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
- *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
- *       {@code poll} at the dynamic-linker level.
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket}, {@code
+ *       bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and {@code poll} at
+ *       the dynamic-linker level.
  *   <li>On each intercepted {@code recv} call a Bernoulli trial with probability {@link #toxicity}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = ETIMEDOUT}.
+ *       is conducted; when it fires the interposer returns {@code -1} and sets {@code errno =
+ *       ETIMEDOUT}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -56,18 +57,18 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <p>In production, {@code ETIMEDOUT} from {@code recv} occurs when a connection is held open
  * across a network partition: the TCP keep-alive mechanism (if enabled) sends probes and eventually
- * determines that the peer is unreachable. The timeout duration depends on
- * {@code tcp_keepalive_time}, {@code tcp_keepalive_intvl}, and {@code tcp_keepalive_probes};
- * with defaults, the kernel may take two hours or more to detect the dead connection.
+ * determines that the peer is unreachable. The timeout duration depends on {@code
+ * tcp_keepalive_time}, {@code tcp_keepalive_intvl}, and {@code tcp_keepalive_probes}; with
+ * defaults, the kernel may take two hours or more to detect the dead connection.
  *
  * <h2>Deep technical dive</h2>
  *
  * <p>The kernel returns {@code ETIMEDOUT} from {@code recv} in two scenarios: when TCP keep-alive
  * probes exhaust their retry limit (controlled by {@code tcp_keepalive_probes}, default 9) and no
- * ACK is received, indicating the remote peer is permanently unreachable; and when the retransmission
- * timer for unacknowledged data exhausts its limit (controlled by {@code tcp_retries2}, default 15,
- * which gives a timeout of approximately 15 minutes under normal RTT). In both cases the kernel
- * closes the connection and marks the socket as error-pending.
+ * ACK is received, indicating the remote peer is permanently unreachable; and when the
+ * retransmission timer for unacknowledged data exhausts its limit (controlled by {@code
+ * tcp_retries2}, default 15, which gives a timeout of approximately 15 minutes under normal RTT).
+ * In both cases the kernel closes the connection and marks the socket as error-pending.
  *
  * <p>This injection delivers {@code ETIMEDOUT} immediately without waiting for keep-alive probes or
  * retransmission timeouts, making it practical to test the application's dead-connection handling

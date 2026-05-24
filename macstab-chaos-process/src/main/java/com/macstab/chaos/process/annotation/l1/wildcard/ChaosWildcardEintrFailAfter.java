@@ -20,66 +20,71 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * process-management operation after N successful ones.
  *
  * <h2>What this annotation is</h2>
- * L1 libchaos-process primitive — one (selector = {@code WILDCARD}, errno = {@code EINTR},
- * effect = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N intercepted
+ *
+ * L1 libchaos-process primitive — one (selector = {@code WILDCARD}, errno = {@code EINTR}, effect =
+ * FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N intercepted
  * process-management calls (across all families — fork, execve, posix_spawn, pthread_create,
  * waitpid) succeed, then the counter trips permanently and every subsequent call returns the error
  * code until the rule is removed. Compile-time safety: invalid selector/errno/effect combinations
  * have no annotation class.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
- *       interposing every process-management libc wrapper at the dynamic-linker level.</li>
+ *       interposing every process-management libc wrapper at the dynamic-linker level.
  *   <li>The interposer maintains a per-rule success counter shared across all intercepted syscall
  *       families; the counter does not reset automatically between test methods when the annotation
- *       is at class scope.</li>
+ *       is at class scope.
  *   <li>Once the counter reaches zero it trips permanently: every subsequent process-management
  *       call returns {@code -1} (or the errno value directly for pthread_create and posix_spawn)
- *       with {@code errno = EINTR}.</li>
- *   <li>The calling code receives: {@code waitpid()}/{@code fork()} return {@code -1} with
- *       {@code errno = EINTR} (4); {@code posix_spawn}/{@code pthread_create} return {@code EINTR}
- *       directly; {@code strerror(EINTR)}: "Interrupted system call".</li>
+ *       with {@code errno = EINTR}.
+ *   <li>The calling code receives: {@code waitpid()}/{@code fork()} return {@code -1} with {@code
+ *       errno = EINTR} (4); {@code posix_spawn}/{@code pthread_create} return {@code EINTR}
+ *       directly; {@code strerror(EINTR)}: "Interrupted system call".
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
  *   <li>The first {@link #successesBeforeFailure} process-management calls proceed normally; all
  *       subsequent calls return EINTR permanently; assert that the application's EINTR retry loops
  *       across all process-management paths are bounded and check the shutdown flag — an unbounded
- *       EINTR retry loop triggered by SIGTERM will spin forever rather than proceeding with graceful
- *       shutdown.</li>
+ *       EINTR retry loop triggered by SIGTERM will spin forever rather than proceeding with
+ *       graceful shutdown.
  *   <li>FAIL_AFTER models the sustained signal-storm scenario: N calls succeed before a
  *       high-frequency timer signal (SIGALRM, SIGRTMIN+n) begins firing; all subsequent calls
- *       return EINTR — assert that the application detects the sustained EINTR condition across
- *       all process-management paths and falls back to non-blocking alternatives (WNOHANG for
- *       waitpid, circuit-breaking for fork/spawn).</li>
- *   <li>Assert that the application's EINTR handling across all families is consistent — the
- *       retry budget, back-off strategy, and shutdown-flag check should be uniform across fork,
- *       waitpid, pthread_create, and posix_spawn paths.</li>
+ *       return EINTR — assert that the application detects the sustained EINTR condition across all
+ *       process-management paths and falls back to non-blocking alternatives (WNOHANG for waitpid,
+ *       circuit-breaking for fork/spawn).
+ *   <li>Assert that the application's EINTR handling across all families is consistent — the retry
+ *       budget, back-off strategy, and shutdown-flag check should be uniform across fork, waitpid,
+ *       pthread_create, and posix_spawn paths.
  * </ul>
+ *
  * Production failure mode: a process supervisor starts N operations successfully; a library
  * installed by a newly deployed dependency begins firing a high-frequency timer signal (SIGALRM);
  * all process-management operations start returning EINTR; the supervisor's per-path retry loops
- * spin at different rates with different back-offs; when SIGTERM arrives the loops do not check
- * the shutdown flag and the supervisor misses the graceful shutdown window.
+ * spin at different rates with different back-offs; when SIGTERM arrives the loops do not check the
+ * shutdown flag and the supervisor misses the graceful shutdown window.
  *
  * <h2>Deep technical dive</h2>
+ *
  * <p>The WILDCARD FAIL_AFTER counter charges across all process-management families simultaneously.
- * The EINTR phase begins when the combined traffic exhausts the counter. Set
- * {@link #successesBeforeFailure} to the total process-management call count during the normal
- * operating phase — this is the point at which the signal storm begins in the modelled scenario.
+ * The EINTR phase begins when the combined traffic exhausts the counter. Set {@link
+ * #successesBeforeFailure} to the total process-management call count during the normal operating
+ * phase — this is the point at which the signal storm begins in the modelled scenario.
  *
  * <p>The counter does not reset between test methods when the annotation is at class scope. First
  * test method: N successful calls (pre-storm). Subsequent test methods: EINTR phase (all process
- * management interrupted). The shutdown-flag check during EINTR retry is critical: a SIGTERM
- * that triggers EINTR on waitpid must cause the application to exit the retry loop and proceed
- * with cleanup, not loop indefinitely.
+ * management interrupted). The shutdown-flag check during EINTR retry is critical: a SIGTERM that
+ * triggers EINTR on waitpid must cause the application to exit the retry loop and proceed with
+ * cleanup, not loop indefinitely.
  *
- * <p>SA_RESTART does not help with waitpid — it is explicitly excluded from automatic restart
- * on Linux. For fork and exec, SA_RESTART may cause automatic restart depending on the signal
- * and kernel version. Applications cannot rely on SA_RESTART to handle EINTR; each call site
- * must implement its own bounded retry with shutdown-flag check.
+ * <p>SA_RESTART does not help with waitpid — it is explicitly excluded from automatic restart on
+ * Linux. For fork and exec, SA_RESTART may cause automatic restart depending on the signal and
+ * kernel version. Applications cannot rely on SA_RESTART to handle EINTR; each call site must
+ * implement its own bounded retry with shutdown-flag check.
  *
  * <h2>Example</h2>
  *
@@ -100,9 +105,10 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to the total number
  * of process-management calls during the pre-storm phase; values 10–200 cover typical workload
  * phases; 0 means the signal storm begins before any process or thread can be created.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every process-chaos-capable container
- * in the test class.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container in
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ProcessFailAfterBinding

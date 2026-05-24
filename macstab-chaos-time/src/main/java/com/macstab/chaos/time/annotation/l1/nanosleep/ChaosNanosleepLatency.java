@@ -27,8 +27,8 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
- *       extension to upload {@code libchaos-time.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
  *       at the dynamic-linker level.
  *   <li>On every intercepted {@code nanosleep} call the interposer first sleeps for an additional
@@ -46,8 +46,8 @@ import com.macstab.chaos.time.model.TimeSelector;
  *       causing timeout-based leader elections or watchdog trips.
  *   <li>Rate-limiters that measure elapsed time between consecutive operations will observe a
  *       larger interval and may over-estimate available capacity.
- *   <li>Assert that SLA budgets account for scheduler jitter of at least the configured extra
- *       delay and that watchdog timeouts are set with sufficient headroom.
+ *   <li>Assert that SLA budgets account for scheduler jitter of at least the configured extra delay
+ *       and that watchdog timeouts are set with sufficient headroom.
  * </ul>
  *
  * <p>In production, extended {@code nanosleep} durations are caused by kernel scheduling stalls
@@ -57,18 +57,18 @@ import com.macstab.chaos.time.model.TimeSelector;
  * <h2>Deep technical dive</h2>
  *
  * <p>{@code nanosleep(2)} guarantees that the sleep is at least as long as requested; the kernel
- * may deliver the wake-up later than exactly requested due to timer granularity and scheduling.
- * The extra latency injected by {@code libchaos-time.so} simulates an extreme version of this
+ * may deliver the wake-up later than exactly requested due to timer granularity and scheduling. The
+ * extra latency injected by {@code libchaos-time.so} simulates an extreme version of this
  * over-sleep, stretching what is normally a microsecond-level jitter into a configurable
  * millisecond-level stall.
  *
- * <p>This is particularly relevant for Redis client idle-timeout handling, connection pool
- * eviction loops, and Kubernetes liveness probe loops — all of which use sleep-based scheduling
- * and have strict timeout budgets that must accommodate scheduler jitter.
+ * <p>This is particularly relevant for Redis client idle-timeout handling, connection pool eviction
+ * loops, and Kubernetes liveness probe loops — all of which use sleep-based scheduling and have
+ * strict timeout budgets that must accommodate scheduler jitter.
  *
- * <p>Sibling annotation: {@link ChaosNanosleepEintr} cuts the sleep short instead of extending
- * it; combining both annotations exercises both the under-sleep and over-sleep dimensions.
- * {@link ChaosWildcardLatency} applies the same delay to all interposed time syscalls simultaneously.
+ * <p>Sibling annotation: {@link ChaosNanosleepEintr} cuts the sleep short instead of extending it;
+ * combining both annotations exercises both the under-sleep and over-sleep dimensions. {@link
+ * ChaosWildcardLatency} applies the same delay to all interposed time syscalls simultaneously.
  *
  * <h2>Example</h2>
  *

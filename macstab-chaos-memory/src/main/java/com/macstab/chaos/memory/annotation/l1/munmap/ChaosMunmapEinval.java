@@ -18,35 +18,39 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * calling code to observe an invalid-argument failure when attempting to unmap a memory region.
  *
  * <h2>What this annotation is</h2>
- * L1 libchaos-memory primitive — one (selector = {@code MUNMAP}, errno = {@code EINVAL})
- * tuple. The {@code MUNMAP} selector intercepts {@code munmap} calls only, leaving {@code mmap},
- * {@code mprotect}, and {@code madvise} unaffected. Compile-time safety: invalid selector/errno
+ *
+ * L1 libchaos-memory primitive — one (selector = {@code MUNMAP}, errno = {@code EINVAL}) tuple. The
+ * {@code MUNMAP} selector intercepts {@code munmap} calls only, leaving {@code mmap}, {@code
+ * mprotect}, and {@code madvise} unaffected. Compile-time safety: invalid selector/errno
  * combinations have no annotation class.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
- *       interposing the libc {@code munmap} wrapper at the dynamic-linker level.</li>
- *   <li>On each {@code munmap} call the interposer runs a Bernoulli trial with probability
- *       {@link #probability}.</li>
+ *       interposing the libc {@code munmap} wrapper at the dynamic-linker level.
+ *   <li>On each {@code munmap} call the interposer runs a Bernoulli trial with probability {@link
+ *       #probability}.
  *   <li>When the trial fires, the interposer sets {@code errno = EINVAL} and returns {@code -1}
- *       without issuing the real kernel call.</li>
- *   <li>The calling code receives: {@code -1} return, {@code errno} 22,
- *       {@code strerror}: "Invalid argument"; the memory region is NOT unmapped.</li>
+ *       without issuing the real kernel call.
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 22, {@code strerror}: "Invalid
+ *       argument"; the memory region is NOT unmapped.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
- *   <li>{@code munmap} returns {@code -1}; {@code errno = EINVAL} (22); the memory region
- *       remains mapped — the application must not treat the region as released.</li>
- *   <li>Memory managers that compute the unmap address from allocation metadata must validate
- *       page alignment before calling {@code munmap}; assert that {@code EINVAL} triggers a
- *       diagnostic that includes the unaligned address so that operators can identify the
- *       alignment bug from logs.</li>
- *   <li>Assert that a failed {@code munmap} does not cause the allocator to double-free or to
- *       reuse the address range before verifying that the unmap succeeded — doing so causes
- *       use-after-free or silent memory corruption in a subsequent allocation.</li>
+ *   <li>{@code munmap} returns {@code -1}; {@code errno = EINVAL} (22); the memory region remains
+ *       mapped — the application must not treat the region as released.
+ *   <li>Memory managers that compute the unmap address from allocation metadata must validate page
+ *       alignment before calling {@code munmap}; assert that {@code EINVAL} triggers a diagnostic
+ *       that includes the unaligned address so that operators can identify the alignment bug from
+ *       logs.
+ *   <li>Assert that a failed {@code munmap} does not cause the allocator to double-free or to reuse
+ *       the address range before verifying that the unmap succeeded — doing so causes
+ *       use-after-free or silent memory corruption in a subsequent allocation.
  * </ul>
+ *
  * Production failure mode: a memory manager that truncates a 64-bit address to 32 bits before
  * passing it to {@code munmap} (an integer width bug in native code) produces a non-page-aligned
  * address that the kernel rejects with {@code EINVAL}; the manager silently treats the chunk as
@@ -54,32 +58,31 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * exhausts the address space.
  *
  * <h2>Deep technical dive</h2>
+ *
  * <p>POSIX specifies {@code EINVAL} for {@code munmap} when the {@code addr} argument is not
- * aligned to the system page size (a multiple of {@code sysconf(_SC_PAGESIZE)}), when
- * {@code len} is zero, or when the address range {@code [addr, addr+len)} wraps around the
- * address space. On Linux, {@code do_munmap} checks alignment and zero-length in this order:
- * non-page-aligned {@code addr} returns {@code -EINVAL}; zero {@code len} returns {@code -EINVAL};
- * address-space wrap returns {@code -EINVAL}.
+ * aligned to the system page size (a multiple of {@code sysconf(_SC_PAGESIZE)}), when {@code len}
+ * is zero, or when the address range {@code [addr, addr+len)} wraps around the address space. On
+ * Linux, {@code do_munmap} checks alignment and zero-length in this order: non-page-aligned {@code
+ * addr} returns {@code -EINVAL}; zero {@code len} returns {@code -EINVAL}; address-space wrap
+ * returns {@code -EINVAL}.
  *
  * <p>The most common source of {@code EINVAL} from {@code munmap} in production code is an
- * integer-width mismatch: JNI code that stores an address as {@code jint} rather than
- * {@code jlong} will pass the truncated value to native {@code munmap} when freeing a
- * Java-allocated direct buffer. If the original address had bits set above bit 31, the
- * truncation produces an unaligned value and {@code munmap} returns {@code EINVAL}. The
- * region at the original address is never freed; the region at the truncated address may or
- * may not be mapped.
+ * integer-width mismatch: JNI code that stores an address as {@code jint} rather than {@code jlong}
+ * will pass the truncated value to native {@code munmap} when freeing a Java-allocated direct
+ * buffer. If the original address had bits set above bit 31, the truncation produces an unaligned
+ * value and {@code munmap} returns {@code EINVAL}. The region at the original address is never
+ * freed; the region at the truncated address may or may not be mapped.
  *
- * <p>A zero-length {@code munmap} (arising from an arithmetic error in the size calculation)
- * is also rejected with {@code EINVAL}. A database engine that computes the size of a segment
- * to unmap from the difference of two file positions can produce zero if the positions are
- * equal; the {@code munmap} call is silently rejected and the segment accumulates as a VMA
- * leak.
+ * <p>A zero-length {@code munmap} (arising from an arithmetic error in the size calculation) is
+ * also rejected with {@code EINVAL}. A database engine that computes the size of a segment to unmap
+ * from the difference of two file positions can produce zero if the positions are equal; the {@code
+ * munmap} call is silently rejected and the segment accumulates as a VMA leak.
  *
- * <p>Compared with {@code EFAULT}: {@code EINVAL} indicates the arguments are structurally
- * invalid (misaligned address, zero length, or address overflow); {@code EFAULT} indicates
- * the address range is inaccessible to the kernel (extends beyond the accessible address space).
- * On modern Linux, the kernel returns {@code EINVAL} for both misalignment and overflow
- * conditions; {@code EFAULT} from {@code munmap} is effectively unreachable on current kernels.
+ * <p>Compared with {@code EFAULT}: {@code EINVAL} indicates the arguments are structurally invalid
+ * (misaligned address, zero length, or address overflow); {@code EFAULT} indicates the address
+ * range is inaccessible to the kernel (extends beyond the accessible address space). On modern
+ * Linux, the kernel returns {@code EINVAL} for both misalignment and overflow conditions; {@code
+ * EFAULT} from {@code munmap} is effectively unreachable on current kernels.
  *
  * <h2>Example</h2>
  *
@@ -97,6 +100,7 @@ import com.macstab.chaos.memory.model.MmapErrno;
  *
  * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; rates above 0.01 prevent the glibc
  * allocator from returning memory to the OS, causing virtual address space exhaustion.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
  * the test class.

@@ -19,52 +19,57 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * an explicit binary path.
  *
  * <h2>What this annotation is</h2>
+ *
  * L1 libchaos-process primitive — one (selector = {@code POSIX_SPAWN}, errno = {@code ENOENT})
- * tuple. The {@code POSIX_SPAWN} selector intercepts {@code posix_spawn} calls only, leaving
- * {@code posix_spawnp} (which searches {@code $PATH}), {@code fork}, {@code execve}, and all other
- * process syscalls unaffected. Compile-time safety: invalid selector/errno combinations have no
- * annotation class.
+ * tuple. The {@code POSIX_SPAWN} selector intercepts {@code posix_spawn} calls only, leaving {@code
+ * posix_spawnp} (which searches {@code $PATH}), {@code fork}, {@code execve}, and all other process
+ * syscalls unaffected. Compile-time safety: invalid selector/errno combinations have no annotation
+ * class.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
- *       interposing the libc {@code posix_spawn} wrapper at the dynamic-linker level.</li>
+ *       interposing the libc {@code posix_spawn} wrapper at the dynamic-linker level.
  *   <li>On each {@code posix_spawn} call the interposer runs a Bernoulli trial with probability
- *       {@link #probability}.</li>
+ *       {@link #probability}.
  *   <li>When the trial fires, the interposer returns {@code ENOENT} directly (POSIX spawn returns
- *       the error code, not -1) without issuing the real kernel call.</li>
- *   <li>The calling code receives: return value {@code ENOENT} (2),
- *       {@code strerror}: "No such file or directory"; no child process is created; the binary
- *       path passed to spawn does not resolve to an existing executable.</li>
+ *       the error code, not -1) without issuing the real kernel call.
+ *   <li>The calling code receives: return value {@code ENOENT} (2), {@code strerror}: "No such file
+ *       or directory"; no child process is created; the binary path passed to spawn does not
+ *       resolve to an existing executable.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
  *   <li>{@code posix_spawn} returns {@code ENOENT}; no child process is created; assert that the
- *       application includes the attempted binary path in the error diagnostic — ENOENT without
- *       the path forces operators to reconstruct what path was used from process arguments, which
- *       is not always possible in production.</li>
- *   <li>Applications that use {@code posix_spawn} with hardcoded absolute paths must handle
- *       ENOENT as a deployment error (binary missing from container image) rather than a transient
+ *       application includes the attempted binary path in the error diagnostic — ENOENT without the
+ *       path forces operators to reconstruct what path was used from process arguments, which is
+ *       not always possible in production.
+ *   <li>Applications that use {@code posix_spawn} with hardcoded absolute paths must handle ENOENT
+ *       as a deployment error (binary missing from container image) rather than a transient
  *       condition — assert that ENOENT does not trigger a retry loop but instead surfaces a
- *       deployment-integrity alert.</li>
- *   <li>Assert that the application distinguishes {@code posix_spawn}-ENOENT (binary not found,
- *       use absolute path) from {@code posix_spawnp}-ENOENT (binary not found in any {@code $PATH}
- *       directory, check PATH configuration) — the remediation steps differ for each case.</li>
+ *       deployment-integrity alert.
+ *   <li>Assert that the application distinguishes {@code posix_spawn}-ENOENT (binary not found, use
+ *       absolute path) from {@code posix_spawnp}-ENOENT (binary not found in any {@code $PATH}
+ *       directory, check PATH configuration) — the remediation steps differ for each case.
  * </ul>
+ *
  * Production failure mode: a container image includes a tool binary at a hardcoded path; a build
  * process updates the container image but the binary is omitted from the new layer; the process
- * calls {@code posix_spawn} with the hardcoded path; spawn returns ENOENT; the application's
- * error message says "spawn failed" without the path, leaving the operations team unable to
- * identify which binary is missing from the new image.
+ * calls {@code posix_spawn} with the hardcoded path; spawn returns ENOENT; the application's error
+ * message says "spawn failed" without the path, leaving the operations team unable to identify
+ * which binary is missing from the new image.
  *
  * <h2>Deep technical dive</h2>
+ *
  * <p>{@code ENOENT} from {@code posix_spawn} occurs at the exec phase in the child: the glibc
  * implementation forks a child, sets up the file-actions and attributes in the child, then calls
  * {@code execve} with the path; if the path does not exist, {@code execve} returns ENOENT, the
- * child communicates the error back to the parent via a pipe, and the parent reports ENOENT as
- * the spawn return value. The interposer fires before the fork, so the application sees ENOENT at
- * the spawn API boundary without the internal fork/exec sequence occurring.
+ * child communicates the error back to the parent via a pipe, and the parent reports ENOENT as the
+ * spawn return value. The interposer fires before the fork, so the application sees ENOENT at the
+ * spawn API boundary without the internal fork/exec sequence occurring.
  *
  * <p>The distinction between {@code posix_spawn} and {@code posix_spawnp} is important for ENOENT:
  * {@code posix_spawn} takes an absolute or relative path directly, so ENOENT means the specific
@@ -102,9 +107,10 @@ import com.macstab.chaos.process.model.ProcessSelector;
  *
  * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; binary-not-found is a deployment error;
  * any non-zero probability exercises the deployment-integrity check path.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every process-chaos-capable container
- * in the test class.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container in
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ProcessErrnoBinding

@@ -14,9 +14,9 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Intercepts {@code DataSource.getConnection()} and delays the calling thread for
- * {@link #delayMs()} milliseconds before returning a connection, simulating a slow or
- * saturated JDBC connection pool and the associated request-queuing latency.
+ * Intercepts {@code DataSource.getConnection()} and delays the calling thread for {@link
+ * #delayMs()} milliseconds before returning a connection, simulating a slow or saturated JDBC
+ * connection pool and the associated request-queuing latency.
  *
  * <h2>What this annotation is</h2>
  *
@@ -30,10 +30,10 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <ol>
  *   <li>Before every call to {@code javax.sql.DataSource#getConnection()} inside the target
  *       container's JVM, the chaos agent intercepts the calling thread.
- *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()},
- *       {@link #maxDelayMs()}]; equal values produce a deterministic delay.
- *   <li>Control returns to the caller and the underlying {@code getConnection()} executes
- *       normally, returning a real connection from the pool.
+ *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()}, {@link
+ *       #maxDelayMs()}]; equal values produce a deterministic delay.
+ *   <li>Control returns to the caller and the underlying {@code getConnection()} executes normally,
+ *       returning a real connection from the pool.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -41,35 +41,34 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <ul>
  *   <li>Every database operation takes at least {@link #delayMs()} ms longer at the connection
  *       acquisition step; assert that request response times include this overhead.
- *   <li>Connection pool timeouts (HikariCP's {@code connectionTimeout}, C3P0's
- *       {@code checkoutTimeout}) configured shorter than the injected delay will now fire;
- *       assert that the application converts pool timeout exceptions to HTTP 503.
- *   <li>Spring's {@code @Transactional} methods acquire a connection at transaction begin; a
- *       delay here pushes the total transaction time over ORM-level statement timeouts.
- *   <li><strong>Production failure mode:</strong> a connection leak in one service causes the
- *       pool to fill; {@code getConnection()} blocks for {@code connectionTimeout} (30 s) on
- *       every request, the thread pool saturates, health-checks fail, and the instance is removed
- *       from the load balancer while the root cause (the leak) goes undetected.
+ *   <li>Connection pool timeouts (HikariCP's {@code connectionTimeout}, C3P0's {@code
+ *       checkoutTimeout}) configured shorter than the injected delay will now fire; assert that the
+ *       application converts pool timeout exceptions to HTTP 503.
+ *   <li>Spring's {@code @Transactional} methods acquire a connection at transaction begin; a delay
+ *       here pushes the total transaction time over ORM-level statement timeouts.
+ *   <li><strong>Production failure mode:</strong> a connection leak in one service causes the pool
+ *       to fill; {@code getConnection()} blocks for {@code connectionTimeout} (30 s) on every
+ *       request, the thread pool saturates, health-checks fail, and the instance is removed from
+ *       the load balancer while the root cause (the leak) goes undetected.
  * </ul>
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>The interception targets {@code javax.sql.DataSource#getConnection()} at the interface
- * method level. Byte Buddy matches any class implementing {@code DataSource} whose
- * {@code getConnection()} is called, which covers HikariCP's {@code HikariDataSource},
- * Apache DBCP2's {@code BasicDataSource}, and Spring's {@code DriverManagerDataSource}.
- * Because the intercept fires before the pool's own wait logic, the injected delay compounds with
- * any real pool-wait time: if the pool is already under pressure, the observed delay is the sum
- * of both.
+ * <p>The interception targets {@code javax.sql.DataSource#getConnection()} at the interface method
+ * level. Byte Buddy matches any class implementing {@code DataSource} whose {@code getConnection()}
+ * is called, which covers HikariCP's {@code HikariDataSource}, Apache DBCP2's {@code
+ * BasicDataSource}, and Spring's {@code DriverManagerDataSource}. Because the intercept fires
+ * before the pool's own wait logic, the injected delay compounds with any real pool-wait time: if
+ * the pool is already under pressure, the observed delay is the sum of both.
  *
- * <p>HikariCP's pool implementation parks the acquiring thread on a
- * {@code java.util.concurrent.SynchronousQueue} or {@code LinkedBlockingDeque} when no
- * connections are immediately available. The chaos delay fires before this park, so even when a
- * connection is immediately available the delay is observable. This makes the fault
- * deterministic regardless of pool utilisation level.
+ * <p>HikariCP's pool implementation parks the acquiring thread on a {@code
+ * java.util.concurrent.SynchronousQueue} or {@code LinkedBlockingDeque} when no connections are
+ * immediately available. The chaos delay fires before this park, so even when a connection is
+ * immediately available the delay is observable. This makes the fault deterministic regardless of
+ * pool utilisation level.
  *
- * <p>When multiple threads simultaneously acquire connections with a delay, the pool's
- * {@code maximumPoolSize} acts as a ceiling on concurrency. The injected threads still hold their
+ * <p>When multiple threads simultaneously acquire connections with a delay, the pool's {@code
+ * maximumPoolSize} acts as a ceiling on concurrency. The injected threads still hold their
  * application threads in sleep, inflating thread-pool utilisation without adding pressure to the
  * database itself. This is the correct model for testing "pool wait" scenarios without actually
  * starving the database.
@@ -103,8 +102,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

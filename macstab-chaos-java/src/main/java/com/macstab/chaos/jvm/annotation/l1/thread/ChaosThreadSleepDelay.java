@@ -30,14 +30,14 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <h2>What chaos this applies</h2>
  *
- * <p>The JVM agent installs a Byte Buddy interceptor on {@code Thread.sleep(long)} and
- * {@code Thread.sleep(long, int)}. When the interceptor fires:
+ * <p>The JVM agent installs a Byte Buddy interceptor on {@code Thread.sleep(long)} and {@code
+ * Thread.sleep(long, int)}. When the interceptor fires:
  *
  * <ol>
  *   <li>The real {@code Thread.sleep} call executes for the requested duration.
- *   <li>After the sleep returns (or is interrupted and re-enters), the delay effect calls
- *       {@code LockSupport.parkNanos} on the current thread for the additional configured
- *       duration in milliseconds.
+ *   <li>After the sleep returns (or is interrupted and re-enters), the delay effect calls {@code
+ *       LockSupport.parkNanos} on the current thread for the additional configured duration in
+ *       milliseconds.
  *   <li>After the additional park returns, control returns to the caller — the caller observes a
  *       total wake-up latency of {@code requestedMs + delayMs}.
  * </ol>
@@ -57,9 +57,9 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p><strong>Production failure mode this simulates:</strong> a kernel thread scheduler under CPU
  * contention that delivers wake-ups tens to hundreds of milliseconds after the requested timeout —
- * a retry loop with a 1-second sleep between attempts stalls for 1.3 seconds per retry,
- * causing dependent downstream services to time out before the retry succeeds, turning a
- * recoverable transient error into a cascading timeout.
+ * a retry loop with a 1-second sleep between attempts stalls for 1.3 seconds per retry, causing
+ * dependent downstream services to time out before the retry succeeds, turning a recoverable
+ * transient error into a cascading timeout.
  *
  * <h2>Deep technical dive</h2>
  *
@@ -73,21 +73,21 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <p><strong>Interrupt contract.</strong> If the thread is interrupted during the real sleep, the
  * additional delay does <em>not</em> execute — the {@code InterruptedException} propagates
  * immediately. If the thread is interrupted during the additional park, the park returns early
- * (park is uninterruptible by specification), the interrupt flag is re-set, and the caller
- * receives control with its interrupt flag set. This means that interrupt-aware callers behave
- * correctly under this annotation.
+ * (park is uninterruptible by specification), the interrupt flag is re-set, and the caller receives
+ * control with its interrupt flag set. This means that interrupt-aware callers behave correctly
+ * under this annotation.
  *
- * <p><strong>Distinction from {@code ChaosThreadSleepSuppress}.</strong> The delay effect keeps
- * the sleep active (in fact, makes it longer). The suppress effect skips {@code Thread.sleep}
- * entirely, causing the calling thread to return immediately regardless of the requested duration.
- * Use delay to test timing tolerance; use suppress to test whether code behaves correctly when
- * sleeps are skipped (e.g. in tight busy-wait loops).
+ * <p><strong>Distinction from {@code ChaosThreadSleepSuppress}.</strong> The delay effect keeps the
+ * sleep active (in fact, makes it longer). The suppress effect skips {@code Thread.sleep} entirely,
+ * causing the calling thread to return immediately regardless of the requested duration. Use delay
+ * to test timing tolerance; use suppress to test whether code behaves correctly when sleeps are
+ * skipped (e.g. in tight busy-wait loops).
  *
- * <p><strong>Virtual-thread interaction.</strong> Virtual threads use {@code Thread.sleep} and
- * JDK 21+ re-implements it to yield the carrier rather than blocking the OS thread. The
- * interceptor fires regardless of whether the sleeping thread is a virtual thread or a platform
- * thread; the additional park on a virtual thread causes the carrier to be yielded for
- * {@code delayMs}, freeing it for other virtual threads during that window.
+ * <p><strong>Virtual-thread interaction.</strong> Virtual threads use {@code Thread.sleep} and JDK
+ * 21+ re-implements it to yield the carrier rather than blocking the OS thread. The interceptor
+ * fires regardless of whether the sleeping thread is a virtual thread or a platform thread; the
+ * additional park on a virtual thread causes the carrier to be yielded for {@code delayMs}, freeing
+ * it for other virtual threads during that window.
  *
  * <p><strong>Cascading effect on scheduled tasks.</strong> Many scheduled-task implementations use
  * a sleep-based heartbeat in their polling loop. Adding 200 ms to each sleep in a 1-second polling
@@ -117,7 +117,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java container image — the container must run a JVM process.
  * </ul>

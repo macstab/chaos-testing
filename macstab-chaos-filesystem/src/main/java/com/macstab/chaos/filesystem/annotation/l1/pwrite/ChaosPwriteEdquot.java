@@ -14,29 +14,30 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code EDQUOT} into {@code pwrite(2)}, causing the call to return {@code -1} with
- * {@code errno = EDQUOT} as if the user's disk quota on this filesystem has been exceeded and the
- * kernel cannot allocate additional blocks for the positional write operation.
+ * Injects {@code EDQUOT} into {@code pwrite(2)}, causing the call to return {@code -1} with {@code
+ * errno = EDQUOT} as if the user's disk quota on this filesystem has been exceeded and the kernel
+ * cannot allocate additional blocks for the positional write operation.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code PWRITE}, errno = {@code EDQUOT})
- * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
- * {@code pwrite} call; when it fires the interposer returns {@code -1} with {@code errno = EDQUOT}
- * without performing any real kernel operation. No runtime operation-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code PWRITE}, errno = {@code
+ * EDQUOT}) tuple. A Bernoulli trial with probability {@link #probability} is run on each
+ * intercepted {@code pwrite} call; when it fires the interposer returns {@code -1} with {@code
+ * errno = EDQUOT} without performing any real kernel operation. No runtime operation-errno
+ * validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
- *   <li>On each intercepted {@code pwrite} call a Bernoulli trial with probability {@link #probability}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = EDQUOT}.
+ *   <li>On each intercepted {@code pwrite} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = EDQUOT}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -65,11 +66,11 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * <h2>Deep technical dive</h2>
  *
  * <p>{@code pwrite(2)} writes {@code count} bytes from the caller's buffer to file descriptor
- * {@code fd} at offset {@code offset} without modifying the file's current position. Like
- * {@code write(2)}, it must allocate storage blocks when the write extends the file or fills a
- * sparse region. The kernel's quota subsystem checks the user's block allocation before each new
- * block is allocated; when the write would cause the user's block usage to exceed the hard limit,
- * the kernel returns {@code EDQUOT} for the entire {@code pwrite} call.
+ * {@code fd} at offset {@code offset} without modifying the file's current position. Like {@code
+ * write(2)}, it must allocate storage blocks when the write extends the file or fills a sparse
+ * region. The kernel's quota subsystem checks the user's block allocation before each new block is
+ * allocated; when the write would cause the user's block usage to exceed the hard limit, the kernel
+ * returns {@code EDQUOT} for the entire {@code pwrite} call.
  *
  * <p>Database storage engines prefer {@code pwrite} over {@code lseek} + {@code write} for page
  * writes because {@code pwrite} is thread-safe: multiple threads can issue concurrent page writes
@@ -81,8 +82,8 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * <p>Java's {@code FileChannel.write(ByteBuffer, long)} maps to {@code pwrite(2)} on Linux. When
  * the underlying call returns {@code EDQUOT}, the JVM throws an {@code IOException} with the
  * message "Disk quota exceeded". Application code that catches {@code IOException} and retries
- * indefinitely on quota exhaustion will loop forever; it should apply a retry budget or escalate
- * to an operator alert.
+ * indefinitely on quota exhaustion will loop forever; it should apply a retry budget or escalate to
+ * an operator alert.
  *
  * <h2>Example</h2>
  *

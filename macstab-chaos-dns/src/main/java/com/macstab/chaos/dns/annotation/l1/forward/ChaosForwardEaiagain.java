@@ -15,26 +15,27 @@ import com.macstab.chaos.dns.model.EaiErrno;
 
 /**
  * Injects {@code EAI_AGAIN} into every {@code getaddrinfo(3)} call (forward DNS lookup), causing
- * the call to return {@code EAI_AGAIN} as if the name-service resolver reported a temporary failure.
+ * the call to return {@code EAI_AGAIN} as if the name-service resolver reported a temporary
+ * failure.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (selectorKind = {@code FORWARD}, errno =
- * {@code EAI_AGAIN}) tuple. This annotation always fires on every intercepted forward lookup —
- * there is no per-call probability field. Use it when you need every resolution attempt to fail
- * temporarily so that the application's DNS retry and caching logic is fully exercised. No runtime
- * selector-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (selectorKind = {@code FORWARD}, errno = {@code
+ * EAI_AGAIN}) tuple. This annotation always fires on every intercepted forward lookup — there is no
+ * per-call probability field. Use it when you need every resolution attempt to fail temporarily so
+ * that the application's DNS retry and caching logic is fully exercised. No runtime selector-errno
+ * validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.DNS)} on the container definition causes the
- *       extension to upload {@code libchaos-dns.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-dns.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code getaddrinfo(3)} and {@code getnameinfo(3)} at the
  *       dynamic-linker level.
- *   <li>On every intercepted {@code getaddrinfo} call the interposer immediately returns
- *       {@code EAI_AGAIN} without performing any real resolver query.
+ *   <li>On every intercepted {@code getaddrinfo} call the interposer immediately returns {@code
+ *       EAI_AGAIN} without performing any real resolver query.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -65,14 +66,14 @@ import com.macstab.chaos.dns.model.EaiErrno;
  * when the query times out after all configured retries. Unlike {@code EAI_FAIL}, which signals a
  * permanent authoritative failure, {@code EAI_AGAIN} explicitly allows the caller to retry later.
  *
- * <p>Modern HTTP client libraries (Apache HttpClient, OkHttp, Netty) distinguish between
- * {@code EAI_AGAIN} and {@code EAI_FAIL} in their DNS failure handling: transient failures trigger
- * a retry (possibly against a different resolver), while permanent failures immediately surface as
- * a connection-refused error to the application. Injecting {@code EAI_AGAIN} on every call tests
- * the retry path, not just the single-failure path.
+ * <p>Modern HTTP client libraries (Apache HttpClient, OkHttp, Netty) distinguish between {@code
+ * EAI_AGAIN} and {@code EAI_FAIL} in their DNS failure handling: transient failures trigger a retry
+ * (possibly against a different resolver), while permanent failures immediately surface as a
+ * connection-refused error to the application. Injecting {@code EAI_AGAIN} on every call tests the
+ * retry path, not just the single-failure path.
  *
- * <p>Java's {@code InetAddress.getByName()} calls {@code getaddrinfo} internally and maps
- * {@code EAI_AGAIN} to an {@code UnknownHostException} with the message "Temporary failure in name
+ * <p>Java's {@code InetAddress.getByName()} calls {@code getaddrinfo} internally and maps {@code
+ * EAI_AGAIN} to an {@code UnknownHostException} with the message "Temporary failure in name
  * resolution". Application code that catches {@code UnknownHostException} without examining the
  * message will treat transient and permanent DNS failures identically; this injection makes that
  * behavioural assumption visible under test.

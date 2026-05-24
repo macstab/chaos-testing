@@ -14,10 +14,10 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Intercepts {@code PreparedStatement.execute()} / {@code executeQuery()} /
- * {@code executeUpdate()} and holds the calling thread for {@link #delayMs()} milliseconds before
- * the parameterised SQL is sent to the database, simulating slow parameterised queries used by ORM
- * frameworks like Hibernate and JPA.
+ * Intercepts {@code PreparedStatement.execute()} / {@code executeQuery()} / {@code executeUpdate()}
+ * and holds the calling thread for {@link #delayMs()} milliseconds before the parameterised SQL is
+ * sent to the database, simulating slow parameterised queries used by ORM frameworks like Hibernate
+ * and JPA.
  *
  * <h2>What this annotation is</h2>
  *
@@ -29,11 +29,11 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>Before every call to {@code java.sql.PreparedStatement#execute()},
- *       {@code executeQuery()}, or {@code executeUpdate()} inside the target container's JVM,
- *       the chaos agent intercepts the calling thread.
- *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()},
- *       {@link #maxDelayMs()}]; equal values produce a deterministic delay.
+ *   <li>Before every call to {@code java.sql.PreparedStatement#execute()}, {@code executeQuery()},
+ *       or {@code executeUpdate()} inside the target container's JVM, the chaos agent intercepts
+ *       the calling thread.
+ *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()}, {@link
+ *       #maxDelayMs()}]; equal values produce a deterministic delay.
  *   <li>Control returns and the underlying prepared statement execute proceeds normally, sending
  *       the pre-compiled SQL with bound parameters to the database.
  * </ol>
@@ -41,28 +41,28 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>Every parameterised SQL execution takes at least {@link #delayMs()} ms longer; in
- *       Hibernate applications this inflates {@code Session.flush()} duration when dirty entities
- *       are persisted in batches.
+ *   <li>Every parameterised SQL execution takes at least {@link #delayMs()} ms longer; in Hibernate
+ *       applications this inflates {@code Session.flush()} duration when dirty entities are
+ *       persisted in batches.
  *   <li>Spring Data JPA repository methods ({@code save()}, {@code findById()}) delegate to
  *       prepared statements; assert that repository call latency includes the injected overhead.
- *   <li>JPA's optimistic locking: a delayed {@code UPDATE} statement may push the transaction
- *       past its timeout, causing {@code OptimisticLockException} or
- *       {@code TransactionTimedOutException} — assert that the retry logic handles these.
- *   <li><strong>Production failure mode:</strong> a large Hibernate batch flush with 500
- *       dirty entities takes 8 s; each prepared statement execute is delayed by database
- *       lock contention; the transaction times out mid-flush and Hibernate's second-level
- *       cache becomes inconsistent with the database state.
+ *   <li>JPA's optimistic locking: a delayed {@code UPDATE} statement may push the transaction past
+ *       its timeout, causing {@code OptimisticLockException} or {@code
+ *       TransactionTimedOutException} — assert that the retry logic handles these.
+ *   <li><strong>Production failure mode:</strong> a large Hibernate batch flush with 500 dirty
+ *       entities takes 8 s; each prepared statement execute is delayed by database lock contention;
+ *       the transaction times out mid-flush and Hibernate's second-level cache becomes inconsistent
+ *       with the database state.
  * </ul>
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>The interception targets {@code java.sql.PreparedStatement} — a sub-interface of
- * {@code Statement} — matching the no-argument execute variants that use pre-bound parameters.
- * This is distinct from {@link ChaosJdbcStatementExecuteDelay} which targets the
- * {@code Statement} execute methods taking a SQL string argument. In practice, Hibernate and
- * Spring Data use prepared statements for all parameterised operations, making this annotation
- * the primary tool for ORM-level query latency simulation.
+ * <p>The interception targets {@code java.sql.PreparedStatement} — a sub-interface of {@code
+ * Statement} — matching the no-argument execute variants that use pre-bound parameters. This is
+ * distinct from {@link ChaosJdbcStatementExecuteDelay} which targets the {@code Statement} execute
+ * methods taking a SQL string argument. In practice, Hibernate and Spring Data use prepared
+ * statements for all parameterised operations, making this annotation the primary tool for
+ * ORM-level query latency simulation.
  *
  * <p>PostgreSQL's JDBC driver ({@code org.postgresql.jdbc.PgPreparedStatement}) implements the
  * {@code PreparedStatement} interface and sends a binary-format query over the libpq protocol.
@@ -72,9 +72,9 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p>Hibernate's flush ordering is deterministic per the JPA spec (inserts before updates before
  * deletes by default), but the injected delay applies to each statement independently, so a batch
- * of 100 inserts accumulates 100 × delay. This exponential blow-up accurately models what
- * happens when a database lock causes each statement to wait for lock acquisition — a common
- * cause of transaction timeout cascades.
+ * of 100 inserts accumulates 100 × delay. This exponential blow-up accurately models what happens
+ * when a database lock causes each statement to wait for lock acquisition — a common cause of
+ * transaction timeout cascades.
  *
  * <p>The delay fires before parameter transmission, meaning parameters are already bound in the
  * driver's internal buffer. No parameter data is lost; the sleep merely postpones the network
@@ -104,8 +104,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

@@ -14,30 +14,30 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code EACCES} into {@code open(2)}, causing the call to return {@code -1} with
- * {@code errno = EACCES} as if the calling process lacks the required permission to open the file —
- * either because the file mode bits deny access, a POSIX ACL entry denies the operation, or an
- * LSM (SELinux, AppArmor) policy vetoes the open.
+ * Injects {@code EACCES} into {@code open(2)}, causing the call to return {@code -1} with {@code
+ * errno = EACCES} as if the calling process lacks the required permission to open the file — either
+ * because the file mode bits deny access, a POSIX ACL entry denies the operation, or an LSM
+ * (SELinux, AppArmor) policy vetoes the open.
  *
  * <h2>What this annotation is</h2>
  *
  * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code OPEN}, errno = {@code EACCES})
- * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
- * {@code open} call; when it fires the interposer returns {@code -1} with {@code errno = EACCES}
- * without performing any real kernel operation. No runtime operation-errno validation is needed.
+ * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted {@code
+ * open} call; when it fires the interposer returns {@code -1} with {@code errno = EACCES} without
+ * performing any real kernel operation. No runtime operation-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
- *   <li>On each intercepted {@code open} call a Bernoulli trial with probability {@link #probability}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = EACCES}.
+ *   <li>On each intercepted {@code open} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = EACCES}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -55,13 +55,13 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *       stderr or a syslog appender; assert that the application does not silently drop log events
  *       when the log file cannot be opened.
  *   <li>Assert that {@code EACCES} on {@code open} for a lock file or PID file causes the
- *       application to fail with a clear message rather than proceeding without the lock
- *       (which could cause split-brain).
+ *       application to fail with a clear message rather than proceeding without the lock (which
+ *       could cause split-brain).
  * </ul>
  *
- * <p>In production, {@code EACCES} from {@code open} occurs when container security contexts
- * are misconfigured (SELinux labels, AppArmor profiles, seccomp filters, capability drops), when
- * an application attempts to open a file owned by another user, and when a Kubernetes secret or
+ * <p>In production, {@code EACCES} from {@code open} occurs when container security contexts are
+ * misconfigured (SELinux labels, AppArmor profiles, seccomp filters, capability drops), when an
+ * application attempts to open a file owned by another user, and when a Kubernetes secret or
  * configmap volume is mounted with incorrect file permissions.
  *
  * <h2>Deep technical dive</h2>
@@ -72,18 +72,19 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * evaluated; third, mandatory access control (MAC) modules such as SELinux or AppArmor evaluate
  * their policy. If any stage denies access, the kernel returns {@code EACCES}.
  *
- * <p>The specific flags passed to {@code open} affect which permissions are checked: {@code O_RDONLY}
- * requires read permission, {@code O_WRONLY} requires write permission, and {@code O_RDWR} requires
- * both. {@code O_CREAT} additionally requires write permission on the directory. If the process
- * passes {@code O_CREAT | O_EXCL} on a file that already exists and the process lacks write
- * permission, the kernel returns {@code EACCES} before checking whether the file exists.
+ * <p>The specific flags passed to {@code open} affect which permissions are checked: {@code
+ * O_RDONLY} requires read permission, {@code O_WRONLY} requires write permission, and {@code
+ * O_RDWR} requires both. {@code O_CREAT} additionally requires write permission on the directory.
+ * If the process passes {@code O_CREAT | O_EXCL} on a file that already exists and the process
+ * lacks write permission, the kernel returns {@code EACCES} before checking whether the file
+ * exists.
  *
  * <p>Java maps {@code EACCES} from {@code open} to a {@code FileNotFoundException} with the message
  * "Permission denied" (via {@code new FileInputStream("path")}) or to an {@code IOException}
- * subclass depending on the NIO channel used. The distinction between "file does not exist"
- * ({@code ENOENT}) and "file exists but is not accessible" ({@code EACCES}) is operationally
- * significant — both manifest as {@code FileNotFoundException} in some Java APIs, but the underlying
- * cause and remediation differ entirely.
+ * subclass depending on the NIO channel used. The distinction between "file does not exist" ({@code
+ * ENOENT}) and "file exists but is not accessible" ({@code EACCES}) is operationally significant —
+ * both manifest as {@code FileNotFoundException} in some Java APIs, but the underlying cause and
+ * remediation differ entirely.
  *
  * <h2>Example</h2>
  *

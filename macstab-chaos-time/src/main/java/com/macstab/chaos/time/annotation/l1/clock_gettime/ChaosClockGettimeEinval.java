@@ -19,22 +19,22 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code CLOCK_GETTIME}, errno =
- * {@code EINVAL}) tuple. The tuple is safe by construction — {@code EINVAL} is a documented POSIX
- * result of {@code clock_gettime(2)} when the {@code clockid} argument is unknown, not supported by
- * the kernel build, or the process lacks the capability required for that clock. No runtime
+ * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code CLOCK_GETTIME}, errno = {@code
+ * EINVAL}) tuple. The tuple is safe by construction — {@code EINVAL} is a documented POSIX result
+ * of {@code clock_gettime(2)} when the {@code clockid} argument is unknown, not supported by the
+ * kernel build, or the process lacks the capability required for that clock. No runtime
  * selector-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
- *       extension to upload {@code libchaos-time.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
  *       at the dynamic-linker level.
- *   <li>On every intercepted {@code clock_gettime} call a Bernoulli trial with probability
- *       {@link #probability} is conducted.
+ *   <li>On every intercepted {@code clock_gettime} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted.
  *   <li>When the trial fires the interposer returns {@code -1} and sets {@code errno = EINVAL}
  *       without invoking the real kernel call — the application sees a genuine kernel failure.
  * </ol>
@@ -44,8 +44,8 @@ import com.macstab.chaos.time.model.TimeSelector;
  * <ul>
  *   <li>{@code clock_gettime} returns {@code -1}; callers that omit a return-value check will
  *       silently use an uninitialised {@code timespec} — a subtle correctness bug.
- *   <li>Java's {@code System.currentTimeMillis()} and {@code System.nanoTime()} delegate to
- *       {@code clock_gettime} via JNI and may throw or return stale values depending on the JVM.
+ *   <li>Java's {@code System.currentTimeMillis()} and {@code System.nanoTime()} delegate to {@code
+ *       clock_gettime} via JNI and may throw or return stale values depending on the JVM.
  *   <li>Distributed lease or election logic that derives timeouts from the monotonic clock may
  *       miscalculate intervals and trigger spurious leader elections or lock expiries.
  *   <li>Assert that the application emits a structured error, increments a fault metric, and does
@@ -53,27 +53,27 @@ import com.macstab.chaos.time.model.TimeSelector;
  * </ul>
  *
  * <p>In production, {@code EINVAL} from {@code clock_gettime} most commonly indicates a seccomp
- * filter rejecting the specific clock variant, or a stripped container image in which a non-standard
- * clock identifier is absent from the kernel configuration.
+ * filter rejecting the specific clock variant, or a stripped container image in which a
+ * non-standard clock identifier is absent from the kernel configuration.
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>POSIX (IEEE Std 1003.1-2017, {@code clock_gettime}) mandates {@code EINVAL} when the
- * {@code clockid} argument does not refer to a known clock. The three clocks most relevant to
- * distributed Java services are {@code CLOCK_REALTIME} (wall clock, subject to NTP steps),
- * {@code CLOCK_MONOTONIC} (never steps backward, used for timeouts and heartbeats), and
- * {@code CLOCK_PROCESS_CPUTIME_ID} (requires {@code CAP_SYS_PTRACE} in hardened kernels).
+ * <p>POSIX (IEEE Std 1003.1-2017, {@code clock_gettime}) mandates {@code EINVAL} when the {@code
+ * clockid} argument does not refer to a known clock. The three clocks most relevant to distributed
+ * Java services are {@code CLOCK_REALTIME} (wall clock, subject to NTP steps), {@code
+ * CLOCK_MONOTONIC} (never steps backward, used for timeouts and heartbeats), and {@code
+ * CLOCK_PROCESS_CPUTIME_ID} (requires {@code CAP_SYS_PTRACE} in hardened kernels).
  *
  * <p>The glibc wrapper for {@code clock_gettime} uses the vDSO fast path when available, bypassing
  * the kernel boundary entirely. {@code libchaos-time.so} interposes at the PLT / GOT level, which
  * intercepts the call regardless of whether the vDSO or the real syscall path is taken — making the
  * injected failure transparent to both paths.
  *
- * <p>Frameworks affected: Spring's {@code StopWatch}, Micrometer's {@code Clock}, Caffeine's
- * expiry policy, Jedis / Lettuce socket timeout computation (via {@code getsockopt SO_RCVTIMEO}
- * which reads the monotonic clock internally), Raft and Paxos implementations (etcd, Consul, Zab)
- * that use monotonic time for heartbeat intervals, and Redis's internal {@code mstime()} helper
- * which calls {@code clock_gettime(CLOCK_REALTIME)}.
+ * <p>Frameworks affected: Spring's {@code StopWatch}, Micrometer's {@code Clock}, Caffeine's expiry
+ * policy, Jedis / Lettuce socket timeout computation (via {@code getsockopt SO_RCVTIMEO} which
+ * reads the monotonic clock internally), Raft and Paxos implementations (etcd, Consul, Zab) that
+ * use monotonic time for heartbeat intervals, and Redis's internal {@code mstime()} helper which
+ * calls {@code clock_gettime(CLOCK_REALTIME)}.
  *
  * <p>Sibling annotations: {@link ChaosClockGettimeEfault} targets bad-pointer edge cases at the
  * syscall boundary; {@link ChaosClockGettimeEperm} targets capability failures for privileged clock

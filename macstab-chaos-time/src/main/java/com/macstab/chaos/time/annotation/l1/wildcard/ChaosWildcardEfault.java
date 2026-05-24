@@ -14,23 +14,24 @@ import com.macstab.chaos.time.model.TimeErrno;
 import com.macstab.chaos.time.model.TimeSelector;
 
 /**
- * Injects {@code EFAULT} into every interposed time syscall ({@code clock_gettime}, {@code nanosleep},
- * {@code usleep}), causing each to return {@code -1} with {@code errno = EFAULT} as if a pointer
- * argument pointed to inaccessible memory.
+ * Injects {@code EFAULT} into every interposed time syscall ({@code clock_gettime}, {@code
+ * nanosleep}, {@code usleep}), causing each to return {@code -1} with {@code errno = EFAULT} as if
+ * a pointer argument pointed to inaccessible memory.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code WILDCARD}, errno = {@code EFAULT})
- * tuple. The {@code WILDCARD} selector matches all three interposed time syscalls simultaneously —
- * equivalent to applying {@link ChaosClockGettimeEfault}, {@link ChaosNanosleepEfault}, and
- * {@link ChaosUsleepEfault} in a single annotation. No runtime selector-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code WILDCARD}, errno = {@code
+ * EFAULT}) tuple. The {@code WILDCARD} selector matches all three interposed time syscalls
+ * simultaneously — equivalent to applying {@link ChaosClockGettimeEfault}, {@link
+ * ChaosNanosleepEfault}, and {@link ChaosUsleepEfault} in a single annotation. No runtime
+ * selector-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
- *       extension to upload {@code libchaos-time.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
  *       at the dynamic-linker level.
  *   <li>On every intercepted call to any of the three syscalls a Bernoulli trial with probability
@@ -60,16 +61,17 @@ import com.macstab.chaos.time.model.TimeSelector;
  * <p>The {@code EFAULT} wildcard is the most severe memory-error injection available in the time
  * module: it simulates a condition where the process's virtual address space has become partially
  * unmapped, which in practice is a near-crash state. Using this annotation in controlled tests
- * ensures that the error-handling paths taken in this extreme scenario perform safe cleanup
- * (no reads from unmapped output buffers, no double-free) rather than cascading into secondary
+ * ensures that the error-handling paths taken in this extreme scenario perform safe cleanup (no
+ * reads from unmapped output buffers, no double-free) rather than cascading into secondary
  * failures.
  *
  * <p>JVM implementations that call {@code clock_gettime} via JNI typically handle the return value
  * but may not check for {@code EFAULT} specifically; injecting it exercises any assumption in the
  * JVM's native code that the output buffer is always populated after a successful return.
  *
- * <p>Sibling per-syscall annotations ({@link ChaosClockGettimeEfault}, {@link ChaosNanosleepEfault},
- * {@link ChaosUsleepEfault}) allow targeted injection to individual syscalls.
+ * <p>Sibling per-syscall annotations ({@link ChaosClockGettimeEfault}, {@link
+ * ChaosNanosleepEfault}, {@link ChaosUsleepEfault}) allow targeted injection to individual
+ * syscalls.
  *
  * <h2>Example</h2>
  *

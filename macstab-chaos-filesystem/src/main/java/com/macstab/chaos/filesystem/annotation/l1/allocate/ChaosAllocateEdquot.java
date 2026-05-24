@@ -20,23 +20,24 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code ALLOCATE}, errno = {@code EDQUOT})
- * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
- * {@code fallocate} call; when it fires the interposer returns {@code -1} with {@code errno = EDQUOT}
- * without performing any real kernel operation. No runtime operation-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code ALLOCATE}, errno = {@code
+ * EDQUOT}) tuple. A Bernoulli trial with probability {@link #probability} is run on each
+ * intercepted {@code fallocate} call; when it fires the interposer returns {@code -1} with {@code
+ * errno = EDQUOT} without performing any real kernel operation. No runtime operation-errno
+ * validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
- *   <li>On each intercepted {@code fallocate} call a Bernoulli trial with probability {@link #probability}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = EDQUOT}, simulating a quota-exceeded condition at block pre-allocation time.
+ *   <li>On each intercepted {@code fallocate} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = EDQUOT}, simulating a quota-exceeded condition at block pre-allocation time.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -51,9 +52,9 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *       to a segment that failed pre-allocation and that the transaction in progress is rolled back
  *       cleanly.
  *   <li>Applications that pre-allocate large output files before writing (avoiding fragmentation)
- *       must handle {@code EDQUOT} as a hard stop; assert that the application falls back to writing
- *       without pre-allocation or aborts with a clear quota-exceeded error rather than a generic I/O
- *       error.
+ *       must handle {@code EDQUOT} as a hard stop; assert that the application falls back to
+ *       writing without pre-allocation or aborts with a clear quota-exceeded error rather than a
+ *       generic I/O error.
  *   <li>Assert that the application distinguishes {@code EDQUOT} from {@code ENOSPC}: quota
  *       exhaustion is per-user or per-group (the quota can be raised without freeing space), while
  *       disk-full requires either deleting files or expanding the filesystem.
@@ -72,11 +73,12 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * any blocks are reserved: the kernel computes whether the requested allocation would push the
  * caller's block usage beyond the hard quota limit and returns {@code EDQUOT} immediately if so.
  *
- * <p>On ext4 and XFS, the quota accounting tracks both block usage and inode usage. {@code fallocate}
- * only increases block usage (not inode count), so {@code EDQUOT} from {@code fallocate} indicates
- * that the block quota limit has been reached. Applications that perform their own free-space
- * estimation using {@code statfs(2)} will not see the quota limit — {@code statfs} reports filesystem-wide
- * free space, not per-user quota headroom. Only the actual allocation call exposes the quota limit.
+ * <p>On ext4 and XFS, the quota accounting tracks both block usage and inode usage. {@code
+ * fallocate} only increases block usage (not inode count), so {@code EDQUOT} from {@code fallocate}
+ * indicates that the block quota limit has been reached. Applications that perform their own
+ * free-space estimation using {@code statfs(2)} will not see the quota limit — {@code statfs}
+ * reports filesystem-wide free space, not per-user quota headroom. Only the actual allocation call
+ * exposes the quota limit.
  *
  * <p>Java's NIO {@code FileChannel} does not expose {@code fallocate} directly. Applications that
  * use native code or JNI to call {@code fallocate} must handle the returned error through their

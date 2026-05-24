@@ -14,14 +14,14 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code EINVAL} into {@code listen(2)}, causing the call to return {@code -1} with
- * {@code errno = EINVAL} as if the socket is already connected or the backlog value is negative,
+ * Injects {@code EINVAL} into {@code listen(2)}, causing the call to return {@code -1} with {@code
+ * errno = EINVAL} as if the socket is already connected or the backlog value is negative,
  * indicating a programming error in the socket setup sequence.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code LISTEN}, errno = {@code EINVAL})
- * tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code LISTEN}, errno = {@code
+ * EINVAL}) tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted
  * {@code listen} call; when it fires the interposer returns {@code -1} with {@code errno = EINVAL}
  * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
@@ -29,14 +29,14 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
- *       extension to upload {@code libchaos-net.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
- *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
- *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
- *       {@code poll} at the dynamic-linker level.
- *   <li>On each intercepted {@code listen} call a Bernoulli trial with probability {@link #toxicity}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = EINVAL}.
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket}, {@code
+ *       bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and {@code poll} at
+ *       the dynamic-linker level.
+ *   <li>On each intercepted {@code listen} call a Bernoulli trial with probability {@link
+ *       #toxicity} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = EINVAL}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -57,8 +57,8 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * </ul>
  *
  * <p>In production, {@code EINVAL} from {@code listen} occurs when a socket is converted from a
- * connected socket (after {@code accept}) back into a listening socket without going through
- * {@code socket} + {@code bind} + {@code listen} again, when the backlog value is derived from a
+ * connected socket (after {@code accept}) back into a listening socket without going through {@code
+ * socket} + {@code bind} + {@code listen} again, when the backlog value is derived from a
  * misconfigured environment variable that produces a negative number, and in some kernel versions
  * when {@code listen} is called on an already-listening socket.
  *
@@ -66,8 +66,8 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <p>POSIX specifies that {@code listen} shall fail with {@code EINVAL} when the socket is already
  * connected. Linux additionally returns {@code EINVAL} if the backlog argument is a very large
- * negative value (though positive values are clamped to the kernel limit set by
- * {@code net.core.somaxconn}, defaults to 128 in most distributions, 65535 on recent kernels).
+ * negative value (though positive values are clamped to the kernel limit set by {@code
+ * net.core.somaxconn}, defaults to 128 in most distributions, 65535 on recent kernels).
  *
  * <p>The backlog parameter controls the depth of the kernel's completed-connection queue (the queue
  * of connections that have completed the TCP three-way handshake but have not yet been accepted by

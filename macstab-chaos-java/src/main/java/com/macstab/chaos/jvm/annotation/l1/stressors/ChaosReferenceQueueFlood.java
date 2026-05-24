@@ -17,8 +17,8 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <h2>What this annotation is</h2>
  *
- * <p>A JVM agent stressor L1 primitive. Unlike interceptor primitives, stressors do not intercept
- * a specific JVM operation — they spawn a self-driving background routine that runs from activation
+ * <p>A JVM agent stressor L1 primitive. Unlike interceptor primitives, stressors do not intercept a
+ * specific JVM operation — they spawn a self-driving background routine that runs from activation
  * ({@code beforeAll} or {@code beforeEach}) until cleanup ({@code afterAll} or {@code afterEach}).
  * The stressor allocates {@link #referenceCount()} {@code WeakReference} objects per cycle, makes
  * their referents unreachable, and then sleeps for {@link #floodIntervalMs()} milliseconds before
@@ -29,19 +29,19 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <ol>
  *   <li>On each cycle, the stressor creates {@link #referenceCount()} {@code WeakReference}
- *       instances, each wrapping a small distinct object, and registers each with a shared
- *       {@code ReferenceQueue}.</li>
- *   <li>The stressor drops all strong references to the referents (but not to the
- *       {@code WeakReference} wrappers). At the next GC cycle, the GC detects that the referents
- *       are weakly reachable and clears the references, enqueuing the {@code WeakReference}
- *       objects on the registered queue.</li>
- *   <li>The JVM's {@code ReferenceHandler} thread — a single high-priority internal daemon thread
- *       — dequeues the cleared references and dispatches them for further processing (calling
- *       registered {@code Cleaner} actions, or simply making them available to application code
- *       via {@code queue.poll()}).</li>
+ *       instances, each wrapping a small distinct object, and registers each with a shared {@code
+ *       ReferenceQueue}.
+ *   <li>The stressor drops all strong references to the referents (but not to the {@code
+ *       WeakReference} wrappers). At the next GC cycle, the GC detects that the referents are
+ *       weakly reachable and clears the references, enqueuing the {@code WeakReference} objects on
+ *       the registered queue.
+ *   <li>The JVM's {@code ReferenceHandler} thread — a single high-priority internal daemon thread —
+ *       dequeues the cleared references and dispatches them for further processing (calling
+ *       registered {@code Cleaner} actions, or simply making them available to application code via
+ *       {@code queue.poll()}).
  *   <li>With a large {@link #referenceCount()} and a short {@link #floodIntervalMs()}, the queue
  *       grows faster than the {@code ReferenceHandler} can drain it, stalling GC reference
- *       processing for all reference types (weak, soft, phantom) that share the same queue.</li>
+ *       processing for all reference types (weak, soft, phantom) that share the same queue.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -49,22 +49,22 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * <ul>
  *   <li><strong>Delayed soft-reference eviction.</strong> The JVM evicts soft references before
  *       throwing OOM; if the {@code ReferenceHandler} is backed up, soft-reference eviction
- *       notifications are delayed and the cache they protect may not shrink in time to prevent
- *       OOM; assert that the application-level cache also has a size limit independent of
- *       soft-reference eviction.
- *   <li><strong>Cleaner action delays.</strong> {@code java.lang.ref.Cleaner} (Java 9+) actions
- *       are dispatched by the reference handler or a dedicated cleaner thread; a backed-up handler
- *       delays resource cleanup (file handles, off-heap memory) registered with a
- *       {@code Cleaner}; assert that the application does not leak file descriptors under queue
- *       flooding.
+ *       notifications are delayed and the cache they protect may not shrink in time to prevent OOM;
+ *       assert that the application-level cache also has a size limit independent of soft-reference
+ *       eviction.
+ *   <li><strong>Cleaner action delays.</strong> {@code java.lang.ref.Cleaner} (Java 9+) actions are
+ *       dispatched by the reference handler or a dedicated cleaner thread; a backed-up handler
+ *       delays resource cleanup (file handles, off-heap memory) registered with a {@code Cleaner};
+ *       assert that the application does not leak file descriptors under queue flooding.
  *   <li><strong>Direct-buffer reclamation stalls.</strong> {@code DirectByteBuffer} objects use a
  *       phantom reference and a {@code Cleaner} to free native memory; flooding the reference queue
- *       delays this cleanup; assert that direct-memory usage does not exceed the limit
- *       ({@code MaxDirectMemorySize}) under sustained reference flooding.
- *   <li><strong>Application reference-queue consumers starved.</strong> Application code that
- *       calls {@code ReferenceQueue.remove()} to detect collected objects (e.g. a cache eviction
- *       listener) will see very high latency between the object being collected and the notification
- *       being delivered; assert that the cache eviction callback fires within a bounded time.
+ *       delays this cleanup; assert that direct-memory usage does not exceed the limit ({@code
+ *       MaxDirectMemorySize}) under sustained reference flooding.
+ *   <li><strong>Application reference-queue consumers starved.</strong> Application code that calls
+ *       {@code ReferenceQueue.remove()} to detect collected objects (e.g. a cache eviction
+ *       listener) will see very high latency between the object being collected and the
+ *       notification being delivered; assert that the cache eviction callback fires within a
+ *       bounded time.
  *   <li><strong>Production failure mode:</strong> a cache implemented with {@code WeakReference}
  *       values that is invalidated simultaneously for many keys floods the reference queue with all
  *       the cleared entries at once, temporarily stalling GC reference processing for the entire
@@ -74,17 +74,17 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * <h2>Deep technical dive</h2>
  *
  * <p>The JVM's reference processing pipeline consists of three stages. First, during a GC cycle,
- * the garbage collector identifies weakly/softly/phantom-reachable objects and clears them (or
- * sets a flag to clear them). Second, the {@code ReferenceHandler} thread — a single daemon thread
- * at {@code Thread.MAX_PRIORITY} — reads the pending reference list that the GC populates and
- * enqueues the references on their registered {@code ReferenceQueue}s. Third, application code (or
- * a {@code Cleaner} thread) polls the queue and acts on the notification.
+ * the garbage collector identifies weakly/softly/phantom-reachable objects and clears them (or sets
+ * a flag to clear them). Second, the {@code ReferenceHandler} thread — a single daemon thread at
+ * {@code Thread.MAX_PRIORITY} — reads the pending reference list that the GC populates and enqueues
+ * the references on their registered {@code ReferenceQueue}s. Third, application code (or a {@code
+ * Cleaner} thread) polls the queue and acts on the notification.
  *
  * <p>The {@code ReferenceHandler} is a single thread shared across all reference types and all
  * queues in the JVM. Its throughput is bounded by how fast it can dequeue from the GC's pending
  * list and enqueue to the application queue. With a high flood rate ({@code referenceCount = 10000}
- * every 100 ms = 100,000 references per second), the handler is kept at near-100% CPU, delaying
- * all reference notifications for the entire JVM.
+ * every 100 ms = 100,000 references per second), the handler is kept at near-100% CPU, delaying all
+ * reference notifications for the entire JVM.
  *
  * <p>This stressor is complementary to {@link ChaosFinalizerBacklog}: the finalizer backlog stalls
  * the {@code Finalizer} thread (which runs {@code finalize()} methods), while this stressor stalls
@@ -105,8 +105,8 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <ul>
  *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
- *       agent before the container JVM starts; omitting it causes an
- *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       agent before the container JVM starts; omitting it causes an {@code
+ *       ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
  *       {@code @JvmAgentChaos}.
  *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the

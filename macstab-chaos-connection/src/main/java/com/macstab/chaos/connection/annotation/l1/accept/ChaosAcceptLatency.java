@@ -20,32 +20,34 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * <h2>What this annotation is</h2>
  *
  * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code ACCEPT}, effect = LATENCY)
- * tuple. Unlike errno variants, the latency primitive always delegates to the real kernel call after
- * the configured extra delay — the return value is a valid accepted connection fd. A Bernoulli
- * trial with probability {@link #toxicity} gates whether the delay fires on each call. No runtime
- * operation-effect validation is needed.
+ * tuple. Unlike errno variants, the latency primitive always delegates to the real kernel call
+ * after the configured extra delay — the return value is a valid accepted connection fd. A
+ * Bernoulli trial with probability {@link #toxicity} gates whether the delay fires on each call. No
+ * runtime operation-effect validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
- *       extension to upload {@code libchaos-net.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
- *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
- *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
- *       {@code poll} at the dynamic-linker level.
- *   <li>On each intercepted {@code accept} call a Bernoulli trial with probability {@link #toxicity}
- *       is conducted; when it fires the interposer sleeps for {@link #delayMs} ms before issuing
- *       the real kernel call.
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket}, {@code
+ *       bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and {@code poll} at
+ *       the dynamic-linker level.
+ *   <li>On each intercepted {@code accept} call a Bernoulli trial with probability {@link
+ *       #toxicity} is conducted; when it fires the interposer sleeps for {@link #delayMs} ms before
+ *       issuing the real kernel call.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
  *   <li>Each accepted connection takes longer to return from the accept call; during the delay the
- *       client's connection is in the kernel's accept queue but not yet returned to the application.
+ *       client's connection is in the kernel's accept queue but not yet returned to the
+ *       application.
  *   <li>In single-threaded accept loops, the delay reduces throughput by blocking the thread that
- *       would normally call accept again immediately; assert that throughput decreases proportionally.
+ *       would normally call accept again immediately; assert that throughput decreases
+ *       proportionally.
  *   <li>In multi-threaded servers with a dedicated accept thread, the delay backs up the accept
  *       queue; when the queue fills, the kernel rejects new SYN packets, causing client-side
  *       connection timeouts.
@@ -54,26 +56,26 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * </ul>
  *
  * <p>In production, slow {@code accept} calls occur when the kernel's TCP accept queue management
- * is under memory pressure, when the accept queue draining thread is starved of CPU by higher-priority
- * threads, or when the server is running under cgroup CPU throttling.
+ * is under memory pressure, when the accept queue draining thread is starved of CPU by
+ * higher-priority threads, or when the server is running under cgroup CPU throttling.
  *
  * <h2>Deep technical dive</h2>
  *
  * <p>{@code accept(2)} normally returns very quickly because the kernel pre-completes the TCP
- * three-way handshake and queues the completed connection before the application calls
- * {@code accept}. The syscall itself is typically sub-millisecond. Adding {@link #delayMs}
- * before the syscall simulates the accept thread being descheduled before it can drain the queue —
- * a condition that occurs under high CPU contention.
+ * three-way handshake and queues the completed connection before the application calls {@code
+ * accept}. The syscall itself is typically sub-millisecond. Adding {@link #delayMs} before the
+ * syscall simulates the accept thread being descheduled before it can drain the queue — a condition
+ * that occurs under high CPU contention.
  *
- * <p>Event-driven servers (Netty, Vert.x) process many connections per accept-loop iteration
- * by calling {@code accept} in a tight loop until {@code EAGAIN}. Delaying each accept call
- * reduces the rate at which the server drains the accept queue, causing clients to wait in the
- * queue for longer. The Netty accept loop detects this as increased accept-latency and can emit
- * a warning metric.
+ * <p>Event-driven servers (Netty, Vert.x) process many connections per accept-loop iteration by
+ * calling {@code accept} in a tight loop until {@code EAGAIN}. Delaying each accept call reduces
+ * the rate at which the server drains the accept queue, causing clients to wait in the queue for
+ * longer. The Netty accept loop detects this as increased accept-latency and can emit a warning
+ * metric.
  *
  * <p>The delay is injected before the kernel call, so the accepted connection fd is still valid
- * after the delay and no resource leak occurs. This distinguishes the latency injection from
- * error injections, which do not produce a valid fd and require no cleanup from the application.
+ * after the delay and no resource leak occurs. This distinguishes the latency injection from error
+ * injections, which do not produce a valid fd and require no cleanup from the application.
  *
  * <h2>Example</h2>
  *

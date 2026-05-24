@@ -25,9 +25,9 @@ import com.macstab.chaos.dns.annotation.l1.wildcard.ChaosWildcardEaiagain;
  * End-to-end integration test for the DNS L1 annotation path.
  *
  * <p>Exercises the full chain: L1 annotation on a fixture class → {@link L1AnnotationProcessor}
- * reflective dispatch → {@code DnsEaiTranslator} → {@code LibchaosDnsChaos.apply()} →
- * config-file write inside a real running container. Verifies both class-scope application and
- * post-remove cleanup, on both glibc and musl base images.
+ * reflective dispatch → {@code DnsEaiTranslator} → {@code LibchaosDnsChaos.apply()} → config-file
+ * write inside a real running container. Verifies both class-scope application and post-remove
+ * cleanup, on both glibc and musl base images.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -53,7 +53,8 @@ class L1DnsAnnotationEndToEndTest {
 
   @ParameterizedTest
   @ValueSource(strings = {DEBIAN, ALPINE})
-  @DisplayName("@ChaosForwardEaiagain writes getaddrinfo EAI_AGAIN rule to config and removes cleanly")
+  @DisplayName(
+      "@ChaosForwardEaiagain writes getaddrinfo EAI_AGAIN rule to config and removes cleanly")
   void forwardEaiagainWrittenAndRemoved(final String image) throws Exception {
     try (final GenericContainer<?> container = prepared(image)) {
       final var handles = containers(container);
@@ -77,7 +78,8 @@ class L1DnsAnnotationEndToEndTest {
 
   @ParameterizedTest
   @ValueSource(strings = {DEBIAN, ALPINE})
-  @DisplayName("@ChaosForwardEaifail writes getaddrinfo EAI_FAIL rule to config and removes cleanly")
+  @DisplayName(
+      "@ChaosForwardEaifail writes getaddrinfo EAI_FAIL rule to config and removes cleanly")
   void forwardEaifailWrittenAndRemoved(final String image) throws Exception {
     try (final GenericContainer<?> container = prepared(image)) {
       final var handles = containers(container);
@@ -101,7 +103,8 @@ class L1DnsAnnotationEndToEndTest {
 
   @ParameterizedTest
   @ValueSource(strings = {DEBIAN, ALPINE})
-  @DisplayName("@ChaosWildcardEaiagain writes wildcard EAI_AGAIN rule to config and removes cleanly")
+  @DisplayName(
+      "@ChaosWildcardEaiagain writes wildcard EAI_AGAIN rule to config and removes cleanly")
   void wildcardEaiagainWrittenAndRemoved(final String image) throws Exception {
     try (final GenericContainer<?> container = prepared(image)) {
       final var handles = containers(container);

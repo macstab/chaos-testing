@@ -17,8 +17,8 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <h2>What this annotation is</h2>
  *
- * <p>A JVM agent stressor L1 primitive. Unlike interceptor primitives, stressors do not intercept
- * a specific JVM operation — they spawn a self-driving background routine that runs from activation
+ * <p>A JVM agent stressor L1 primitive. Unlike interceptor primitives, stressors do not intercept a
+ * specific JVM operation — they spawn a self-driving background routine that runs from activation
  * ({@code beforeAll} or {@code beforeEach}) until cleanup ({@code afterAll} or {@code afterEach}).
  * The stressor submits tasks to the common fork-join pool (or a known thread pool in the
  * container's JVM) that call {@code ThreadLocal.set()} with a large byte-array value and then
@@ -28,18 +28,18 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>The agent identifies pool threads in the target JVM (the common fork-join pool's workers
- *       or the application's servlet thread pool, depending on configuration).</li>
+ *   <li>The agent identifies pool threads in the target JVM (the common fork-join pool's workers or
+ *       the application's servlet thread pool, depending on configuration).
  *   <li>A task is submitted to each pool thread that calls {@code threadLocal.set(new
- *       byte[valueSizeBytes])} {@link #entriesPerThread()} times using distinct
- *       {@code ThreadLocal} instances. The task returns without removing any of the values.</li>
- *   <li>Because pool threads are never terminated (they are reused for future tasks), the
- *       {@code ThreadLocal} values are retained indefinitely. Each value is reachable via:
- *       {@code Thread → ThreadLocalMap → Entry → value}. The GC cannot collect these values as
- *       long as the thread is alive.</li>
- *   <li>Total retained heap = number of pool threads × {@link #entriesPerThread()} ×
- *       {@link #valueSizeBytes()} bytes. With 16 pool threads, 100 entries each of 64 KB, total
- *       retention is 100 MB.</li>
+ *       byte[valueSizeBytes])} {@link #entriesPerThread()} times using distinct {@code ThreadLocal}
+ *       instances. The task returns without removing any of the values.
+ *   <li>Because pool threads are never terminated (they are reused for future tasks), the {@code
+ *       ThreadLocal} values are retained indefinitely. Each value is reachable via: {@code Thread →
+ *       ThreadLocalMap → Entry → value}. The GC cannot collect these values as long as the thread
+ *       is alive.
+ *   <li>Total retained heap = number of pool threads × {@link #entriesPerThread()} × {@link
+ *       #valueSizeBytes()} bytes. With 16 pool threads, 100 entries each of 64 KB, total retention
+ *       is 100 MB.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -51,15 +51,15 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *   <li><strong>Increased GC pause time.</strong> A larger live set requires the GC to mark and
  *       copy more objects during each collection; pause times grow in proportion to the total
  *       retained bytes; assert that GC pauses remain within SLA.
- *   <li><strong>ThreadLocalMap growth and lookup latency.</strong> Each thread's
- *       {@code ThreadLocalMap} is an open-addressing hash table; with many entries its load factor
+ *   <li><strong>ThreadLocalMap growth and lookup latency.</strong> Each thread's {@code
+ *       ThreadLocalMap} is an open-addressing hash table; with many entries its load factor
  *       increases and lookup time for any ThreadLocal (including the application's own) grows;
  *       assert that the framework's per-request ThreadLocal access latency does not become a
  *       bottleneck.
- *   <li><strong>Off-heap interactions.</strong> Some ThreadLocal values hold references to
- *       off-heap resources (database connections, output streams); retaining the ThreadLocal
- *       value prevents the off-heap resource from being released; assert that the resource pool
- *       detects the over-retention and reclaims leaked entries.
+ *   <li><strong>Off-heap interactions.</strong> Some ThreadLocal values hold references to off-heap
+ *       resources (database connections, output streams); retaining the ThreadLocal value prevents
+ *       the off-heap resource from being released; assert that the resource pool detects the
+ *       over-retention and reclaims leaked entries.
  *   <li><strong>Production failure mode:</strong> a servlet container thread serves a request,
  *       stores the request context in a {@code ThreadLocal}, and then throws an unhandled exception
  *       that bypasses the cleanup code in the {@code finally} block; the thread is returned to the
@@ -82,11 +82,11 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * entries therefore never become candidates for cleanup regardless of GC frequency.
  *
  * <p>The interaction with virtual threads is important: virtual threads do not share a carrier's
- * {@code ThreadLocalMap}; each virtual thread has its own map. However, virtual threads use
- * {@code ScopedValue} rather than {@code ThreadLocal} in modern code; legacy code using
- * {@code ThreadLocal} on virtual threads still leaks as described, except that virtual threads may
- * be destroyed and recreated frequently (unlike pool threads), so the leak is bounded by the
- * lifetime of each virtual thread.
+ * {@code ThreadLocalMap}; each virtual thread has its own map. However, virtual threads use {@code
+ * ScopedValue} rather than {@code ThreadLocal} in modern code; legacy code using {@code
+ * ThreadLocal} on virtual threads still leaks as described, except that virtual threads may be
+ * destroyed and recreated frequently (unlike pool threads), so the leak is bounded by the lifetime
+ * of each virtual thread.
  *
  * <p>Combining this stressor with {@link ChaosHeapPressure} produces a cumulative heap-retention
  * scenario that is representative of a production system under a slow ThreadLocal leak: the
@@ -107,8 +107,8 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <ul>
  *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
- *       agent before the container JVM starts; omitting it causes an
- *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       agent before the container JVM starts; omitting it causes an {@code
+ *       ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
  *       {@code @JvmAgentChaos}.
  *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the

@@ -15,9 +15,9 @@ import com.macstab.chaos.jvm.api.OperationType;
 
 /**
  * Intercepts {@code FileInputStream.read()} and {@code RandomAccessFile.read()} and throws the
- * configured exception before any bytes are read from the file, simulating storage hardware
- * errors, corrupt NFS mounts, or missing files that cause configuration loaders, keystore readers,
- * and log appenders to fail at read time.
+ * configured exception before any bytes are read from the file, simulating storage hardware errors,
+ * corrupt NFS mounts, or missing files that cause configuration loaders, keystore readers, and log
+ * appenders to fail at read time.
  *
  * <h2>What this annotation is</h2>
  *
@@ -29,9 +29,9 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>Before every call to {@code java.io.FileInputStream#read(byte[], int, int)} and
- *       {@code java.io.RandomAccessFile#read(byte[], int, int)} inside the target container's JVM,
- *       the chaos agent intercepts the calling thread.
+ *   <li>Before every call to {@code java.io.FileInputStream#read(byte[], int, int)} and {@code
+ *       java.io.RandomAccessFile#read(byte[], int, int)} inside the target container's JVM, the
+ *       chaos agent intercepts the calling thread.
  *   <li>The agent reflectively instantiates the class named by {@link #exceptionClassName()} with
  *       the message from {@link #message()} and throws it; no bytes are read from the file.
  *   <li>The exception propagates to the caller — configuration loader, properties reader, keystore
@@ -41,52 +41,51 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>Spring Boot's configuration loading path reads YAML/properties files via
- *       {@code FileInputStream}; an exception here causes {@code ConfigDataException} to propagate
- *       from {@code SpringApplication.run()} and the application fails to start; assert that the
+ *   <li>Spring Boot's configuration loading path reads YAML/properties files via {@code
+ *       FileInputStream}; an exception here causes {@code ConfigDataException} to propagate from
+ *       {@code SpringApplication.run()} and the application fails to start; assert that the
  *       application's health probe returns a failure state and that the container is restarted by
  *       Kubernetes (rather than staying alive with no config).
- *   <li>Java keystores ({@code KeyStore.load(InputStream, char[])}) read via {@code FileInputStream};
- *       an exception here causes {@code KeyStoreException: failed to load keystore data}; TLS
- *       handshake initialisation fails; assert that the application reports the keystore load
- *       failure clearly and does not silently use an empty trust store.
+ *   <li>Java keystores ({@code KeyStore.load(InputStream, char[])}) read via {@code
+ *       FileInputStream}; an exception here causes {@code KeyStoreException: failed to load
+ *       keystore data}; TLS handshake initialisation fails; assert that the application reports the
+ *       keystore load failure clearly and does not silently use an empty trust store.
  *   <li>Inject {@code java.io.EOFException} to simulate a truncated file (e.g. the file was
- *       partially written); assert that the application does not accept partial configuration
- *       and fails fast with a clear error message rather than starting with inconsistent state.
- *   <li><strong>Production failure mode:</strong> a cloud storage provider (AWS EFS, GCP
- *       Filestore) returns I/O errors during a maintenance window; application pods that read
- *       secrets or certificates from the mounted volume during startup or hot-reload fail with
- *       {@code IOException: Input/output error}; pods cannot start; Kubernetes marks them as
+ *       partially written); assert that the application does not accept partial configuration and
+ *       fails fast with a clear error message rather than starting with inconsistent state.
+ *   <li><strong>Production failure mode:</strong> a cloud storage provider (AWS EFS, GCP Filestore)
+ *       returns I/O errors during a maintenance window; application pods that read secrets or
+ *       certificates from the mounted volume during startup or hot-reload fail with {@code
+ *       IOException: Input/output error}; pods cannot start; Kubernetes marks them as
  *       CrashLoopBackOff; the root cause (storage maintenance) is not visible in the pod logs
  *       without correlating with storage provider events.
  * </ul>
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>The interception targets {@code java.io.FileInputStream#read(byte[], int, int)} and
- * {@code java.io.RandomAccessFile#read(byte[], int, int)} via Byte Buddy. Both methods ultimately
- * call JNI native methods ({@code FileInputStream.readBytes} and {@code RandomAccessFile.readBytes}
- * respectively); the chaos intercept fires before the JNI call, so no syscall is issued and no
- * page cache I/O occurs.
+ * <p>The interception targets {@code java.io.FileInputStream#read(byte[], int, int)} and {@code
+ * java.io.RandomAccessFile#read(byte[], int, int)} via Byte Buddy. Both methods ultimately call JNI
+ * native methods ({@code FileInputStream.readBytes} and {@code RandomAccessFile.readBytes}
+ * respectively); the chaos intercept fires before the JNI call, so no syscall is issued and no page
+ * cache I/O occurs.
  *
  * <p>Spring's {@code PropertiesLoaderUtils.loadProperties(Resource)} reads properties files via
- * {@code resource.getInputStream()}, which for file-backed resources returns a
- * {@code FileInputStream}. An {@code IOException} thrown during the read propagates as
- * {@code IOException} from {@code loadProperties()}, which Spring wraps in a
- * {@code BeanDefinitionStoreException} during context refresh. The application context
- * initialisation aborts and the JVM exits (for Spring Boot with an embedded server) or the WAR
- * deployment fails (for standalone app servers).
+ * {@code resource.getInputStream()}, which for file-backed resources returns a {@code
+ * FileInputStream}. An {@code IOException} thrown during the read propagates as {@code IOException}
+ * from {@code loadProperties()}, which Spring wraps in a {@code BeanDefinitionStoreException}
+ * during context refresh. The application context initialisation aborts and the JVM exits (for
+ * Spring Boot with an embedded server) or the WAR deployment fails (for standalone app servers).
  *
- * <p>Java's {@code KeyStore.load(InputStream, char[])} reads the keystore format (JKS, PKCS12)
- * from the stream; an {@code IOException} during the read causes {@code KeyStoreException}.
- * If the keystore is loaded at TLS context initialisation (inside {@code SSLContext.init()})
- * via {@code KeyManagerFactory.init()}, the exception propagates as {@code KeyManagementException}
- * and the entire TLS context fails to initialise.
+ * <p>Java's {@code KeyStore.load(InputStream, char[])} reads the keystore format (JKS, PKCS12) from
+ * the stream; an {@code IOException} during the read causes {@code KeyStoreException}. If the
+ * keystore is loaded at TLS context initialisation (inside {@code SSLContext.init()}) via {@code
+ * KeyManagerFactory.init()}, the exception propagates as {@code KeyManagementException} and the
+ * entire TLS context fails to initialise.
  *
- * <p>The file read exception fires on every {@code read()} call, not just the first; if the
- * caller handles partial reads and retries (e.g. by calling {@code read()} in a loop), every
- * iteration throws. The caller's retry loop should be bounded; an unbounded loop retrying on
- * every {@code IOException} will spin indefinitely, exhausting CPU.
+ * <p>The file read exception fires on every {@code read()} call, not just the first; if the caller
+ * handles partial reads and retries (e.g. by calling {@code read()} in a loop), every iteration
+ * throws. The caller's retry loop should be bounded; an unbounded loop retrying on every {@code
+ * IOException} will spin indefinitely, exhausting CPU.
  *
  * <h2>Example</h2>
  *
@@ -109,8 +108,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

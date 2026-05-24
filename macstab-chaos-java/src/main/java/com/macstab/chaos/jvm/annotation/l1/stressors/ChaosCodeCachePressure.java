@@ -17,8 +17,8 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <h2>What this annotation is</h2>
  *
- * <p>A JVM agent stressor L1 primitive. Unlike interceptor primitives, stressors do not intercept
- * a specific JVM operation — they spawn a self-driving background routine that runs from activation
+ * <p>A JVM agent stressor L1 primitive. Unlike interceptor primitives, stressors do not intercept a
+ * specific JVM operation — they spawn a self-driving background routine that runs from activation
  * ({@code beforeAll} or {@code beforeEach}) until cleanup ({@code afterAll} or {@code afterEach}).
  * The stressor generates {@link #classCount()} synthetic classes with {@link #methodsPerClass()}
  * methods each, loads them, calls them in a tight loop to satisfy the JIT's invocation-count
@@ -29,17 +29,17 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <ol>
  *   <li>The agent uses a bytecode generation library to generate {@link #classCount()} synthetic
- *       classes, each with {@link #methodsPerClass()} distinct methods that contain enough
- *       bytecode to be non-trivial (at least a few arithmetic operations to prevent inlining).</li>
- *   <li>Each method is called in a loop until the JIT's invocation counter reaches the
- *       compilation threshold ({@code -XX:CompileThreshold}, default 10,000 for C2). The JIT
- *       compiler then enqueues the method for native code compilation.</li>
+ *       classes, each with {@link #methodsPerClass()} distinct methods that contain enough bytecode
+ *       to be non-trivial (at least a few arithmetic operations to prevent inlining).
+ *   <li>Each method is called in a loop until the JIT's invocation counter reaches the compilation
+ *       threshold ({@code -XX:CompileThreshold}, default 10,000 for C2). The JIT compiler then
+ *       enqueues the method for native code compilation.
  *   <li>Each compiled method occupies space in the code cache (a native memory region bounded by
  *       {@code -XX:ReservedCodeCacheSize}, default 240 MB). As the cache fills, the JVM emits a
- *       warning log message and stops accepting new compilations.</li>
+ *       warning log message and stops accepting new compilations.
  *   <li>When the code cache is full and no eviction happens, newly hot methods remain in
  *       interpreted mode. The application's own hot methods may also lose compilation slots,
- *       causing the interpreter to run them instead of compiled native code.</li>
+ *       causing the interpreter to run them instead of compiled native code.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -49,9 +49,9 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *       application code that was not yet compiled (e.g. code first triggered by a production-
  *       volume load test) runs in the interpreter, which is typically 5–10x slower than
  *       JIT-compiled code; assert that throughput does not drop below an acceptable threshold.
- *   <li><strong>Compilation queue backlog.</strong> The JIT compiler's compilation queue
- *       ({@code -XX:+PrintCompilation} or JFR {@code jdk.Compilation} events) will show a growing
- *       backlog with no completions; assert that the monitoring pipeline detects this and alerts.
+ *   <li><strong>Compilation queue backlog.</strong> The JIT compiler's compilation queue ({@code
+ *       -XX:+PrintCompilation} or JFR {@code jdk.Compilation} events) will show a growing backlog
+ *       with no completions; assert that the monitoring pipeline detects this and alerts.
  *   <li><strong>Code cache full warning in logs.</strong> The JVM logs "CodeCache is full" at
  *       warning level when the cache saturates; assert that the log monitoring pipeline captures
  *       this message and does not discard it as a debug line.
@@ -59,36 +59,36 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *       reclaims space by evicting old nmethods, threads executing those methods are deoptimised
  *       and fall back to the interpreter mid-execution; assert that the application handles
  *       mid-flight deoptimisation without throwing unexpected exceptions.
- *   <li><strong>Production failure mode:</strong> a dynamically deployed application (e.g. a
- *       plugin system, a hot-reload framework, or an application server with many deployed WARs)
- *       that generates many unique classes at startup can fill the code cache before the
- *       application's own hot methods are compiled, causing permanently degraded throughput.
+ *   <li><strong>Production failure mode:</strong> a dynamically deployed application (e.g. a plugin
+ *       system, a hot-reload framework, or an application server with many deployed WARs) that
+ *       generates many unique classes at startup can fill the code cache before the application's
+ *       own hot methods are compiled, causing permanently degraded throughput.
  * </ul>
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>The JVM's code cache is a single contiguous native memory region reserved at startup by
- * {@code -XX:ReservedCodeCacheSize}. It stores nmethods (compiled native code for Java methods),
- * JVM stubs, and adapter frames. In Java 9+, the code cache is divided into three segments:
- * non-method (JVM stubs), profiled (C1 tier compilations), and non-profiled (C2 tier). Each
- * segment has its own size limit.
+ * <p>The JVM's code cache is a single contiguous native memory region reserved at startup by {@code
+ * -XX:ReservedCodeCacheSize}. It stores nmethods (compiled native code for Java methods), JVM
+ * stubs, and adapter frames. In Java 9+, the code cache is divided into three segments: non-method
+ * (JVM stubs), profiled (C1 tier compilations), and non-profiled (C2 tier). Each segment has its
+ * own size limit.
  *
  * <p>When the non-profiled segment fills, the JVM switches to "CodeCache is full" mode: the JIT
  * compiler stops enqueuing new compilations. Existing compiled methods continue to run, but hot
  * methods that have not been compiled yet remain in the interpreter. The JVM's code cache sweeper
- * thread periodically evicts old nmethods to reclaim space; this eviction can cause threads to
- * be deoptimised if they are executing an evicted method.
+ * thread periodically evicts old nmethods to reclaim space; this eviction can cause threads to be
+ * deoptimised if they are executing an evicted method.
  *
- * <p>The stressor fills the cache with synthetic methods: {@link #classCount()} classes ×
- * {@link #methodsPerClass()} methods. The total code cache consumption depends on the average
- * native code size per method (typically 200–500 bytes of machine code after C2 compilation).
- * With 5,000 classes and 50 methods each (250,000 methods total) and an average of 300 bytes
- * per compiled method, total cache usage is approximately 75 MB — enough to saturate a 240 MB
- * cache when combined with the application's own compiled methods.
+ * <p>The stressor fills the cache with synthetic methods: {@link #classCount()} classes × {@link
+ * #methodsPerClass()} methods. The total code cache consumption depends on the average native code
+ * size per method (typically 200–500 bytes of machine code after C2 compilation). With 5,000
+ * classes and 50 methods each (250,000 methods total) and an average of 300 bytes per compiled
+ * method, total cache usage is approximately 75 MB — enough to saturate a 240 MB cache when
+ * combined with the application's own compiled methods.
  *
- * <p>The stressor interacts with {@link ChaosMetaspacePressure}: generating classes for code
- * cache pressure also consumes Metaspace (for class metadata and constant pools). Running both
- * stressors simultaneously exercises both native memory subsystems at once.
+ * <p>The stressor interacts with {@link ChaosMetaspacePressure}: generating classes for code cache
+ * pressure also consumes Metaspace (for class metadata and constant pools). Running both stressors
+ * simultaneously exercises both native memory subsystems at once.
  *
  * <h2>Example</h2>
  *
@@ -104,8 +104,8 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <ul>
  *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
- *       agent before the container JVM starts; omitting it causes an
- *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       agent before the container JVM starts; omitting it causes an {@code
+ *       ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
  *       {@code @JvmAgentChaos}.
  *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the

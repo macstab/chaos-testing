@@ -14,26 +14,26 @@ import com.macstab.chaos.time.model.TimeErrno;
 import com.macstab.chaos.time.model.TimeSelector;
 
 /**
- * Injects {@code EINVAL} into {@code usleep(3)}, causing the call to return {@code -1} with
- * {@code errno = EINVAL} as if the microsecond argument exceeded the valid range.
+ * Injects {@code EINVAL} into {@code usleep(3)}, causing the call to return {@code -1} with {@code
+ * errno = EINVAL} as if the microsecond argument exceeded the valid range.
  *
  * <h2>What this annotation is</h2>
  *
  * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code USLEEP}, errno = {@code EINVAL})
- * tuple. The tuple is safe by construction — {@code EINVAL} is a documented POSIX result of
- * {@code usleep(3)} when the {@code usec} argument is greater than or equal to 1,000,000 (one second).
- * No runtime selector-errno validation is needed.
+ * tuple. The tuple is safe by construction — {@code EINVAL} is a documented POSIX result of {@code
+ * usleep(3)} when the {@code usec} argument is greater than or equal to 1,000,000 (one second). No
+ * runtime selector-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
- *       extension to upload {@code libchaos-time.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
  *       at the dynamic-linker level.
- *   <li>On every intercepted {@code usleep} call a Bernoulli trial with probability
- *       {@link #probability} is conducted.
+ *   <li>On every intercepted {@code usleep} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted.
  *   <li>When the trial fires the interposer returns {@code -1} and sets {@code errno = EINVAL}
  *       without sleeping — the sleep is rejected.
  * </ol>
@@ -43,31 +43,31 @@ import com.macstab.chaos.time.model.TimeSelector;
  * <ul>
  *   <li>The sleep is skipped; callers without error handling will proceed immediately without the
  *       intended back-off, producing a busy-loop.
- *   <li>Code that passes {@code usec} values computed from division or scaling may pass values
- *       ≥ 1,000,000 due to integer arithmetic bugs; this annotation surfaces those bugs.
+ *   <li>Code that passes {@code usec} values computed from division or scaling may pass values ≥
+ *       1,000,000 due to integer arithmetic bugs; this annotation surfaces those bugs.
  *   <li>Assert that the application bounds the {@code usec} argument to the legal range before
  *       calling {@code usleep} and handles the error gracefully.
  * </ul>
  *
  * <p>In production, {@code EINVAL} from {@code usleep} indicates a programming error — the
- * microsecond argument was out of the legal range. The POSIX specification requires callers to
- * use {@code nanosleep} for sleep intervals of one second or longer.
+ * microsecond argument was out of the legal range. The POSIX specification requires callers to use
+ * {@code nanosleep} for sleep intervals of one second or longer.
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>The POSIX 2017 specification states that {@code usleep} behavior is undefined when
- * {@code usec >= 1000000}; some implementations raise {@code EINVAL}, others clamp to the maximum.
- * On Linux with glibc, the glibc wrapper converts {@code usec} to a {@code timespec} and calls
- * {@code nanosleep}; since {@code nanosleep} accepts any number of seconds, glibc never actually
- * raises {@code EINVAL} for large values on Linux. {@code libchaos-time.so} injects it anyway
- * to simulate the POSIX-compliant behavior and test that callers do not rely on the glibc extension.
+ * <p>The POSIX 2017 specification states that {@code usleep} behavior is undefined when {@code usec
+ * >= 1000000}; some implementations raise {@code EINVAL}, others clamp to the maximum. On Linux
+ * with glibc, the glibc wrapper converts {@code usec} to a {@code timespec} and calls {@code
+ * nanosleep}; since {@code nanosleep} accepts any number of seconds, glibc never actually raises
+ * {@code EINVAL} for large values on Linux. {@code libchaos-time.so} injects it anyway to simulate
+ * the POSIX-compliant behavior and test that callers do not rely on the glibc extension.
  *
  * <p>This injection is most useful for testing C libraries called from JNI that use {@code usleep}
  * with computed arguments — particularly when the computation involves unit conversion from
  * milliseconds to microseconds and the value can occasionally overflow the 999999 µs limit.
  *
- * <p>Sibling annotations: {@link ChaosUsleepEintr} targets signal interruption;
- * {@link ChaosUsleepEfault} targets bad pointer arguments.
+ * <p>Sibling annotations: {@link ChaosUsleepEintr} targets signal interruption; {@link
+ * ChaosUsleepEfault} targets bad pointer arguments.
  *
  * <h2>Example</h2>
  *

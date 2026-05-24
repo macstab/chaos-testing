@@ -14,8 +14,8 @@ import com.macstab.chaos.time.model.TimeErrno;
 import com.macstab.chaos.time.model.TimeSelector;
 
 /**
- * Injects {@code EAGAIN} into {@code usleep(3)}, causing the call to return {@code -1} with
- * {@code errno = EAGAIN} as if a temporary resource constraint prevented the sleep.
+ * Injects {@code EAGAIN} into {@code usleep(3)}, causing the call to return {@code -1} with {@code
+ * errno = EAGAIN} as if a temporary resource constraint prevented the sleep.
  *
  * <h2>What this annotation is</h2>
  *
@@ -28,12 +28,12 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
- *       extension to upload {@code libchaos-time.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
  *       at the dynamic-linker level.
- *   <li>On every intercepted {@code usleep} call a Bernoulli trial with probability
- *       {@link #probability} is conducted.
+ *   <li>On every intercepted {@code usleep} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted.
  *   <li>When the trial fires the interposer returns {@code -1} and sets {@code errno = EAGAIN}
  *       without sleeping — the sleep is skipped.
  * </ol>
@@ -57,12 +57,12 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * <p>Standard Linux kernels do not return {@code EAGAIN} from {@code nanosleep} (the underlying
  * implementation of {@code usleep}); the sleep always either completes or is interrupted by a
- * signal. The injection via {@code libchaos-time.so} creates a synthetic transient error to
- * test code paths that use a generic {@code errno != EINVAL} guard before retrying.
+ * signal. The injection via {@code libchaos-time.so} creates a synthetic transient error to test
+ * code paths that use a generic {@code errno != EINVAL} guard before retrying.
  *
- * <p>Such patterns are common in legacy C libraries: {@code while (usleep(n) != 0 && errno != EINVAL) usleep(n);}
- * This loop retries on any non-EINVAL error, including {@code EAGAIN}, potentially leading to
- * a busy-loop if the injection rate is high enough.
+ * <p>Such patterns are common in legacy C libraries: {@code while (usleep(n) != 0 && errno !=
+ * EINVAL) usleep(n);} This loop retries on any non-EINVAL error, including {@code EAGAIN},
+ * potentially leading to a busy-loop if the injection rate is high enough.
  *
  * <p>Sibling annotations: {@link ChaosUsleepEintr} is the far more realistic signal-interruption
  * case; {@link ChaosNanosleepEagain} applies the equivalent injection to the modern interface.

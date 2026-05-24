@@ -15,63 +15,66 @@ import com.macstab.chaos.memory.model.MmapErrno;
 
 /**
  * Injects {@code EPERM} into all {@code mmap} calls (anonymous and file-backed) intercepted by
- * libchaos-memory, causing the calling code to observe an operation-not-permitted failure from
- * any memory-mapping operation.
+ * libchaos-memory, causing the calling code to observe an operation-not-permitted failure from any
+ * memory-mapping operation.
  *
  * <h2>What this annotation is</h2>
- * L1 libchaos-memory primitive — one (selector = {@code MMAP}, errno = {@code EPERM}) tuple.
- * The {@code MMAP} selector covers both anonymous and file-backed {@code mmap} calls; use
- * {@code ChaosMmapAnonEperm} or {@code ChaosMmapFileEperm} for narrower fault isolation.
- * Compile-time safety: invalid selector/errno combinations have no annotation class.
+ *
+ * L1 libchaos-memory primitive — one (selector = {@code MMAP}, errno = {@code EPERM}) tuple. The
+ * {@code MMAP} selector covers both anonymous and file-backed {@code mmap} calls; use {@code
+ * ChaosMmapAnonEperm} or {@code ChaosMmapFileEperm} for narrower fault isolation. Compile-time
+ * safety: invalid selector/errno combinations have no annotation class.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
- *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
- *   <li>On each {@code mmap} call the interposer runs a Bernoulli trial with probability
- *       {@link #probability}.</li>
- *   <li>When the trial fires, the interposer sets {@code errno = EPERM} and returns
- *       {@code MAP_FAILED} without issuing the real kernel call.</li>
- *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 1,
- *       {@code strerror}: "Operation not permitted".</li>
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.
+ *   <li>On each {@code mmap} call the interposer runs a Bernoulli trial with probability {@link
+ *       #probability}.
+ *   <li>When the trial fires, the interposer sets {@code errno = EPERM} and returns {@code
+ *       MAP_FAILED} without issuing the real kernel call.
+ *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 1, {@code strerror}:
+ *       "Operation not permitted".
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
  *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = EPERM} (1); both the anonymous
- *       allocator path and the file-backed mapping path are affected simultaneously.</li>
- *   <li>JVM code-cache expansion (which requires {@code PROT_EXEC}) is particularly at risk;
- *       the JVM may fall back to interpreted mode or abort.</li>
- *   <li>Assert that the application surfaces a privilege-related diagnostic and does not
- *       retry indefinitely — {@code EPERM} is permanent without a privilege change.</li>
+ *       allocator path and the file-backed mapping path are affected simultaneously.
+ *   <li>JVM code-cache expansion (which requires {@code PROT_EXEC}) is particularly at risk; the
+ *       JVM may fall back to interpreted mode or abort.
+ *   <li>Assert that the application surfaces a privilege-related diagnostic and does not retry
+ *       indefinitely — {@code EPERM} is permanent without a privilege change.
  * </ul>
- * Production failure mode: a tightened seccomp profile or Kubernetes Pod Security Admission
- * change applied to a new container revision can simultaneously deny {@code PROT_EXEC} on
- * anonymous mappings (JVM code cache) and prevent write-shared mappings on files (memory-mapped
- * databases), causing cascading failures across both subsystems.
+ *
+ * Production failure mode: a tightened seccomp profile or Kubernetes Pod Security Admission change
+ * applied to a new container revision can simultaneously deny {@code PROT_EXEC} on anonymous
+ * mappings (JVM code cache) and prevent write-shared mappings on files (memory-mapped databases),
+ * causing cascading failures across both subsystems.
  *
  * <h2>Deep technical dive</h2>
- * <p>POSIX specifies {@code EPERM} for {@code mmap} when the operation is structurally
- * disallowed regardless of credentials. On Linux this arises when: {@code PROT_EXEC} is
- * requested on a noexec filesystem or when the Yama LSM blocks executable anonymous mappings;
- * when {@code MAP_LOCKED | MAP_ANONYMOUS} is used without {@code CAP_IPC_LOCK} and the process
- * has reached its {@code RLIMIT_MEMLOCK} limit; or when a sealed memfd is re-mapped with
- * incompatible flags.
  *
- * <p>The broad {@code MMAP} selector simultaneously injects {@code EPERM} on all call paths.
- * This creates a comprehensive test of privilege-failure handling: a JVM that runs on a
- * noexec filesystem will fail its JIT code-cache allocation; a database engine that uses
- * locked anonymous memory for its page cache will fail its buffer allocation; and any file
- * that is mapped with {@code MAP_SHARED | PROT_WRITE} on a noexec or read-only filesystem
- * will fail its mapping.
+ * <p>POSIX specifies {@code EPERM} for {@code mmap} when the operation is structurally disallowed
+ * regardless of credentials. On Linux this arises when: {@code PROT_EXEC} is requested on a noexec
+ * filesystem or when the Yama LSM blocks executable anonymous mappings; when {@code MAP_LOCKED |
+ * MAP_ANONYMOUS} is used without {@code CAP_IPC_LOCK} and the process has reached its {@code
+ * RLIMIT_MEMLOCK} limit; or when a sealed memfd is re-mapped with incompatible flags.
  *
- * <p>glibc's standard {@code malloc} never uses {@code PROT_EXEC} or {@code MAP_LOCKED},
- * so it will not encounter real {@code EPERM} under normal conditions. JVM internal allocators,
- * JNA, and database engines that use mlock or executable mappings are at risk.
+ * <p>The broad {@code MMAP} selector simultaneously injects {@code EPERM} on all call paths. This
+ * creates a comprehensive test of privilege-failure handling: a JVM that runs on a noexec
+ * filesystem will fail its JIT code-cache allocation; a database engine that uses locked anonymous
+ * memory for its page cache will fail its buffer allocation; and any file that is mapped with
+ * {@code MAP_SHARED | PROT_WRITE} on a noexec or read-only filesystem will fail its mapping.
+ *
+ * <p>glibc's standard {@code malloc} never uses {@code PROT_EXEC} or {@code MAP_LOCKED}, so it will
+ * not encounter real {@code EPERM} under normal conditions. JVM internal allocators, JNA, and
+ * database engines that use mlock or executable mappings are at risk.
  *
  * <p>Compared with {@code EACCES}: {@code EPERM} is a structural check failure (the operation
- * itself is disallowed for this process class); {@code EACCES} is a credential check failure
- * on a specific object. Both are non-transient; neither will succeed on retry without privilege
+ * itself is disallowed for this process class); {@code EACCES} is a credential check failure on a
+ * specific object. Both are non-transient; neither will succeed on retry without privilege
  * elevation or policy change.
  *
  * <h2>Example</h2>
@@ -90,6 +93,7 @@ import com.macstab.chaos.memory.model.MmapErrno;
  *
  * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2; privilege failures are rare in
  * well-configured environments — they surface when policy changes are applied.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
  * the test class.

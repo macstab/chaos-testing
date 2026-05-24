@@ -19,8 +19,8 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code NANOSLEEP}, errno = {@code EPERM})
- * tuple. The tuple is safe by construction — {@code EPERM} is a documented POSIX result of
+ * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code NANOSLEEP}, errno = {@code
+ * EPERM}) tuple. The tuple is safe by construction — {@code EPERM} is a documented POSIX result of
  * {@code nanosleep(2)} when the process attempts to use a high-resolution sleep that requires
  * elevated privilege on certain POSIX platforms. No runtime selector-errno validation is needed.
  *
@@ -28,12 +28,12 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
- *       extension to upload {@code libchaos-time.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
  *       at the dynamic-linker level.
- *   <li>On every intercepted {@code nanosleep} call a Bernoulli trial with probability
- *       {@link #probability} is conducted.
+ *   <li>On every intercepted {@code nanosleep} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted.
  *   <li>When the trial fires the interposer returns {@code -1} and sets {@code errno = EPERM}
  *       without sleeping — the sleep is aborted immediately.
  * </ol>
@@ -51,23 +51,24 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * <p>In production, {@code EPERM} from {@code nanosleep} appears on POSIX systems (not standard
  * Linux) where high-resolution clocks require a privilege, and in seccomp-filtered environments
- * where the {@code clock_nanosleep} syscall is blocked but the application falls back to
- * {@code nanosleep} which is similarly blocked.
+ * where the {@code clock_nanosleep} syscall is blocked but the application falls back to {@code
+ * nanosleep} which is similarly blocked.
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>Standard Linux does not return {@code EPERM} from {@code nanosleep} for unprivileged processes.
- * The injection via {@code libchaos-time.so} simulates the behaviour of stricter POSIX systems
- * (e.g. some BSD variants with mandatory access control frameworks) or of seccomp profiles that
- * deny the {@code nanosleep} syscall. The return value mimics what those systems would deliver.
+ * <p>Standard Linux does not return {@code EPERM} from {@code nanosleep} for unprivileged
+ * processes. The injection via {@code libchaos-time.so} simulates the behaviour of stricter POSIX
+ * systems (e.g. some BSD variants with mandatory access control frameworks) or of seccomp profiles
+ * that deny the {@code nanosleep} syscall. The return value mimics what those systems would
+ * deliver.
  *
  * <p>Code that uses {@code nanosleep} as a rate-limiting primitive and handles only {@code EINTR}
  * will treat {@code EPERM} as an unexpected error. If the only response to an unexpected error is
  * to retry immediately, the result is a CPU-bound busy-loop that can saturate a core and trigger
  * OOMKiller intervention or eviction by the container orchestrator.
  *
- * <p>Sibling annotations: {@link ChaosNanosleepEinval} targets invalid sleep durations;
- * {@link ChaosNanosleepEintr} targets the far more common signal-interruption case.
+ * <p>Sibling annotations: {@link ChaosNanosleepEinval} targets invalid sleep durations; {@link
+ * ChaosNanosleepEintr} targets the far more common signal-interruption case.
  *
  * <h2>Example</h2>
  *

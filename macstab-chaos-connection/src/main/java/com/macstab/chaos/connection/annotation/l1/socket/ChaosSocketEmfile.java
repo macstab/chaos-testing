@@ -14,14 +14,14 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code EMFILE} into {@code socket(2)}, causing the call to return {@code -1} with
- * {@code errno = EMFILE} as if the calling process has reached its per-process file descriptor
- * limit ({@code RLIMIT_NOFILE}) and the kernel cannot assign a new file descriptor for the socket.
+ * Injects {@code EMFILE} into {@code socket(2)}, causing the call to return {@code -1} with {@code
+ * errno = EMFILE} as if the calling process has reached its per-process file descriptor limit
+ * ({@code RLIMIT_NOFILE}) and the kernel cannot assign a new file descriptor for the socket.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code SOCKET}, errno = {@code EMFILE})
- * tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code SOCKET}, errno = {@code
+ * EMFILE}) tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted
  * {@code socket} call; when it fires the interposer returns {@code -1} with {@code errno = EMFILE}
  * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
@@ -29,14 +29,14 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
- *       extension to upload {@code libchaos-net.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
- *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
- *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
- *       {@code poll} at the dynamic-linker level.
- *   <li>On each intercepted {@code socket} call a Bernoulli trial with probability {@link #toxicity}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = EMFILE}.
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket}, {@code
+ *       bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and {@code poll} at
+ *       the dynamic-linker level.
+ *   <li>On each intercepted {@code socket} call a Bernoulli trial with probability {@link
+ *       #toxicity} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = EMFILE}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -46,13 +46,13 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *       exhausted; no new sockets, files, pipes, or other file-descriptor-using resources can be
  *       created until existing ones are closed. Assert that the application does not spin trying to
  *       create new connections — each retry consumes CPU without progress.
- *   <li>Connection pools that create sockets on demand must handle {@code EMFILE} by either
- *       waiting for an existing connection to become available (backpressure) or returning a
- *       "pool exhausted" error to the caller; assert that the pool does not propagate an
- *       uncaught exception that terminates the thread.
+ *   <li>Connection pools that create sockets on demand must handle {@code EMFILE} by either waiting
+ *       for an existing connection to become available (backpressure) or returning a "pool
+ *       exhausted" error to the caller; assert that the pool does not propagate an uncaught
+ *       exception that terminates the thread.
  *   <li>Assert that the application emits an "fd limit reached" alert when {@code EMFILE} is
- *       received from {@code socket}, enabling operators to identify whether the process has a
- *       file descriptor leak or simply needs a higher {@code RLIMIT_NOFILE} setting.
+ *       received from {@code socket}, enabling operators to identify whether the process has a file
+ *       descriptor leak or simply needs a higher {@code RLIMIT_NOFILE} setting.
  *   <li>Assert that the application's health check endpoint returns a degraded status when it
  *       cannot create new connections due to {@code EMFILE}, so that load balancers can route
  *       traffic away from the affected instance.
@@ -60,10 +60,10 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <p>In production, {@code EMFILE} from {@code socket} occurs when a connection pool leaks
  * connections (creating them without closing them on error paths), when a burst of concurrent
- * requests causes connection pool expansion to exceed the process's file descriptor limit, and
- * when the container's {@code ulimit -n} is set too low for the expected connection concurrency.
- * The default soft limit is 1024 on many Linux distributions; long-running Java services may
- * exhaust this with large thread pools and connection pools.
+ * requests causes connection pool expansion to exceed the process's file descriptor limit, and when
+ * the container's {@code ulimit -n} is set too low for the expected connection concurrency. The
+ * default soft limit is 1024 on many Linux distributions; long-running Java services may exhaust
+ * this with large thread pools and connection pools.
  *
  * <h2>Deep technical dive</h2>
  *
@@ -81,11 +81,11 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * the current limit ({@code /proc/self/limits}) when they receive either error to help operators
  * distinguish the two cases.
  *
- * <p>Java's NIO and networking layers allocate file descriptors invisibly to application code:
- * each {@code Selector} instance (used by Netty, Vert.x, and other NIO frameworks) consumes at
- * least two file descriptors (epoll fd + pipe for wakeup); each {@code SocketChannel} consumes one.
- * A Netty server with 8 I/O threads, 4 boss threads, and 1000 active connections consumes at least
- * 1024 file descriptors before any application-layer sockets are created. The JVM itself opens
+ * <p>Java's NIO and networking layers allocate file descriptors invisibly to application code: each
+ * {@code Selector} instance (used by Netty, Vert.x, and other NIO frameworks) consumes at least two
+ * file descriptors (epoll fd + pipe for wakeup); each {@code SocketChannel} consumes one. A Netty
+ * server with 8 I/O threads, 4 boss threads, and 1000 active connections consumes at least 1024
+ * file descriptors before any application-layer sockets are created. The JVM itself opens
  * additional file descriptors for class loading, JMX, and GC logging.
  *
  * <h2>Example</h2>

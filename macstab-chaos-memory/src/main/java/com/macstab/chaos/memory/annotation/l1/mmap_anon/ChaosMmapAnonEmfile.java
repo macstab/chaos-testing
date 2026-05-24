@@ -19,60 +19,65 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * memory allocation.
  *
  * <h2>What this annotation is</h2>
+ *
  * L1 libchaos-memory primitive — one (selector = {@code MMAP_ANON}, errno = {@code EMFILE}) tuple.
  * Compile-time safety: this annotation exists only because {@code EMFILE} is a defined POSIX result
  * for {@code mmap}; invalid combinations have no annotation class and cannot be expressed.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
- *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.
  *   <li>On each {@code mmap(MAP_ANONYMOUS)} call the interposer runs a Bernoulli trial with
- *       probability {@link #probability}.</li>
- *   <li>When the trial fires, the interposer sets {@code errno = EMFILE} and returns
- *       {@code MAP_FAILED} without issuing the real kernel call.</li>
- *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 24,
- *       {@code strerror}: "Too many open files".</li>
+ *       probability {@link #probability}.
+ *   <li>When the trial fires, the interposer sets {@code errno = EMFILE} and returns {@code
+ *       MAP_FAILED} without issuing the real kernel call.
+ *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 24, {@code strerror}:
+ *       "Too many open files".
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
  *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = EMFILE} (24); the application
- *       should report a resource-limit error rather than dereferencing the failed pointer.</li>
- *   <li>glibc {@code malloc} propagates {@code NULL}; JVM allocators raise {@code OutOfMemoryError}.
- *       Applications that close fds in response to {@code EMFILE} from other syscalls should
- *       exercise the same logic here.</li>
+ *       should report a resource-limit error rather than dereferencing the failed pointer.
+ *   <li>glibc {@code malloc} propagates {@code NULL}; JVM allocators raise {@code
+ *       OutOfMemoryError}. Applications that close fds in response to {@code EMFILE} from other
+ *       syscalls should exercise the same logic here.
  *   <li>Assert that connection pools, file-descriptor trackers, or resource monitors surface the
- *       per-process limit condition and that the application degrades gracefully.</li>
+ *       per-process limit condition and that the application degrades gracefully.
  * </ul>
+ *
  * Production failure mode: long-lived processes with slow file-descriptor leaks (connections not
  * closed, temporary files not unlinked) eventually hit {@code RLIMIT_NOFILE}; every subsequent
  * {@code open}, {@code socket}, or internally {@code mmap} call fails with {@code EMFILE}.
- * Applications that conflate {@code EMFILE} with {@code ENOMEM} may misdiagnose the incident as
- * an OOM event rather than a descriptor leak.
+ * Applications that conflate {@code EMFILE} with {@code ENOMEM} may misdiagnose the incident as an
+ * OOM event rather than a descriptor leak.
  *
  * <h2>Deep technical dive</h2>
+ *
  * <p>POSIX specifies {@code EMFILE} when the per-process limit on the number of open file
  * descriptors ({@code RLIMIT_NOFILE}) would be exceeded by the {@code mmap} call. On Linux,
- * anonymous {@code mmap} does not allocate a file descriptor (unlike file-backed mappings), so
- * the kernel does not check {@code RLIMIT_NOFILE} for {@code MAP_ANONYMOUS} calls. In practice,
- * {@code EMFILE} from a real anonymous {@code mmap} would indicate a kernel bug.
+ * anonymous {@code mmap} does not allocate a file descriptor (unlike file-backed mappings), so the
+ * kernel does not check {@code RLIMIT_NOFILE} for {@code MAP_ANONYMOUS} calls. In practice, {@code
+ * EMFILE} from a real anonymous {@code mmap} would indicate a kernel bug.
  *
  * <p>However, this annotation intentionally injects {@code EMFILE} to verify that application
  * error-handling code handles it correctly when it appears. Because many allocator wrappers treat
- * all {@code mmap} failure codes uniformly, applications that do not test this code path may
- * crash, loop, or produce corrupt output when the real {@code EMFILE} condition arises from a
- * concurrent {@code open} or {@code socket} call on a different thread, which races with the
- * {@code malloc} call.
+ * all {@code mmap} failure codes uniformly, applications that do not test this code path may crash,
+ * loop, or produce corrupt output when the real {@code EMFILE} condition arises from a concurrent
+ * {@code open} or {@code socket} call on a different thread, which races with the {@code malloc}
+ * call.
  *
  * <p>For file-backed mmaps ({@code MMAP} selector), {@code EMFILE} is a realistic kernel response
  * when the file descriptor used in the {@code mmap} call was itself the last descriptor and the
- * mapping internally creates an additional reference. For anonymous mappings it serves as a
- * canary for the error-handling robustness of the allocation stack.
+ * mapping internally creates an additional reference. For anonymous mappings it serves as a canary
+ * for the error-handling robustness of the allocation stack.
  *
- * <p>Compared with sibling {@code ENFILE}: {@code EMFILE} is per-process (one process hit its
- * own limit); {@code ENFILE} is system-wide (the entire host has exhausted the global fd table).
- * Both produce allocation failures but require different remediation in operations runbooks.
+ * <p>Compared with sibling {@code ENFILE}: {@code EMFILE} is per-process (one process hit its own
+ * limit); {@code ENFILE} is system-wide (the entire host has exhausted the global fd table). Both
+ * produce allocation failures but require different remediation in operations runbooks.
  *
  * <h2>Example</h2>
  *
@@ -91,6 +96,7 @@ import com.macstab.chaos.memory.model.MmapErrno;
  *
  * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2 to simulate fd-limit pressure; combine
  * with a reduced {@code RLIMIT_NOFILE} in the container for maximum realism.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
  * the test class.

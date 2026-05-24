@@ -18,54 +18,59 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * causing the calling code to observe a no-such-device failure from anonymous memory allocation.
  *
  * <h2>What this annotation is</h2>
+ *
  * L1 libchaos-memory primitive — one (selector = {@code MMAP_ANON}, errno = {@code ENODEV}) tuple.
  * Compile-time safety: this annotation exists only because {@code ENODEV} is a defined POSIX result
  * for {@code mmap}; invalid combinations have no annotation class and cannot be expressed.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
- *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.
  *   <li>On each {@code mmap(MAP_ANONYMOUS)} call the interposer runs a Bernoulli trial with
- *       probability {@link #probability}.</li>
- *   <li>When the trial fires, the interposer sets {@code errno = ENODEV} and returns
- *       {@code MAP_FAILED} without issuing the real kernel call.</li>
- *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 19,
- *       {@code strerror}: "No such device".</li>
+ *       probability {@link #probability}.
+ *   <li>When the trial fires, the interposer sets {@code errno = ENODEV} and returns {@code
+ *       MAP_FAILED} without issuing the real kernel call.
+ *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 19, {@code strerror}:
+ *       "No such device".
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
- *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = ENODEV} (19); callers should
- *       treat this as a non-transient infrastructure failure and escalate the error.</li>
- *   <li>glibc {@code malloc} propagates {@code NULL}; JVM allocators raise {@code OutOfMemoryError}.
- *       Error messages will typically not distinguish {@code ENODEV} from {@code ENOMEM} at the
- *       Java level; native log lines and crash dumps are more informative.</li>
+ *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = ENODEV} (19); callers should treat
+ *       this as a non-transient infrastructure failure and escalate the error.
+ *   <li>glibc {@code malloc} propagates {@code NULL}; JVM allocators raise {@code
+ *       OutOfMemoryError}. Error messages will typically not distinguish {@code ENODEV} from {@code
+ *       ENOMEM} at the Java level; native log lines and crash dumps are more informative.
  *   <li>Assert that the application does not silently corrupt state and that it surfaces a
- *       hardware-level error diagnostic that distinguishes device failure from OOM.</li>
+ *       hardware-level error diagnostic that distinguishes device failure from OOM.
  * </ul>
+ *
  * Production failure mode: NUMA nodes being hot-removed from a running system, persistent memory
- * (PMEM/NVDIMM) devices being unplugged, or software RAID arrays going offline can cause the
- * memory subsystem to return {@code ENODEV} for mappings that reference those devices.
+ * (PMEM/NVDIMM) devices being unplugged, or software RAID arrays going offline can cause the memory
+ * subsystem to return {@code ENODEV} for mappings that reference those devices.
  *
  * <h2>Deep technical dive</h2>
- * <p>POSIX specifies {@code ENODEV} for {@code mmap} when the filesystem underlying the mapped
- * file does not support memory mapping (the file system's {@code f_op->mmap} is {@code NULL}).
- * For anonymous mappings, this error is produced by the kernel when a backing device (such as a
- * {@code /dev/mem} region, a PMEM device, or a DAX-capable block device) becomes unavailable
- * after the process started but before the mapping is established.
  *
- * <p>This scenario is most relevant for applications that map device memory directly
- * (e.g. SPDK-based storage engines, DPDK packet buffers, or GPU memory via {@code /dev/nvidia})
- * and for HPC applications that use PMEM-backed anonymous mappings through the
- * {@code MEMKIND_DAX} allocator family. In container environments it can arise when a host-side
- * device is hot-removed while a container that has volume-mounted the device is still running.
+ * <p>POSIX specifies {@code ENODEV} for {@code mmap} when the filesystem underlying the mapped file
+ * does not support memory mapping (the file system's {@code f_op->mmap} is {@code NULL}). For
+ * anonymous mappings, this error is produced by the kernel when a backing device (such as a {@code
+ * /dev/mem} region, a PMEM device, or a DAX-capable block device) becomes unavailable after the
+ * process started but before the mapping is established.
+ *
+ * <p>This scenario is most relevant for applications that map device memory directly (e.g.
+ * SPDK-based storage engines, DPDK packet buffers, or GPU memory via {@code /dev/nvidia}) and for
+ * HPC applications that use PMEM-backed anonymous mappings through the {@code MEMKIND_DAX}
+ * allocator family. In container environments it can arise when a host-side device is hot-removed
+ * while a container that has volume-mounted the device is still running.
  *
  * <p>Standard glibc {@code malloc} uses {@code /dev/zero} (or {@code MAP_ANONYMOUS}) and never
- * touches hardware-backed devices, so it never encounters {@code ENODEV} in practice. This errno
- * is therefore relevant only for native code that maps device memory explicitly. The JVM is
- * unaffected unless it is configured with off-heap allocators that target PMEM (e.g. Memkind or
- * the JVM's own {@code -XX:AllocateHeapAt} option targeting a DAX filesystem).
+ * touches hardware-backed devices, so it never encounters {@code ENODEV} in practice. This errno is
+ * therefore relevant only for native code that maps device memory explicitly. The JVM is unaffected
+ * unless it is configured with off-heap allocators that target PMEM (e.g. Memkind or the JVM's own
+ * {@code -XX:AllocateHeapAt} option targeting a DAX filesystem).
  *
  * <p>Compared with siblings: {@code ENODEV} indicates a device-level infrastructure failure
  * (hardware gone); {@code EACCES} indicates a permissions failure (device present but access
@@ -88,6 +93,7 @@ import com.macstab.chaos.memory.model.MmapErrno;
  *
  * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; device-removal failures are rare but
  * catastrophic — low probability is sufficient to exercise the error-handling branch.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
  * the test class.

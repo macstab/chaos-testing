@@ -40,47 +40,47 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>Every call to {@code getConnection()} throws the configured exception; in Spring
- *       applications this is typically translated by {@code SQLExceptionTranslator} into a
- *       {@code DataAccessException} subtype — assert the correct subtype is used.
+ *       applications this is typically translated by {@code SQLExceptionTranslator} into a {@code
+ *       DataAccessException} subtype — assert the correct subtype is used.
  *   <li>Spring's {@code @Transactional} propagation: when {@code getConnection()} throws inside a
- *       transaction, the transaction manager rolls back immediately; assert that the rollback
- *       path does not itself call {@code getConnection()} (double-fault risk).
+ *       transaction, the transaction manager rolls back immediately; assert that the rollback path
+ *       does not itself call {@code getConnection()} (double-fault risk).
  *   <li>Inject {@code java.sql.SQLTransientConnectionException} to test transient-failure retry
  *       logic separately from {@code SQLNonTransientConnectionException} for permanent failures.
  *   <li><strong>Production failure mode:</strong> database certificate rotation causes all new
- *       connections to fail with {@code javax.net.ssl.SSLException} wrapped in
- *       {@code SQLException}; the application floods logs with stack traces, exhausts log
- *       storage, and the logging system drops critical alerts for unrelated services.
+ *       connections to fail with {@code javax.net.ssl.SSLException} wrapped in {@code
+ *       SQLException}; the application floods logs with stack traces, exhausts log storage, and the
+ *       logging system drops critical alerts for unrelated services.
  * </ul>
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>The exception injection translator targets {@code javax.sql.DataSource#getConnection()} at
- * the interface boundary, so HikariCP, DBCP2, and C3P0 are all affected regardless of their
- * internal pool implementation. The agent fires before any pool logic executes, meaning pool
- * statistics (active connections, pending acquisitions) are not disturbed — this is a clean
- * injection that does not pollute pool metrics.
+ * <p>The exception injection translator targets {@code javax.sql.DataSource#getConnection()} at the
+ * interface boundary, so HikariCP, DBCP2, and C3P0 are all affected regardless of their internal
+ * pool implementation. The agent fires before any pool logic executes, meaning pool statistics
+ * (active connections, pending acquisitions) are not disturbed — this is a clean injection that
+ * does not pollute pool metrics.
  *
  * <p>HikariCP's pool health-check background thread also calls {@code getConnection()}
- * periodically; if this annotation is active during a health-check period, the health-check
- * will also fail, which may trigger pool eviction or connection-dead detection. This is often the
+ * periodically; if this annotation is active during a health-check period, the health-check will
+ * also fail, which may trigger pool eviction or connection-dead detection. This is often the
  * desired behavior: verify that the application detects pool health degradation and alerts on it.
  *
- * <p>The most common exception class for this annotation is {@code java.sql.SQLException}
- * (the default), which Spring's {@code SQLExceptionTranslator} will classify based on the SQL
- * state. To test a specific classification, inject a vendor-specific subclass such as
- * {@code com.mysql.cj.jdbc.exceptions.CommunicationsException} or use a standard JDK class
- * with a SQL state that maps to the desired Spring {@code DataAccessException} subtype.
+ * <p>The most common exception class for this annotation is {@code java.sql.SQLException} (the
+ * default), which Spring's {@code SQLExceptionTranslator} will classify based on the SQL state. To
+ * test a specific classification, inject a vendor-specific subclass such as {@code
+ * com.mysql.cj.jdbc.exceptions.CommunicationsException} or use a standard JDK class with a SQL
+ * state that maps to the desired Spring {@code DataAccessException} subtype.
  *
  * <p>When used with a probability modifier, the annotation produces intermittent connection
- * failures that exercise retry logic. Frameworks like Spring Retry that retry on
- * {@code TransientDataAccessException} will fire retries; assert that the retry count is bounded
- * and that each retry does not accumulate a new database connection that is never closed.
+ * failures that exercise retry logic. Frameworks like Spring Retry that retry on {@code
+ * TransientDataAccessException} will fire retries; assert that the retry count is bounded and that
+ * each retry does not accumulate a new database connection that is never closed.
  *
  * <p>Unlike {@link ChaosJdbcConnectionAcquireDelay}, which adds latency but always returns a
- * connection, this annotation produces a hard failure that forces the application to take the
- * error path unconditionally. Combining both in separate test methods provides full coverage of
- * the slow-pool and dead-pool scenarios.
+ * connection, this annotation produces a hard failure that forces the application to take the error
+ * path unconditionally. Combining both in separate test methods provides full coverage of the
+ * slow-pool and dead-pool scenarios.
  *
  * <h2>Example</h2>
  *
@@ -103,8 +103,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

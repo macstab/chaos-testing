@@ -28,8 +28,8 @@ import com.macstab.chaos.dns.annotation.l1.DnsSelectorKind;
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.DNS)} on the container definition causes the
- *       extension to upload {@code libchaos-dns.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-dns.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code getaddrinfo(3)} and {@code getnameinfo(3)} at the
  *       dynamic-linker level.
  *   <li>On every intercepted {@code getaddrinfo} call the interposer first sleeps for an additional
@@ -48,8 +48,8 @@ import com.macstab.chaos.dns.annotation.l1.DnsSelectorKind;
  *       initialise; health-check probes that run before startup completes may report false
  *       positives.
  *   <li>HTTP client libraries that budget a single timeout across DNS resolution, TCP connect, and
- *       TLS handshake will exhaust their budget in the DNS phase, making the TCP and TLS code
- *       paths unreachable.
+ *       TLS handshake will exhaust their budget in the DNS phase, making the TCP and TLS code paths
+ *       unreachable.
  *   <li>Assert that DNS resolution timeouts are configured independently from connection timeouts
  *       and that the application correctly distinguishes a DNS-timeout failure from a
  *       connection-refused failure.
@@ -62,12 +62,12 @@ import com.macstab.chaos.dns.annotation.l1.DnsSelectorKind;
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>{@code getaddrinfo(3)} is a blocking call that internally sends one or more UDP (or TCP)
- * DNS queries and waits for responses. On Linux with glibc, the default resolver timeout is
- * 5 seconds per nameserver with 2 retries, giving a worst-case latency of 15 seconds before the
- * call returns {@code EAI_AGAIN}. The injected extra delay is added on top of the actual resolver
- * round trip, which in a test environment completes in milliseconds; the total duration observed
- * by the application is therefore approximately {@link #delayMs} plus the real resolver latency.
+ * <p>{@code getaddrinfo(3)} is a blocking call that internally sends one or more UDP (or TCP) DNS
+ * queries and waits for responses. On Linux with glibc, the default resolver timeout is 5 seconds
+ * per nameserver with 2 retries, giving a worst-case latency of 15 seconds before the call returns
+ * {@code EAI_AGAIN}. The injected extra delay is added on top of the actual resolver round trip,
+ * which in a test environment completes in milliseconds; the total duration observed by the
+ * application is therefore approximately {@link #delayMs} plus the real resolver latency.
  *
  * <p>Java's {@code InetAddress.getByName()} is synchronous and blocks the calling thread for the
  * full duration of the DNS lookup. Applications that call it on a Netty event-loop thread or an
@@ -75,10 +75,10 @@ import com.macstab.chaos.dns.annotation.l1.DnsSelectorKind;
  * loop. Injecting forward latency reveals these blocking-DNS patterns in code review by observing
  * that all concurrent operations stall during the delay window.
  *
- * <p>Asynchronous DNS libraries (c-ares, Netty's {@code DnsNameResolver}) perform the lookup in
- * a separate thread or event loop and will not block application threads. The forward latency
- * injection still delays the completion of the lookup, which delays the connection establishment
- * — making it useful for testing the timeout and cancellation behaviour of async DNS pipelines.
+ * <p>Asynchronous DNS libraries (c-ares, Netty's {@code DnsNameResolver}) perform the lookup in a
+ * separate thread or event loop and will not block application threads. The forward latency
+ * injection still delays the completion of the lookup, which delays the connection establishment —
+ * making it useful for testing the timeout and cancellation behaviour of async DNS pipelines.
  *
  * <h2>Example</h2>
  *

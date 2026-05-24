@@ -14,70 +14,75 @@ import com.macstab.chaos.memory.model.MemorySelector;
 import com.macstab.chaos.memory.model.MmapErrno;
 
 /**
- * Injects {@code EBADF} into file-backed {@code mmap} calls intercepted by libchaos-memory,
- * causing the calling code to observe a bad-file-descriptor failure when attempting to establish
- * a file-backed memory mapping.
+ * Injects {@code EBADF} into file-backed {@code mmap} calls intercepted by libchaos-memory, causing
+ * the calling code to observe a bad-file-descriptor failure when attempting to establish a
+ * file-backed memory mapping.
  *
  * <h2>What this annotation is</h2>
- * L1 libchaos-memory primitive — one (selector = {@code MMAP_FILE}, errno = {@code EBADF})
- * tuple. The {@code MMAP_FILE} selector intercepts only file-backed {@code mmap} calls (those
- * without {@code MAP_ANONYMOUS}), leaving anonymous allocations unaffected. Compile-time
- * safety: invalid selector/errno combinations have no annotation class.
+ *
+ * L1 libchaos-memory primitive — one (selector = {@code MMAP_FILE}, errno = {@code EBADF}) tuple.
+ * The {@code MMAP_FILE} selector intercepts only file-backed {@code mmap} calls (those without
+ * {@code MAP_ANONYMOUS}), leaving anonymous allocations unaffected. Compile-time safety: invalid
+ * selector/errno combinations have no annotation class.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
- *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.
  *   <li>On each file-backed {@code mmap} call the interposer runs a Bernoulli trial with
- *       probability {@link #probability}.</li>
- *   <li>When the trial fires, the interposer sets {@code errno = EBADF} and returns
- *       {@code MAP_FAILED} without issuing the real kernel call.</li>
- *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 9,
- *       {@code strerror}: "Bad file descriptor".</li>
+ *       probability {@link #probability}.
+ *   <li>When the trial fires, the interposer sets {@code errno = EBADF} and returns {@code
+ *       MAP_FAILED} without issuing the real kernel call.
+ *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 9, {@code strerror}:
+ *       "Bad file descriptor".
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
  *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = EBADF} (9); the application must
  *       treat the mapped region as unavailable and either re-open the file or surface a structured
- *       error.</li>
- *   <li>Database engines (RocksDB, LMDB, HaloDB) that hold long-lived file descriptors for SST
- *       or data files may receive {@code EBADF} if another thread closes or replaces the fd via
- *       {@code dup2}; assert that no data corruption results from the aborted mapping.</li>
+ *       error.
+ *   <li>Database engines (RocksDB, LMDB, HaloDB) that hold long-lived file descriptors for SST or
+ *       data files may receive {@code EBADF} if another thread closes or replaces the fd via {@code
+ *       dup2}; assert that no data corruption results from the aborted mapping.
  *   <li>Assert that the application does not indefinitely retry with the same (now invalid)
- *       descriptor — each retry will also fail and may cause a busy-loop.</li>
+ *       descriptor — each retry will also fail and may cause a busy-loop.
  * </ul>
- * Production failure mode: a close-on-exec race, a {@code dup2} overwrite in a concurrent
- * thread, or a file descriptor accidentally closed by a third-party library causes all subsequent
- * {@code mmap} calls on that fd to fail with {@code EBADF} — a class of bugs that is essentially
+ *
+ * Production failure mode: a close-on-exec race, a {@code dup2} overwrite in a concurrent thread,
+ * or a file descriptor accidentally closed by a third-party library causes all subsequent {@code
+ * mmap} calls on that fd to fail with {@code EBADF} — a class of bugs that is essentially
  * untestable without fault injection.
  *
  * <h2>Deep technical dive</h2>
- * <p>POSIX specifies {@code EBADF} for file-backed {@code mmap} when {@code fildes} is not a
- * valid open file descriptor or when the file was not opened with a mode that allows the
- * requested mapping protection. The kernel validates the fd in {@code do_mmap_pgoff} before
- * allocating the VMA: if the fd does not reference an open {@code struct file}, the kernel
- * returns {@code -EBADF} immediately.
  *
- * <p>The most common production scenario is a fd lifecycle race: one thread opens a file and
- * passes the fd to a memory-mapping subsystem; concurrently, another thread (or a signal handler)
- * closes or replaces the fd before the mapping is established. The {@code close(2)} call does not
- * block on outstanding {@code mmap} setup — once the fd is closed, any subsequent {@code mmap}
- * with that fd number will either fail with {@code EBADF} or (worse) map the file opened by a
- * racing {@code open(2)} call that was assigned the same fd number.
+ * <p>POSIX specifies {@code EBADF} for file-backed {@code mmap} when {@code fildes} is not a valid
+ * open file descriptor or when the file was not opened with a mode that allows the requested
+ * mapping protection. The kernel validates the fd in {@code do_mmap_pgoff} before allocating the
+ * VMA: if the fd does not reference an open {@code struct file}, the kernel returns {@code -EBADF}
+ * immediately.
+ *
+ * <p>The most common production scenario is a fd lifecycle race: one thread opens a file and passes
+ * the fd to a memory-mapping subsystem; concurrently, another thread (or a signal handler) closes
+ * or replaces the fd before the mapping is established. The {@code close(2)} call does not block on
+ * outstanding {@code mmap} setup — once the fd is closed, any subsequent {@code mmap} with that fd
+ * number will either fail with {@code EBADF} or (worse) map the file opened by a racing {@code
+ * open(2)} call that was assigned the same fd number.
  *
  * <p>A subtler case arises with O_WRONLY files: POSIX requires that if {@code PROT_READ} is
- * requested and the fd was opened write-only, the kernel returns {@code EBADF} (not
- * {@code EACCES}). This distinction is important: {@code EBADF} means "wrong fd usage", whereas
- * {@code EACCES} means "credential check failed". Applications that open files with {@code O_RDWR}
- * for performance and later downgrade the open flags via {@code fcntl(F_SETFL)} may encounter
- * this scenario if the downgrade races with a mapping attempt.
+ * requested and the fd was opened write-only, the kernel returns {@code EBADF} (not {@code
+ * EACCES}). This distinction is important: {@code EBADF} means "wrong fd usage", whereas {@code
+ * EACCES} means "credential check failed". Applications that open files with {@code O_RDWR} for
+ * performance and later downgrade the open flags via {@code fcntl(F_SETFL)} may encounter this
+ * scenario if the downgrade races with a mapping attempt.
  *
  * <p>Compared with {@code EACCES}: {@code EBADF} is a structural fd-validity failure (the
- * descriptor itself is wrong); {@code EACCES} is a credentials check failure on a valid
- * descriptor. Both are non-transient for the given fd; recovery requires obtaining a fresh
- * descriptor with the correct flags. The recovery path is different: {@code EBADF} requires
- * re-open and fd repair; {@code EACCES} may require permission escalation or filesystem remount.
+ * descriptor itself is wrong); {@code EACCES} is a credentials check failure on a valid descriptor.
+ * Both are non-transient for the given fd; recovery requires obtaining a fresh descriptor with the
+ * correct flags. The recovery path is different: {@code EBADF} requires re-open and fd repair;
+ * {@code EACCES} may require permission escalation or filesystem remount.
  *
  * <h2>Example</h2>
  *
@@ -96,6 +101,7 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3 is sufficient to exercise fd-lifecycle
  * guards; rates above 0.01 will prevent the process from establishing any file-backed mapping,
  * breaking shared-library loading.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
  * the test class.

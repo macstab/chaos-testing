@@ -14,8 +14,8 @@ import com.macstab.chaos.time.model.TimeErrno;
 import com.macstab.chaos.time.model.TimeSelector;
 
 /**
- * Injects {@code ENOSYS} into {@code usleep(3)}, causing the call to return {@code -1} with
- * {@code errno = ENOSYS} as if the underlying sleep syscall was absent from the kernel.
+ * Injects {@code ENOSYS} into {@code usleep(3)}, causing the call to return {@code -1} with {@code
+ * errno = ENOSYS} as if the underlying sleep syscall was absent from the kernel.
  *
  * <h2>What this annotation is</h2>
  *
@@ -27,12 +27,12 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
- *       extension to upload {@code libchaos-time.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
  *       at the dynamic-linker level.
- *   <li>On every intercepted {@code usleep} call a Bernoulli trial with probability
- *       {@link #probability} is conducted.
+ *   <li>On every intercepted {@code usleep} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted.
  *   <li>When the trial fires the interposer returns {@code -1} and sets {@code errno = ENOSYS}
  *       without sleeping — the call appears entirely unsupported.
  * </ol>
@@ -42,15 +42,15 @@ import com.macstab.chaos.time.model.TimeSelector;
  * <ul>
  *   <li>The sleep returns immediately with an error; callers that do not fall back to an
  *       alternative sleep primitive will proceed without any delay.
- *   <li>Libraries compiled against feature-detection macros that assume {@code usleep} is
- *       always available may not have a fallback path; this injection reveals those gaps.
+ *   <li>Libraries compiled against feature-detection macros that assume {@code usleep} is always
+ *       available may not have a fallback path; this injection reveals those gaps.
  *   <li>Assert that the application selects an alternative sleep mechanism and emits a diagnostic
  *       warning at startup rather than crashing or busy-spinning.
  * </ul>
  *
  * <p>In production, {@code ENOSYS} from {@code usleep} appears on extremely minimal kernels or
- * POSIX emulation layers; it is primarily useful for testing that capability-detection logic in
- * C libraries is correct.
+ * POSIX emulation layers; it is primarily useful for testing that capability-detection logic in C
+ * libraries is correct.
  *
  * <h2>Deep technical dive</h2>
  *
@@ -65,7 +65,8 @@ import com.macstab.chaos.time.model.TimeSelector;
  * most useful for testing legacy code paths or embedded C libraries bundled in JNI shims.
  *
  * <p>Sibling annotations: {@link ChaosNanosleepEnosys} applies the same injection to the modern
- * {@code nanosleep} interface; {@link ChaosUsleepEintr} targets the common signal-interruption case.
+ * {@code nanosleep} interface; {@link ChaosUsleepEintr} targets the common signal-interruption
+ * case.
  *
  * <h2>Example</h2>
  *

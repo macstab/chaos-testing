@@ -38,9 +38,9 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ol>
  *   <li>The interceptor is entered on the calling thread before {@code cancel}'s body executes.
- *   <li>The delay effect calls {@code Thread.sleep(delayMs)} (or a random value in {@code
- *       [delayMs, maxDelayMs]} when {@code maxDelayMs > delayMs}), parking the calling thread for
- *       the configured duration.
+ *   <li>The delay effect calls {@code Thread.sleep(delayMs)} (or a random value in {@code [delayMs,
+ *       maxDelayMs]} when {@code maxDelayMs > delayMs}), parking the calling thread for the
+ *       configured duration.
  *   <li>After the sleep, control returns to the original {@code cancel} body, which executes
  *       normally: the future's CAS transitions from {@code PENDING} to {@code CANCELLED}, waiting
  *       threads are unparked, and {@code cancel} returns {@code true} (or {@code false} if the
@@ -68,18 +68,18 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <h2>Deep technical dive</h2>
  *
- * <p><strong>Interception point.</strong> The agent targets
- * {@code java.util.concurrent.CompletableFuture#cancel(boolean)} via a Byte Buddy method
- * interceptor installed in the premain phase. Because {@code CompletableFuture} is a JDK bootstrap
- * class, the agent uses retransformation over the bootstrap class loader's channel. If the JVM has
- * already loaded {@code CompletableFuture} before the agent attaches, the agent retransforms it
- * in-place without reloading the class.
+ * <p><strong>Interception point.</strong> The agent targets {@code
+ * java.util.concurrent.CompletableFuture#cancel(boolean)} via a Byte Buddy method interceptor
+ * installed in the premain phase. Because {@code CompletableFuture} is a JDK bootstrap class, the
+ * agent uses retransformation over the bootstrap class loader's channel. If the JVM has already
+ * loaded {@code CompletableFuture} before the agent attaches, the agent retransforms it in-place
+ * without reloading the class.
  *
  * <p><strong>Thread parking mechanics.</strong> The delay is implemented as {@code Thread.sleep},
- * which issues an OS-level park on the calling thread. During the sleep the thread holds no
- * monitor locks, so no deadlock risk is introduced by the delay itself. However, if the calling
- * thread is a virtual thread (Project Loom, Java 21+), the sleep yields the carrier thread back
- * to the scheduler — the delay still fires but does not block a platform thread for its duration.
+ * which issues an OS-level park on the calling thread. During the sleep the thread holds no monitor
+ * locks, so no deadlock risk is introduced by the delay itself. However, if the calling thread is a
+ * virtual thread (Project Loom, Java 21+), the sleep yields the carrier thread back to the
+ * scheduler — the delay still fires but does not block a platform thread for its duration.
  *
  * <p><strong>Cascading effects.</strong> Any code that holds a lock before calling {@code cancel}
  * continues holding that lock for the entire sleep duration. If other threads try to acquire the
@@ -88,16 +88,16 @@ import com.macstab.chaos.jvm.api.OperationType;
  * per future, potentially stretching a graceful-shutdown window from milliseconds to seconds.
  *
  * <p><strong>Interaction with mayInterruptIfRunning.</strong> The {@code mayInterrupt} flag is
- * passed unchanged to the original {@code cancel} body after the sleep. Any thread that is
- * blocked inside the future's computation and would be interrupted by {@code cancel(true)} is only
- * interrupted after the delay, widening the window during which the computation thread consumes
- * CPU or holds other resources.
+ * passed unchanged to the original {@code cancel} body after the sleep. Any thread that is blocked
+ * inside the future's computation and would be interrupted by {@code cancel(true)} is only
+ * interrupted after the delay, widening the window during which the computation thread consumes CPU
+ * or holds other resources.
  *
  * <p><strong>Distinguishing from siblings.</strong> {@link ChaosAsyncCancelSuppress} discards the
  * cancel — the future is never cancelled. This annotation preserves correctness but stretches
  * timing. To simulate a cancellation that completes the future with an exception rather than
- * cancelling it, there is no direct L1 primitive; compose with
- * {@link ChaosAsyncCompleteExceptionalCompletion} on the complete path instead.
+ * cancelling it, there is no direct L1 primitive; compose with {@link
+ * ChaosAsyncCompleteExceptionalCompletion} on the complete path instead.
  *
  * <h2>Example</h2>
  *
@@ -121,7 +121,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java container image — the container must run a JVM process.
  * </ul>

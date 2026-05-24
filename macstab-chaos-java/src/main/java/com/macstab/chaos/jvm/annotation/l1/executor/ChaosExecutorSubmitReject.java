@@ -14,27 +14,27 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Makes every {@link java.util.concurrent.ExecutorService#submit ExecutorService.submit} and
- * {@link java.util.concurrent.ForkJoinPool#submit ForkJoinPool.submit} call throw
- * {@link java.util.concurrent.RejectedExecutionException} before the task enters the queue — the
- * task is never scheduled and the caller's submission attempt fails immediately.
+ * Makes every {@link java.util.concurrent.ExecutorService#submit ExecutorService.submit} and {@link
+ * java.util.concurrent.ForkJoinPool#submit ForkJoinPool.submit} call throw {@link
+ * java.util.concurrent.RejectedExecutionException} before the task enters the queue — the task is
+ * never scheduled and the caller's submission attempt fails immediately.
  *
  * <h2>What this annotation is</h2>
  *
  * <p>An L1 JVM chaos primitive in the {@code EXECUTOR} selector family targeting the {@code
  * EXECUTOR_SUBMIT} operation with the {@code reject} effect. It intercepts every task submission in
- * the container JVM and throws {@code RejectedExecutionException} with the configured
- * {@link #message()} before the task is placed on any work queue. No task object is enqueued, no
- * {@code Future} is returned, and no worker thread is notified.
+ * the container JVM and throws {@code RejectedExecutionException} with the configured {@link
+ * #message()} before the task is placed on any work queue. No task object is enqueued, no {@code
+ * Future} is returned, and no worker thread is notified.
  *
- * <p>This directly replicates the exception thrown by {@code ThreadPoolExecutor}'s
- * {@code AbortPolicy} when the queue is full and all threads are busy, or when the executor has
- * been shut down — the most common production failure mode for executor saturation.
+ * <p>This directly replicates the exception thrown by {@code ThreadPoolExecutor}'s {@code
+ * AbortPolicy} when the queue is full and all threads are busy, or when the executor has been shut
+ * down — the most common production failure mode for executor saturation.
  *
  * <h2>What chaos this applies</h2>
  *
- * <p>The JVM agent installs a Byte Buddy interceptor on the {@code submit} methods of
- * {@code ExecutorService} and {@code ForkJoinPool}. When the interceptor fires:
+ * <p>The JVM agent installs a Byte Buddy interceptor on the {@code submit} methods of {@code
+ * ExecutorService} and {@code ForkJoinPool}. When the interceptor fires:
  *
  * <ol>
  *   <li>The interceptor is entered on the submitting thread before the task touches the queue.
@@ -46,13 +46,14 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>{@code executor.submit(task)} throws {@link java.util.concurrent.RejectedExecutionException}
- *       — every call, every time the rule is active.
+ *   <li>{@code executor.submit(task)} throws {@link
+ *       java.util.concurrent.RejectedExecutionException} — every call, every time the rule is
+ *       active.
  *   <li>No {@code Future} is returned; no task runs.
  *   <li>Application code that catches {@code RejectedExecutionException} and applies a retry or
  *       fallback will exercise that path on every submission.
- *   <li>Application code that does not catch {@code RejectedExecutionException} will propagate
- *       an unhandled exception up through the calling layer, potentially aborting a request or
+ *   <li>Application code that does not catch {@code RejectedExecutionException} will propagate an
+ *       unhandled exception up through the calling layer, potentially aborting a request or
  *       crashing a background thread.
  * </ul>
  *
@@ -63,17 +64,17 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <h2>Deep technical dive</h2>
  *
- * <p><strong>Interception point.</strong> The agent targets the {@code submit(Callable)},
- * {@code submit(Runnable)}, and {@code submit(Runnable, T)} overloads on
- * {@code java.util.concurrent.ExecutorService} and the equivalent on
- * {@code java.util.concurrent.ForkJoinPool} via Byte Buddy retransformation of bootstrap-loaded
- * JDK classes. The exception is thrown before any internal state in the executor is modified.
+ * <p><strong>Interception point.</strong> The agent targets the {@code submit(Callable)}, {@code
+ * submit(Runnable)}, and {@code submit(Runnable, T)} overloads on {@code
+ * java.util.concurrent.ExecutorService} and the equivalent on {@code
+ * java.util.concurrent.ForkJoinPool} via Byte Buddy retransformation of bootstrap-loaded JDK
+ * classes. The exception is thrown before any internal state in the executor is modified.
  *
- * <p><strong>Exception identity.</strong> The thrown exception is a plain
- * {@code RejectedExecutionException} — the same type that {@code ThreadPoolExecutor}'s
- * {@code AbortPolicy} produces. Application code that catches this specific type will behave
- * identically to the production saturation scenario. The {@link #message()} attribute allows the
- * test to embed a marker string to distinguish injected rejections from real ones in logs.
+ * <p><strong>Exception identity.</strong> The thrown exception is a plain {@code
+ * RejectedExecutionException} — the same type that {@code ThreadPoolExecutor}'s {@code AbortPolicy}
+ * produces. Application code that catches this specific type will behave identically to the
+ * production saturation scenario. The {@link #message()} attribute allows the test to embed a
+ * marker string to distinguish injected rejections from real ones in logs.
  *
  * <p><strong>Interaction with {@code execute} vs {@code submit}.</strong> This annotation targets
  * {@code submit} only. If the application uses {@code executor.execute(runnable)} directly, that
@@ -83,8 +84,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <p><strong>Cascading effects.</strong> Any {@code Future} chained on the expected submission
  * result will never receive a value or exception from the rejected task — it stays pending unless
  * the application has defensive null checks or timeouts after catching the rejection. Reactive
- * frameworks that use executor-backed schedulers may log the rejection and schedule a retry, or
- * may drop the work item entirely depending on their error strategy.
+ * frameworks that use executor-backed schedulers may log the rejection and schedule a retry, or may
+ * drop the work item entirely depending on their error strategy.
  *
  * <p><strong>Distinguishing from siblings.</strong> {@link ChaosExecutorSubmitDelay} allows the
  * task to be submitted, just slowly. {@link ChaosExecutorSubmitGate} holds the submitting thread
@@ -110,7 +111,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java container image — the container must run a JVM process.
  * </ul>

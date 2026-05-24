@@ -21,18 +21,18 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p>A JVM agent L1 chaos primitive targeting the {@code JMX_GET_ATTR} operation — one typed
  * annotation per (selector family, operation type, effect) tuple. Declared on a test class or
- * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until
- * {@code afterAll}/{@code afterEach} respectively.
+ * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until {@code
+ * afterAll}/{@code afterEach} respectively.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>The chaos agent intercepts every call to
- *       {@code javax.management.MBeanServer.getAttribute(ObjectName, String)} in the target
- *       container's JVM.
+ *   <li>The chaos agent intercepts every call to {@code
+ *       javax.management.MBeanServer.getAttribute(ObjectName, String)} in the target container's
+ *       JVM.
  *   <li>Before forwarding the call to the MBean implementation, the interceptor parks the calling
- *       thread for a duration sampled uniformly between {@link #delayMs()} and
- *       {@link #maxDelayMs()} milliseconds.
+ *       thread for a duration sampled uniformly between {@link #delayMs()} and {@link
+ *       #maxDelayMs()} milliseconds.
  *   <li>After the delay, the real attribute read executes and the value is returned to the caller.
  * </ol>
  *
@@ -41,14 +41,14 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <ul>
  *   <li><strong>Monitoring scrape times out.</strong> Prometheus JMX exporters, Jolokia, or custom
  *       management probes that read MBean attributes will time out if the delay exceeds the scrape
- *       interval; assert that the monitoring system marks the target as stale rather than raising
- *       a false alert.
+ *       interval; assert that the monitoring system marks the target as stale rather than raising a
+ *       false alert.
  *   <li><strong>Auto-scaling decisions delayed.</strong> Auto-scalers that read JVM metrics (heap
- *       usage, thread count) via JMX to decide on scaling actions will operate on stale data
- *       during the delay window; assert that the auto-scaler handles stale or missing data safely.
+ *       usage, thread count) via JMX to decide on scaling actions will operate on stale data during
+ *       the delay window; assert that the auto-scaler handles stale or missing data safely.
  *   <li><strong>Health-check probe slow.</strong> JVM health checks implemented via JMX attribute
- *       reads will be slow to respond; assert that the orchestration layer distinguishes between
- *       a slow health check and a failed one.
+ *       reads will be slow to respond; assert that the orchestration layer distinguishes between a
+ *       slow health check and a failed one.
  *   <li><strong>Production failure mode:</strong> JMX attribute reads that invoke synchronised
  *       application code (e.g. reading a connection pool's active count via the pool's own lock)
  *       can block application threads if the JMX read delays cause the JMX client to issue
@@ -87,8 +87,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
- *       agent before the container JVM starts; omitting it causes an
- *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       agent before the container JVM starts; omitting it causes an {@code
+ *       ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
  *       {@code @JvmAgentChaos}.
  *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the

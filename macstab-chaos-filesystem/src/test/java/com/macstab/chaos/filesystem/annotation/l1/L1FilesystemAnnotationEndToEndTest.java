@@ -18,8 +18,8 @@ import com.macstab.chaos.core.extension.L1AnnotationProcessor.ContainerHandle;
 import com.macstab.chaos.core.syscall.LibchaosLib;
 import com.macstab.chaos.core.syscall.LibchaosTransport;
 import com.macstab.chaos.filesystem.annotation.l1.read.ChaosReadEio;
-import com.macstab.chaos.filesystem.annotation.l1.write.ChaosWriteErofs;
 import com.macstab.chaos.filesystem.annotation.l1.unlink.ChaosUnlinkEacces;
+import com.macstab.chaos.filesystem.annotation.l1.write.ChaosWriteErofs;
 
 /**
  * End-to-end integration test for the filesystem L1 annotation path.

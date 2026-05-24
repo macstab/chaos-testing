@@ -14,29 +14,29 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code ENOSPC} into {@code fsync(2)}, causing the call to return {@code -1} with
- * {@code errno = ENOSPC} as if the kernel ran out of disk space while allocating journal blocks
- * or indirect blocks needed to flush the file's dirty data to the storage device.
+ * Injects {@code ENOSPC} into {@code fsync(2)}, causing the call to return {@code -1} with {@code
+ * errno = ENOSPC} as if the kernel ran out of disk space while allocating journal blocks or
+ * indirect blocks needed to flush the file's dirty data to the storage device.
  *
  * <h2>What this annotation is</h2>
  *
  * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code FSYNC}, errno = {@code ENOSPC})
- * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
- * {@code fsync} call; when it fires the interposer returns {@code -1} with {@code errno = ENOSPC}
- * without performing any real kernel operation. No runtime operation-errno validation is needed.
+ * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted {@code
+ * fsync} call; when it fires the interposer returns {@code -1} with {@code errno = ENOSPC} without
+ * performing any real kernel operation. No runtime operation-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
- *   <li>On each intercepted {@code fsync} call a Bernoulli trial with probability {@link #probability}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = ENOSPC}.
+ *   <li>On each intercepted {@code fsync} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = ENOSPC}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -51,9 +51,9 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *       transactions that were waiting for this fsync's durability guarantee; assert that no
  *       transaction is acknowledged as committed when the WAL fsync failed due to disk exhaustion.
  *   <li>Journalled filesystems (ext4 with journalling, XFS) must flush journal blocks before
- *       flushing data blocks; an {@code ENOSPC} during journal flushing is returned as
- *       {@code ENOSPC} from {@code fsync}. Assert that the application does not assume the data
- *       is durable when only the writes (not the subsequent fsync) succeeded.
+ *       flushing data blocks; an {@code ENOSPC} during journal flushing is returned as {@code
+ *       ENOSPC} from {@code fsync}. Assert that the application does not assume the data is durable
+ *       when only the writes (not the subsequent fsync) succeeded.
  *   <li>Assert that the application emits a "disk full — fsync failed" alert that is distinct from
  *       a write-time disk-full alert, enabling operators to identify that the filesystem is full
  *       and that recent writes may not be durable.
@@ -62,29 +62,28 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * <p>In production, {@code ENOSPC} from {@code fsync} is less common than from {@code write} but
  * occurs on journalled filesystems when the journal fills up (because pending transactions have not
  * been checkpointed) and a new journal block allocation fails, and on copy-on-write filesystems
- * (Btrfs, ZFS) where the fsync triggers the allocation of new on-disk blocks for the CoW pages
- * and the allocation fails because the filesystem has no free blocks.
+ * (Btrfs, ZFS) where the fsync triggers the allocation of new on-disk blocks for the CoW pages and
+ * the allocation fails because the filesystem has no free blocks.
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>{@code fsync(2)} flushes all dirty data and metadata for the file to the storage device.
- * On a journalled filesystem, this involves writing the dirty data pages, writing the updated
- * metadata to the journal, and waiting for the journal commit to be acknowledged by the device.
- * Each step may require allocating new blocks (journal blocks, indirect blocks), and any of these
- * allocations can fail with {@code ENOSPC} if the filesystem has no free blocks. The application
- * sees a single {@code ENOSPC} from the {@code fsync} call, even though the write calls that
- * created the dirty pages returned successfully.
+ * <p>{@code fsync(2)} flushes all dirty data and metadata for the file to the storage device. On a
+ * journalled filesystem, this involves writing the dirty data pages, writing the updated metadata
+ * to the journal, and waiting for the journal commit to be acknowledged by the device. Each step
+ * may require allocating new blocks (journal blocks, indirect blocks), and any of these allocations
+ * can fail with {@code ENOSPC} if the filesystem has no free blocks. The application sees a single
+ * {@code ENOSPC} from the {@code fsync} call, even though the write calls that created the dirty
+ * pages returned successfully.
  *
- * <p>This is the "deferred ENOSPC" scenario: the filesystem accepts writes into the page cache
- * even when it cannot immediately guarantee block allocation, deferring the allocation to the
- * writeback or fsync path. Applications that write data and then fsync to make it durable must
- * handle {@code ENOSPC} from the fsync, not just from the write, to correctly detect all
- * disk-full conditions.
+ * <p>This is the "deferred ENOSPC" scenario: the filesystem accepts writes into the page cache even
+ * when it cannot immediately guarantee block allocation, deferring the allocation to the writeback
+ * or fsync path. Applications that write data and then fsync to make it durable must handle {@code
+ * ENOSPC} from the fsync, not just from the write, to correctly detect all disk-full conditions.
  *
- * <p>Java's {@code FileChannel.force(true)} calls {@code fsync(2)} and throws an {@code IOException}
- * with the message "No space left on device" when the underlying call returns {@code ENOSPC}.
- * Application code that catches {@code IOException} from {@code force()} must treat this as a
- * fatal durability failure.
+ * <p>Java's {@code FileChannel.force(true)} calls {@code fsync(2)} and throws an {@code
+ * IOException} with the message "No space left on device" when the underlying call returns {@code
+ * ENOSPC}. Application code that catches {@code IOException} from {@code force()} must treat this
+ * as a fatal durability failure.
  *
  * <h2>Example</h2>
  *

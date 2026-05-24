@@ -20,24 +20,24 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code RECV}, errno =
- * {@code ECONNRESET}) tuple. A Bernoulli trial with probability {@link #toxicity} is run on each
- * intercepted {@code recv} call; when it fires the interposer returns {@code -1} with
- * {@code errno = ECONNRESET} without performing any real kernel operation. No runtime
- * operation-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code RECV}, errno = {@code
+ * ECONNRESET}) tuple. A Bernoulli trial with probability {@link #toxicity} is run on each
+ * intercepted {@code recv} call; when it fires the interposer returns {@code -1} with {@code errno
+ * = ECONNRESET} without performing any real kernel operation. No runtime operation-errno validation
+ * is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
- *       extension to upload {@code libchaos-net.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
- *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
- *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
- *       {@code poll} at the dynamic-linker level.
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket}, {@code
+ *       bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and {@code poll} at
+ *       the dynamic-linker level.
  *   <li>On each intercepted {@code recv} call a Bernoulli trial with probability {@link #toxicity}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = ECONNRESET}.
+ *       is conducted; when it fires the interposer returns {@code -1} and sets {@code errno =
+ *       ECONNRESET}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -71,16 +71,17 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * must be closed and a new connection established.
  *
  * <p>Java maps {@code ECONNRESET} from {@code recv} to a {@code SocketException} with the message
- * "Connection reset". This is one of the most common exceptions in Java networking code; application
- * code that catches it generically without distinguishing the phase (in-request vs. between-request)
- * may apply an incorrect recovery strategy. A reset between requests (while the socket is idle in
- * the pool) is safe to silently replace; a reset during an active request requires either retry or
- * error propagation depending on whether the request was idempotent.
+ * "Connection reset". This is one of the most common exceptions in Java networking code;
+ * application code that catches it generically without distinguishing the phase (in-request vs.
+ * between-request) may apply an incorrect recovery strategy. A reset between requests (while the
+ * socket is idle in the pool) is safe to silently replace; a reset during an active request
+ * requires either retry or error propagation depending on whether the request was idempotent.
  *
- * <p>Lettuce (Redis client) distinguishes between reset on idle connections (replaced transparently)
- * and reset during command execution (propagated as a {@code RedisCommandExecutionException}).
- * HikariCP marks the connection as dead and removes it from the pool. This injection exercises both
- * code paths depending on when during the connection lifecycle the reset fires.
+ * <p>Lettuce (Redis client) distinguishes between reset on idle connections (replaced
+ * transparently) and reset during command execution (propagated as a {@code
+ * RedisCommandExecutionException}). HikariCP marks the connection as dead and removes it from the
+ * pool. This injection exercises both code paths depending on when during the connection lifecycle
+ * the reset fires.
  *
  * <h2>Example</h2>
  *

@@ -21,8 +21,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p>A JVM agent L1 chaos primitive targeting the {@code LOCAL_DATE_TIME_NOW} operation — one typed
  * annotation per (selector family, operation type, effect) tuple. Declared on a test class or
- * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until
- * {@code afterAll}/{@code afterEach} respectively.
+ * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until {@code
+ * afterAll}/{@code afterEach} respectively.
  *
  * <h2>What chaos this applies</h2>
  *
@@ -38,19 +38,19 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Audit log timestamps wrong.</strong> Entities stamped with {@code LocalDateTime.now()}
- *       at creation or modification time will carry a shifted timestamp that violates chronological
- *       ordering of audit trails; assert that the application validates or rejects records with
- *       future timestamps.
- *   <li><strong>Business-rule windows broken.</strong> Applications that check whether
- *       {@code LocalDateTime.now()} falls within an open/close window (trading hours, maintenance
+ *   <li><strong>Audit log timestamps wrong.</strong> Entities stamped with {@code
+ *       LocalDateTime.now()} at creation or modification time will carry a shifted timestamp that
+ *       violates chronological ordering of audit trails; assert that the application validates or
+ *       rejects records with future timestamps.
+ *   <li><strong>Business-rule windows broken.</strong> Applications that check whether {@code
+ *       LocalDateTime.now()} falls within an open/close window (trading hours, maintenance
  *       blackout) will make wrong decisions; assert that boundary conditions are handled
  *       idempotently.
- *   <li><strong>Scheduled-task drift.</strong> In-process schedulers that compare
- *       {@code LocalDateTime.now()} against a next-run time will fire tasks early or skip them.
+ *   <li><strong>Scheduled-task drift.</strong> In-process schedulers that compare {@code
+ *       LocalDateTime.now()} against a next-run time will fire tasks early or skip them.
  *   <li><strong>Production failure mode:</strong> audit logs with future timestamps can violate
- *       GDPR retention constraints enforced by downstream data-lake pipelines that reject
- *       records whose timestamp exceeds the ingestion time by more than a configurable tolerance.
+ *       GDPR retention constraints enforced by downstream data-lake pipelines that reject records
+ *       whose timestamp exceeds the ingestion time by more than a configurable tolerance.
  * </ul>
  *
  * <h2>Deep technical dive</h2>
@@ -59,8 +59,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  * without any offset-from-UTC information, making it the simplest of the java.time "now" methods.
  * Because it discards timezone context, it is commonly used for display, logging, and business
  * rules that are inherently local — but this also means skewing it produces effects that are
- * invisible to any code that uses zone-aware types such as {@code ZonedDateTime} or
- * {@code OffsetDateTime}.
+ * invisible to any code that uses zone-aware types such as {@code ZonedDateTime} or {@code
+ * OffsetDateTime}.
  *
  * <p>The agent intercepts {@code LocalDateTime.now(ZoneId)} (the method ultimately called by all
  * no-arg and single-arg variants) using standard Byte Buddy method-entry advice, replaces the
@@ -68,12 +68,12 @@ import com.macstab.chaos.jvm.api.OperationType;
  * No native-method delegation is required because {@code LocalDateTime.now()} is a pure Java
  * method.
  *
- * <p>Mixing this annotation with {@link ChaosInstantNowSkew} or
- * {@link ChaosSystemClockMillisSkew} on the same container creates an inconsistency between the
- * different time APIs, which is a realistic scenario on nodes that do not propagate clock
- * corrections uniformly through all layers (e.g. the OS clock is corrected by NTP but the JVM's
- * default {@code Clock} instance is cached and not refreshed). Tests that assert internal
- * consistency between timestamps produced by different APIs will catch this class of bug.
+ * <p>Mixing this annotation with {@link ChaosInstantNowSkew} or {@link ChaosSystemClockMillisSkew}
+ * on the same container creates an inconsistency between the different time APIs, which is a
+ * realistic scenario on nodes that do not propagate clock corrections uniformly through all layers
+ * (e.g. the OS clock is corrected by NTP but the JVM's default {@code Clock} instance is cached and
+ * not refreshed). Tests that assert internal consistency between timestamps produced by different
+ * APIs will catch this class of bug.
  *
  * <p>The {@code FREEZE} mode is particularly useful for testing date-based pagination or report
  * generation that assumes {@code LocalDateTime.now()} advances between page requests; frozen, the
@@ -93,8 +93,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
- *       agent before the container JVM starts; omitting it causes an
- *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       agent before the container JVM starts; omitting it causes an {@code
+ *       ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
  *       {@code @JvmAgentChaos}.
  *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the

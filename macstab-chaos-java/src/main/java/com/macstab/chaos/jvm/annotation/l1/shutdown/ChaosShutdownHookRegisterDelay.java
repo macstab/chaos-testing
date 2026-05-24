@@ -15,19 +15,19 @@ import com.macstab.chaos.jvm.api.OperationType;
 
 /**
  * Parks the calling thread inside {@link Runtime#addShutdownHook(Thread)
- * Runtime.addShutdownHook(thread)} for the configured number of milliseconds before the hook
- * thread is registered with the JVM — every shutdown-hook registration takes at least
- * {@code delayMs} longer than normal.
+ * Runtime.addShutdownHook(thread)} for the configured number of milliseconds before the hook thread
+ * is registered with the JVM — every shutdown-hook registration takes at least {@code delayMs}
+ * longer than normal.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>An L1 JVM chaos primitive targeting the {@code SHUTDOWN} selector family with the
- * {@code delay} effect applied to the {@code SHUTDOWN_HOOK_REGISTER} operation. It intercepts
- * {@code Runtime.getRuntime().addShutdownHook(Thread)} before the hook thread is stored in the
- * JVM's internal shutdown-hook map and artificially inflates the registration latency. The
- * annotation is declared on the test class or method alongside a container annotation and is
- * active for the lifetime of the annotated scope (class-scope: {@code beforeAll} to
- * {@code afterAll}; method-scope: {@code beforeEach} to {@code afterEach}).
+ * <p>An L1 JVM chaos primitive targeting the {@code SHUTDOWN} selector family with the {@code
+ * delay} effect applied to the {@code SHUTDOWN_HOOK_REGISTER} operation. It intercepts {@code
+ * Runtime.getRuntime().addShutdownHook(Thread)} before the hook thread is stored in the JVM's
+ * internal shutdown-hook map and artificially inflates the registration latency. The annotation is
+ * declared on the test class or method alongside a container annotation and is active for the
+ * lifetime of the annotated scope (class-scope: {@code beforeAll} to {@code afterAll};
+ * method-scope: {@code beforeEach} to {@code afterEach}).
  *
  * <h2>What chaos this applies</h2>
  *
@@ -46,12 +46,12 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>Wall-clock time for the {@code addShutdownHook} call is at least {@code delayMs} —
- *       assert with a {@code StopWatch} around the registration call site.
+ *   <li>Wall-clock time for the {@code addShutdownHook} call is at least {@code delayMs} — assert
+ *       with a {@code StopWatch} around the registration call site.
  *   <li>Application startup sequences that register many hooks during their initialisation phase
- *       (e.g. Spring's context shutdown hooks, JDBC driver cleanup hooks) are slower by
- *       {@code delayMs} per hook — assert that the startup-ready signal arrives later than the
- *       non-chaos baseline.
+ *       (e.g. Spring's context shutdown hooks, JDBC driver cleanup hooks) are slower by {@code
+ *       delayMs} per hook — assert that the startup-ready signal arrives later than the non-chaos
+ *       baseline.
  *   <li>The hook is eventually registered normally; assert that the hook thread's {@code run}
  *       method executes when the JVM terminates (by triggering a graceful shutdown in the test).
  * </ul>
@@ -65,28 +65,28 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Deep technical dive</h2>
  *
  * <p><strong>Interception point.</strong> {@code Runtime.addShutdownHook} delegates internally to
- * {@code ApplicationShutdownHooks.add(Thread)}, which acquires a class-level lock on
- * {@code ApplicationShutdownHooks} and stores the hook in a {@code IdentityHashMap}. The agent
- * intercepts the public {@code Runtime.addShutdownHook} entry point. The delay fires before the
- * internal lock is acquired — the calling thread parks without holding the hooks lock, so other
- * concurrent hook registrations are not serialised by the delay.
+ * {@code ApplicationShutdownHooks.add(Thread)}, which acquires a class-level lock on {@code
+ * ApplicationShutdownHooks} and stores the hook in a {@code IdentityHashMap}. The agent intercepts
+ * the public {@code Runtime.addShutdownHook} entry point. The delay fires before the internal lock
+ * is acquired — the calling thread parks without holding the hooks lock, so other concurrent hook
+ * registrations are not serialised by the delay.
  *
- * <p><strong>JVM shutdown-phase guard.</strong> {@code addShutdownHook} throws
- * {@link IllegalStateException} if the JVM's shutdown sequence has already begun. The delay fires
- * before this check, so if the JVM starts shutting down during the park, the subsequent
- * {@code addShutdownHook} call will throw rather than register the hook — exercising the
- * application's handling of late-registration failures.
+ * <p><strong>JVM shutdown-phase guard.</strong> {@code addShutdownHook} throws {@link
+ * IllegalStateException} if the JVM's shutdown sequence has already begun. The delay fires before
+ * this check, so if the JVM starts shutting down during the park, the subsequent {@code
+ * addShutdownHook} call will throw rather than register the hook — exercising the application's
+ * handling of late-registration failures.
  *
  * <p><strong>Distinction from {@code ChaosShutdownHookRegisterReject}.</strong> The delay effect
- * eventually registers the hook. The reject effect throws before registration, so the hook is
- * never stored and never executed on JVM exit. Use delay to test registration-latency tolerance;
- * use reject to test handling of hook-registration failure.
+ * eventually registers the hook. The reject effect throws before registration, so the hook is never
+ * stored and never executed on JVM exit. Use delay to test registration-latency tolerance; use
+ * reject to test handling of hook-registration failure.
  *
  * <p><strong>Interaction with container lifecycle.</strong> Docker and Kubernetes send SIGTERM to
  * the JVM process and then wait for {@code terminationGracePeriodSeconds} (default: 30 s) before
  * sending SIGKILL. If a shutdown hook is not registered before SIGTERM arrives (because its
- * registration is delayed past the signal time), the hook does not run during the graceful
- * shutdown window — the container exits without executing the hook's cleanup logic.
+ * registration is delayed past the signal time), the hook does not run during the graceful shutdown
+ * window — the container exits without executing the hook's cleanup logic.
  *
  * <h2>Example</h2>
  *
@@ -109,7 +109,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java container image — the container must run a JVM process.
  * </ul>

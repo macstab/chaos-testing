@@ -20,22 +20,22 @@ import com.macstab.chaos.dns.model.EaiErrno;
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (selectorKind = {@code FORWARD}, errno =
- * {@code EAI_SYSTEM}) tuple. This annotation always fires on every intercepted forward lookup —
- * there is no per-call probability field. Use it when you need every resolution attempt to fail
- * with a system-level error so that the application's handling of resolver-infrastructure faults
- * is exercised. No runtime selector-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (selectorKind = {@code FORWARD}, errno = {@code
+ * EAI_SYSTEM}) tuple. This annotation always fires on every intercepted forward lookup — there is
+ * no per-call probability field. Use it when you need every resolution attempt to fail with a
+ * system-level error so that the application's handling of resolver-infrastructure faults is
+ * exercised. No runtime selector-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.DNS)} on the container definition causes the
- *       extension to upload {@code libchaos-dns.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-dns.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code getaddrinfo(3)} and {@code getnameinfo(3)} at the
  *       dynamic-linker level.
- *   <li>On every intercepted {@code getaddrinfo} call the interposer immediately returns
- *       {@code EAI_SYSTEM} without performing any real resolver query.
+ *   <li>On every intercepted {@code getaddrinfo} call the interposer immediately returns {@code
+ *       EAI_SYSTEM} without performing any real resolver query.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -58,22 +58,22 @@ import com.macstab.chaos.dns.model.EaiErrno;
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>{@code EAI_SYSTEM} is defined by POSIX as "system error returned in errno". It is the
- * escape hatch that allows {@code getaddrinfo} to signal syscall-level failures that do not map
- * to any of the named {@code EAI_*} codes. When the glibc resolver encounters a syscall failure
- * (e.g. {@code socket(2)} returns {@code EMFILE} when trying to open a UDP socket for the query),
- * it returns {@code EAI_SYSTEM} and leaves {@code errno} set to the syscall's error code.
+ * <p>{@code EAI_SYSTEM} is defined by POSIX as "system error returned in errno". It is the escape
+ * hatch that allows {@code getaddrinfo} to signal syscall-level failures that do not map to any of
+ * the named {@code EAI_*} codes. When the glibc resolver encounters a syscall failure (e.g. {@code
+ * socket(2)} returns {@code EMFILE} when trying to open a UDP socket for the query), it returns
+ * {@code EAI_SYSTEM} and leaves {@code errno} set to the syscall's error code.
  *
- * <p>Application code that handles {@code EAI_*} errors with a switch statement and has a
- * {@code default: throw new RuntimeException()} branch will typically reach that branch on
- * {@code EAI_SYSTEM}, revealing whether the exception message includes both the resolver error
- * code and the underlying {@code errno}. This injection makes that code path reachable without
- * requiring file descriptor exhaustion or network interface failure in the test environment.
+ * <p>Application code that handles {@code EAI_*} errors with a switch statement and has a {@code
+ * default: throw new RuntimeException()} branch will typically reach that branch on {@code
+ * EAI_SYSTEM}, revealing whether the exception message includes both the resolver error code and
+ * the underlying {@code errno}. This injection makes that code path reachable without requiring
+ * file descriptor exhaustion or network interface failure in the test environment.
  *
- * <p>Java's {@code InetAddress} maps all {@code EAI_*} codes to {@code UnknownHostException}
- * and does not expose the original code or the secondary {@code errno}. Native DNS clients accessed
- * via JNI (c-ares, libadns) preserve the {@code EAI_SYSTEM} code in their own error structures;
- * this injection ensures those structures are correctly populated and surfaced to the Java caller.
+ * <p>Java's {@code InetAddress} maps all {@code EAI_*} codes to {@code UnknownHostException} and
+ * does not expose the original code or the secondary {@code errno}. Native DNS clients accessed via
+ * JNI (c-ares, libadns) preserve the {@code EAI_SYSTEM} code in their own error structures; this
+ * injection ensures those structures are correctly populated and surfaced to the Java caller.
  *
  * <h2>Example</h2>
  *

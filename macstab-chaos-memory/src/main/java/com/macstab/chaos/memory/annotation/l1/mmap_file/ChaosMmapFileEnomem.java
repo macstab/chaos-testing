@@ -19,36 +19,40 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * attempting to establish a file-backed memory mapping.
  *
  * <h2>What this annotation is</h2>
- * L1 libchaos-memory primitive — one (selector = {@code MMAP_FILE}, errno = {@code ENOMEM})
- * tuple. The {@code MMAP_FILE} selector intercepts only file-backed {@code mmap} calls (those
- * without {@code MAP_ANONYMOUS}), leaving anonymous allocations unaffected. Compile-time
- * safety: invalid selector/errno combinations have no annotation class.
+ *
+ * L1 libchaos-memory primitive — one (selector = {@code MMAP_FILE}, errno = {@code ENOMEM}) tuple.
+ * The {@code MMAP_FILE} selector intercepts only file-backed {@code mmap} calls (those without
+ * {@code MAP_ANONYMOUS}), leaving anonymous allocations unaffected. Compile-time safety: invalid
+ * selector/errno combinations have no annotation class.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
- *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.
  *   <li>On each file-backed {@code mmap} call the interposer runs a Bernoulli trial with
- *       probability {@link #probability}.</li>
- *   <li>When the trial fires, the interposer sets {@code errno = ENOMEM} and returns
- *       {@code MAP_FAILED} without issuing the real kernel call.</li>
- *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 12,
- *       {@code strerror}: "Out of memory (cannot allocate memory)".</li>
+ *       probability {@link #probability}.
+ *   <li>When the trial fires, the interposer sets {@code errno = ENOMEM} and returns {@code
+ *       MAP_FAILED} without issuing the real kernel call.
+ *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 12, {@code strerror}:
+ *       "Out of memory (cannot allocate memory)".
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
  *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = ENOMEM} (12); file-mapping code
  *       must fall back to conventional read/write I/O or reject the operation with a structured
- *       error — retrying is unlikely to succeed without releasing memory.</li>
+ *       error — retrying is unlikely to succeed without releasing memory.
  *   <li>Database engines that use memory-mapped files as their primary I/O mechanism (RocksDB,
  *       LMDB, HaloDB, MapDB) must either fall back to {@code pread}/{@code pwrite} or close
  *       existing mappings before retrying; assert that the fallback path produces correct query
- *       results, not just absence of an exception.</li>
+ *       results, not just absence of an exception.
  *   <li>Assert that applications which manage a memory-mapped cache (e.g. Kafka log segments,
  *       Chronicle Map) evict the oldest segment mapping and retry — verify that the eviction
- *       reduces the VMA count before the retry is issued.</li>
+ *       reduces the VMA count before the retry is issued.
  * </ul>
+ *
  * Production failure mode: a long-running process accumulates file-backed VMAs across segment
  * rotation and compaction cycles without adequately releasing old mappings; as the VMA count
  * approaches {@code vm.max_map_count} (default 65536), new file-backed {@code mmap} calls begin
@@ -56,27 +60,27 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * released.
  *
  * <h2>Deep technical dive</h2>
+ *
  * <p>POSIX specifies {@code ENOMEM} for file-backed {@code mmap} in two distinct cases: (1) the
  * process has reached the limit imposed by {@code RLIMIT_AS} (address space) or the process's
- * virtual address space is exhausted; (2) the number of VMAs in the process would exceed
- * {@code vm.max_map_count} (default 65536), which limits the number of distinct memory regions
- * per process to prevent unbounded kernel metadata growth.
+ * virtual address space is exhausted; (2) the number of VMAs in the process would exceed {@code
+ * vm.max_map_count} (default 65536), which limits the number of distinct memory regions per process
+ * to prevent unbounded kernel metadata growth.
  *
  * <p>For file-backed mappings, the {@code vm.max_map_count} limit is particularly important for
- * applications that create one mapping per file segment. Kafka brokers that manage thousands of
- * log segment files with per-segment {@code mmap} calls, RocksDB instances with large L0 and L1
- * layers of SST files, and Chronicle Map databases with many regions can all approach this limit
- * during heavy write workloads. The kernel allocates a new VMA struct for each mapping; when the
- * total count across all anonymous and file-backed mappings reaches the limit, the next
- * {@code mmap} call returns {@code ENOMEM} regardless of available physical memory.
+ * applications that create one mapping per file segment. Kafka brokers that manage thousands of log
+ * segment files with per-segment {@code mmap} calls, RocksDB instances with large L0 and L1 layers
+ * of SST files, and Chronicle Map databases with many regions can all approach this limit during
+ * heavy write workloads. The kernel allocates a new VMA struct for each mapping; when the total
+ * count across all anonymous and file-backed mappings reaches the limit, the next {@code mmap} call
+ * returns {@code ENOMEM} regardless of available physical memory.
  *
  * <p>The page-table allocation failure is a separate code path: when the kernel successfully
- * allocates the VMA but fails to allocate a page table entry (PTE) for the mapping, it also
- * returns {@code ENOMEM} from {@code mmap}. This occurs when physical memory or swap is
- * exhausted, or when a cgroup memory controller rejects the page-table charge. The two sources
- * of {@code ENOMEM} — VMA limit and PTE allocation failure — require different remediation:
- * VMA limit requires releasing mappings; PTE failure requires adding memory or raising cgroup
- * limits.
+ * allocates the VMA but fails to allocate a page table entry (PTE) for the mapping, it also returns
+ * {@code ENOMEM} from {@code mmap}. This occurs when physical memory or swap is exhausted, or when
+ * a cgroup memory controller rejects the page-table charge. The two sources of {@code ENOMEM} — VMA
+ * limit and PTE allocation failure — require different remediation: VMA limit requires releasing
+ * mappings; PTE failure requires adding memory or raising cgroup limits.
  *
  * <p>Compared with {@code EAGAIN}: {@code ENOMEM} from file-backed {@code mmap} is typically
  * structural — the process cannot establish the mapping without releasing existing resources or
@@ -100,6 +104,7 @@ import com.macstab.chaos.memory.model.MmapErrno;
  *
  * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3 mirrors realistic VMA-limit exhaustion
  * rates; rates above 0.01 will prevent shared-library loading at process startup.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
  * the test class.

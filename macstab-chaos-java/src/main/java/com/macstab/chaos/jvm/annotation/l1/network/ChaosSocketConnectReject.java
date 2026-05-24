@@ -14,10 +14,10 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Intercepts {@code Socket.connect()} and throws {@code java.io.IOException} immediately before
- * any TCP handshake occurs, simulating a hard connection-refused failure at the blocking socket
- * layer used by JDBC drivers, legacy HTTP clients, and any code that uses {@code java.net.Socket}
- * for outbound connections.
+ * Intercepts {@code Socket.connect()} and throws {@code java.io.IOException} immediately before any
+ * TCP handshake occurs, simulating a hard connection-refused failure at the blocking socket layer
+ * used by JDBC drivers, legacy HTTP clients, and any code that uses {@code java.net.Socket} for
+ * outbound connections.
  *
  * <h2>What this annotation is</h2>
  *
@@ -29,9 +29,9 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>Before every call to {@code java.net.Socket#connect(SocketAddress)} or
- *       {@code Socket#connect(SocketAddress, int)} inside the target container's JVM, the chaos
- *       agent intercepts the calling thread.
+ *   <li>Before every call to {@code java.net.Socket#connect(SocketAddress)} or {@code
+ *       Socket#connect(SocketAddress, int)} inside the target container's JVM, the chaos agent
+ *       intercepts the calling thread.
  *   <li>The agent throws {@code java.io.IOException} immediately; no SYN packet is sent and the
  *       socket remains unconnected; the file descriptor is not modified.
  *   <li>The exception propagates directly to the caller — JDBC driver, HTTP client, or raw socket
@@ -63,9 +63,9 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p>The interception targets {@code java.net.Socket#connect(SocketAddress, int)}. Unlike the NIO
  * variant ({@link ChaosNioChannelConnectReject}), which targets {@code SocketChannel.connect()},
- * this annotation targets the blocking {@code Socket} API used by traditional I/O frameworks.
- * The distinction matters: Kafka's Java producer, Zookeeper client, and most JDBC drivers use
- * blocking sockets; Netty and modern reactive clients use NIO channels.
+ * this annotation targets the blocking {@code Socket} API used by traditional I/O frameworks. The
+ * distinction matters: Kafka's Java producer, Zookeeper client, and most JDBC drivers use blocking
+ * sockets; Netty and modern reactive clients use NIO channels.
  *
  * <p>When {@code Socket.connect()} throws, the socket's state remains {@code Socket.isConnected()
  * == false}; the socket is not closed; callers may attempt to call {@code connect()} again on the
@@ -73,17 +73,17 @@ import com.macstab.chaos.jvm.api.OperationType;
  * allocated by {@code Socket()} is not released by a failed connect; callers that do not close the
  * socket after a failed connect leak a file descriptor. This annotation exercises those paths.
  *
- * <p>JDBC driver behaviour: PostgreSQL JDBC catches the {@code IOException} in
- * {@code org.postgresql.core.v3.ConnectionFactoryImpl.openConnectionImpl()} and wraps it in
- * {@code PSQLException} with SQL state {@code 08001} (connection exception). MySQL Connector/J
- * wraps it in {@code CJCommunicationsException} with SQL state {@code 08S01}. HikariCP calls
- * {@code isNetworkTimeout()} to determine if the exception is transient; for {@code IOException}
- * it does not evict the pool entry immediately but marks the connection for validation.
+ * <p>JDBC driver behaviour: PostgreSQL JDBC catches the {@code IOException} in {@code
+ * org.postgresql.core.v3.ConnectionFactoryImpl.openConnectionImpl()} and wraps it in {@code
+ * PSQLException} with SQL state {@code 08001} (connection exception). MySQL Connector/J wraps it in
+ * {@code CJCommunicationsException} with SQL state {@code 08S01}. HikariCP calls {@code
+ * isNetworkTimeout()} to determine if the exception is transient; for {@code IOException} it does
+ * not evict the pool entry immediately but marks the connection for validation.
  *
  * <p>The reject effect is faster to observe than a delay: instead of waiting for a timeout, the
  * test sees an immediate exception. This makes it suitable for testing fast-fail code paths —
- * circuit breakers, fallback logic — where a long delay would mask the failure as a timeout
- * rather than a rejection.
+ * circuit breakers, fallback logic — where a long delay would mask the failure as a timeout rather
+ * than a rejection.
  *
  * <h2>Example</h2>
  *
@@ -104,8 +104,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

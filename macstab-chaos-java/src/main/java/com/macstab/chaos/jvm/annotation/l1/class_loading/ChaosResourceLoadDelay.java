@@ -15,9 +15,9 @@ import com.macstab.chaos.jvm.api.OperationType;
 
 /**
  * Intercepts {@code ClassLoader.getResource()} and {@code ClassLoader.getResourceAsStream()} and
- * holds the calling thread for {@link #delayMs()} milliseconds before the resource URL is
- * resolved, simulating slow classpath scanning or a high-latency JAR file system when Spring,
- * Hibernate, or any framework resolves configuration resources from the classpath.
+ * holds the calling thread for {@link #delayMs()} milliseconds before the resource URL is resolved,
+ * simulating slow classpath scanning or a high-latency JAR file system when Spring, Hibernate, or
+ * any framework resolves configuration resources from the classpath.
  *
  * <h2>What this annotation is</h2>
  *
@@ -29,11 +29,11 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>Before every call to {@code java.lang.ClassLoader#getResource(String)} and
- *       {@code ClassLoader#getResourceAsStream(String)} inside the target container's JVM, the
- *       chaos agent intercepts the calling thread.
- *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()},
- *       {@link #maxDelayMs()}]; equal values produce a deterministic delay.
+ *   <li>Before every call to {@code java.lang.ClassLoader#getResource(String)} and {@code
+ *       ClassLoader#getResourceAsStream(String)} inside the target container's JVM, the chaos agent
+ *       intercepts the calling thread.
+ *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()}, {@link
+ *       #maxDelayMs()}]; equal values produce a deterministic delay.
  *   <li>Control returns and the underlying {@code getResource()} executes normally, scanning the
  *       classpath entries (JAR files, directories) to locate the resource and return its URL.
  * </ol>
@@ -41,49 +41,50 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>Spring Boot's auto-configuration loading calls {@code getResource()} to locate
- *       {@code META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports}
- *       files in each JAR on the classpath; the delay fires for each JAR lookup; on a classpath
- *       with 200 JARs the total delay inflates startup time by {@code 200 × delayMs}; assert
- *       that the readiness probe timeout accounts for this.
- *   <li>Hibernate's {@code MetadataSources} scans for {@code hbm.xml} mapping files and JPA
- *       XML configuration via {@code getResourceAsStream()}; the delay inflates the EntityManagerFactory
- *       initialisation time; assert that the JPA timeout is configured appropriately.
- *   <li>Log4j's configuration loading uses {@code ClassLoader.getResource("log4j2.xml")} to
- *       locate the configuration file; a delay here extends the time between JVM startup and
- *       the first log statement being processed; assert that the application does not lose log
- *       events emitted before the configuration is loaded.
+ *   <li>Spring Boot's auto-configuration loading calls {@code getResource()} to locate {@code
+ *       META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports} files in
+ *       each JAR on the classpath; the delay fires for each JAR lookup; on a classpath with 200
+ *       JARs the total delay inflates startup time by {@code 200 × delayMs}; assert that the
+ *       readiness probe timeout accounts for this.
+ *   <li>Hibernate's {@code MetadataSources} scans for {@code hbm.xml} mapping files and JPA XML
+ *       configuration via {@code getResourceAsStream()}; the delay inflates the
+ *       EntityManagerFactory initialisation time; assert that the JPA timeout is configured
+ *       appropriately.
+ *   <li>Log4j's configuration loading uses {@code ClassLoader.getResource("log4j2.xml")} to locate
+ *       the configuration file; a delay here extends the time between JVM startup and the first log
+ *       statement being processed; assert that the application does not lose log events emitted
+ *       before the configuration is loaded.
  *   <li><strong>Production failure mode:</strong> an application built with a large number of
- *       nested fat-JAR files (Spring Boot's nested JAR layout) uses a custom
- *       {@code LaunchedURLClassLoader} that scans through nested JAR entries on each resource
- *       lookup; under memory pressure, the JVM evicts the JAR index from the page cache; each
- *       resource lookup requires re-reading and re-parsing JAR central directory entries, making
- *       {@code getResource()} noticeably slow; the application's startup time increases in
- *       proportion to heap pressure.
+ *       nested fat-JAR files (Spring Boot's nested JAR layout) uses a custom {@code
+ *       LaunchedURLClassLoader} that scans through nested JAR entries on each resource lookup;
+ *       under memory pressure, the JVM evicts the JAR index from the page cache; each resource
+ *       lookup requires re-reading and re-parsing JAR central directory entries, making {@code
+ *       getResource()} noticeably slow; the application's startup time increases in proportion to
+ *       heap pressure.
  * </ul>
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>The interception targets {@code java.lang.ClassLoader#getResource(String)} and
- * {@code ClassLoader#getResourceAsStream(String)}. Both follow the same delegation model as
- * {@code loadClass()}: the parent class loader is consulted first. The chaos delay fires before
- * the parent delegation, adding to the time for each step of the hierarchy traversal.
+ * <p>The interception targets {@code java.lang.ClassLoader#getResource(String)} and {@code
+ * ClassLoader#getResourceAsStream(String)}. Both follow the same delegation model as {@code
+ * loadClass()}: the parent class loader is consulted first. The chaos delay fires before the parent
+ * delegation, adding to the time for each step of the hierarchy traversal.
  *
  * <p>Spring's {@code PathMatchingResourcePatternResolver} uses {@code getResources()} (plural)
  * which calls {@code getResource()} for each candidate path. Classpath scanning with a wildcard
  * pattern ({@code classpath*:META-INF/**}) calls {@code getResources()} once per JAR or directory
- * on the classpath; each call incurs the delay. A fat JAR with 200 classpath entries generates
- * 200 delay invocations for a single classpath scan.
+ * on the classpath; each call incurs the delay. A fat JAR with 200 classpath entries generates 200
+ * delay invocations for a single classpath scan.
  *
  * <p>JAXB's {@code JAXBContext.newInstance()} calls {@code ClassLoader.getResource("jaxb.index")}
  * and {@code getResourceAsStream("javax/xml/bind/...")}) to locate implementation classes; the
  * delay fires here during JAXB context initialisation. Spring's XML-based configuration loading
  * uses {@code getResourceAsStream()} to read XML files; the delay fires once per XML file.
  *
- * <p>The delay models realistic classpath resource lookup latency that occurs when the JVM's
- * file metadata cache is cold (e.g. after a cold deployment on a new node) versus warm (after
- * the OS has cached the JAR directory entries). This is particularly relevant for applications
- * that deploy frequently and whose startup time SLO must account for cold-cache scenarios.
+ * <p>The delay models realistic classpath resource lookup latency that occurs when the JVM's file
+ * metadata cache is cold (e.g. after a cold deployment on a new node) versus warm (after the OS has
+ * cached the JAR directory entries). This is particularly relevant for applications that deploy
+ * frequently and whose startup time SLO must account for cold-cache scenarios.
  *
  * <h2>Example</h2>
  *
@@ -104,8 +105,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

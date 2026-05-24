@@ -28,9 +28,9 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
@@ -41,13 +41,13 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>File size modification operations take longer than normal; applications that use
- *       {@code truncate} in the startup path (pre-sizing WAL files, sizing mmap files) will see
- *       increased startup latency. Assert that the application's startup timeout accounts for the
- *       injected delay.
- *   <li>Log rotation implementations that use {@code truncate} to clear the current log file
- *       after archiving will see increased rotation latency; assert that the rotation operation
- *       does not time out and that the logging path continues to function during a slow rotation.
+ *   <li>File size modification operations take longer than normal; applications that use {@code
+ *       truncate} in the startup path (pre-sizing WAL files, sizing mmap files) will see increased
+ *       startup latency. Assert that the application's startup timeout accounts for the injected
+ *       delay.
+ *   <li>Log rotation implementations that use {@code truncate} to clear the current log file after
+ *       archiving will see increased rotation latency; assert that the rotation operation does not
+ *       time out and that the logging path continues to function during a slow rotation.
  *   <li>Applications that use {@code truncate} on the critical path (e.g., truncating a temporary
  *       file before writing a new version of a configuration) will see increased operation latency;
  *       assert that the operation's timeout accounts for the truncate delay.
@@ -56,28 +56,28 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *       connection listener is activated, and the startup timeout should be calibrated accordingly.
  * </ul>
  *
- * <p>In production, slow {@code truncate} calls occur on NFS mounts when the server must update
- * the inode and release the blocks atomically while holding a lock, when the filesystem's free
- * block bitmap must be updated and the bitmap blocks are not in the page cache, and when a shrink
+ * <p>In production, slow {@code truncate} calls occur on NFS mounts when the server must update the
+ * inode and release the blocks atomically while holding a lock, when the filesystem's free block
+ * bitmap must be updated and the bitmap blocks are not in the page cache, and when a shrink
  * operation requires walking and freeing a large number of indirect blocks.
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>{@code truncate(2)} modifies the file's size by updating the inode's size field and
- * optionally allocating or freeing data blocks. A shrink operation must free the blocks that
- * back the truncated region, which requires walking the file's block map (direct blocks, indirect
- * blocks, double-indirect blocks) and updating the free block bitmap. For very large files, this
- * can require many disk accesses. An extend operation must update the inode's size field (and
- * possibly allocate blocks for the extended region on non-sparse filesystems).
+ * <p>{@code truncate(2)} modifies the file's size by updating the inode's size field and optionally
+ * allocating or freeing data blocks. A shrink operation must free the blocks that back the
+ * truncated region, which requires walking the file's block map (direct blocks, indirect blocks,
+ * double-indirect blocks) and updating the free block bitmap. For very large files, this can
+ * require many disk accesses. An extend operation must update the inode's size field (and possibly
+ * allocate blocks for the extended region on non-sparse filesystems).
  *
  * <p>This injection adds the delay before the kernel call, simulating the scheduling stall and
  * metadata I/O latency without requiring actual slow storage or large file structures. The delay
  * fires on every truncate call regardless of whether the operation shrinks or extends the file.
  *
- * <p>Java's {@code FileChannel.truncate(long)} calls {@code ftruncate(2)} and is affected by
- * this annotation when the underlying truncate call is intercepted. The delay applies before the
- * kernel call, so the calling thread blocks for the duration of the delay plus the actual kernel
- * operation time.
+ * <p>Java's {@code FileChannel.truncate(long)} calls {@code ftruncate(2)} and is affected by this
+ * annotation when the underlying truncate call is intercepted. The delay applies before the kernel
+ * call, so the calling thread blocks for the duration of the delay plus the actual kernel operation
+ * time.
  *
  * <h2>Example</h2>
  *

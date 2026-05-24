@@ -16,7 +16,8 @@ import com.macstab.chaos.jvm.api.OperationType;
 /**
  * Blocks the calling thread on every {@link java.util.concurrent.BlockingQueue#put(Object)
  * BlockingQueue.put(item)} call until the test releases the gate or {@link #maxBlockMs} elapses,
- * giving the test precise control over exactly when a producer thread is allowed to enqueue an item.
+ * giving the test precise control over exactly when a producer thread is allowed to enqueue an
+ * item.
  *
  * <h2>What this annotation is</h2>
  *
@@ -33,16 +34,16 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <h2>What chaos this applies</h2>
  *
- * <p>The JVM agent installs a Byte Buddy interceptor on {@code BlockingQueue.put(Object)}. When
- * the interceptor fires:
+ * <p>The JVM agent installs a Byte Buddy interceptor on {@code BlockingQueue.put(Object)}. When the
+ * interceptor fires:
  *
  * <ol>
  *   <li>The interceptor is entered on the producer thread before the queue's internal lock is
  *       acquired.
- *   <li>The gate effect acquires an internal latch and blocks with
- *       {@code latch.await(maxBlockMs, MILLISECONDS)}.
- *   <li>The test calls the agent's gate-release API; the latch counts down, unblocking the
- *       producer thread.
+ *   <li>The gate effect acquires an internal latch and blocks with {@code latch.await(maxBlockMs,
+ *       MILLISECONDS)}.
+ *   <li>The test calls the agent's gate-release API; the latch counts down, unblocking the producer
+ *       thread.
  *   <li>If {@link #maxBlockMs} elapses before the gate is released, the latch times out and the
  *       thread proceeds automatically.
  *   <li>After the gate is released, the original {@code put} body executes: the queue lock is
@@ -55,16 +56,16 @@ import com.macstab.chaos.jvm.api.OperationType;
  *   <li>{@code queue.put(item)} does not return until the gate is released or {@link #maxBlockMs}
  *       ms pass — the producer thread is fully blocked.
  *   <li>While the gate is held, the queue's size does not grow from the gated {@code put} calls.
- *   <li>Consumer threads that drain the queue continue to run while the gate is held —
- *       only the producer side is frozen.
+ *   <li>Consumer threads that drain the queue continue to run while the gate is held — only the
+ *       producer side is frozen.
  *   <li>Multiple producer threads hitting the gate simultaneously are all held and released
  *       together when the gate is opened.
  * </ul>
  *
  * <p><strong>Production failure mode:</strong> a producer service attempts to hand off events to a
  * downstream service through a shared queue; the downstream service is slow or stopped, the queue
- * fills, and all producer threads are parked indefinitely on {@code put} — the gate replicates
- * this exact stall condition with deterministic release timing for testing.
+ * fills, and all producer threads are parked indefinitely on {@code put} — the gate replicates this
+ * exact stall condition with deterministic release timing for testing.
  *
  * <h2>Deep technical dive</h2>
  *
@@ -76,18 +77,18 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p><strong>Gate release semantics.</strong> A single release signal unblocks all threads
  * currently parked at the gate. If new producer threads arrive at the gate after the release has
- * fired, they pass through immediately (the latch is at zero). To re-gate future {@code put}
- * calls, the test must configure a new rule or reset the gate via the agent API.
+ * fired, they pass through immediately (the latch is at zero). To re-gate future {@code put} calls,
+ * the test must configure a new rule or reset the gate via the agent API.
  *
  * <p><strong>Interaction with interruption.</strong> While a thread is blocked on the latch, it
- * remains interruptible. If the application's shutdown logic interrupts producer threads,
- * {@code InterruptedException} is thrown from the latch, propagating up through the interceptor
- * as-is. The thread's interrupt flag is restored before the exception is thrown.
+ * remains interruptible. If the application's shutdown logic interrupts producer threads, {@code
+ * InterruptedException} is thrown from the latch, propagating up through the interceptor as-is. The
+ * thread's interrupt flag is restored before the exception is thrown.
  *
  * <p><strong>Distinguishing from siblings.</strong> {@link ChaosQueuePutDelay} releases
  * automatically after a fixed sleep. {@link ChaosQueueOfferSuppress} discards items on the
- * non-blocking {@code offer} path. This annotation is the only one that freezes the producer
- * thread and requires an external release — enabling precise test coordination.
+ * non-blocking {@code offer} path. This annotation is the only one that freezes the producer thread
+ * and requires an external release — enabling precise test coordination.
  *
  * <h2>Example</h2>
  *
@@ -109,7 +110,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java container image — the container must run a JVM process.
  * </ul>

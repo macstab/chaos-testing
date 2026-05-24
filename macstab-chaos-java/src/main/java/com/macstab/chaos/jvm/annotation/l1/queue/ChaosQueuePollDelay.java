@@ -21,12 +21,12 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <h2>What this annotation is</h2>
  *
- * <p>An L1 JVM chaos primitive in the {@code QUEUE} selector family targeting the {@code QUEUE_POLL}
- * operation with the {@code delay} effect. It intercepts every non-blocking {@code poll()} call on
- * {@code BlockingQueue} implementations in the container JVM and parks the consuming thread for the
- * configured duration before allowing the poll to attempt to dequeue an item. After the sleep,
- * {@code poll()} executes normally — it returns the head item if one is available, or {@code null}
- * if the queue is empty at that moment.
+ * <p>An L1 JVM chaos primitive in the {@code QUEUE} selector family targeting the {@code
+ * QUEUE_POLL} operation with the {@code delay} effect. It intercepts every non-blocking {@code
+ * poll()} call on {@code BlockingQueue} implementations in the container JVM and parks the
+ * consuming thread for the configured duration before allowing the poll to attempt to dequeue an
+ * item. After the sleep, {@code poll()} executes normally — it returns the head item if one is
+ * available, or {@code null} if the queue is empty at that moment.
  *
  * <p>This is the non-blocking-dequeue analogue of {@link ChaosQueueTakeDelay}. Where {@code take}
  * blocks until an item is available, {@code poll} returns immediately whether or not an item is
@@ -34,27 +34,27 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <h2>What chaos this applies</h2>
  *
- * <p>The JVM agent installs a Byte Buddy interceptor on {@code BlockingQueue.poll()} (and the
- * timed variant {@code poll(long, TimeUnit)}). When the interceptor fires:
+ * <p>The JVM agent installs a Byte Buddy interceptor on {@code BlockingQueue.poll()} (and the timed
+ * variant {@code poll(long, TimeUnit)}). When the interceptor fires:
  *
  * <ol>
  *   <li>The interceptor is entered on the consuming thread before the queue's lock is acquired.
- *   <li>The delay effect calls {@code Thread.sleep(delayMs)} (or a random value in {@code
- *       [delayMs, maxDelayMs]}), parking the thread.
- *   <li>After the sleep, the original {@code poll()} body executes: the lock is acquired, the
- *       head item is removed and returned if present, or {@code null} is returned if empty.
+ *   <li>The delay effect calls {@code Thread.sleep(delayMs)} (or a random value in {@code [delayMs,
+ *       maxDelayMs]}), parking the thread.
+ *   <li>After the sleep, the original {@code poll()} body executes: the lock is acquired, the head
+ *       item is removed and returned if present, or {@code null} is returned if empty.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>{@code queue.poll()} returns the head item (or {@code null}) but takes at least
- *       {@link #delayMs} ms longer than normal.
+ *   <li>{@code queue.poll()} returns the head item (or {@code null}) but takes at least {@link
+ *       #delayMs} ms longer than normal.
  *   <li>Tight poll loops (e.g., a busy-spin consumer using {@code while (queue.poll() != null)})
  *       are slowed to at most {@code 1000/delayMs} polls per second per thread.
  *   <li>Items produced during the delay may accumulate in the queue before the poll check — the
- *       poll is more likely to return an item (not {@code null}) than it would without the delay
- *       if the producer is active.
+ *       poll is more likely to return an item (not {@code null}) than it would without the delay if
+ *       the producer is active.
  *   <li>Time-sensitive timed poll calls lose part of their timeout budget to the delay.
  * </ul>
  *
@@ -65,9 +65,9 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <h2>Deep technical dive</h2>
  *
- * <p><strong>Interception point.</strong> The agent targets {@code BlockingQueue#poll()} and
- * {@code BlockingQueue#poll(long, TimeUnit)} via Byte Buddy retransformation of JDK classes. The
- * delay fires before the queue's internal {@code ReentrantLock} (or CAS) is entered, so no lock
+ * <p><strong>Interception point.</strong> The agent targets {@code BlockingQueue#poll()} and {@code
+ * BlockingQueue#poll(long, TimeUnit)} via Byte Buddy retransformation of JDK classes. The delay
+ * fires before the queue's internal {@code ReentrantLock} (or CAS) is entered, so no lock
  * contention is introduced by the sleep.
  *
  * <p><strong>Race with producers.</strong> During the sleep, other threads can enqueue items. A
@@ -104,7 +104,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java container image — the container must run a JVM process.
  * </ul>

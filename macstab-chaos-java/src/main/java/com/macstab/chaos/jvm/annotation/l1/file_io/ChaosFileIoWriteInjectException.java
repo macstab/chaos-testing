@@ -15,9 +15,9 @@ import com.macstab.chaos.jvm.api.OperationType;
 
 /**
  * Intercepts {@code FileOutputStream.write()} and {@code RandomAccessFile.write()} and throws the
- * configured exception before any bytes are written to the file, simulating a full filesystem,
- * a read-only mount, or a storage I/O error that causes log appenders, audit writers, and
- * file-based transactional logs to fail mid-write.
+ * configured exception before any bytes are written to the file, simulating a full filesystem, a
+ * read-only mount, or a storage I/O error that causes log appenders, audit writers, and file-based
+ * transactional logs to fail mid-write.
  *
  * <h2>What this annotation is</h2>
  *
@@ -29,9 +29,9 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>Before every call to {@code java.io.FileOutputStream#write(byte[], int, int)} and
- *       {@code java.io.RandomAccessFile#write(byte[], int, int)} inside the target container's
- *       JVM, the chaos agent intercepts the calling thread.
+ *   <li>Before every call to {@code java.io.FileOutputStream#write(byte[], int, int)} and {@code
+ *       java.io.RandomAccessFile#write(byte[], int, int)} inside the target container's JVM, the
+ *       chaos agent intercepts the calling thread.
  *   <li>The agent reflectively instantiates the class named by {@link #exceptionClassName()} with
  *       the message from {@link #message()} and throws it; no bytes are written to the file.
  *   <li>The exception propagates to the caller — log appender, audit writer, WAL writer — which
@@ -47,33 +47,32 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       crash when logging fails and that the status listener reports the write error.
  *   <li>Inject {@code java.io.IOException: No space left on device} (ENOSPC) to simulate a full
  *       filesystem; Spring Boot's embedded server writes access logs and temporary files to disk;
- *       assert that the application transitions to a degraded health state and that the
- *       {@code /actuator/health} endpoint reflects the disk-full condition.
+ *       assert that the application transitions to a degraded health state and that the {@code
+ *       /actuator/health} endpoint reflects the disk-full condition.
  *   <li>Applications that use {@code RandomAccessFile} for local state storage (e.g. offset
  *       tracking files, local caches) will throw on write; assert that the application rolls back
  *       to the last persisted state rather than silently losing the update.
- *   <li><strong>Production failure mode:</strong> a Kafka broker's log directory disk fills due
- *       to insufficient retention configuration; every log segment write throws
- *       {@code IOException: No space left on device}; the broker is unable to accept new messages;
- *       it marks itself as unclean and triggers leader election on all partitions; the cluster
- *       becomes unavailable for producers; operators must manually clean the disk and restart the
- *       broker to recover.
+ *   <li><strong>Production failure mode:</strong> a Kafka broker's log directory disk fills due to
+ *       insufficient retention configuration; every log segment write throws {@code IOException: No
+ *       space left on device}; the broker is unable to accept new messages; it marks itself as
+ *       unclean and triggers leader election on all partitions; the cluster becomes unavailable for
+ *       producers; operators must manually clean the disk and restart the broker to recover.
  * </ul>
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>The interception targets {@code java.io.FileOutputStream#write(byte[], int, int)} and
- * {@code java.io.RandomAccessFile#write(byte[], int, int)} via Byte Buddy. Both call JNI native
- * methods; the chaos exception fires before the JNI boundary, so the OS file state is unmodified.
- * The file remains at its pre-write size with its pre-write contents; no partial writes occur.
+ * <p>The interception targets {@code java.io.FileOutputStream#write(byte[], int, int)} and {@code
+ * java.io.RandomAccessFile#write(byte[], int, int)} via Byte Buddy. Both call JNI native methods;
+ * the chaos exception fires before the JNI boundary, so the OS file state is unmodified. The file
+ * remains at its pre-write size with its pre-write contents; no partial writes occur.
  *
- * <p>Log4j 2's {@code RollingFileManager} calls {@code channel.write(byteBuffer)} for the NIO
- * path or {@code outputStream.write(bytes)}  for the classic path; both eventually reach
- * {@code FileOutputStream.write()}. On write failure, Log4j's error handling depends on the
- * configured {@code AbstractAppender#isIgnoreExceptions()} flag: if {@code true} (the default),
- * the exception is silently swallowed and the event is dropped; if {@code false}, the exception
- * propagates to the caller. Applications relying on the default silent-drop behaviour may not
- * notice that they have lost log events until a post-incident analysis.
+ * <p>Log4j 2's {@code RollingFileManager} calls {@code channel.write(byteBuffer)} for the NIO path
+ * or {@code outputStream.write(bytes)} for the classic path; both eventually reach {@code
+ * FileOutputStream.write()}. On write failure, Log4j's error handling depends on the configured
+ * {@code AbstractAppender#isIgnoreExceptions()} flag: if {@code true} (the default), the exception
+ * is silently swallowed and the event is dropped; if {@code false}, the exception propagates to the
+ * caller. Applications relying on the default silent-drop behaviour may not notice that they have
+ * lost log events until a post-incident analysis.
  *
  * <p>RocksDB (used by many JVM applications as an embedded store via JNI) writes its WAL and
  * SSTable files via JNI; the Byte Buddy intercept at the Java level does not fire for JNI-based
@@ -108,8 +107,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

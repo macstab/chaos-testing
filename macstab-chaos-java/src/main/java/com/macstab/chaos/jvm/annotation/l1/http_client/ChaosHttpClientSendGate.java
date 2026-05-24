@@ -65,8 +65,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  * ({@code jdk.internal.net.http.ConnectionPool}) does not see the requests until after gate
  * release. This means the pool is not exhausted during the gate period — exhaustion happens only
  * after release when all threads compete for a bounded pool simultaneously. If the goal is to test
- * pool exhaustion in isolation, pair this with a pool size configured below the number of concurrent
- * test threads.
+ * pool exhaustion in isolation, pair this with a pool size configured below the number of
+ * concurrent test threads.
  *
  * <p>The gate is distinct from a simple delay ({@link ChaosHttpClientSendDelay}) in that the gate
  * synchronises threads: all threads wait together and are released together. This models a
@@ -104,8 +104,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

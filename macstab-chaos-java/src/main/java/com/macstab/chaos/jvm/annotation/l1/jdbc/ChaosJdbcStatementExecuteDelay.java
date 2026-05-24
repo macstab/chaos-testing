@@ -28,11 +28,11 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>Before every call to {@code java.sql.Statement#execute(String)},
- *       {@code executeQuery(String)}, or {@code executeUpdate(String)} inside the target
- *       container's JVM, the chaos agent intercepts the calling thread.
- *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()},
- *       {@link #maxDelayMs()}]; equal values produce a deterministic delay.
+ *   <li>Before every call to {@code java.sql.Statement#execute(String)}, {@code
+ *       executeQuery(String)}, or {@code executeUpdate(String)} inside the target container's JVM,
+ *       the chaos agent intercepts the calling thread.
+ *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()}, {@link
+ *       #maxDelayMs()}]; equal values produce a deterministic delay.
  *   <li>Control returns to the caller and the underlying statement execute proceeds normally,
  *       sending SQL to the database and waiting for the result.
  * </ol>
@@ -40,14 +40,14 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>Every SQL statement execution takes at least {@link #delayMs()} ms longer; assert that
- *       the application's JDBC query timeout (via {@code Statement.setQueryTimeout()}) fires.
+ *   <li>Every SQL statement execution takes at least {@link #delayMs()} ms longer; assert that the
+ *       application's JDBC query timeout (via {@code Statement.setQueryTimeout()}) fires.
  *   <li>Spring's {@code @Transactional(timeout)} counts the transaction wall-clock time from
  *       connection acquisition; a long statement delay will push transactions past this timeout,
  *       triggering {@code TransactionTimedOutException}.
- *   <li>ORM batch operations: Hibernate's batch flush calls {@code executeBatch()} on a
- *       {@code PreparedStatement}; delay here inflates flush time and may cause session-scoped
- *       timeouts to fire mid-transaction.
+ *   <li>ORM batch operations: Hibernate's batch flush calls {@code executeBatch()} on a {@code
+ *       PreparedStatement}; delay here inflates flush time and may cause session-scoped timeouts to
+ *       fire mid-transaction.
  *   <li><strong>Production failure mode:</strong> a missing index causes a full table scan on a
  *       50-million-row table; every {@code SELECT} takes 8 s, JDBC threads block, the connection
  *       pool fills, and the application stops serving traffic within 30 s of the bad deployment.
@@ -56,33 +56,32 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Deep technical dive</h2>
  *
  * <p>The interception targets {@code java.sql.Statement} at the interface level, matching all
- * concrete implementations: JDBC driver-specific implementations (PostgreSQL's
- * {@code PgStatement}, MySQL Connector/J's {@code StatementImpl}), and pool-wrapped statements
- * from HikariCP ({@code HikariProxyStatement}) and DBCP2 ({@code DelegatingStatement}). Byte
- * Buddy matches by interface method signature, so the intercept fires regardless of which pool
- * or driver is in use.
+ * concrete implementations: JDBC driver-specific implementations (PostgreSQL's {@code PgStatement},
+ * MySQL Connector/J's {@code StatementImpl}), and pool-wrapped statements from HikariCP ({@code
+ * HikariProxyStatement}) and DBCP2 ({@code DelegatingStatement}). Byte Buddy matches by interface
+ * method signature, so the intercept fires regardless of which pool or driver is in use.
  *
- * <p>The delay fires before the statement's network write, meaning the connection's socket is
- * held open during the sleep. If the database has a server-side idle-connection timeout shorter
- * than the injected delay, the connection may be killed by the database during the sleep; the
- * subsequent socket write will then fail with a broken-pipe {@code SQLException}. This compound
- * failure (injected delay + server kill) is a realistic model of what happens when a database
- * is under heavy load and aggressively evicting idle connections.
+ * <p>The delay fires before the statement's network write, meaning the connection's socket is held
+ * open during the sleep. If the database has a server-side idle-connection timeout shorter than the
+ * injected delay, the connection may be killed by the database during the sleep; the subsequent
+ * socket write will then fail with a broken-pipe {@code SQLException}. This compound failure
+ * (injected delay + server kill) is a realistic model of what happens when a database is under
+ * heavy load and aggressively evicting idle connections.
  *
- * <p>JDBC's {@code Statement.setQueryTimeout(seconds)} is checked by the driver after the
- * execute begins; because the chaos delay fires before the execute, it adds to the total
- * observed query time. If the sum of the injected delay and the real query time exceeds the
- * query timeout, the driver throws {@code SQLTimeoutException}. This is the correct behavior
- * to test: the application should handle {@code SQLTimeoutException} gracefully.
+ * <p>JDBC's {@code Statement.setQueryTimeout(seconds)} is checked by the driver after the execute
+ * begins; because the chaos delay fires before the execute, it adds to the total observed query
+ * time. If the sum of the injected delay and the real query time exceeds the query timeout, the
+ * driver throws {@code SQLTimeoutException}. This is the correct behavior to test: the application
+ * should handle {@code SQLTimeoutException} gracefully.
  *
  * <p>For prepared statements specifically, see {@link ChaosJdbcPreparedStatementDelay}, which
- * targets {@code PreparedStatement.execute()} / {@code executeQuery()} / {@code executeUpdate()}
- * on the parameterised variant. Both annotations may be combined to cover all JDBC statement
- * paths simultaneously.
+ * targets {@code PreparedStatement.execute()} / {@code executeQuery()} / {@code executeUpdate()} on
+ * the parameterised variant. Both annotations may be combined to cover all JDBC statement paths
+ * simultaneously.
  *
- * <p>Combining with {@link ChaosJdbcTransactionCommitDelay} simulates the worst-case scenario
- * where both query execution and commit are slow, compounding latency across the full
- * transaction lifecycle — the model for a database performing a large UNDO/REDO log write.
+ * <p>Combining with {@link ChaosJdbcTransactionCommitDelay} simulates the worst-case scenario where
+ * both query execution and commit are slow, compounding latency across the full transaction
+ * lifecycle — the model for a database performing a large UNDO/REDO log write.
  *
  * <h2>Example</h2>
  *
@@ -103,8 +102,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

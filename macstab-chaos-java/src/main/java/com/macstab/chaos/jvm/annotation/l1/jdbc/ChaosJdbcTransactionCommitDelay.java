@@ -15,8 +15,8 @@ import com.macstab.chaos.jvm.api.OperationType;
 
 /**
  * Intercepts {@code Connection.commit()} and holds the calling thread for {@link #delayMs()}
- * milliseconds before the transaction is flushed to the database, simulating a slow database
- * commit caused by heavy WAL/redo-log I/O, lock contention, or fsync pressure.
+ * milliseconds before the transaction is flushed to the database, simulating a slow database commit
+ * caused by heavy WAL/redo-log I/O, lock contention, or fsync pressure.
  *
  * <h2>What this annotation is</h2>
  *
@@ -30,38 +30,38 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <ol>
  *   <li>Before every call to {@code java.sql.Connection#commit()} inside the target container's
  *       JVM, the chaos agent intercepts the calling thread.
- *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()},
- *       {@link #maxDelayMs()}]; equal values produce a deterministic delay.
- *   <li>Control returns and the underlying {@code commit()} executes normally; the database
- *       durably writes the transaction.
+ *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()}, {@link
+ *       #maxDelayMs()}]; equal values produce a deterministic delay.
+ *   <li>Control returns and the underlying {@code commit()} executes normally; the database durably
+ *       writes the transaction.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>Every committed transaction takes at least {@link #delayMs()} ms longer; rows remain
- *       locked at the SERIALIZABLE or REPEATABLE READ isolation level for the duration, blocking
- *       other transactions that request the same rows.
- *   <li>Spring's {@code @Transactional(timeout)} counts from the transaction's begin; commit
- *       delay adds to that total. If the sum exceeds the timeout, the commit throws
- *       {@code TransactionTimedOutException} — assert the rollback path handles this.
- *   <li>Distributed systems using two-phase commit (XA transactions) hold the prepare lock
- *       during the commit; a delayed commit keeps the XA resource locked, potentially causing
- *       other participants' transactions to fail with lock-wait timeout.
- *   <li><strong>Production failure mode:</strong> a database storage node's disk subsystem
- *       stalls during fsync; every {@code commit()} takes 5–10 s; database connections are held
- *       in the commit phase, the pool fills, and no new requests can acquire connections while
- *       existing transactions hang mid-commit — an incident that looks like "no database
- *       connections available" but is actually "commit stalled".
+ *   <li>Every committed transaction takes at least {@link #delayMs()} ms longer; rows remain locked
+ *       at the SERIALIZABLE or REPEATABLE READ isolation level for the duration, blocking other
+ *       transactions that request the same rows.
+ *   <li>Spring's {@code @Transactional(timeout)} counts from the transaction's begin; commit delay
+ *       adds to that total. If the sum exceeds the timeout, the commit throws {@code
+ *       TransactionTimedOutException} — assert the rollback path handles this.
+ *   <li>Distributed systems using two-phase commit (XA transactions) hold the prepare lock during
+ *       the commit; a delayed commit keeps the XA resource locked, potentially causing other
+ *       participants' transactions to fail with lock-wait timeout.
+ *   <li><strong>Production failure mode:</strong> a database storage node's disk subsystem stalls
+ *       during fsync; every {@code commit()} takes 5–10 s; database connections are held in the
+ *       commit phase, the pool fills, and no new requests can acquire connections while existing
+ *       transactions hang mid-commit — an incident that looks like "no database connections
+ *       available" but is actually "commit stalled".
  * </ul>
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>The interception targets {@code java.sql.Connection#commit()} at the interface level,
- * covering all JDBC drivers and pool-wrapped connections. The chaos delay fires before the
- * JDBC driver's network write of the commit command to the database. During the sleep, the
- * transaction's row-level locks remain held at the database (the database does not know the
- * commit is coming yet), so the delay compounds lock-wait time for other transactions.
+ * <p>The interception targets {@code java.sql.Connection#commit()} at the interface level, covering
+ * all JDBC drivers and pool-wrapped connections. The chaos delay fires before the JDBC driver's
+ * network write of the commit command to the database. During the sleep, the transaction's
+ * row-level locks remain held at the database (the database does not know the commit is coming
+ * yet), so the delay compounds lock-wait time for other transactions.
  *
  * <p>PostgreSQL uses the simple query protocol for {@code COMMIT}; the commit round-trip is
  * typically sub-millisecond on a local database but can take seconds under write-heavy load when
@@ -69,15 +69,15 @@ import com.macstab.chaos.jvm.api.OperationType;
  * the actual I/O load, which is useful for isolated unit testing of lock-contention scenarios.
  *
  * <p>Spring's {@code DataSourceTransactionManager} calls {@code Connection.commit()} inside a
- * {@code finally} block after {@code @Transactional} method execution. If the commit throws (due
- * to the application's own transaction timeout), the manager calls {@code rollback()} as a
- * fallback. The chaos delay may cause this sequence — commit delay → timeout → rollback attempt —
- * which is a realistic scenario for testing the exception message and log output that accompanies
- * a timed-out commit.
+ * {@code finally} block after {@code @Transactional} method execution. If the commit throws (due to
+ * the application's own transaction timeout), the manager calls {@code rollback()} as a fallback.
+ * The chaos delay may cause this sequence — commit delay → timeout → rollback attempt — which is a
+ * realistic scenario for testing the exception message and log output that accompanies a timed-out
+ * commit.
  *
- * <p>HikariCP wraps {@code commit()} via {@code ProxyConnection}; the chaos intercept fires on
- * the wrapper's method, so HikariCP's pool statistics (in-use time, transaction duration
- * histograms) will accurately reflect the injected delay in their recorded values.
+ * <p>HikariCP wraps {@code commit()} via {@code ProxyConnection}; the chaos intercept fires on the
+ * wrapper's method, so HikariCP's pool statistics (in-use time, transaction duration histograms)
+ * will accurately reflect the injected delay in their recorded values.
  *
  * <p>Combining with {@link ChaosJdbcTransactionRollbackDelay} allows testing the scenario where
  * both commit and rollback are slow — the worst-case for a database under storage pressure where
@@ -102,8 +102,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

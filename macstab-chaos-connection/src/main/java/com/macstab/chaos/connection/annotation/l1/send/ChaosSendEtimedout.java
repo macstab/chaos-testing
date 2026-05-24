@@ -14,29 +14,30 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code ETIMEDOUT} into {@code send(2)}, causing the call to return {@code -1} with
- * {@code errno = ETIMEDOUT} as if the TCP retransmission timer exhausted its retry limit after
- * the kernel sent data that was never acknowledged by the remote peer, terminating the connection.
+ * Injects {@code ETIMEDOUT} into {@code send(2)}, causing the call to return {@code -1} with {@code
+ * errno = ETIMEDOUT} as if the TCP retransmission timer exhausted its retry limit after the kernel
+ * sent data that was never acknowledged by the remote peer, terminating the connection.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code SEND}, errno = {@code ETIMEDOUT})
- * tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted
- * {@code send} call; when it fires the interposer returns {@code -1} with {@code errno = ETIMEDOUT}
- * without performing any real kernel operation. No runtime operation-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code SEND}, errno = {@code
+ * ETIMEDOUT}) tuple. A Bernoulli trial with probability {@link #toxicity} is run on each
+ * intercepted {@code send} call; when it fires the interposer returns {@code -1} with {@code errno
+ * = ETIMEDOUT} without performing any real kernel operation. No runtime operation-errno validation
+ * is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
- *       extension to upload {@code libchaos-net.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
- *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
- *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
- *       {@code poll} at the dynamic-linker level.
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket}, {@code
+ *       bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and {@code poll} at
+ *       the dynamic-linker level.
  *   <li>On each intercepted {@code send} call a Bernoulli trial with probability {@link #toxicity}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = ETIMEDOUT}.
+ *       is conducted; when it fires the interposer returns {@code -1} and sets {@code errno =
+ *       ETIMEDOUT}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -60,30 +61,30 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * <p>In production, {@code ETIMEDOUT} from {@code send} occurs when a network partition forms
  * between sender and receiver after the TCP connection is established: the kernel continues to
  * retransmit unacknowledged segments according to exponential backoff until the retransmission
- * limit (controlled by {@code tcp_retries2}, default 15, approximately 15 minutes) is exhausted,
- * at which point the kernel closes the connection and sets the socket error to {@code ETIMEDOUT}.
+ * limit (controlled by {@code tcp_retries2}, default 15, approximately 15 minutes) is exhausted, at
+ * which point the kernel closes the connection and sets the socket error to {@code ETIMEDOUT}.
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>When data is sent on a TCP socket, the kernel places it in the retransmission queue and
- * starts the retransmission timer. If an ACK is not received before the timer fires, the kernel
+ * <p>When data is sent on a TCP socket, the kernel places it in the retransmission queue and starts
+ * the retransmission timer. If an ACK is not received before the timer fires, the kernel
  * retransmits the segment and doubles the timer interval (exponential backoff). This continues
  * until {@code tcp_retries2} retransmissions have been attempted without acknowledgement, at which
- * point the kernel marks the connection as dead and returns {@code ETIMEDOUT} on the next
- * {@code send} call (or on a pending blocking {@code send}, unblocking the thread). The total
+ * point the kernel marks the connection as dead and returns {@code ETIMEDOUT} on the next {@code
+ * send} call (or on a pending blocking {@code send}, unblocking the thread). The total
  * retransmission timeout depends on the current RTT and the number of retries; with default
  * settings it is approximately 15 minutes.
  *
  * <p>This injection delivers {@code ETIMEDOUT} immediately without waiting for the 15-minute
  * retransmission sequence, making it practical to test the application's dead-connection handling
  * without the real multi-minute wait. This is especially valuable in tests that verify retry
- * budgets, circuit-breaker thresholds, and connection-pool eviction — all of which need the
- * timeout to happen on a testable time scale.
+ * budgets, circuit-breaker thresholds, and connection-pool eviction — all of which need the timeout
+ * to happen on a testable time scale.
  *
- * <p>The distinction between send-time and recv-time {@code ETIMEDOUT} matters for recovery:
- * on send-time timeout, the data was not delivered (unconfirmed); on recv-time timeout, the data
- * may or may not have been processed by the server before the connection was lost. Both require
- * the socket to be closed, but the idempotency constraints for retry differ.
+ * <p>The distinction between send-time and recv-time {@code ETIMEDOUT} matters for recovery: on
+ * send-time timeout, the data was not delivered (unconfirmed); on recv-time timeout, the data may
+ * or may not have been processed by the server before the connection was lost. Both require the
+ * socket to be closed, but the idempotency constraints for retry differ.
  *
  * <p>Java maps {@code ETIMEDOUT} from {@code send} to a {@code SocketException} with the message
  * "Connection timed out". This is the same message used for {@code ETIMEDOUT} from {@code connect}

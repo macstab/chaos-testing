@@ -14,29 +14,29 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code EROFS} into {@code open(2)}, causing the call to return {@code -1} with
- * {@code errno = EROFS} as if the file resides on a read-only filesystem and the caller attempted
- * to open it for writing, create it, or truncate it.
+ * Injects {@code EROFS} into {@code open(2)}, causing the call to return {@code -1} with {@code
+ * errno = EROFS} as if the file resides on a read-only filesystem and the caller attempted to open
+ * it for writing, create it, or truncate it.
  *
  * <h2>What this annotation is</h2>
  *
  * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code OPEN}, errno = {@code EROFS})
- * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
- * {@code open} call; when it fires the interposer returns {@code -1} with {@code errno = EROFS}
- * without performing any real kernel operation. No runtime operation-errno validation is needed.
+ * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted {@code
+ * open} call; when it fires the interposer returns {@code -1} with {@code errno = EROFS} without
+ * performing any real kernel operation. No runtime operation-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
- *   <li>On each intercepted {@code open} call a Bernoulli trial with probability {@link #probability}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = EROFS}.
+ *   <li>On each intercepted {@code open} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = EROFS}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -47,39 +47,39 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *       permissions. Assert that the application reports a "filesystem is read-only" error rather
  *       than a permissions error — the remediation (remounting the filesystem read-write or
  *       redirecting writes to another volume) is different from a permissions fix.
- *   <li>Applications that write logs, configuration, or data to the same filesystem as their
- *       binary must handle {@code EROFS} when the filesystem is remounted read-only after a disk
- *       error; assert that the application falls back to a writable location or fails with a
- *       clear message.
- *   <li>PID files and lock files written by daemon processes must handle {@code EROFS} at startup
- *       — a daemon that cannot write its PID file should fail with a clear error rather than
- *       running without locking.
+ *   <li>Applications that write logs, configuration, or data to the same filesystem as their binary
+ *       must handle {@code EROFS} when the filesystem is remounted read-only after a disk error;
+ *       assert that the application falls back to a writable location or fails with a clear
+ *       message.
+ *   <li>PID files and lock files written by daemon processes must handle {@code EROFS} at startup —
+ *       a daemon that cannot write its PID file should fail with a clear error rather than running
+ *       without locking.
  *   <li>Assert that the application correctly differentiates {@code EROFS} from {@code EACCES}:
- *       both prevent writing, but {@code EROFS} indicates a filesystem-level constraint that
- *       cannot be resolved by changing file permissions.
+ *       both prevent writing, but {@code EROFS} indicates a filesystem-level constraint that cannot
+ *       be resolved by changing file permissions.
  * </ul>
  *
  * <p>In production, {@code EROFS} from {@code open} occurs when a disk develops read errors that
  * cause the kernel to remount the filesystem read-only to prevent further corruption (visible in
  * {@code dmesg} as "EXT4-fs error ... remounting filesystem read-only"), when a Kubernetes
- * read-only root filesystem ({@code readOnlyRootFilesystem: true} in the security context) is
- * in effect, and when a container image layer is mounted read-only and an application writes to
- * a path that should have been an overlay writable layer but is not.
+ * read-only root filesystem ({@code readOnlyRootFilesystem: true} in the security context) is in
+ * effect, and when a container image layer is mounted read-only and an application writes to a path
+ * that should have been an overlay writable layer but is not.
  *
  * <h2>Deep technical dive</h2>
  *
  * <p>The kernel returns {@code EROFS} when the filesystem's superblock has the read-only flag set
- * and the caller requests write access (any combination of {@code O_WRONLY}, {@code O_RDWR},
- * {@code O_CREAT}, {@code O_TRUNC}, or {@code O_APPEND}). The check is performed before any
- * per-file permission check; even root cannot write to a read-only filesystem without first
- * remounting it read-write using {@code mount -o remount,rw}.
+ * and the caller requests write access (any combination of {@code O_WRONLY}, {@code O_RDWR}, {@code
+ * O_CREAT}, {@code O_TRUNC}, or {@code O_APPEND}). The check is performed before any per-file
+ * permission check; even root cannot write to a read-only filesystem without first remounting it
+ * read-write using {@code mount -o remount,rw}.
  *
- * <p>The ext4 filesystem remounts itself read-only automatically when it encounters an unrecoverable
- * error during journal recovery, inode table access, or block group descriptor write. This protects
- * the filesystem from further corruption but causes all subsequent write-intent opens to return
- * {@code EROFS}. The remount is reported in the kernel log and can be detected by monitoring
- * {@code /proc/mounts} for the {@code ro} mount option appearing on a previously {@code rw}
- * filesystem.
+ * <p>The ext4 filesystem remounts itself read-only automatically when it encounters an
+ * unrecoverable error during journal recovery, inode table access, or block group descriptor write.
+ * This protects the filesystem from further corruption but causes all subsequent write-intent opens
+ * to return {@code EROFS}. The remount is reported in the kernel log and can be detected by
+ * monitoring {@code /proc/mounts} for the {@code ro} mount option appearing on a previously {@code
+ * rw} filesystem.
  *
  * <p>Java maps {@code EROFS} from {@code open} to an {@code IOException} with the message
  * "Read-only file system". Unlike {@code EACCES} which maps to {@code FileNotFoundException} in

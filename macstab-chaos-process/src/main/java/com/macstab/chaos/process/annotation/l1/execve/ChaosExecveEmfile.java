@@ -19,64 +19,68 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * the process image.
  *
  * <h2>What this annotation is</h2>
+ *
  * L1 libchaos-process primitive — one (selector = {@code EXECVE}, errno = {@code EMFILE}) tuple.
- * The {@code EXECVE} selector intercepts {@code execve} calls only, leaving {@code fork},
- * {@code pthread_create}, {@code posix_spawn}, {@code posix_spawnp}, {@code execveat}, and
- * {@code waitpid} unaffected. Compile-time safety: invalid selector/errno combinations have no
- * annotation class.
+ * The {@code EXECVE} selector intercepts {@code execve} calls only, leaving {@code fork}, {@code
+ * pthread_create}, {@code posix_spawn}, {@code posix_spawnp}, {@code execveat}, and {@code waitpid}
+ * unaffected. Compile-time safety: invalid selector/errno combinations have no annotation class.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
- *       interposing the libc {@code execve} wrapper at the dynamic-linker level.</li>
- *   <li>On each {@code execve} call the interposer runs a Bernoulli trial with probability
- *       {@link #probability}.</li>
+ *       interposing the libc {@code execve} wrapper at the dynamic-linker level.
+ *   <li>On each {@code execve} call the interposer runs a Bernoulli trial with probability {@link
+ *       #probability}.
  *   <li>When the trial fires, the interposer sets {@code errno = EMFILE} and returns {@code -1}
- *       without issuing the real kernel call.</li>
- *   <li>The calling code receives: {@code -1} return, {@code errno} 24,
- *       {@code strerror}: "Too many open files"; no new process image is loaded.</li>
+ *       without issuing the real kernel call.
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 24, {@code strerror}: "Too many
+ *       open files"; no new process image is loaded.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
  *   <li>{@code execve} returns {@code -1}; {@code errno = EMFILE} (24); the process's file
  *       descriptor table has reached {@code RLIMIT_NOFILE} — the application must handle the
- *       failure without assuming the binary is absent or the permissions are wrong.</li>
+ *       failure without assuming the binary is absent or the permissions are wrong.
  *   <li>The reason {@code execve} returns {@code EMFILE} is that exec opening the new binary
- *       requires allocating a file descriptor slot internally; if the process's fd table is
- *       full at the time of the exec, the binary open fails before the exec commits. Applications
- *       that invoke child processes must ensure their own fd table has headroom before calling
- *       exec — assert that the application closes unnecessary fds before spawning children.</li>
+ *       requires allocating a file descriptor slot internally; if the process's fd table is full at
+ *       the time of the exec, the binary open fails before the exec commits. Applications that
+ *       invoke child processes must ensure their own fd table has headroom before calling exec —
+ *       assert that the application closes unnecessary fds before spawning children.
  *   <li>Assert that the application treats {@code EMFILE} from {@code execve} as a recoverable
- *       resource error (distinct from a permanent permission failure); the correct response is
- *       to close leaked file descriptors and retry the exec or report the fd leak for operator
- *       intervention.</li>
+ *       resource error (distinct from a permanent permission failure); the correct response is to
+ *       close leaked file descriptors and retry the exec or report the fd leak for operator
+ *       intervention.
  * </ul>
+ *
  * Production failure mode: a long-running server process accumulates file descriptor leaks over
- * hours or days; when the process attempts to spawn a helper subprocess via {@code fork} +
- * {@code execve}, the exec fails with {@code EMFILE} because the process's fd table is
- * exhausted — the helper is silently not invoked, causing a feature regression that is invisible
- * until the leaked fd count is correlated with the helper invocation failure.
+ * hours or days; when the process attempts to spawn a helper subprocess via {@code fork} + {@code
+ * execve}, the exec fails with {@code EMFILE} because the process's fd table is exhausted — the
+ * helper is silently not invoked, causing a feature regression that is invisible until the leaked
+ * fd count is correlated with the helper invocation failure.
  *
  * <h2>Deep technical dive</h2>
- * <p>POSIX specifies {@code EMFILE} for {@code execve} when the per-process file descriptor limit
- * (governed by {@code RLIMIT_NOFILE}) would be exceeded by opening the binary file. On Linux,
- * the exec path must open the binary as a file before loading it; this open operation allocates
- * a file descriptor slot in the calling process's fd table. If the table is full, the open fails
- * with {@code EMFILE} and the exec returns this error before modifying the process image.
  *
- * <p>The practical implication is that {@code EMFILE} from {@code execve} is a symptom of a
- * file descriptor leak in the calling process, not a property of the binary or the exec target.
- * The distinction is operationally significant: operators investigating {@code EMFILE} errors
- * from exec should check the process's current fd count (via {@code /proc/self/fd}) and
- * {@code RLIMIT_NOFILE} limit, not the binary path. Applications should log the current fd
- * count alongside the {@code EMFILE} error to make the root cause immediately apparent.
+ * <p>POSIX specifies {@code EMFILE} for {@code execve} when the per-process file descriptor limit
+ * (governed by {@code RLIMIT_NOFILE}) would be exceeded by opening the binary file. On Linux, the
+ * exec path must open the binary as a file before loading it; this open operation allocates a file
+ * descriptor slot in the calling process's fd table. If the table is full, the open fails with
+ * {@code EMFILE} and the exec returns this error before modifying the process image.
+ *
+ * <p>The practical implication is that {@code EMFILE} from {@code execve} is a symptom of a file
+ * descriptor leak in the calling process, not a property of the binary or the exec target. The
+ * distinction is operationally significant: operators investigating {@code EMFILE} errors from exec
+ * should check the process's current fd count (via {@code /proc/self/fd}) and {@code RLIMIT_NOFILE}
+ * limit, not the binary path. Applications should log the current fd count alongside the {@code
+ * EMFILE} error to make the root cause immediately apparent.
  *
  * <p>Compared with {@code ENFILE}: {@code EMFILE} indicates the per-process limit is exhausted
  * (fixable in-process by closing leaked fds, or by raising {@code RLIMIT_NOFILE}); {@code ENFILE}
- * indicates the system-wide kernel file table is exhausted (requires platform-level intervention
- * to raise {@code fs.file-max}). For exec-EMFILE, the most likely fix is an application-level
- * fd leak fix rather than a platform configuration change.
+ * indicates the system-wide kernel file table is exhausted (requires platform-level intervention to
+ * raise {@code fs.file-max}). For exec-EMFILE, the most likely fix is an application-level fd leak
+ * fix rather than a platform configuration change.
  *
  * <h2>Example</h2>
  *
@@ -92,11 +96,12 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; fd exhaustion is a gradual process,
- * so low probabilities usefully exercise the error path without blocking all exec calls.
+ * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; fd exhaustion is a gradual process, so
+ * low probabilities usefully exercise the error path without blocking all exec calls.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every process-chaos-capable container
- * in the test class.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container in
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ProcessErrnoBinding

@@ -14,25 +14,25 @@ import com.macstab.chaos.time.model.TimeErrno;
 import com.macstab.chaos.time.model.TimeSelector;
 
 /**
- * Injects {@code EPERM} into {@code usleep(3)}, causing the call to return {@code -1} with
- * {@code errno = EPERM} as if the process lacked permission to use the underlying sleep mechanism.
+ * Injects {@code EPERM} into {@code usleep(3)}, causing the call to return {@code -1} with {@code
+ * errno = EPERM} as if the process lacked permission to use the underlying sleep mechanism.
  *
  * <h2>What this annotation is</h2>
  *
  * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code USLEEP}, errno = {@code EPERM})
- * tuple. The tuple is safe by construction — {@code EPERM} is a valid POSIX error indicating that
- * a privileged operation was denied. No runtime selector-errno validation is needed.
+ * tuple. The tuple is safe by construction — {@code EPERM} is a valid POSIX error indicating that a
+ * privileged operation was denied. No runtime selector-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
- *       extension to upload {@code libchaos-time.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
  *       at the dynamic-linker level.
- *   <li>On every intercepted {@code usleep} call a Bernoulli trial with probability
- *       {@link #probability} is conducted.
+ *   <li>On every intercepted {@code usleep} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted.
  *   <li>When the trial fires the interposer returns {@code -1} and sets {@code errno = EPERM}
  *       without sleeping — the sleep is denied immediately.
  * </ol>
@@ -44,28 +44,28 @@ import com.macstab.chaos.time.model.TimeSelector;
  *       back-off, potentially overwhelming downstream services or entering a busy-loop.
  *   <li>Code paths that treat any non-zero return as an {@code EINTR} case and immediately retry
  *       will loop indefinitely when the error is {@code EPERM}.
- *   <li>Assert that the application treats {@code EPERM} as a non-retriable error, logs the
- *       denial, and applies a safe static fallback delay.
+ *   <li>Assert that the application treats {@code EPERM} as a non-retriable error, logs the denial,
+ *       and applies a safe static fallback delay.
  * </ul>
  *
  * <p>In production, {@code EPERM} from {@code usleep} is an unusual signal; it most commonly
- * appears in seccomp-filtered environments that block the underlying {@code nanosleep} syscall,
- * or in mandatory access control environments that restrict sleep operations.
+ * appears in seccomp-filtered environments that block the underlying {@code nanosleep} syscall, or
+ * in mandatory access control environments that restrict sleep operations.
  *
  * <h2>Deep technical dive</h2>
  *
  * <p>Standard Linux kernels do not return {@code EPERM} from {@code nanosleep} (the backend of
  * {@code usleep}) for ordinary processes. The injection simulates the behavior of stricter access
- * control environments and seccomp profiles that block the sleep syscall. Code that uses
- * {@code usleep} without considering permission failures will expose this as a production gap
- * when deployed to hardened container environments.
+ * control environments and seccomp profiles that block the sleep syscall. Code that uses {@code
+ * usleep} without considering permission failures will expose this as a production gap when
+ * deployed to hardened container environments.
  *
  * <p>C libraries such as libcurl, librdkafka, and OpenSSL use {@code usleep} internally in their
  * retry backoff logic. A seccomp profile that blocks {@code nanosleep} on a container where these
  * libraries are used will cause their retry loops to fail silently, producing retry storms.
  *
- * <p>Sibling annotations: {@link ChaosUsleepEintr} targets signal interruption;
- * {@link ChaosNanosleepEperm} applies the equivalent injection to the modern interface.
+ * <p>Sibling annotations: {@link ChaosUsleepEintr} targets signal interruption; {@link
+ * ChaosNanosleepEperm} applies the equivalent injection to the modern interface.
  *
  * <h2>Example</h2>
  *

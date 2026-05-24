@@ -14,37 +14,37 @@ import com.macstab.chaos.dns.annotation.l1.DnsSelectorKind;
 import com.macstab.chaos.dns.model.EaiErrno;
 
 /**
- * Injects {@code EAI_MEMORY} into both {@code getaddrinfo(3)} (forward lookup) and
- * {@code getnameinfo(3)} (reverse lookup), causing every DNS resolver call to return
- * {@code EAI_MEMORY} as if the resolver could not allocate memory needed to complete the query.
+ * Injects {@code EAI_MEMORY} into both {@code getaddrinfo(3)} (forward lookup) and {@code
+ * getnameinfo(3)} (reverse lookup), causing every DNS resolver call to return {@code EAI_MEMORY} as
+ * if the resolver could not allocate memory needed to complete the query.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (selectorKind = {@code WILDCARD}, errno =
- * {@code EAI_MEMORY}) tuple. The {@code WILDCARD} selector matches both interposed DNS calls
- * simultaneously — equivalent to applying {@link ChaosForwardEaimemory} and
- * {@link ChaosReverseEaimemory} in a single annotation. This annotation always fires on every
- * intercepted DNS call — there is no per-call probability field. No runtime selector-errno
- * validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (selectorKind = {@code WILDCARD}, errno = {@code
+ * EAI_MEMORY}) tuple. The {@code WILDCARD} selector matches both interposed DNS calls
+ * simultaneously — equivalent to applying {@link ChaosForwardEaimemory} and {@link
+ * ChaosReverseEaimemory} in a single annotation. This annotation always fires on every intercepted
+ * DNS call — there is no per-call probability field. No runtime selector-errno validation is
+ * needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.DNS)} on the container definition causes the
- *       extension to upload {@code libchaos-dns.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-dns.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code getaddrinfo(3)} and {@code getnameinfo(3)} at the
  *       dynamic-linker level.
- *   <li>On every intercepted call to either function the interposer immediately returns
- *       {@code EAI_MEMORY} without performing any real resolver query.
+ *   <li>On every intercepted call to either function the interposer immediately returns {@code
+ *       EAI_MEMORY} without performing any real resolver query.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
  *   <li>Both forward and reverse DNS resolution fail with a memory-exhaustion indicator; the
- *       application must handle both failures independently without propagating an
- *       {@code OutOfMemoryError} — the native heap and JVM heap are separate.
+ *       application must handle both failures independently without propagating an {@code
+ *       OutOfMemoryError} — the native heap and JVM heap are separate.
  *   <li>Connection establishment fails because forward resolution returns {@code EAI_MEMORY};
  *       assert that the application emits a structured connection-failure error rather than a
  *       confusing "out of memory" diagnostic.
@@ -55,24 +55,24 @@ import com.macstab.chaos.dns.model.EaiErrno;
  * </ul>
  *
  * <p>In production, simultaneous {@code EAI_MEMORY} on both DNS APIs occurs when the process is
- * near its native memory limit — a condition where both the forward and reverse resolver code
- * paths fail because neither can allocate their internal query buffers.
+ * near its native memory limit — a condition where both the forward and reverse resolver code paths
+ * fail because neither can allocate their internal query buffers.
  *
  * <h2>Deep technical dive</h2>
  *
  * <p>The {@code WILDCARD} {@code EAI_MEMORY} injection tests the most extreme memory-pressure
- * scenario for the DNS subsystem: both resolution paths fail simultaneously due to native
- * allocator exhaustion. This is distinct from the JVM's heap memory — the glibc resolver uses
- * {@code malloc(3)} from the native heap, which is a completely separate allocator.
+ * scenario for the DNS subsystem: both resolution paths fail simultaneously due to native allocator
+ * exhaustion. This is distinct from the JVM's heap memory — the glibc resolver uses {@code
+ * malloc(3)} from the native heap, which is a completely separate allocator.
  *
- * <p>Applications that conflate native {@code EAI_MEMORY} with JVM {@code OutOfMemoryError}
- * will apply the wrong recovery strategy. JVM OOM typically requires garbage collection and may
- * be recoverable; native {@code EAI_MEMORY} indicates that the allocator's arena is exhausted
- * and may not recover without process restart. This injection makes the distinction testable.
+ * <p>Applications that conflate native {@code EAI_MEMORY} with JVM {@code OutOfMemoryError} will
+ * apply the wrong recovery strategy. JVM OOM typically requires garbage collection and may be
+ * recoverable; native {@code EAI_MEMORY} indicates that the allocator's arena is exhausted and may
+ * not recover without process restart. This injection makes the distinction testable.
  *
- * <p>Sibling per-call annotations ({@link ChaosForwardEaimemory} and
- * {@link ChaosReverseEaimemory}) allow targeted injection to a single resolver API when the
- * forward and reverse memory-failure paths need to be tested independently.
+ * <p>Sibling per-call annotations ({@link ChaosForwardEaimemory} and {@link ChaosReverseEaimemory})
+ * allow targeted injection to a single resolver API when the forward and reverse memory-failure
+ * paths need to be tested independently.
  *
  * <h2>Example</h2>
  *

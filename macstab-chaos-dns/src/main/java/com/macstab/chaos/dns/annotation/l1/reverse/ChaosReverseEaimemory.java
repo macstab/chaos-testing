@@ -20,22 +20,22 @@ import com.macstab.chaos.dns.model.EaiErrno;
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (selectorKind = {@code REVERSE}, errno =
- * {@code EAI_MEMORY}) tuple. This annotation always fires on every intercepted reverse lookup —
- * there is no per-call probability field. Use it when you need every reverse resolution attempt to
- * fail with an out-of-memory condition so that the application's memory-pressure handling in the
+ * <p>L1 libchaos primitive. Encodes exactly one (selectorKind = {@code REVERSE}, errno = {@code
+ * EAI_MEMORY}) tuple. This annotation always fires on every intercepted reverse lookup — there is
+ * no per-call probability field. Use it when you need every reverse resolution attempt to fail with
+ * an out-of-memory condition so that the application's memory-pressure handling in the
  * reverse-lookup path is exercised. No runtime selector-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.DNS)} on the container definition causes the
- *       extension to upload {@code libchaos-dns.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-dns.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code getaddrinfo(3)} and {@code getnameinfo(3)} at the
  *       dynamic-linker level.
- *   <li>On every intercepted {@code getnameinfo} call the interposer immediately returns
- *       {@code EAI_MEMORY} without performing any real resolver query.
+ *   <li>On every intercepted {@code getnameinfo} call the interposer immediately returns {@code
+ *       EAI_MEMORY} without performing any real resolver query.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -44,36 +44,37 @@ import com.macstab.chaos.dns.model.EaiErrno;
  *   <li>Every reverse lookup fails with a memory-exhaustion indicator; the application must fall
  *       back to the raw IP address without attempting to retry or cache the result.
  *   <li>Components that pre-allocate hostname buffers before calling {@code getnameinfo} must
- *       handle the case where the call fails despite the buffer being available — {@code EAI_MEMORY}
- *       indicates that the resolver's own internal allocation failed, not the caller's buffer.
- *   <li>Assert that the application does not propagate an {@code OutOfMemoryError} when it
- *       receives {@code EAI_MEMORY} from a native resolver call; the native heap and the JVM heap
- *       are separate allocations.
+ *       handle the case where the call fails despite the buffer being available — {@code
+ *       EAI_MEMORY} indicates that the resolver's own internal allocation failed, not the caller's
+ *       buffer.
+ *   <li>Assert that the application does not propagate an {@code OutOfMemoryError} when it receives
+ *       {@code EAI_MEMORY} from a native resolver call; the native heap and the JVM heap are
+ *       separate allocations.
  * </ul>
  *
- * <p>In production, {@code EAI_MEMORY} from {@code getnameinfo} occurs when the process is near
- * its native memory limit and the glibc resolver cannot allocate the internal structures it needs
- * to send and parse the PTR query. This is more likely in long-running processes that accumulate
+ * <p>In production, {@code EAI_MEMORY} from {@code getnameinfo} occurs when the process is near its
+ * native memory limit and the glibc resolver cannot allocate the internal structures it needs to
+ * send and parse the PTR query. This is more likely in long-running processes that accumulate
  * native memory fragmentation over time.
  *
  * <h2>Deep technical dive</h2>
  *
  * <p>{@code getnameinfo(3)} allocates internal buffers for parsing the DNS response and
- * constructing the returned hostname string. When {@code malloc} fails inside the resolver,
- * {@code getnameinfo} returns {@code EAI_MEMORY}. Unlike {@code EAI_FAIL} or {@code EAI_AGAIN},
- * this error is entirely host-side and indicates a process-level resource exhaustion rather than
- * a DNS infrastructure problem.
+ * constructing the returned hostname string. When {@code malloc} fails inside the resolver, {@code
+ * getnameinfo} returns {@code EAI_MEMORY}. Unlike {@code EAI_FAIL} or {@code EAI_AGAIN}, this error
+ * is entirely host-side and indicates a process-level resource exhaustion rather than a DNS
+ * infrastructure problem.
  *
  * <p>Because {@code getnameinfo} writes its result into a caller-supplied buffer (rather than
  * returning a heap-allocated pointer as {@code getaddrinfo} does), the allocation that fails is
- * entirely internal to the glibc resolver. The caller's buffer is not populated on
- * {@code EAI_MEMORY} — application code must not read from the output hostname buffer when the
- * return value is non-zero.
+ * entirely internal to the glibc resolver. The caller's buffer is not populated on {@code
+ * EAI_MEMORY} — application code must not read from the output hostname buffer when the return
+ * value is non-zero.
  *
- * <p>Java's {@code InetAddress.getHostName()} silently suppresses resolver errors and returns
- * the IP address string on failure. Application code that calls native resolver APIs through JNI
- * must explicitly check the return value and handle {@code EAI_MEMORY} without assuming that the
- * output hostname buffer contains a valid C string.
+ * <p>Java's {@code InetAddress.getHostName()} silently suppresses resolver errors and returns the
+ * IP address string on failure. Application code that calls native resolver APIs through JNI must
+ * explicitly check the return value and handle {@code EAI_MEMORY} without assuming that the output
+ * hostname buffer contains a valid C string.
  *
  * <h2>Example</h2>
  *

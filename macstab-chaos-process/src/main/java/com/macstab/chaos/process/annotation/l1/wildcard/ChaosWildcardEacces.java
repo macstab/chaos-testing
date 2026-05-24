@@ -14,8 +14,8 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * Injects {@code EACCES} ("Permission denied") into every process-management syscall intercepted
- * by libchaos-process — {@code fork}, {@code execve}, {@code posix_spawn}, {@code pthread_create},
+ * Injects {@code EACCES} ("Permission denied") into every process-management syscall intercepted by
+ * libchaos-process — {@code fork}, {@code execve}, {@code posix_spawn}, {@code pthread_create},
  * {@code waitpid} and their variants — simultaneously, gated by {@link #probability}.
  *
  * <h2>What this annotation is</h2>
@@ -33,40 +33,40 @@ import com.macstab.chaos.process.model.ProcessSelector;
  *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
- *       interposing every process-management libc wrapper at the dynamic-linker level.</li>
+ *       interposing every process-management libc wrapper at the dynamic-linker level.
  *   <li>On each intercepted syscall (any of the wildcard family: fork, execve, posix_spawn,
- *       pthread_create, waitpid, and variants), a Bernoulli trial with probability {@link #probability}
- *       runs.</li>
+ *       pthread_create, waitpid, and variants), a Bernoulli trial with probability {@link
+ *       #probability} runs.
  *   <li>When the trial fires, the interposer sets {@code errno = EACCES} and returns {@code -1}
- *       before the real kernel call executes.</li>
+ *       before the real kernel call executes.
  *   <li>The calling code receives the same value it would from a kernel with SELinux or AppArmor
  *       denying the syscall: {@code fork()} returns {@code -1}, {@code pthread_create} returns
- *       {@code EACCES}, {@code execve} returns {@code -1 / EACCES}.</li>
+ *       {@code EACCES}, {@code execve} returns {@code -1 / EACCES}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
  *   <li>{@code fork()} returns {@code -1} with {@code errno = EACCES}; {@code strerror} yields
- *       "Permission denied". The child process is never created.</li>
+ *       "Permission denied". The child process is never created.
  *   <li>{@code pthread_create} returns {@code EACCES} directly (POSIX thread API returns the errno
- *       as a value rather than setting the global). The thread is never started.</li>
+ *       as a value rather than setting the global). The thread is never started.
  *   <li>{@code execve} / {@code posix_spawn} return {@code -1 / EACCES}; the new executable is
  *       never loaded. Any file descriptor setup before the exec call is not cleaned up by the
- *       kernel — assert that the application handles descriptor leaks correctly.</li>
+ *       kernel — assert that the application handles descriptor leaks correctly.
  *   <li>Application frameworks that spawn threads or child processes must surface error logs or
- *       graceful-degradation behaviour when the spawn is blocked — assert those rather than
- *       raw return codes.</li>
+ *       graceful-degradation behaviour when the spawn is blocked — assert those rather than raw
+ *       return codes.
  *   <li>Thread pool implementations that receive {@code EACCES} from {@code pthread_create} must
  *       not enter an infinite retry loop — assert that the pool bounds its retry count and surfaces
- *       an alert when the pool falls below minimum size.</li>
+ *       an alert when the pool falls below minimum size.
  * </ul>
  *
- * <p><strong>Production failure mode:</strong> a container whose security context is changed
- * (new AppArmor profile applied, SELinux label relabelled, or seccomp profile updated) mid-run
- * may find that process-management calls it relied on are now blocked with {@code EACCES}. Worker
- * pool expansions silently fail; background threads that die are not replaced; health checks that
- * spawn a subprocess return stale data.
+ * <p><strong>Production failure mode:</strong> a container whose security context is changed (new
+ * AppArmor profile applied, SELinux label relabelled, or seccomp profile updated) mid-run may find
+ * that process-management calls it relied on are now blocked with {@code EACCES}. Worker pool
+ * expansions silently fail; background threads that die are not replaced; health checks that spawn
+ * a subprocess return stale data.
  *
  * <h2>Deep technical dive</h2>
  *
@@ -75,28 +75,28 @@ import com.macstab.chaos.process.model.ProcessSelector;
  *
  * <p><strong>SELinux:</strong> the process's security context does not have the {@code fork},
  * {@code execve}, or {@code clone} permission in the active type enforcement policy. SELinux
- * denials are logged to the audit subsystem ({@code /var/log/audit/audit.log}) with an AVC
- * denial record. The denial is permanent for the lifetime of the process's current context —
- * unlike {@code EPERM} which can sometimes be resolved by acquiring capabilities.
+ * denials are logged to the audit subsystem ({@code /var/log/audit/audit.log}) with an AVC denial
+ * record. The denial is permanent for the lifetime of the process's current context — unlike {@code
+ * EPERM} which can sometimes be resolved by acquiring capabilities.
  *
- * <p><strong>AppArmor:</strong> the process's confinement profile includes a {@code deny fork}
- * or {@code deny exec} rule. AppArmor denials are logged to {@code /var/log/kern.log} and
- * produce an {@code APPARMOR_DENIED} audit record. A container runtime that applies an AppArmor
- * profile at startup applies it for the entire container lifetime.
+ * <p><strong>AppArmor:</strong> the process's confinement profile includes a {@code deny fork} or
+ * {@code deny exec} rule. AppArmor denials are logged to {@code /var/log/kern.log} and produce an
+ * {@code APPARMOR_DENIED} audit record. A container runtime that applies an AppArmor profile at
+ * startup applies it for the entire container lifetime.
  *
  * <p>The wildcard selector fires across all process-management calls simultaneously. Even at low
- * probabilities, a single fired trial can break the entire process lifecycle in unexpected ways:
- * if {@code fork} returns {@code EACCES} during a health-check subprocess spawn, the check
- * returns a stale cached result; if {@code pthread_create} fails during an HTTP connection-pool
- * expansion, the pool silently stays undersized under load.
+ * probabilities, a single fired trial can break the entire process lifecycle in unexpected ways: if
+ * {@code fork} returns {@code EACCES} during a health-check subprocess spawn, the check returns a
+ * stale cached result; if {@code pthread_create} fails during an HTTP connection-pool expansion,
+ * the pool silently stays undersized under load.
  *
- * <p>Compared with the single-selector annotations ({@code ChaosForkEacces}): this wildcard
- * variant fires across every family, making it harder for the application to handle via a
- * single error path — each calling site must be tested. Use single-selector variants to verify
- * one specific error path; use {@code WILDCARD} to verify the application is resilient across
- * all of them simultaneously. Compared with {@link ChaosWildcardEnosys}: {@code EACCES}
- * simulates a policy that exists but forbids the operation; {@code ENOSYS} simulates a kernel
- * that does not implement the syscall at all.
+ * <p>Compared with the single-selector annotations ({@code ChaosForkEacces}): this wildcard variant
+ * fires across every family, making it harder for the application to handle via a single error path
+ * — each calling site must be tested. Use single-selector variants to verify one specific error
+ * path; use {@code WILDCARD} to verify the application is resilient across all of them
+ * simultaneously. Compared with {@link ChaosWildcardEnosys}: {@code EACCES} simulates a policy that
+ * exists but forbids the operation; {@code ENOSYS} simulates a kernel that does not implement the
+ * syscall at all.
  *
  * <h2>Example</h2>
  *
@@ -116,8 +116,9 @@ import com.macstab.chaos.process.model.ProcessSelector;
  *
  * <p><strong>Probability guidance:</strong> {@code 1e-4} to {@code 1e-3} — higher values will
  * typically block container startup since the init sequence itself spawns threads.
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default
- * empty string applies to every process-chaos-capable container in the test class.
+ *
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
+ * string applies to every process-chaos-capable container in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see com.macstab.chaos.process.model.ProcessRule#errno(ProcessSelector, ProcessErrno, double)

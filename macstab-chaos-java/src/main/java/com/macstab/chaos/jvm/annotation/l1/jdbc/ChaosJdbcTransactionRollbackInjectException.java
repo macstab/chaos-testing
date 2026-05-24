@@ -14,10 +14,9 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Intercepts {@code Connection.rollback()} and throws the configured exception before the
- * rollback command is sent to the database, simulating a failed rollback that leaves the
- * connection in an unknown state and exercises the most deeply nested error-recovery paths
- * in JDBC-using frameworks.
+ * Intercepts {@code Connection.rollback()} and throws the configured exception before the rollback
+ * command is sent to the database, simulating a failed rollback that leaves the connection in an
+ * unknown state and exercises the most deeply nested error-recovery paths in JDBC-using frameworks.
  *
  * <h2>What this annotation is</h2>
  *
@@ -42,16 +41,16 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>The rollback itself throws an exception; Spring's {@code DataSourceTransactionManager}
- *       catches it in the rollback path and — depending on version — may swallow it or re-throw
- *       it as {@code TransactionSystemException}; assert which behaviour the application relies on.
- *   <li>HikariCP will evict the connection from the pool when rollback fails (the pool calls
- *       {@code isValid()} on exception and evicts the connection if the check fails); assert
- *       that the pool size shrinks and that the pool replenishes correctly.
+ *       catches it in the rollback path and — depending on version — may swallow it or re-throw it
+ *       as {@code TransactionSystemException}; assert which behaviour the application relies on.
+ *   <li>HikariCP will evict the connection from the pool when rollback fails (the pool calls {@code
+ *       isValid()} on exception and evicts the connection if the check fails); assert that the pool
+ *       size shrinks and that the pool replenishes correctly.
  *   <li>The original business exception (which triggered the rollback) may be masked by the
- *       rollback exception; assert that error logging captures both the business exception and
- *       the rollback exception so operators can diagnose the root cause.
- *   <li><strong>Production failure mode:</strong> a database reboot causes all open connections
- *       to drop; the application's exception handlers call rollback on broken connections, the
+ *       rollback exception; assert that error logging captures both the business exception and the
+ *       rollback exception so operators can diagnose the root cause.
+ *   <li><strong>Production failure mode:</strong> a database reboot causes all open connections to
+ *       drop; the application's exception handlers call rollback on broken connections, the
  *       rollback throws {@code SQLException: connection closed}, the pool evicts all connections
  *       simultaneously, and the pool's connection-creation logic hammers the restarting database
  *       with reconnect attempts — a reconnect storm layered on top of the original restart.
@@ -60,33 +59,33 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Deep technical dive</h2>
  *
  * <p>A rollback failure is exceptional in production because rollback is called in error-handling
- * paths that already assume something went wrong. Most application code does not have a
- * try-catch around rollback; a thrown exception here propagates up through the transaction
- * manager's finally block, potentially masking the original exception that caused the rollback.
- * Java's exception masking rule means the original exception is attached as a suppressed exception,
- * not as the cause — verify that the application's logging or error-tracking tool surfaces both.
+ * paths that already assume something went wrong. Most application code does not have a try-catch
+ * around rollback; a thrown exception here propagates up through the transaction manager's finally
+ * block, potentially masking the original exception that caused the rollback. Java's exception
+ * masking rule means the original exception is attached as a suppressed exception, not as the cause
+ * — verify that the application's logging or error-tracking tool surfaces both.
  *
  * <p>Spring's {@code DataSourceTransactionManager.doRollback()} wraps the rollback in a try-catch
  * and calls {@code triggerAfterCompletion(status, ROLLBACK_FAILED)} on all registered
- * synchronizations. A failing rollback means the database connection is in an unknown state;
- * Spring marks the connection as damaged and calls {@code DataSourceUtils.releaseConnection()},
- * which asks the pool to close (not return) the connection. HikariCP then removes the connection
- * from its internal bag and schedules pool replenishment.
+ * synchronizations. A failing rollback means the database connection is in an unknown state; Spring
+ * marks the connection as damaged and calls {@code DataSourceUtils.releaseConnection()}, which asks
+ * the pool to close (not return) the connection. HikariCP then removes the connection from its
+ * internal bag and schedules pool replenishment.
  *
  * <p>Hibernate's {@code SessionImpl}: if rollback fails, Hibernate does not attempt to re-use the
- * session. The {@code Session} is closed in its finally block regardless of rollback success;
- * the {@code EntityManager} is invalidated. Any subsequent call to the same {@code EntityManager}
+ * session. The {@code Session} is closed in its finally block regardless of rollback success; the
+ * {@code EntityManager} is invalidated. Any subsequent call to the same {@code EntityManager}
  * throws {@code IllegalStateException: Session is closed}.
  *
  * <p>This annotation is most useful combined with {@link ChaosJdbcTransactionCommitInjectException}
- * in a single test class using different probabilities: some transactions fail at commit, some
- * also fail at rollback, creating a full matrix of transaction lifecycle failure scenarios that
- * expose gaps in exception-handling coverage.
+ * in a single test class using different probabilities: some transactions fail at commit, some also
+ * fail at rollback, creating a full matrix of transaction lifecycle failure scenarios that expose
+ * gaps in exception-handling coverage.
  *
- * <p>The most realistic injected exception class is {@code java.sql.SQLRecoverableException},
- * which is what most JDBC drivers throw when the connection is lost. Using
- * {@code java.sql.SQLNonTransientException} tests the path where the application gives up
- * rather than retrying.
+ * <p>The most realistic injected exception class is {@code java.sql.SQLRecoverableException}, which
+ * is what most JDBC drivers throw when the connection is lost. Using {@code
+ * java.sql.SQLNonTransientException} tests the path where the application gives up rather than
+ * retrying.
  *
  * <h2>Example</h2>
  *
@@ -110,8 +109,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

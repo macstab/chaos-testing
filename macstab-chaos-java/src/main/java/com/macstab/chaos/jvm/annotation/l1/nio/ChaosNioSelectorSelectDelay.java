@@ -14,9 +14,9 @@ import com.macstab.chaos.jvm.api.OperationType;
 
 /**
  * Intercepts {@code Selector.select()} and holds the calling thread for {@link #delayMs()}
- * milliseconds before the selector polls the OS for I/O readiness, inflating the total time
- * between consecutive event-loop iterations and simulating a sluggish or overloaded NIO event
- * loop in Netty, Undertow, or any framework that drives channels via a {@code java.nio.Selector}.
+ * milliseconds before the selector polls the OS for I/O readiness, inflating the total time between
+ * consecutive event-loop iterations and simulating a sluggish or overloaded NIO event loop in
+ * Netty, Undertow, or any framework that drives channels via a {@code java.nio.Selector}.
  *
  * <h2>What this annotation is</h2>
  *
@@ -28,11 +28,11 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>Before every call to {@code java.nio.channels.Selector#select()} or
- *       {@code Selector#select(long)} inside the target container's JVM, the chaos agent
- *       intercepts the calling thread.
- *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()},
- *       {@link #maxDelayMs()}]; equal values produce a deterministic delay.
+ *   <li>Before every call to {@code java.nio.channels.Selector#select()} or {@code
+ *       Selector#select(long)} inside the target container's JVM, the chaos agent intercepts the
+ *       calling thread.
+ *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()}, {@link
+ *       #maxDelayMs()}]; equal values produce a deterministic delay.
  *   <li>Control returns and the underlying {@code select()} executes normally, blocking until at
  *       least one channel is ready or the specified timeout expires.
  * </ol>
@@ -40,16 +40,16 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>Every event-loop iteration is delayed by at least {@link #delayMs()} ms; all I/O
- *       operations — reads, writes, accepts, connects — are deferred; assert that the
- *       application's response latency at the 99th percentile increases by approximately the
- *       configured delay and that latency SLO alerting fires.
- *   <li>Netty's {@code DefaultEventLoop.runAllTasks()} processes scheduled tasks after each
- *       {@code select()}; with a delayed select, scheduled timers (e.g. heartbeat sends,
- *       {@code IdleStateHandler} checks) fire late; assert that the application tolerates
- *       over-due timer execution without cascading disconnections.
- *   <li>The selector delay stacks with the actual I/O operation time: a 100 ms select delay plus
- *       a 50 ms read delay means each read takes 150 ms from the kernel's perspective; assert that
+ *   <li>Every event-loop iteration is delayed by at least {@link #delayMs()} ms; all I/O operations
+ *       — reads, writes, accepts, connects — are deferred; assert that the application's response
+ *       latency at the 99th percentile increases by approximately the configured delay and that
+ *       latency SLO alerting fires.
+ *   <li>Netty's {@code DefaultEventLoop.runAllTasks()} processes scheduled tasks after each {@code
+ *       select()}; with a delayed select, scheduled timers (e.g. heartbeat sends, {@code
+ *       IdleStateHandler} checks) fire late; assert that the application tolerates over-due timer
+ *       execution without cascading disconnections.
+ *   <li>The selector delay stacks with the actual I/O operation time: a 100 ms select delay plus a
+ *       50 ms read delay means each read takes 150 ms from the kernel's perspective; assert that
  *       the application's end-to-end timeout is set higher than the sum of all injected delays.
  *   <li><strong>Production failure mode:</strong> a CPU steal spike on a cloud VM (due to a noisy
  *       neighbour) reduces the event loop's share of CPU time; each {@code select()} call blocks
@@ -62,29 +62,28 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Deep technical dive</h2>
  *
  * <p>The interception targets {@code sun.nio.ch.SelectorImpl#select(long)}, the JDK's internal
- * implementation of the {@code Selector} class. On Linux, {@code SelectorImpl} delegates to
- * {@code EPollSelectorImpl}, which calls {@code epoll_wait(2)} with the specified timeout. On
- * macOS, it delegates to {@code KQueueSelectorImpl} and {@code kevent(2)}. The chaos delay fires
- * before the OS-level syscall, adding to the time before the event loop knows which channels are
- * ready.
+ * implementation of the {@code Selector} class. On Linux, {@code SelectorImpl} delegates to {@code
+ * EPollSelectorImpl}, which calls {@code epoll_wait(2)} with the specified timeout. On macOS, it
+ * delegates to {@code KQueueSelectorImpl} and {@code kevent(2)}. The chaos delay fires before the
+ * OS-level syscall, adding to the time before the event loop knows which channels are ready.
  *
  * <p>Netty's {@code NioEventLoop} drives its select loop via {@code select(timeoutMillis)} where
  * the timeout is calculated from the next scheduled task deadline. The chaos delay lengthens the
- * effective timeout as seen by the event loop, causing scheduled tasks to fire up to
- * {@code delayMs} milliseconds late. If the delay exceeds the next task deadline, the task runs
+ * effective timeout as seen by the event loop, causing scheduled tasks to fire up to {@code
+ * delayMs} milliseconds late. If the delay exceeds the next task deadline, the task runs
  * immediately after select completes but is already past its scheduled time, simulating a
  * persistently overloaded event loop.
  *
- * <p>Netty's selector rebuild logic (the JDK epoll bug workaround in
- * {@code NioEventLoop.rebuildSelector()}) counts the number of consecutive spurious wakeups. The
- * select delay causes legitimate wakeups to be slow, not spurious; the rebuild logic does not
- * trigger. This distinguishes a delay from a spurious wakeup — see
- * {@link ChaosNioSelectorSelectSpuriousWakeup} for the spurious variant.
+ * <p>Netty's selector rebuild logic (the JDK epoll bug workaround in {@code
+ * NioEventLoop.rebuildSelector()}) counts the number of consecutive spurious wakeups. The select
+ * delay causes legitimate wakeups to be slow, not spurious; the rebuild logic does not trigger.
+ * This distinguishes a delay from a spurious wakeup — see {@link
+ * ChaosNioSelectorSelectSpuriousWakeup} for the spurious variant.
  *
- * <p>The delay affects all channels registered on the same selector, not just a specific one.
- * In Netty's default configuration each worker event loop manages one selector; all channels
- * assigned to that worker are affected uniformly. Combining multiple worker threads means only
- * the channels assigned to the delayed selector's worker thread experience the fault.
+ * <p>The delay affects all channels registered on the same selector, not just a specific one. In
+ * Netty's default configuration each worker event loop manages one selector; all channels assigned
+ * to that worker are affected uniformly. Combining multiple worker threads means only the channels
+ * assigned to the delayed selector's worker thread experience the fault.
  *
  * <h2>Example</h2>
  *
@@ -105,8 +104,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

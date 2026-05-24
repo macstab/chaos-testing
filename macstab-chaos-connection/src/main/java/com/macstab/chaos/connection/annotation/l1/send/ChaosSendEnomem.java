@@ -14,41 +14,41 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code ENOMEM} into {@code send(2)}, causing the call to return {@code -1} with
- * {@code errno = ENOMEM} as if the kernel's memory allocator failed to allocate the internal
- * socket buffer structures needed to queue the outgoing data for transmission.
+ * Injects {@code ENOMEM} into {@code send(2)}, causing the call to return {@code -1} with {@code
+ * errno = ENOMEM} as if the kernel's memory allocator failed to allocate the internal socket buffer
+ * structures needed to queue the outgoing data for transmission.
  *
  * <h2>What this annotation is</h2>
  *
  * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code SEND}, errno = {@code ENOMEM})
- * tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted
- * {@code send} call; when it fires the interposer returns {@code -1} with {@code errno = ENOMEM}
- * without performing any real kernel operation. No runtime operation-errno validation is needed.
+ * tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted {@code
+ * send} call; when it fires the interposer returns {@code -1} with {@code errno = ENOMEM} without
+ * performing any real kernel operation. No runtime operation-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
- *       extension to upload {@code libchaos-net.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
- *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
- *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
- *       {@code poll} at the dynamic-linker level.
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket}, {@code
+ *       bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and {@code poll} at
+ *       the dynamic-linker level.
  *   <li>On each intercepted {@code send} call a Bernoulli trial with probability {@link #toxicity}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = ENOMEM}.
+ *       is conducted; when it fires the interposer returns {@code -1} and sets {@code errno =
+ *       ENOMEM}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
  *   <li>{@code ENOMEM} from {@code send} indicates global kernel memory exhaustion rather than a
- *       per-socket buffer condition; unlike {@code ENOBUFS} (buffer pool exhausted) or
- *       {@code EAGAIN} (send buffer full), {@code ENOMEM} signals that the kernel's slab allocator
- *       could not satisfy an allocation request at the socket layer.
- *   <li>The connection is not necessarily broken by {@code ENOMEM}: the socket remains valid and
- *       a subsequent {@code send} may succeed if kernel memory pressure is relieved. Assert that
- *       the application does not close the socket on receipt of {@code ENOMEM}.
+ *       per-socket buffer condition; unlike {@code ENOBUFS} (buffer pool exhausted) or {@code
+ *       EAGAIN} (send buffer full), {@code ENOMEM} signals that the kernel's slab allocator could
+ *       not satisfy an allocation request at the socket layer.
+ *   <li>The connection is not necessarily broken by {@code ENOMEM}: the socket remains valid and a
+ *       subsequent {@code send} may succeed if kernel memory pressure is relieved. Assert that the
+ *       application does not close the socket on receipt of {@code ENOMEM}.
  *   <li>Assert that the application backs off and retries with exponential delay rather than
  *       spinning in a tight retry loop, which would worsen kernel memory pressure.
  *   <li>Assert that the application emits a kernel memory pressure event or metric, enabling
@@ -57,37 +57,36 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <p>In production, {@code ENOMEM} from {@code send} occurs during severe kernel memory pressure,
  * typically when the container's cgroup memory limit is nearly exhausted and kernel slab caches
- * cannot grow to satisfy new network buffer allocations. It is distinct from user-space
- * {@code OutOfMemoryError}: the JVM heap may be healthy while the kernel's memory is exhausted.
+ * cannot grow to satisfy new network buffer allocations. It is distinct from user-space {@code
+ * OutOfMemoryError}: the JVM heap may be healthy while the kernel's memory is exhausted.
  *
  * <h2>Deep technical dive</h2>
  *
  * <p>The kernel's network stack calls {@code sock_wmalloc()} or {@code sk_stream_alloc_skb()} to
- * allocate an {@code sk_buff} structure to hold the outgoing data. These allocators call
- * {@code kmalloc()} or {@code alloc_skb()} internally; when the slab allocator returns NULL (due
- * to memory pressure), the network stack propagates {@code ENOMEM} up to the {@code send} syscall.
- * Unlike {@code ENOBUFS}, which is returned by the socket layer's per-protocol buffer accounting,
- * {@code ENOMEM} is returned by the general-purpose kernel memory allocator.
+ * allocate an {@code sk_buff} structure to hold the outgoing data. These allocators call {@code
+ * kmalloc()} or {@code alloc_skb()} internally; when the slab allocator returns NULL (due to memory
+ * pressure), the network stack propagates {@code ENOMEM} up to the {@code send} syscall. Unlike
+ * {@code ENOBUFS}, which is returned by the socket layer's per-protocol buffer accounting, {@code
+ * ENOMEM} is returned by the general-purpose kernel memory allocator.
  *
  * <p>The distinction between {@code ENOMEM} and {@code ENOBUFS} is subtle but important: both
- * indicate kernel memory pressure, but {@code ENOBUFS} is returned by the socket's own buffer
- * quota system (tracked per socket via {@code sk_wmem_alloc}), while {@code ENOMEM} is returned
- * when the underlying slab allocator fails regardless of per-socket quotas. In practice,
- * {@code ENOBUFS} is more common on send paths; {@code ENOMEM} appears only under severe
- * system-wide memory pressure.
+ * indicate kernel memory pressure, but {@code ENOBUFS} is returned by the socket's own buffer quota
+ * system (tracked per socket via {@code sk_wmem_alloc}), while {@code ENOMEM} is returned when the
+ * underlying slab allocator fails regardless of per-socket quotas. In practice, {@code ENOBUFS} is
+ * more common on send paths; {@code ENOMEM} appears only under severe system-wide memory pressure.
  *
  * <p>Java maps {@code ENOMEM} from {@code send} to a {@code SocketException} with the message
  * "Cannot allocate memory". This message is generated by {@code strerror(ENOMEM)} in glibc;
  * application code that inspects the exception message to identify the error should be aware that
  * the message text varies across operating systems and glibc versions. The JVM heap remains
- * unaffected — the error originates in kernel space and does not trigger a JVM
- * {@code OutOfMemoryError}.
+ * unaffected — the error originates in kernel space and does not trigger a JVM {@code
+ * OutOfMemoryError}.
  *
  * <p>Containers running under strict cgroup memory limits are particularly susceptible to this
  * condition during traffic spikes: when the JVM's GC pressure causes the operating system to
- * reclaim page cache, kernel slab allocations for network buffers may start failing. Tuning
- * {@code vm.min_free_kbytes} and the container memory limit to leave headroom for kernel slab
- * caches is the standard mitigation.
+ * reclaim page cache, kernel slab allocations for network buffers may start failing. Tuning {@code
+ * vm.min_free_kbytes} and the container memory limit to leave headroom for kernel slab caches is
+ * the standard mitigation.
  *
  * <h2>Example</h2>
  *

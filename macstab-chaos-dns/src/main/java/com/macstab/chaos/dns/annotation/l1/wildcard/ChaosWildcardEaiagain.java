@@ -14,29 +14,28 @@ import com.macstab.chaos.dns.annotation.l1.DnsSelectorKind;
 import com.macstab.chaos.dns.model.EaiErrno;
 
 /**
- * Injects {@code EAI_AGAIN} into both {@code getaddrinfo(3)} (forward lookup) and
- * {@code getnameinfo(3)} (reverse lookup), causing every DNS resolver call to return
- * {@code EAI_AGAIN} as if the resolver reported a temporary failure.
+ * Injects {@code EAI_AGAIN} into both {@code getaddrinfo(3)} (forward lookup) and {@code
+ * getnameinfo(3)} (reverse lookup), causing every DNS resolver call to return {@code EAI_AGAIN} as
+ * if the resolver reported a temporary failure.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (selectorKind = {@code WILDCARD}, errno =
- * {@code EAI_AGAIN}) tuple. The {@code WILDCARD} selector matches both interposed DNS calls
- * simultaneously — equivalent to applying {@link ChaosForwardEaiagain} and
- * {@link ChaosReverseEaiagain} in a single annotation. This annotation always fires on every
- * intercepted DNS call — there is no per-call probability field. No runtime selector-errno
- * validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (selectorKind = {@code WILDCARD}, errno = {@code
+ * EAI_AGAIN}) tuple. The {@code WILDCARD} selector matches both interposed DNS calls simultaneously
+ * — equivalent to applying {@link ChaosForwardEaiagain} and {@link ChaosReverseEaiagain} in a
+ * single annotation. This annotation always fires on every intercepted DNS call — there is no
+ * per-call probability field. No runtime selector-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.DNS)} on the container definition causes the
- *       extension to upload {@code libchaos-dns.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-dns.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code getaddrinfo(3)} and {@code getnameinfo(3)} at the
  *       dynamic-linker level.
- *   <li>On every intercepted call to either function the interposer immediately returns
- *       {@code EAI_AGAIN} without performing any real resolver query.
+ *   <li>On every intercepted call to either function the interposer immediately returns {@code
+ *       EAI_AGAIN} without performing any real resolver query.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -45,8 +44,8 @@ import com.macstab.chaos.dns.model.EaiErrno;
  *   <li>Both forward and reverse DNS resolution fail transiently on every call; the application
  *       must implement DNS retry with back-off for forward lookups and fall back to raw IP
  *       addresses for reverse lookups.
- *   <li>Connection establishment fails because forward resolution cannot complete; connection
- *       pools that rely on DNS for endpoint discovery will not be able to acquire new connections.
+ *   <li>Connection establishment fails because forward resolution cannot complete; connection pools
+ *       that rely on DNS for endpoint discovery will not be able to acquire new connections.
  *   <li>Observability and security components that perform reverse lookups will also fail; assert
  *       that these components degrade independently from the main connection path.
  *   <li>Assert that the application's retry strategy for forward DNS does not block the reverse
@@ -54,23 +53,22 @@ import com.macstab.chaos.dns.model.EaiErrno;
  * </ul>
  *
  * <p>In production, simultaneous {@code EAI_AGAIN} on both forward and reverse lookups occurs
- * during complete DNS infrastructure outages — CoreDNS crashes, network partitions that isolate
- * the container from its configured nameservers, or DNS amplification attacks that saturate the
+ * during complete DNS infrastructure outages — CoreDNS crashes, network partitions that isolate the
+ * container from its configured nameservers, or DNS amplification attacks that saturate the
  * resolver.
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>The {@code WILDCARD} selector applies {@code EAI_AGAIN} to both {@code getaddrinfo} and
- * {@code getnameinfo} simultaneously. This is the most aggressive DNS chaos primitive: it removes
- * both hostname-to-address and address-to-hostname resolution from the application's environment.
- * Code that relies on either form of DNS will fail, including connection establishment, peer
- * validation, access logging, and distributed tracing enrichment.
+ * <p>The {@code WILDCARD} selector applies {@code EAI_AGAIN} to both {@code getaddrinfo} and {@code
+ * getnameinfo} simultaneously. This is the most aggressive DNS chaos primitive: it removes both
+ * hostname-to-address and address-to-hostname resolution from the application's environment. Code
+ * that relies on either form of DNS will fail, including connection establishment, peer validation,
+ * access logging, and distributed tracing enrichment.
  *
  * <p>Applications with asynchronous DNS resolution (Netty's {@code DnsNameResolver}, c-ares) will
  * receive {@code EAI_AGAIN} in their completion callbacks, which must correctly signal failure to
- * waiting callers rather than silently dropping the resolution result. This injection exercises
- * the full async failure path without requiring a DNS infrastructure failure in the test
- * environment.
+ * waiting callers rather than silently dropping the resolution result. This injection exercises the
+ * full async failure path without requiring a DNS infrastructure failure in the test environment.
  *
  * <p>Sibling per-call annotations ({@link ChaosForwardEaiagain} and {@link ChaosReverseEaiagain})
  * allow targeted injection to a single resolver call when the forward and reverse failure paths

@@ -15,9 +15,9 @@ import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
  * Injects {@code ENOSYS} ("Function not implemented") into every process-management syscall
- * intercepted by libchaos-process — {@code fork}, {@code execve}, {@code posix_spawn},
- * {@code pthread_create}, {@code waitpid} and their variants — simultaneously, gated by
- * {@link #probability}.
+ * intercepted by libchaos-process — {@code fork}, {@code execve}, {@code posix_spawn}, {@code
+ * pthread_create}, {@code waitpid} and their variants — simultaneously, gated by {@link
+ * #probability}.
  *
  * <h2>What this annotation is</h2>
  *
@@ -32,27 +32,27 @@ import com.macstab.chaos.process.model.ProcessSelector;
  *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
- *       interposing every process-management libc wrapper at the dynamic-linker level.</li>
+ *       interposing every process-management libc wrapper at the dynamic-linker level.
  *   <li>On each intercepted syscall (any of the wildcard family), a Bernoulli trial with
- *       probability {@link #probability} runs.</li>
+ *       probability {@link #probability} runs.
  *   <li>When the trial fires, the interposer sets {@code errno = ENOSYS} and returns {@code -1}
- *       before the real kernel call executes.</li>
- *   <li>The calling code receives the same value it would from a kernel with the syscall blocked
- *       by seccomp: {@code fork()} returns {@code -1}, {@code pthread_create} returns {@code ENOSYS},
- *       {@code execve} returns {@code -1 / ENOSYS}.</li>
+ *       before the real kernel call executes.
+ *   <li>The calling code receives the same value it would from a kernel with the syscall blocked by
+ *       seccomp: {@code fork()} returns {@code -1}, {@code pthread_create} returns {@code ENOSYS},
+ *       {@code execve} returns {@code -1 / ENOSYS}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
  *   <li>{@code fork()} returns {@code -1} with {@code errno = ENOSYS}; {@code strerror} yields
- *       "Function not implemented".</li>
- *   <li>{@code pthread_create} returns {@code ENOSYS} directly (POSIX thread API returns the
- *       errno as a value rather than setting the global).</li>
+ *       "Function not implemented".
+ *   <li>{@code pthread_create} returns {@code ENOSYS} directly (POSIX thread API returns the errno
+ *       as a value rather than setting the global).
  *   <li>{@code execve} / {@code posix_spawn} return {@code -1 / ENOSYS}; child process is never
- *       created.</li>
+ *       created.
  *   <li>Application frameworks that spawn threads or child processes should surface error logs or
- *       graceful-degradation behaviour — assert those rather than raw return codes.</li>
+ *       graceful-degradation behaviour — assert those rather than raw return codes.
  * </ul>
  *
  * <p><strong>Production failure mode:</strong> a container deployed on a hardened kernel with a
@@ -62,22 +62,22 @@ import com.macstab.chaos.process.model.ProcessSelector;
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>{@code ENOSYS} is the kernel's way of saying it does not support the syscall number at all.
- * On Linux this happens most commonly with seccomp-BPF policies that return {@code ENOSYS} rather
- * than {@code EPERM} (to avoid leaking information about whether the syscall exists), with WSL1
- * which does not implement the full Linux syscall table, and with QEMU user-mode emulation of
+ * <p>{@code ENOSYS} is the kernel's way of saying it does not support the syscall number at all. On
+ * Linux this happens most commonly with seccomp-BPF policies that return {@code ENOSYS} rather than
+ * {@code EPERM} (to avoid leaking information about whether the syscall exists), with WSL1 which
+ * does not implement the full Linux syscall table, and with QEMU user-mode emulation of
  * cross-architecture binaries where the host kernel lacks a translated syscall.
  *
  * <p>The wildcard selector is the highest-blast-radius L1 in the process module — it fires across
  * all syscall families simultaneously. Even at low probabilities, a single fired trial blocks the
- * entire process lifecycle: if {@code fork} returns {@code ENOSYS} during a worker-pool resize,
- * the pool silently stays undersized; if {@code pthread_create} fails, a background reaper thread
- * is never started, causing zombie accumulation.
+ * entire process lifecycle: if {@code fork} returns {@code ENOSYS} during a worker-pool resize, the
+ * pool silently stays undersized; if {@code pthread_create} fails, a background reaper thread is
+ * never started, causing zombie accumulation.
  *
- * <p>Unlike {@code EAGAIN} (retry may succeed) or {@code ENOMEM} (free memory and retry),
- * {@code ENOSYS} is permanent and non-retriable — no amount of resource management will make the
- * syscall available. Applications that distinguish {@code ENOSYS} from other errnos and degrade
- * gracefully are significantly more portable to restricted deployment environments.
+ * <p>Unlike {@code EAGAIN} (retry may succeed) or {@code ENOMEM} (free memory and retry), {@code
+ * ENOSYS} is permanent and non-retriable — no amount of resource management will make the syscall
+ * available. Applications that distinguish {@code ENOSYS} from other errnos and degrade gracefully
+ * are significantly more portable to restricted deployment environments.
  *
  * <p>Compared with the single-selector wildcards ({@code ChaosWildcardEacces}): {@code ENOSYS}
  * simulates a missing kernel feature, while {@code EACCES} simulates a present but forbidden one.
@@ -102,8 +102,9 @@ import com.macstab.chaos.process.model.ProcessSelector;
  *
  * <p><strong>Probability guidance:</strong> {@code 1e-4} to {@code 1e-3} — higher values will
  * typically block container startup since the init sequence itself spawns threads.
- * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default
- * empty string applies to every process-chaos-capable container in the test class.
+ *
+ * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container; the default empty
+ * string applies to every process-chaos-capable container in the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see com.macstab.chaos.process.model.ProcessRule#errno(ProcessSelector, ProcessErrno, double)

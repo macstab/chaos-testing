@@ -19,64 +19,69 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * with an invalid {@code pthread_attr_t}.
  *
  * <h2>What this annotation is</h2>
+ *
  * L1 libchaos-process primitive — one (selector = {@code PTHREAD_CREATE}, errno = {@code EINVAL})
  * tuple. The {@code PTHREAD_CREATE} selector intercepts {@code pthread_create} calls only, leaving
- * {@code fork}, {@code posix_spawn}, and all other process syscalls unaffected. Compile-time safety:
- * invalid selector/errno combinations have no annotation class.
+ * {@code fork}, {@code posix_spawn}, and all other process syscalls unaffected. Compile-time
+ * safety: invalid selector/errno combinations have no annotation class.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
- *       interposing the libc {@code pthread_create} wrapper at the dynamic-linker level.</li>
+ *       interposing the libc {@code pthread_create} wrapper at the dynamic-linker level.
  *   <li>On each {@code pthread_create} call the interposer runs a Bernoulli trial with probability
- *       {@link #probability}.</li>
+ *       {@link #probability}.
  *   <li>When the trial fires, the interposer returns {@code EINVAL} directly (pthread_create
- *       returns the error code, not -1; it does not set errno).</li>
- *   <li>The calling code receives: return value {@code EINVAL} (22),
- *       {@code strerror(EINVAL)}: "Invalid argument"; the {@code pthread_attr_t} attribute object
- *       contains an invalid setting; no thread is created.</li>
+ *       returns the error code, not -1; it does not set errno).
+ *   <li>The calling code receives: return value {@code EINVAL} (22), {@code strerror(EINVAL)}:
+ *       "Invalid argument"; the {@code pthread_attr_t} attribute object contains an invalid
+ *       setting; no thread is created.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
  *   <li>{@code pthread_create} returns {@code EINVAL}; no thread is created; assert that the
  *       application treats EINVAL as a non-retryable programming error — the thread attribute
- *       structure contains an invalid value that must be fixed in code, not retried.</li>
+ *       structure contains an invalid value that must be fixed in code, not retried.
  *   <li>Applications that build {@code pthread_attr_t} structures dynamically (from configuration
  *       or serialised state) must validate the attribute before calling pthread_create — assert
  *       that EINVAL from pthread_create triggers a diagnostic that includes the stack size,
- *       scheduling policy, guard size, and detach state for operator debugging.</li>
- *   <li>Assert that the application does not retry on EINVAL; do not apply exponential backoff to
- *       a programming error that will reproduce identically on every attempt with the same
- *       attribute structure.</li>
+ *       scheduling policy, guard size, and detach state for operator debugging.
+ *   <li>Assert that the application does not retry on EINVAL; do not apply exponential backoff to a
+ *       programming error that will reproduce identically on every attempt with the same attribute
+ *       structure.
  * </ul>
+ *
  * Production failure mode: a thread pool uses a serialisation framework to persist and restore its
  * configuration including {@code pthread_attr_t} parameters; a version upgrade changes the encoding
- * of a scheduling policy field, producing an attribute structure that NPTL rejects with EINVAL;
- * the pool does not log the attribute values on failure, making root cause analysis require
- * reproducing the exact serialised configuration.
+ * of a scheduling policy field, producing an attribute structure that NPTL rejects with EINVAL; the
+ * pool does not log the attribute values on failure, making root cause analysis require reproducing
+ * the exact serialised configuration.
  *
  * <h2>Deep technical dive</h2>
- * <p>{@code EINVAL} from {@code pthread_create} is returned when the {@code attr} argument
- * contains an invalid value. Sources include: stack size smaller than {@code PTHREAD_STACK_MIN}
- * (typically 16384 bytes); stack size not a multiple of the system page size in some
- * implementations; invalid scheduling policy (not SCHED_OTHER, SCHED_FIFO, or SCHED_RR); scheduling
- * priority out of range for the policy; invalid guard size; detach state not PTHREAD_CREATE_JOINABLE
- * or PTHREAD_CREATE_DETACHED. If {@code attr} is {@code NULL}, pthread_create uses default
- * attributes and EINVAL cannot be returned from attribute validation.
+ *
+ * <p>{@code EINVAL} from {@code pthread_create} is returned when the {@code attr} argument contains
+ * an invalid value. Sources include: stack size smaller than {@code PTHREAD_STACK_MIN} (typically
+ * 16384 bytes); stack size not a multiple of the system page size in some implementations; invalid
+ * scheduling policy (not SCHED_OTHER, SCHED_FIFO, or SCHED_RR); scheduling priority out of range
+ * for the policy; invalid guard size; detach state not PTHREAD_CREATE_JOINABLE or
+ * PTHREAD_CREATE_DETACHED. If {@code attr} is {@code NULL}, pthread_create uses default attributes
+ * and EINVAL cannot be returned from attribute validation.
  *
  * <p>pthread_create follows the POSIX error-return convention for thread functions: it returns the
- * error code directly (not -1) and does not set {@code errno}. Code that checks
- * {@code if (ret == -1)} or {@code if (errno == EINVAL)} after pthread_create silently misses
- * EINVAL (22). Code that tests {@code if (ret != 0)} is correct. EINVAL (22) and EAGAIN (11)
- * require different responses: EINVAL is a non-retryable attribute configuration error; EAGAIN is
- * a transient resource shortage that warrants retry.
+ * error code directly (not -1) and does not set {@code errno}. Code that checks {@code if (ret ==
+ * -1)} or {@code if (errno == EINVAL)} after pthread_create silently misses EINVAL (22). Code that
+ * tests {@code if (ret != 0)} is correct. EINVAL (22) and EAGAIN (11) require different responses:
+ * EINVAL is a non-retryable attribute configuration error; EAGAIN is a transient resource shortage
+ * that warrants retry.
  *
  * <p>A common source of EINVAL in containerised applications is custom thread attribute builders
  * that compute stack size from a configured value without clamping to PTHREAD_STACK_MIN. A
- * configuration change that reduces the requested stack size below the minimum produces a
- * permanent EINVAL on every subsequent thread creation, which causes thread pools to fail to
- * expand under load at exactly the moment when expansion is most needed.
+ * configuration change that reduces the requested stack size below the minimum produces a permanent
+ * EINVAL on every subsequent thread creation, which causes thread pools to fail to expand under
+ * load at exactly the moment when expansion is most needed.
  *
  * <p>EINVAL from pthread_create also fires when the scheduling policy or priority is incompatible
  * with the process's privilege level — for example, requesting SCHED_FIFO in a thread attribute
@@ -99,11 +104,12 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2; EINVAL is a configuration error;
- * any non-zero probability exercises the non-retryable error diagnostic path.
+ * <p><strong>Probability guidance:</strong> 1e-3 to 1e-2; EINVAL is a configuration error; any
+ * non-zero probability exercises the non-retryable error diagnostic path.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every process-chaos-capable container
- * in the test class.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container in
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ProcessErrnoBinding

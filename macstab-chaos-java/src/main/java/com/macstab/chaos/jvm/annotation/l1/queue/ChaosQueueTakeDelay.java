@@ -20,10 +20,10 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <h2>What this annotation is</h2>
  *
- * <p>An L1 JVM chaos primitive in the {@code QUEUE} selector family targeting the {@code QUEUE_TAKE}
- * operation with the {@code delay} effect. It intercepts every blocking {@code take()} call on
- * {@code BlockingQueue} implementations in the container JVM and parks the consuming thread for
- * the configured duration before allowing the take to proceed. After the sleep, {@code take()}
+ * <p>An L1 JVM chaos primitive in the {@code QUEUE} selector family targeting the {@code
+ * QUEUE_TAKE} operation with the {@code delay} effect. It intercepts every blocking {@code take()}
+ * call on {@code BlockingQueue} implementations in the container JVM and parks the consuming thread
+ * for the configured duration before allowing the take to proceed. After the sleep, {@code take()}
  * executes normally — it blocks until an item is available and then returns the head item.
  *
  * <p>The net effect is that the consumer drains the queue {@link #delayMs} ms slower per item,
@@ -37,8 +37,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ol>
  *   <li>The interceptor is entered on the consuming thread before the queue's lock is acquired.
- *   <li>The delay effect calls {@code Thread.sleep(delayMs)} (or a random value in {@code
- *       [delayMs, maxDelayMs]}), parking the thread.
+ *   <li>The delay effect calls {@code Thread.sleep(delayMs)} (or a random value in {@code [delayMs,
+ *       maxDelayMs]}), parking the thread.
  *   <li>After the sleep, the original {@code take()} body executes: the lock is acquired, the
  *       thread waits for an item if the queue is empty, and the head item is removed and returned.
  * </ol>
@@ -46,14 +46,14 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>{@code queue.take()} returns the correct head item, but takes at least {@link #delayMs}
- *       ms longer than without chaos.
- *   <li>Consumer throughput drops — the consumer can process at most {@code 1000/delayMs} items
- *       per second regardless of queue occupancy.
+ *   <li>{@code queue.take()} returns the correct head item, but takes at least {@link #delayMs} ms
+ *       longer than without chaos.
+ *   <li>Consumer throughput drops — the consumer can process at most {@code 1000/delayMs} items per
+ *       second regardless of queue occupancy.
  *   <li>Producer threads that call {@code put} may start blocking as the queue fills up (because
  *       the consumer is artificially slowed), allowing tests to assert on back-pressure signals.
- *   <li>Any bounded queue configured with an {@code AbortPolicy} or similar will trigger
- *       {@code RejectedExecutionException} earlier than usual once the queue fills.
+ *   <li>Any bounded queue configured with an {@code AbortPolicy} or similar will trigger {@code
+ *       RejectedExecutionException} earlier than usual once the queue fills.
  * </ul>
  *
  * <p><strong>Production failure mode:</strong> a consumer microservice processes events from an
@@ -81,9 +81,9 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p><strong>Distinguishing from siblings.</strong> {@link ChaosQueueTakeGate} blocks until the
  * test explicitly releases the consumer — no auto-release. {@link ChaosQueuePollDelay} targets the
- * non-blocking {@code poll} path. {@link ChaosQueuePollSuppress} makes {@code poll} return
- * {@code null}. This annotation targets the blocking {@code take} path and preserves its
- * correctness while stretching its latency.
+ * non-blocking {@code poll} path. {@link ChaosQueuePollSuppress} makes {@code poll} return {@code
+ * null}. This annotation targets the blocking {@code take} path and preserves its correctness while
+ * stretching its latency.
  *
  * <h2>Example</h2>
  *
@@ -104,7 +104,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java container image — the container must run a JVM process.
  * </ul>

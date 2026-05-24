@@ -20,23 +20,24 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code ALLOCATE}, errno = {@code ENOSPC})
- * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
- * {@code fallocate} call; when it fires the interposer returns {@code -1} with {@code errno = ENOSPC}
- * without performing any real kernel operation. No runtime operation-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code ALLOCATE}, errno = {@code
+ * ENOSPC}) tuple. A Bernoulli trial with probability {@link #probability} is run on each
+ * intercepted {@code fallocate} call; when it fires the interposer returns {@code -1} with {@code
+ * errno = ENOSPC} without performing any real kernel operation. No runtime operation-errno
+ * validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
- *   <li>On each intercepted {@code fallocate} call a Bernoulli trial with probability {@link #probability}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = ENOSPC}, simulating a disk-full condition at pre-allocation time.
+ *   <li>On each intercepted {@code fallocate} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = ENOSPC}, simulating a disk-full condition at pre-allocation time.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -51,9 +52,9 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *       writing without pre-allocation (accepting fragmentation and the risk of mid-write ENOSPC)
  *       or stops accepting new transactions until space is reclaimed.
  *   <li>Applications that pre-allocate large output files before writing must treat {@code ENOSPC}
- *       from {@code fallocate} as an early-warning disk-pressure signal; assert that the application
- *       triggers its disk-space alert path rather than silently falling back to writing without
- *       pre-allocation.
+ *       from {@code fallocate} as an early-warning disk-pressure signal; assert that the
+ *       application triggers its disk-space alert path rather than silently falling back to writing
+ *       without pre-allocation.
  *   <li>Assert that the application's error path on {@code ENOSPC} from {@code fallocate} produces
  *       the same user-visible message as {@code ENOSPC} from a write — both indicate disk full,
  *       regardless of the operation that surfaced it.
@@ -71,21 +72,22 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * <p>{@code fallocate(2)} allocates disk blocks for a file without writing any data. The key
  * benefit over writing zeroes is that the kernel reserves the blocks in the filesystem's allocation
  * bitmap before the application performs any I/O, guaranteeing that subsequent writes to the
- * pre-allocated region will succeed (barring hardware failure). When the filesystem has insufficient
- * free blocks, the kernel returns {@code ENOSPC} immediately without modifying the file.
+ * pre-allocated region will succeed (barring hardware failure). When the filesystem has
+ * insufficient free blocks, the kernel returns {@code ENOSPC} immediately without modifying the
+ * file.
  *
  * <p>On ext4, the block allocator checks the number of free blocks against the requested allocation
  * and the filesystem's reserved-blocks threshold (controlled by {@code tune2fs -m}). If the
- * requested allocation would leave fewer than the reserved threshold, the kernel returns {@code ENOSPC}
- * even when there are technically some free blocks — those blocks are reserved for root-owned
- * processes. An unprivileged service process will see {@code ENOSPC} when the disk is at 95%
- * capacity even though the filesystem reports 5% free.
+ * requested allocation would leave fewer than the reserved threshold, the kernel returns {@code
+ * ENOSPC} even when there are technically some free blocks — those blocks are reserved for
+ * root-owned processes. An unprivileged service process will see {@code ENOSPC} when the disk is at
+ * 95% capacity even though the filesystem reports 5% free.
  *
  * <p>Java's NIO {@code FileChannel} does not directly expose {@code fallocate}. Applications that
  * use native libraries (SQLite via JDBC, RocksDB via JNI, custom file management code) may call
- * {@code fallocate} internally; their JNI bridge typically surfaces {@code ENOSPC} as an
- * {@code IOException} with the message "No space left on device". The JVM itself does not use
- * {@code fallocate} in its standard file I/O implementation.
+ * {@code fallocate} internally; their JNI bridge typically surfaces {@code ENOSPC} as an {@code
+ * IOException} with the message "No space left on device". The JVM itself does not use {@code
+ * fallocate} in its standard file I/O implementation.
  *
  * <h2>Example</h2>
  *

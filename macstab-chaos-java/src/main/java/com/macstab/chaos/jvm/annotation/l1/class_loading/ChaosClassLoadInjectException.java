@@ -41,24 +41,24 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>Spring's {@code AnnotationConfigApplicationContext.refresh()} calls {@code loadClass()}
- *       to load bean classes; an exception here causes {@code BeanDefinitionStoreException}
- *       wrapping the class loading error; the Spring context fails to start; assert that the
- *       application's failure mode is a clean shutdown rather than a hung process.
+ *   <li>Spring's {@code AnnotationConfigApplicationContext.refresh()} calls {@code loadClass()} to
+ *       load bean classes; an exception here causes {@code BeanDefinitionStoreException} wrapping
+ *       the class loading error; the Spring context fails to start; assert that the application's
+ *       failure mode is a clean shutdown rather than a hung process.
  *   <li>Hibernate's entity manager factory initialisation calls {@code loadClass()} to resolve
  *       entity classes declared in {@code persistence.xml} or found via scanning; a failure here
- *       causes {@code PersistenceException: Unable to build Hibernate SessionFactory}; assert
- *       that the JPA container properly propagates the error.
- *   <li>Inject {@code java.lang.ClassNotFoundException} (the natural exception from
- *       {@code loadClass()}) to model a genuinely missing class; inject
- *       {@code java.lang.LinkageError} to model a class that was found but could not be linked
- *       (e.g. incompatible bytecode version or broken class file).
- *   <li><strong>Production failure mode:</strong> a fat JAR is built with a dependency at
- *       version X, but a transitive dependency already includes version Y; the class loader
- *       finds version Y first; the application calls {@code loadClass()} for a class that exists
- *       in version X but not version Y; the resulting {@code ClassNotFoundException} propagates
- *       through many layers of framework initialization before manifesting as an unhelpful error
- *       message about a bean that failed to initialize.
+ *       causes {@code PersistenceException: Unable to build Hibernate SessionFactory}; assert that
+ *       the JPA container properly propagates the error.
+ *   <li>Inject {@code java.lang.ClassNotFoundException} (the natural exception from {@code
+ *       loadClass()}) to model a genuinely missing class; inject {@code java.lang.LinkageError} to
+ *       model a class that was found but could not be linked (e.g. incompatible bytecode version or
+ *       broken class file).
+ *   <li><strong>Production failure mode:</strong> a fat JAR is built with a dependency at version
+ *       X, but a transitive dependency already includes version Y; the class loader finds version Y
+ *       first; the application calls {@code loadClass()} for a class that exists in version X but
+ *       not version Y; the resulting {@code ClassNotFoundException} propagates through many layers
+ *       of framework initialization before manifesting as an unhelpful error message about a bean
+ *       that failed to initialize.
  * </ul>
  *
  * <h2>Deep technical dive</h2>
@@ -70,18 +70,18 @@ import com.macstab.chaos.jvm.api.OperationType;
  * fires before any lock acquisition.
  *
  * <p>When a {@code ClassNotFoundException} propagates from {@code ClassLoader.loadClass()}, callers
- * that used {@code Class.forName()} receive it directly. Callers that used reflection APIs
- * ({@code Method.invoke()}, {@code Field.get()}) receive a {@code NoClassDefFoundError} wrapping
- * the original exception if the class was partially resolved at compile time. These two exception
- * types trigger different handling in frameworks: Spring maps {@code NoClassDefFoundError} to a
- * {@code BeanCreationException}; Jakarta EE containers may treat it as a deployment error.
+ * that used {@code Class.forName()} receive it directly. Callers that used reflection APIs ({@code
+ * Method.invoke()}, {@code Field.get()}) receive a {@code NoClassDefFoundError} wrapping the
+ * original exception if the class was partially resolved at compile time. These two exception types
+ * trigger different handling in frameworks: Spring maps {@code NoClassDefFoundError} to a {@code
+ * BeanCreationException}; Jakarta EE containers may treat it as a deployment error.
  *
- * <p>The JVM caches class loading failures: once a class fails to load, subsequent attempts to
- * load the same class from the same class loader throw {@code NoClassDefFoundError} with the
- * original failure as the cause, even if the underlying cause (the injected exception) is no
- * longer active. This annotation's effect may persist beyond the fault window for specific class
- * names if those names were attempted during the fault and cached as failed — restart the
- * container to clear the class loading failure cache.
+ * <p>The JVM caches class loading failures: once a class fails to load, subsequent attempts to load
+ * the same class from the same class loader throw {@code NoClassDefFoundError} with the original
+ * failure as the cause, even if the underlying cause (the injected exception) is no longer active.
+ * This annotation's effect may persist beyond the fault window for specific class names if those
+ * names were attempted during the fault and cached as failed — restart the container to clear the
+ * class loading failure cache.
  *
  * <h2>Example</h2>
  *
@@ -104,8 +104,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

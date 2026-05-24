@@ -46,8 +46,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>{@code queue.offer(item)} returns {@code false} — every time, as long as the annotation
- *       is active.
+ *   <li>{@code queue.offer(item)} returns {@code false} — every time, as long as the annotation is
+ *       active.
  *   <li>{@code queue.size()} is unchanged after the suppressed offer.
  *   <li>Producer code that checks the return value and applies a drop-on-full policy will silently
  *       drop all items, even if the queue has available capacity.
@@ -59,31 +59,31 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <p><strong>Production failure mode:</strong> an event-driven service writes to an internal
  * bounded queue and drops events when {@code offer} returns {@code false} (correct behaviour under
  * normal back-pressure); during an upstream burst the queue fills and subsequent events are
- * silently dropped — this annotation tests that the downstream consumer detects the drop and
- * emits the correct metrics or triggers a dead-letter queue.
+ * silently dropped — this annotation tests that the downstream consumer detects the drop and emits
+ * the correct metrics or triggers a dead-letter queue.
  *
  * <h2>Deep technical dive</h2>
  *
  * <p><strong>Interception point.</strong> The agent targets {@code BlockingQueue#offer(Object)} on
- * all concrete JDK implementations ({@code LinkedBlockingQueue}, {@code ArrayBlockingQueue},
- * {@code PriorityBlockingQueue}, {@code SynchronousQueue}, etc.) via Byte Buddy retransformation.
- * Because the suppress fires before the lock is acquired, it is invisible to the queue's internal
- * state machine — the queue does not know an offer was attempted.
+ * all concrete JDK implementations ({@code LinkedBlockingQueue}, {@code ArrayBlockingQueue}, {@code
+ * PriorityBlockingQueue}, {@code SynchronousQueue}, etc.) via Byte Buddy retransformation. Because
+ * the suppress fires before the lock is acquired, it is invisible to the queue's internal state
+ * machine — the queue does not know an offer was attempted.
  *
- * <p><strong>SynchronousQueue specifics.</strong> {@code SynchronousQueue.offer} returns
- * {@code false} immediately if no consumer thread is already waiting. The suppress makes every
- * offer return {@code false} regardless of whether a consumer is waiting — including cases where
- * the transfer would normally succeed.
+ * <p><strong>SynchronousQueue specifics.</strong> {@code SynchronousQueue.offer} returns {@code
+ * false} immediately if no consumer thread is already waiting. The suppress makes every offer
+ * return {@code false} regardless of whether a consumer is waiting — including cases where the
+ * transfer would normally succeed.
  *
  * <p><strong>Cascading effects.</strong> Producers that use {@code offer} with a fallback (e.g.,
  * write to a database when the in-memory queue is full) will activate the fallback on every
  * message, potentially overwhelming the fallback store. Test that the fallback path is both
  * functional and appropriately rate-limited.
  *
- * <p><strong>Distinguishing from siblings.</strong> {@link ChaosQueueOfferDelay} delays but
- * allows the offer to succeed or fail naturally. {@link ChaosQueuePutGate} blocks the producer on
- * the blocking {@code put} path. This annotation is the only one that always reports queue-full
- * without touching the queue, suitable for testing drop-on-full logic.
+ * <p><strong>Distinguishing from siblings.</strong> {@link ChaosQueueOfferDelay} delays but allows
+ * the offer to succeed or fail naturally. {@link ChaosQueuePutGate} blocks the producer on the
+ * blocking {@code put} path. This annotation is the only one that always reports queue-full without
+ * touching the queue, suitable for testing drop-on-full logic.
  *
  * <h2>Example</h2>
  *
@@ -104,7 +104,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java container image — the container must run a JVM process.
  * </ul>

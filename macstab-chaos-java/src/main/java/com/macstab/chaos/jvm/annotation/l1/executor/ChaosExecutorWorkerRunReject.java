@@ -25,12 +25,12 @@ import com.macstab.chaos.jvm.api.OperationType;
  * task-dispatch entry point and throws {@code RejectedExecutionException} with the configured
  * {@link #message()} before the task body ({@code Runnable.run()} or {@code Callable.call()}) is
  * invoked. The submitter's call to {@code executor.submit()} already returned a {@code Future} at
- * this point — the exception appears to the submitter via {@code Future.get()} as an
- * {@code ExecutionException} wrapping a {@code RejectedExecutionException}.
+ * this point — the exception appears to the submitter via {@code Future.get()} as an {@code
+ * ExecutionException} wrapping a {@code RejectedExecutionException}.
  *
- * <p>This is distinct from {@link ChaosExecutorSubmitReject}, which rejects at submission time
- * (the caller's {@code submit()} throws immediately and no {@code Future} is returned). Here the
- * {@code Future} is returned normally; only the execution of the task body is rejected.
+ * <p>This is distinct from {@link ChaosExecutorSubmitReject}, which rejects at submission time (the
+ * caller's {@code submit()} throws immediately and no {@code Future} is returned). Here the {@code
+ * Future} is returned normally; only the execution of the task body is rejected.
  *
  * <h2>What chaos this applies</h2>
  *
@@ -41,9 +41,9 @@ import com.macstab.chaos.jvm.api.OperationType;
  *   <li>The worker thread has dequeued the task and is about to invoke {@code task.run()}.
  *   <li>The reject effect throws {@code new RejectedExecutionException(message)} from the
  *       interceptor, before the task body begins.
- *   <li>The {@code ThreadPoolExecutor}'s {@code runWorker} loop catches the unchecked exception
- *       and routes it through the {@code afterExecute} hook; the underlying {@code FutureTask}
- *       stores the exception as its cause.
+ *   <li>The {@code ThreadPoolExecutor}'s {@code runWorker} loop catches the unchecked exception and
+ *       routes it through the {@code afterExecute} hook; the underlying {@code FutureTask} stores
+ *       the exception as its cause.
  *   <li>Any caller blocking on {@code future.get()} receives {@code ExecutionException} wrapping
  *       the {@code RejectedExecutionException}.
  *   <li>The worker thread survives the exception and loops back to dequeue the next task.
@@ -52,8 +52,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>{@code future.get()} throws {@link java.util.concurrent.ExecutionException} whose
- *       {@code getCause()} is a {@code RejectedExecutionException} with the configured message.
+ *   <li>{@code future.get()} throws {@link java.util.concurrent.ExecutionException} whose {@code
+ *       getCause()} is a {@code RejectedExecutionException} with the configured message.
  *   <li>The task's business logic never runs — no side effects, no database writes, no I/O.
  *   <li>The worker thread is not killed; subsequent tasks (if any) are dequeued and also rejected
  *       as long as the annotation is active.
@@ -76,24 +76,23 @@ import com.macstab.chaos.jvm.api.OperationType;
  * injected exception.
  *
  * <p><strong>FutureTask exception routing.</strong> When {@code FutureTask} wraps the submitted
- * callable, it catches any exception from {@code Callable.call()} and stores it via
- * {@code setException}. Because the interceptor throws before entering {@code FutureTask.run()},
- * the exception bypasses {@code FutureTask}'s catch block and is instead caught by
- * {@code runWorker}'s catch — the {@code FutureTask} completes exceptionally only if
- * {@code runWorker} propagates the exception back through the worker's exception handler. The exact
- * routing depends on the JDK version and executor configuration; test your target version.
+ * callable, it catches any exception from {@code Callable.call()} and stores it via {@code
+ * setException}. Because the interceptor throws before entering {@code FutureTask.run()}, the
+ * exception bypasses {@code FutureTask}'s catch block and is instead caught by {@code runWorker}'s
+ * catch — the {@code FutureTask} completes exceptionally only if {@code runWorker} propagates the
+ * exception back through the worker's exception handler. The exact routing depends on the JDK
+ * version and executor configuration; test your target version.
  *
  * <p><strong>Cascading effects.</strong> While the annotation is active, the executor's worker
  * threads are effectively turned into reject-and-continue machines: they drain the queue rapidly
- * (no task body runs) but complete every future with an exception. Any downstream logic that
- * chains on those futures — {@code thenApply}, {@code handle}, etc. — will fire their error paths.
+ * (no task body runs) but complete every future with an exception. Any downstream logic that chains
+ * on those futures — {@code thenApply}, {@code handle}, etc. — will fire their error paths.
  *
  * <p><strong>Distinguishing from siblings.</strong> {@link ChaosExecutorSubmitReject} rejects
  * before the task enters the queue — no {@code Future} is returned. This annotation rejects after
  * the task is already in the queue and a {@code Future} has been handed to the caller — the caller
- * gets an exceptionally-completed {@code Future} rather than an immediate exception.
- * {@link ChaosExecutorWorkerRunDelay} delays instead of rejecting, allowing the task to eventually
- * run.
+ * gets an exceptionally-completed {@code Future} rather than an immediate exception. {@link
+ * ChaosExecutorWorkerRunDelay} delays instead of rejecting, allowing the task to eventually run.
  *
  * <h2>Example</h2>
  *
@@ -115,7 +114,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java container image — the container must run a JVM process.
  * </ul>

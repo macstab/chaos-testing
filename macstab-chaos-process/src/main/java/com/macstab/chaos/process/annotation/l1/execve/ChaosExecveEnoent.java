@@ -18,38 +18,41 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * calling code to observe a no-such-file failure when attempting to replace the process image.
  *
  * <h2>What this annotation is</h2>
+ *
  * L1 libchaos-process primitive — one (selector = {@code EXECVE}, errno = {@code ENOENT}) tuple.
- * The {@code EXECVE} selector intercepts {@code execve} calls only, leaving {@code fork},
- * {@code pthread_create}, {@code posix_spawn}, {@code posix_spawnp}, {@code execveat}, and
- * {@code waitpid} unaffected. Compile-time safety: invalid selector/errno combinations have no
- * annotation class.
+ * The {@code EXECVE} selector intercepts {@code execve} calls only, leaving {@code fork}, {@code
+ * pthread_create}, {@code posix_spawn}, {@code posix_spawnp}, {@code execveat}, and {@code waitpid}
+ * unaffected. Compile-time safety: invalid selector/errno combinations have no annotation class.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
- *       interposing the libc {@code execve} wrapper at the dynamic-linker level.</li>
- *   <li>On each {@code execve} call the interposer runs a Bernoulli trial with probability
- *       {@link #probability}.</li>
+ *       interposing the libc {@code execve} wrapper at the dynamic-linker level.
+ *   <li>On each {@code execve} call the interposer runs a Bernoulli trial with probability {@link
+ *       #probability}.
  *   <li>When the trial fires, the interposer sets {@code errno = ENOENT} and returns {@code -1}
- *       without issuing the real kernel call.</li>
- *   <li>The calling code receives: {@code -1} return, {@code errno} 2,
- *       {@code strerror}: "No such file or directory"; no new process image is loaded.</li>
+ *       without issuing the real kernel call.
+ *   <li>The calling code receives: {@code -1} return, {@code errno} 2, {@code strerror}: "No such
+ *       file or directory"; no new process image is loaded.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
  *   <li>{@code execve} returns {@code -1}; {@code errno = ENOENT} (2); the binary path does not
  *       exist or a component of the path prefix is missing — the application must handle the
- *       failure with a clear diagnostic that includes the attempted path.</li>
- *   <li>Applications that resolve binary paths via {@code $PATH} at runtime must handle
- *       {@code ENOENT} from {@code execve} by trying the next entry in {@code $PATH} or reporting
- *       that the binary is not installed, rather than propagating the kernel error code directly
- *       to the user.</li>
+ *       failure with a clear diagnostic that includes the attempted path.
+ *   <li>Applications that resolve binary paths via {@code $PATH} at runtime must handle {@code
+ *       ENOENT} from {@code execve} by trying the next entry in {@code $PATH} or reporting that the
+ *       binary is not installed, rather than propagating the kernel error code directly to the
+ *       user.
  *   <li>Assert that the application's error message for {@code ENOENT} from {@code execve} is
  *       actionable for operators: it should name the binary that was not found, the full path
  *       attempted, and whether a {@code $PATH} search was performed — this distinguishes a missing
- *       installation from a misconfigured path.</li>
+ *       installation from a misconfigured path.
  * </ul>
+ *
  * Production failure mode: a container image layer that provides a helper binary (e.g. a
  * compression tool, a database client) is updated and the binary is renamed or relocated; the
  * application's hardcoded path to the binary fails with {@code ENOENT} at runtime — a deployment
@@ -57,6 +60,7 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * binary is first exercised.
  *
  * <h2>Deep technical dive</h2>
+ *
  * <p>POSIX specifies {@code ENOENT} for {@code execve} when the {@code pathname} argument does not
  * name an existing file, or when a component of the path prefix is not a directory or does not
  * exist. On Linux, the kernel returns {@code ENOENT} from {@code do_open_execat} when the VFS
@@ -65,18 +69,18 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * recursively on the interpreter path; if the interpreter path in the shebang line does not exist,
  * the outer {@code execve} returns {@code ENOENT} even though the script file itself exists.
  *
- * <p>The shebang-interpreter case is particularly treacherous: a script that uses
- * {@code #!/usr/bin/env python3} will return {@code ENOENT} from {@code execve} if {@code env}
- * is not installed at {@code /usr/bin/env} (non-standard for some minimal base images) or if
- * {@code python3} is not in {@code $PATH}. The application sees {@code ENOENT} but the script
- * file is present and readable — the error message "No such file or directory" is misleading
- * unless the diagnostic includes the attempted interpreter path.
+ * <p>The shebang-interpreter case is particularly treacherous: a script that uses {@code
+ * #!/usr/bin/env python3} will return {@code ENOENT} from {@code execve} if {@code env} is not
+ * installed at {@code /usr/bin/env} (non-standard for some minimal base images) or if {@code
+ * python3} is not in {@code $PATH}. The application sees {@code ENOENT} but the script file is
+ * present and readable — the error message "No such file or directory" is misleading unless the
+ * diagnostic includes the attempted interpreter path.
  *
- * <p>Container image layer interoperability is a frequent production source of {@code ENOENT}:
- * when a base image and an application layer are combined in a multi-stage build, the final image
- * may be missing binaries that were present in an intermediate layer but were excluded from the
- * final copy. The binary exists in development (where the full build environment is used) but not
- * in production (where only the runtime layer is deployed).
+ * <p>Container image layer interoperability is a frequent production source of {@code ENOENT}: when
+ * a base image and an application layer are combined in a multi-stage build, the final image may be
+ * missing binaries that were present in an intermediate layer but were excluded from the final
+ * copy. The binary exists in development (where the full build environment is used) but not in
+ * production (where only the runtime layer is deployed).
  *
  * <h2>Example</h2>
  *
@@ -92,12 +96,13 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; binary-not-found is a deployment
- * error rather than a runtime condition, so even very low rates will exercise the error path
- * without masking normal execve operations.
+ * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; binary-not-found is a deployment error
+ * rather than a runtime condition, so even very low rates will exercise the error path without
+ * masking normal execve operations.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every process-chaos-capable container
- * in the test class.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container in
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ProcessErrnoBinding

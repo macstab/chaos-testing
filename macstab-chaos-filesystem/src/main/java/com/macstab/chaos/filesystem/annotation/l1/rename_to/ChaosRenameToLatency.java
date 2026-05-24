@@ -20,17 +20,17 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * <h2>What this annotation is</h2>
  *
  * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code RENAME_TO}, effect = LATENCY)
- * tuple. Unlike errno variants, the latency primitive always delegates to the real kernel call after
- * the configured extra delay — the rename completes normally. No probability gate is applied; the
- * delay fires on every intercepted {@code rename} call. No runtime operation-effect validation is
- * needed.
+ * tuple. Unlike errno variants, the latency primitive always delegates to the real kernel call
+ * after the configured extra delay — the rename completes normally. No probability gate is applied;
+ * the delay fires on every intercepted {@code rename} call. No runtime operation-effect validation
+ * is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
@@ -49,18 +49,18 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *       block the caller for the duration of the delay; assert that the log writer's deadline
  *       accounts for slow rename operations and that no log records are lost during the rename.
  *   <li>Applications that rename output files to publish results — report writers, artifact
- *       publishers — block for the duration of the rename; assert that publication timeouts are
- *       set conservatively enough to tolerate storage-layer stalls.
- *   <li>Assert that a slow rename on a background thread does not starve the main request path
- *       by holding a lock across the rename; publish operations should be lock-free or use a
- *       dedicated thread with a bounded queue.
+ *       publishers — block for the duration of the rename; assert that publication timeouts are set
+ *       conservatively enough to tolerate storage-layer stalls.
+ *   <li>Assert that a slow rename on a background thread does not starve the main request path by
+ *       holding a lock across the rename; publish operations should be lock-free or use a dedicated
+ *       thread with a bounded queue.
  * </ul>
  *
  * <p>In production, slow {@code rename} calls occur on network filesystems (NFS, SMB/CIFS) where
  * the server must acknowledge the directory modification before the client-side call returns, on
- * storage devices under write pressure where the journal commit is delayed by I/O queuing, and
- * on large directories where the directory data blocks must be read from disk to locate the
- * insertion point for the new entry.
+ * storage devices under write pressure where the journal commit is delayed by I/O queuing, and on
+ * large directories where the directory data blocks must be read from disk to locate the insertion
+ * point for the new entry.
  *
  * <h2>Deep technical dive</h2>
  *
@@ -68,7 +68,8 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * and destination directories in one journal commit. On a warmed page cache with small directories,
  * the commit takes microseconds — all modifications are in-memory and the journal write is fast.
  * Under storage pressure (journal writeback latency, write throttling, dirty page writeback), the
- * same operation can take hundreds of milliseconds while the calling thread is blocked in the kernel.
+ * same operation can take hundreds of milliseconds while the calling thread is blocked in the
+ * kernel.
  *
  * <p>The latency injection simulates the storage-layer component of rename latency without actually
  * stressing the storage device. This allows controlled reproduction of scenarios where rename is
@@ -77,12 +78,12 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *
  * <p>The delay is injected before the real kernel call, so the calling thread is blocked for the
  * full {@link #delayMs} plus the actual kernel rename time. Applications that perform the rename
- * while holding a lock — a common pattern when updating a "latest result" symlink or file atomically
- * — will block all other threads waiting for that lock for the entire duration.
+ * while holding a lock — a common pattern when updating a "latest result" symlink or file
+ * atomically — will block all other threads waiting for that lock for the entire duration.
  *
- * <p>Java's {@code Files.move(Path, Path, CopyOption...)} with {@code ATOMIC_MOVE} calls
- * {@code rename(2)} and returns only when the kernel call completes. The injected delay adds
- * directly to the wall-clock time observable by the calling thread.
+ * <p>Java's {@code Files.move(Path, Path, CopyOption...)} with {@code ATOMIC_MOVE} calls {@code
+ * rename(2)} and returns only when the kernel call completes. The injected delay adds directly to
+ * the wall-clock time observable by the calling thread.
  *
  * <h2>Example</h2>
  *

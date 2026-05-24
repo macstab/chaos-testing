@@ -31,58 +31,58 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <ol>
  *   <li>Before every call to {@code java.net.SocketInputStream#read(byte[], int, int)} inside the
  *       target container's JVM, the chaos agent intercepts the calling thread.
- *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()},
- *       {@link #maxDelayMs()}]; equal values produce a deterministic delay.
- *   <li>Control returns and the underlying {@code read()} executes normally, blocking until data
- *       is available in the kernel receive buffer and copying it to the caller's byte array.
+ *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()}, {@link
+ *       #maxDelayMs()}]; equal values produce a deterministic delay.
+ *   <li>Control returns and the underlying {@code read()} executes normally, blocking until data is
+ *       available in the kernel receive buffer and copying it to the caller's byte array.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>The thread that calls {@code read()} is blocked for at least {@link #delayMs()} ms on
- *       every read; in thread-per-request servers (Tomcat), each active connection occupies its
- *       thread for the extra duration; assert that thread pool utilisation increases and that the
+ *   <li>The thread that calls {@code read()} is blocked for at least {@link #delayMs()} ms on every
+ *       read; in thread-per-request servers (Tomcat), each active connection occupies its thread
+ *       for the extra duration; assert that thread pool utilisation increases and that the
  *       application's thread pool queue fills if requests arrive faster than threads complete.
- *   <li>If the delay exceeds the socket's read timeout ({@code SO_TIMEOUT} set via
- *       {@code Socket.setSoTimeout()}), the timeout fires after the sleep and the read itself
- *       never executes; the caller receives {@code SocketTimeoutException}; assert that the
- *       application distinguishes a read timeout from a connection reset.
+ *   <li>If the delay exceeds the socket's read timeout ({@code SO_TIMEOUT} set via {@code
+ *       Socket.setSoTimeout()}), the timeout fires after the sleep and the read itself never
+ *       executes; the caller receives {@code SocketTimeoutException}; assert that the application
+ *       distinguishes a read timeout from a connection reset.
  *   <li>JDBC drivers that use blocking reads for query response parsing experience inflated query
- *       times; HikariCP's statement-level timeout (if configured) may expire during the read
- *       delay; assert that the connection is properly evicted rather than returned to the pool.
- *   <li><strong>Production failure mode:</strong> a database runs a long query that returns a
- *       large result set in multiple TCP segments; the application's JDBC thread blocks on
- *       {@code SocketInputStream.read()} waiting for each segment; if the DB server is under GC
- *       pressure it pauses sending; the Tomcat thread is blocked for the GC pause duration;
- *       during this time the Tomcat connector cannot allocate threads for new requests, causing
- *       cascading request queuing and timeout failures.
+ *       times; HikariCP's statement-level timeout (if configured) may expire during the read delay;
+ *       assert that the connection is properly evicted rather than returned to the pool.
+ *   <li><strong>Production failure mode:</strong> a database runs a long query that returns a large
+ *       result set in multiple TCP segments; the application's JDBC thread blocks on {@code
+ *       SocketInputStream.read()} waiting for each segment; if the DB server is under GC pressure
+ *       it pauses sending; the Tomcat thread is blocked for the GC pause duration; during this time
+ *       the Tomcat connector cannot allocate threads for new requests, causing cascading request
+ *       queuing and timeout failures.
  * </ul>
  *
  * <h2>Deep technical dive</h2>
  *
  * <p>The interception targets {@code java.net.SocketInputStream#read(byte[], int, int)}, the
- * internal stream used by {@code Socket.getInputStream()}. Unlike NIO
- * {@code SocketChannel.read(ByteBuffer)} which is used by Netty and async frameworks, this path
- * is used exclusively by blocking socket clients. The read call ultimately issues a {@code recv(2)}
+ * internal stream used by {@code Socket.getInputStream()}. Unlike NIO {@code
+ * SocketChannel.read(ByteBuffer)} which is used by Netty and async frameworks, this path is used
+ * exclusively by blocking socket clients. The read call ultimately issues a {@code recv(2)}
  * syscall; the chaos delay fires before this syscall, holding the calling thread.
  *
- * <p>PostgreSQL JDBC's {@code org.postgresql.core.PGStream} wraps the socket input stream and
- * calls {@code read()} to receive protocol messages from the database. Every query response, every
- * COPY data chunk, and every notification is received via this path. The delay fires on each read
- * call, compounding for large result sets that arrive in multiple reads.
+ * <p>PostgreSQL JDBC's {@code org.postgresql.core.PGStream} wraps the socket input stream and calls
+ * {@code read()} to receive protocol messages from the database. Every query response, every COPY
+ * data chunk, and every notification is received via this path. The delay fires on each read call,
+ * compounding for large result sets that arrive in multiple reads.
  *
  * <p>The {@code SO_TIMEOUT} set via {@code Socket.setSoTimeout()} is enforced by the OS-level
  * {@code SO_RCVTIMEO} socket option. The chaos delay fires in the JVM before the syscall; if the
  * delay itself exceeds the SO_TIMEOUT value, the timeout fires immediately when {@code recv(2)} is
- * called after the sleep — the OS does not know about the JVM sleep. This creates an apparent
- * read timeout even when the sender is responsive, which is a realistic simulation of a slow
- * consumer exceeding its own timeout budget.
+ * called after the sleep — the OS does not know about the JVM sleep. This creates an apparent read
+ * timeout even when the sender is responsive, which is a realistic simulation of a slow consumer
+ * exceeding its own timeout budget.
  *
- * <p>Kafka's Java consumer uses {@code kafka.network.Selector} which is NIO-based for the
- * consumer group protocol, but the older {@code SimpleConsumer} (Kafka 0.x/1.x) used blocking
- * sockets; this annotation applies to legacy Kafka integrations. Modern Kafka clients should use
- * {@link ChaosNioChannelReadDelay} instead.
+ * <p>Kafka's Java consumer uses {@code kafka.network.Selector} which is NIO-based for the consumer
+ * group protocol, but the older {@code SimpleConsumer} (Kafka 0.x/1.x) used blocking sockets; this
+ * annotation applies to legacy Kafka integrations. Modern Kafka clients should use {@link
+ * ChaosNioChannelReadDelay} instead.
  *
  * <h2>Example</h2>
  *
@@ -104,8 +104,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

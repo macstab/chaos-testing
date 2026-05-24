@@ -19,21 +19,21 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code CLOCK_GETTIME}, errno =
- * {@code ENOSYS}) tuple. The tuple is safe by construction — {@code ENOSYS} is a documented POSIX
- * result of {@code clock_gettime(2)} on kernels that were compiled without POSIX clock support.
- * No runtime selector-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code CLOCK_GETTIME}, errno = {@code
+ * ENOSYS}) tuple. The tuple is safe by construction — {@code ENOSYS} is a documented POSIX result
+ * of {@code clock_gettime(2)} on kernels that were compiled without POSIX clock support. No runtime
+ * selector-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
- *       extension to upload {@code libchaos-time.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
  *       at the dynamic-linker level.
- *   <li>On every intercepted {@code clock_gettime} call a Bernoulli trial with probability
- *       {@link #probability} is conducted.
+ *   <li>On every intercepted {@code clock_gettime} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted.
  *   <li>When the trial fires the interposer returns {@code -1} and sets {@code errno = ENOSYS}
  *       without invoking the real kernel call — the application sees a genuine "not implemented"
  *       failure.
@@ -53,9 +53,9 @@ import com.macstab.chaos.time.model.TimeSelector;
  * </ul>
  *
  * <p>In production, {@code ENOSYS} from {@code clock_gettime} appears in extremely old or minimal
- * kernels (pre-2.6.28), uClinux environments, or emulated POSIX layers where POSIX clocks are
- * not compiled in. It is a rare but legitimate edge case for software that must run on embedded
- * or legacy hosts.
+ * kernels (pre-2.6.28), uClinux environments, or emulated POSIX layers where POSIX clocks are not
+ * compiled in. It is a rare but legitimate edge case for software that must run on embedded or
+ * legacy hosts.
  *
  * <h2>Deep technical dive</h2>
  *
@@ -65,17 +65,17 @@ import com.macstab.chaos.time.model.TimeSelector;
  * relevant symbols. {@code libchaos-time.so} injects the failure before either path is attempted.
  *
  * <p>Glibc itself checks for {@code ENOSYS} on first use and falls back to {@code gettimeofday(2)}
- * for {@code CLOCK_REALTIME}. Binaries compiled against musl that statically link the time calls
- * do not have this fallback and will propagate the error directly to the caller.
+ * for {@code CLOCK_REALTIME}. Binaries compiled against musl that statically link the time calls do
+ * not have this fallback and will propagate the error directly to the caller.
  *
  * <p>This injection is most useful for verifying that frameworks perform capability discovery at
  * startup (checking which clocks are available) rather than assuming all POSIX clocks are always
  * present. Spring Boot's {@code ApplicationContext} startup phase, Micrometer's clock selection,
  * and custom high-resolution timer utilities are the primary targets.
  *
- * <p>Sibling annotations: {@link ChaosClockGettimeEinval} targets unknown clock ids;
- * {@link ChaosClockGettimeEfault} targets bad output pointers; {@link ChaosClockGettimeEperm}
- * targets capability failures.
+ * <p>Sibling annotations: {@link ChaosClockGettimeEinval} targets unknown clock ids; {@link
+ * ChaosClockGettimeEfault} targets bad output pointers; {@link ChaosClockGettimeEperm} targets
+ * capability failures.
  *
  * <h2>Example</h2>
  *

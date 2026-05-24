@@ -46,39 +46,38 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       delay variant, the suppress variant does not block the thread — it keeps it busy; assert
  *       that the acceptor thread's CPU usage increases and that the application's monitoring
  *       detects a hot-spinning thread.
- *   <li>Existing established connections held by previously accepted threads are not affected;
- *       only new connection acceptance is suppressed; assert that in-flight requests continue to
+ *   <li>Existing established connections held by previously accepted threads are not affected; only
+ *       new connection acceptance is suppressed; assert that in-flight requests continue to
  *       completion while no new connections are established.
- *   <li><strong>Production failure mode:</strong> a Tomcat BIO acceptor thread deadlocks inside
- *       the server socket factory (e.g. due to a custom SSL factory bug); the acceptor calls
- *       {@code accept()} but never returns; from the OS perspective, the listen socket is still
- *       open; clients complete TCP handshakes and are placed in the backlog; once the backlog fills
- *       the OS drops SYN packets; health-check systems that use new TCP connections to check
- *       application health report the service as down, but existing connections continue to work
- *       — a misleading dual-state failure.
+ *   <li><strong>Production failure mode:</strong> a Tomcat BIO acceptor thread deadlocks inside the
+ *       server socket factory (e.g. due to a custom SSL factory bug); the acceptor calls {@code
+ *       accept()} but never returns; from the OS perspective, the listen socket is still open;
+ *       clients complete TCP handshakes and are placed in the backlog; once the backlog fills the
+ *       OS drops SYN packets; health-check systems that use new TCP connections to check
+ *       application health report the service as down, but existing connections continue to work —
+ *       a misleading dual-state failure.
  * </ul>
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>The interception targets {@code java.net.ServerSocket#accept()}. In contrast to
- * {@code ServerSocketChannel.accept()} (NIO) which legitimately returns {@code null} in
- * non-blocking mode, {@code ServerSocket.accept()} in blocking mode never returns {@code null}
- * in normal operation — it either blocks until a connection arrives or throws
- * {@code SocketTimeoutException} if {@code SO_TIMEOUT} is set. Returning {@code null} here is an
- * abnormal condition that most server loops do not explicitly handle; the chaos effect exercises
- * the null-return handling path (or lack thereof) in the application's acceptor loop.
+ * <p>The interception targets {@code java.net.ServerSocket#accept()}. In contrast to {@code
+ * ServerSocketChannel.accept()} (NIO) which legitimately returns {@code null} in non-blocking mode,
+ * {@code ServerSocket.accept()} in blocking mode never returns {@code null} in normal operation —
+ * it either blocks until a connection arrives or throws {@code SocketTimeoutException} if {@code
+ * SO_TIMEOUT} is set. Returning {@code null} here is an abnormal condition that most server loops
+ * do not explicitly handle; the chaos effect exercises the null-return handling path (or lack
+ * thereof) in the application's acceptor loop.
  *
- * <p>Tomcat's BIO connector ({@code JIoEndpoint.Acceptor}) calls {@code serverSocket.accept()} in
- * a while loop; the returned socket is dispatched to a worker thread pool. If {@code accept()}
+ * <p>Tomcat's BIO connector ({@code JIoEndpoint.Acceptor}) calls {@code serverSocket.accept()} in a
+ * while loop; the returned socket is dispatched to a worker thread pool. If {@code accept()}
  * returns {@code null}, Tomcat's null-check discards the result and loops; the worker thread pool
  * is not occupied. This is distinct from the NIO connector (NioEndpoint) and APR connector, which
  * are not affected by this annotation.
  *
- * <p>Unlike {@link ChaosSocketAcceptDelay} which slows the accept rate while still making
- * progress, this annotation halts progress entirely. The suppress variant is appropriate when
- * testing a complete listen-path failure — for example, verifying that health checks report
- * correctly or that the application can be gracefully stopped even when the acceptor is not
- * processing connections.
+ * <p>Unlike {@link ChaosSocketAcceptDelay} which slows the accept rate while still making progress,
+ * this annotation halts progress entirely. The suppress variant is appropriate when testing a
+ * complete listen-path failure — for example, verifying that health checks report correctly or that
+ * the application can be gracefully stopped even when the acceptor is not processing connections.
  *
  * <h2>Example</h2>
  *
@@ -100,8 +99,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

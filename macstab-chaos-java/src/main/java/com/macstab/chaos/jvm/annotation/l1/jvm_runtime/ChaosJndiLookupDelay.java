@@ -21,8 +21,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p>A JVM agent L1 chaos primitive targeting the {@code JNDI_LOOKUP} operation — one typed
  * annotation per (selector family, operation type, effect) tuple. Declared on a test class or
- * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until
- * {@code afterAll}/{@code afterEach} respectively.
+ * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until {@code
+ * afterAll}/{@code afterEach} respectively.
  *
  * <h2>What chaos this applies</h2>
  *
@@ -30,8 +30,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *   <li>The chaos agent intercepts every call to {@code javax.naming.InitialContext.lookup(String)}
  *       in the target container's JVM.
  *   <li>Before forwarding the lookup to the naming provider, the interceptor parks the calling
- *       thread for a duration sampled uniformly between {@link #delayMs()} and
- *       {@link #maxDelayMs()} milliseconds.
+ *       thread for a duration sampled uniformly between {@link #delayMs()} and {@link
+ *       #maxDelayMs()} milliseconds.
  *   <li>After the delay, the real lookup executes and the bound object is returned to the caller.
  * </ol>
  *
@@ -43,9 +43,9 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       assert that the application server starts within its configured deployment timeout.
  *   <li><strong>EJB remote lookup slow.</strong> Remote EJB clients use JNDI to resolve remote
  *       references; assert that the client's connection timeout is applied correctly.
- *   <li><strong>JMS connection factory slow.</strong> JMS providers are often bound to JNDI; a
- *       slow lookup delays message-consumer startup and can cause producer timeouts if the
- *       consumer is not ready within the broker's session timeout.
+ *   <li><strong>JMS connection factory slow.</strong> JMS providers are often bound to JNDI; a slow
+ *       lookup delays message-consumer startup and can cause producer timeouts if the consumer is
+ *       not ready within the broker's session timeout.
  *   <li><strong>Production failure mode:</strong> in legacy application servers (WebLogic,
  *       WebSphere) JNDI lookups may contact a remote cluster naming service over the network; a
  *       network partition causes the lookup to hang until the configured JNDI provider timeout,
@@ -55,10 +55,10 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Deep technical dive</h2>
  *
  * <p>{@code InitialContext.lookup()} resolves a JNDI name through the configured naming provider
- * (LDAP, RMI, file-system, in-JVM). For in-JVM providers (e.g. Tomcat's
- * {@code org.apache.naming} package) the lookup is fast and local; for remote providers
- * (LDAP, JNDI-over-RMI) it involves a network round-trip. The agent intercepts at the
- * {@code InitialContext.lookup()} level regardless of which provider is used.
+ * (LDAP, RMI, file-system, in-JVM). For in-JVM providers (e.g. Tomcat's {@code org.apache.naming}
+ * package) the lookup is fast and local; for remote providers (LDAP, JNDI-over-RMI) it involves a
+ * network round-trip. The agent intercepts at the {@code InitialContext.lookup()} level regardless
+ * of which provider is used.
  *
  * <p>The delay fires before any network I/O, so it does not interfere with the naming provider's
  * own timeout. The total latency observed by the caller is the injected delay plus the provider's
@@ -89,8 +89,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
- *       agent before the container JVM starts; omitting it causes an
- *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       agent before the container JVM starts; omitting it causes an {@code
+ *       ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
  *       {@code @JvmAgentChaos}.
  *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the

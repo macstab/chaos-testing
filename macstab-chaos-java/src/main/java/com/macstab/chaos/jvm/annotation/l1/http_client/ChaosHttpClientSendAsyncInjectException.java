@@ -53,31 +53,31 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>The exception injection translator reflectively loads the class named by
- * {@link #exceptionClassName()} using the agent's class loader, which has access to all classes
- * visible to the bootstrap and system loaders. Application-specific exception classes that are not
- * on the bootstrap path may not be resolvable; use standard JDK or framework exception types for
- * reliable injection. The translator attempts the single-argument {@code String} constructor first,
- * then falls back to the no-argument constructor, then wraps in a {@code RuntimeException}.
+ * <p>The exception injection translator reflectively loads the class named by {@link
+ * #exceptionClassName()} using the agent's class loader, which has access to all classes visible to
+ * the bootstrap and system loaders. Application-specific exception classes that are not on the
+ * bootstrap path may not be resolvable; use standard JDK or framework exception types for reliable
+ * injection. The translator attempts the single-argument {@code String} constructor first, then
+ * falls back to the no-argument constructor, then wraps in a {@code RuntimeException}.
  *
  * <p>The interception point is the same {@code jdk.internal.net.http.HttpClientImpl#sendAsync}
  * entry used by all HTTP_CLIENT_SEND_ASYNC rules. Because the throw precedes any executor
- * submission, the JDK's internal worker threads ({@code HttpClientImpl.SelectorManager} and
- * the response handler threads) are not involved. From the application's perspective, the call
- * never left the calling thread.
+ * submission, the JDK's internal worker threads ({@code HttpClientImpl.SelectorManager} and the
+ * response handler threads) are not involved. From the application's perspective, the call never
+ * left the calling thread.
  *
  * <p>This annotation is the async counterpart of {@link ChaosHttpClientSendInjectException}. The
- * distinction matters for applications that use both synchronous and asynchronous call styles:
- * both rules must be registered to cover all HTTP call sites.
+ * distinction matters for applications that use both synchronous and asynchronous call styles: both
+ * rules must be registered to cover all HTTP call sites.
  *
  * <p>Combining this annotation with {@link ChaosHttpClientSendAsyncReject} in different test
- * methods provides coverage of both the "canonical IOException" path (Reject) and the
- * "specific exception subtype" path (InjectException) within the same application, enabling
- * branch coverage of exception-type dispatch logic.
+ * methods provides coverage of both the "canonical IOException" path (Reject) and the "specific
+ * exception subtype" path (InjectException) within the same application, enabling branch coverage
+ * of exception-type dispatch logic.
  *
  * <p>Unlike {@link ChaosHttpClientSendAsyncDelay}, which tests latency handling, this annotation
- * tests error routing: the test verifies which branch of a {@code try / catch} or
- * {@code .exceptionally()} handler fires for each exception type.
+ * tests error routing: the test verifies which branch of a {@code try / catch} or {@code
+ * .exceptionally()} handler fires for each exception type.
  *
  * <h2>Example</h2>
  *
@@ -100,8 +100,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

@@ -14,52 +14,57 @@ import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessSelector;
 
 /**
- * After {@link #successesBeforeFailure} successful {@code waitpid} calls, injects {@code EINVAL}
- * on every subsequent call, modelling a waitpid options regression where a configuration change
+ * After {@link #successesBeforeFailure} successful {@code waitpid} calls, injects {@code EINVAL} on
+ * every subsequent call, modelling a waitpid options regression where a configuration change
  * introduces an invalid flag after N successful waits.
  *
  * <h2>What this annotation is</h2>
- * L1 libchaos-process primitive — one (selector = {@code WAITPID}, errno = {@code EINVAL},
- * effect = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N calls succeed,
- * then the counter trips permanently and every subsequent call returns the error code until the
- * rule is removed. Compile-time safety: invalid selector/errno/effect combinations have no
- * annotation class.
+ *
+ * L1 libchaos-process primitive — one (selector = {@code WAITPID}, errno = {@code EINVAL}, effect =
+ * FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N calls succeed, then the
+ * counter trips permanently and every subsequent call returns the error code until the rule is
+ * removed. Compile-time safety: invalid selector/errno/effect combinations have no annotation
+ * class.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
- *       interposing the libc {@code waitpid} wrapper at the dynamic-linker level.</li>
+ *       interposing the libc {@code waitpid} wrapper at the dynamic-linker level.
  *   <li>The interposer maintains a per-rule success counter; the counter does not reset
- *       automatically between test methods when the annotation is at class scope.</li>
- *   <li>Once the counter reaches zero it trips permanently: every subsequent {@code waitpid}
- *       call returns {@code -1} with {@code errno = EINVAL}.</li>
+ *       automatically between test methods when the annotation is at class scope.
+ *   <li>Once the counter reaches zero it trips permanently: every subsequent {@code waitpid} call
+ *       returns {@code -1} with {@code errno = EINVAL}.
  *   <li>The calling code receives: return value {@code -1}, {@code errno = EINVAL} (22); the
- *       options bitmask contains an invalid flag combination.</li>
+ *       options bitmask contains an invalid flag combination.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
  *   <li>The first {@link #successesBeforeFailure} calls proceed normally; all subsequent calls
  *       return EINVAL; assert that the application treats EINVAL as a non-retryable programming
  *       error and logs the options bitmask value for diagnostic purposes — EINVAL from waitpid
- *       never resolves by retrying with the same options value.</li>
- *   <li>FAIL_AFTER models an options regression: N waits succeed with a valid options value;
- *       a hot-reload changes the options mask to include an invalid flag; all subsequent waits
- *       return EINVAL — assert that the application detects this regression and alerts with the
- *       invalid options value.</li>
+ *       never resolves by retrying with the same options value.
+ *   <li>FAIL_AFTER models an options regression: N waits succeed with a valid options value; a
+ *       hot-reload changes the options mask to include an invalid flag; all subsequent waits return
+ *       EINVAL — assert that the application detects this regression and alerts with the invalid
+ *       options value.
  *   <li>Assert that children spawned during the EINVAL phase become permanent zombies (unreaped);
  *       the application must detect this zombie accumulation and alert before the process table
- *       fills.</li>
+ *       fills.
  * </ul>
+ *
  * Production failure mode: a process manager constructs the waitpid options mask from a
- * configuration file to support optional job-control semantics; a configuration push changes
- * the WUNTRACED flag encoding, producing a bitmask with invalid bits; after N successful waits
- * all subsequent waits return EINVAL; children accumulate as zombies; the manager does not log
- * the options value or detect zombie accumulation.
+ * configuration file to support optional job-control semantics; a configuration push changes the
+ * WUNTRACED flag encoding, producing a bitmask with invalid bits; after N successful waits all
+ * subsequent waits return EINVAL; children accumulate as zombies; the manager does not log the
+ * options value or detect zombie accumulation.
  *
  * <h2>Deep technical dive</h2>
- * <p>FAIL_AFTER models the options regression: N waits succeed; a configuration change corrupts
- * the options mask; all subsequent waits fail with EINVAL. Real EINVAL from waitpid fires
+ *
+ * <p>FAIL_AFTER models the options regression: N waits succeed; a configuration change corrupts the
+ * options mask; all subsequent waits fail with EINVAL. Real EINVAL from waitpid fires
  * deterministically whenever the invalid options are used and persists until the options are
  * corrected. waitpid returns -1 and sets errno; checking {@code if (ret == -1 && errno == EINVAL)}
  * is correct.
@@ -93,9 +98,10 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to the number of
  * successful waits before the options regression takes effect; values 5–100 cover most hot-reload
  * scenarios; 0 means every wait is invalid from startup.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every process-chaos-capable container
- * in the test class.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container in
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ProcessFailAfterBinding

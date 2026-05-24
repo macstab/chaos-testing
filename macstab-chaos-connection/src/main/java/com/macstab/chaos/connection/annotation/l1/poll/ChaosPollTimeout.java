@@ -11,9 +11,9 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Overrides the {@code timeout} argument of every intercepted {@code poll(2)} call with
- * {@link #timeoutMs}, causing the call to return {@code 0} (no events ready) after at most
- * {@link #timeoutMs} milliseconds even when the application passed a longer or infinite timeout.
+ * Overrides the {@code timeout} argument of every intercepted {@code poll(2)} call with {@link
+ * #timeoutMs}, causing the call to return {@code 0} (no events ready) after at most {@link
+ * #timeoutMs} milliseconds even when the application passed a longer or infinite timeout.
  *
  * <h2>What this annotation is</h2>
  *
@@ -28,11 +28,11 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
- *       extension to upload {@code libchaos-net.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
- *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
- *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
- *       {@code poll} at the dynamic-linker level.
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket}, {@code
+ *       bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and {@code poll} at
+ *       the dynamic-linker level.
  *   <li>On each intercepted {@code poll} call a Bernoulli trial with probability {@link #toxicity}
  *       is conducted; when it fires the interposer replaces the {@code timeout} argument with
  *       {@link #timeoutMs} before issuing the real kernel call.
@@ -49,8 +49,8 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *       configured duration may send keep-alives more frequently than intended when poll returns
  *       early; assert that the keep-alive logic is not driven solely by poll timeout expiry.
  *   <li>Command pipelines and request-response protocols that use {@code poll} to implement
- *       per-request timeouts will experience unexpectedly short effective timeouts; assert that
- *       the protocol layer retries correctly on zero-event poll returns.
+ *       per-request timeouts will experience unexpectedly short effective timeouts; assert that the
+ *       protocol layer retries correctly on zero-event poll returns.
  *   <li>Redis's blocking command implementation ({@code BLPOP}, {@code BRPOP}) uses {@code poll}
  *       with the configured command timeout; this injection causes blocking commands to return
  *       early without data, testing that clients handle the null response correctly.
@@ -64,11 +64,11 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>POSIX specifies that {@code poll} returns {@code 0} when the timeout expires before any of
- * the monitored file descriptors become ready, and a positive value equal to the number of
- * ready descriptors otherwise. A return of {@code 0} is not an error; it is a normal indication
- * that the timeout elapsed. Applications must be prepared to receive {@code 0} from {@code poll}
- * at any time, including when they pass a long timeout, because signals can interrupt the wait.
+ * <p>POSIX specifies that {@code poll} returns {@code 0} when the timeout expires before any of the
+ * monitored file descriptors become ready, and a positive value equal to the number of ready
+ * descriptors otherwise. A return of {@code 0} is not an error; it is a normal indication that the
+ * timeout elapsed. Applications must be prepared to receive {@code 0} from {@code poll} at any
+ * time, including when they pass a long timeout, because signals can interrupt the wait.
  *
  * <p>This injection tests a subtler contract than error injection: it verifies that application
  * logic driven by {@code poll} is correct when the timeout fires unexpectedly early. Applications

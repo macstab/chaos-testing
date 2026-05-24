@@ -29,11 +29,11 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
- *       extension to upload {@code libchaos-net.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
- *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
- *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
- *       {@code poll} at the dynamic-linker level.
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket}, {@code
+ *       bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and {@code poll} at
+ *       the dynamic-linker level.
  *   <li>On each intercepted {@code send} call a Bernoulli trial with probability {@link #toxicity}
  *       is conducted; when it fires the interposer sleeps for {@link #delayMs} ms before issuing
  *       the real kernel call.
@@ -52,9 +52,9 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *       send buffer; for blocking sockets this means the send call takes at least {@link #delayMs}
  *       longer than the network round-trip time. Assert that upstream timeouts account for this
  *       additional write-side cost.
- *   <li>Assert that TCP's Nagle algorithm interaction is as expected: with the delay injected before
- *       the send call, small writes that would normally be coalesced by Nagle may now be buffered
- *       for longer, potentially improving throughput at the cost of increased latency.
+ *   <li>Assert that TCP's Nagle algorithm interaction is as expected: with the delay injected
+ *       before the send call, small writes that would normally be coalesced by Nagle may now be
+ *       buffered for longer, potentially improving throughput at the cost of increased latency.
  * </ul>
  *
  * <p>In production, slow {@code send} calls occur when the process is CPU throttled by cgroups and
@@ -67,27 +67,28 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <p>The injected delay is added before the {@code send} syscall, so the total send time observed
  * by the caller is {@link #delayMs} plus the time for the kernel to copy data into the send buffer
- * and (for blocking sockets with a full buffer) the time for TCP's flow control to drain the buffer.
- * If the send buffer has space when {@code send} is called, the kernel call itself returns quickly
- * after a memcpy; the total observed latency is dominated by the injection delay.
+ * and (for blocking sockets with a full buffer) the time for TCP's flow control to drain the
+ * buffer. If the send buffer has space when {@code send} is called, the kernel call itself returns
+ * quickly after a memcpy; the total observed latency is dominated by the injection delay.
  *
  * <p>For protocols that require multiple send calls to deliver one logical request (e.g., HTTP/1.1
- * with chunked encoding, or a protocol that sends a header and then a body as separate write calls),
- * the effective per-request latency increase is N × {@link #delayMs} where N is the number of send
- * calls per request. This helps reveal whether application-level write timeouts are calibrated for
- * the worst-case number of send calls per request rather than for a single bulk write.
+ * with chunked encoding, or a protocol that sends a header and then a body as separate write
+ * calls), the effective per-request latency increase is N × {@link #delayMs} where N is the number
+ * of send calls per request. This helps reveal whether application-level write timeouts are
+ * calibrated for the worst-case number of send calls per request rather than for a single bulk
+ * write.
  *
  * <p>TCP's Nagle algorithm coalesces small sends into larger segments to reduce the number of
  * packets on the wire. With send-side latency injected, small writes are delayed before entering
- * the kernel, which gives Nagle more data to coalesce. Applications that disable Nagle via
- * {@code TCP_NODELAY} (common in low-latency RPC frameworks) will not benefit from this coalescing
- * effect, and each delayed send will result in a separate small packet on the wire.
+ * the kernel, which gives Nagle more data to coalesce. Applications that disable Nagle via {@code
+ * TCP_NODELAY} (common in low-latency RPC frameworks) will not benefit from this coalescing effect,
+ * and each delayed send will result in a separate small packet on the wire.
  *
- * <p>Java's blocking {@code Socket.getOutputStream().write()} calls translate to one or more
- * {@code send} or {@code write} syscalls depending on the buffer size and the JVM implementation.
- * Java's NIO {@code SocketChannel.write()} calls translate directly to {@code write} or
- * {@code sendmsg} syscalls. Both paths are intercepted by libchaos-net when the process runs with
- * the shared library in {@code LD_PRELOAD}.
+ * <p>Java's blocking {@code Socket.getOutputStream().write()} calls translate to one or more {@code
+ * send} or {@code write} syscalls depending on the buffer size and the JVM implementation. Java's
+ * NIO {@code SocketChannel.write()} calls translate directly to {@code write} or {@code sendmsg}
+ * syscalls. Both paths are intercepted by libchaos-net when the process runs with the shared
+ * library in {@code LD_PRELOAD}.
  *
  * <h2>Example</h2>
  *

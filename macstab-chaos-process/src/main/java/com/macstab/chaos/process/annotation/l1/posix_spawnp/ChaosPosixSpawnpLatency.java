@@ -15,60 +15,65 @@ import com.macstab.chaos.process.model.ProcessSelector;
 /**
  * Adds a fixed delay of {@link #delayMs} milliseconds before each {@code posix_spawnp} call
  * intercepted by libchaos-process, causing the spawn to succeed but take longer than expected,
- * exercising timeout budgets and latency assumptions in code that invokes processes by {@code $PATH}
- * lookup.
+ * exercising timeout budgets and latency assumptions in code that invokes processes by {@code
+ * $PATH} lookup.
  *
  * <h2>What this annotation is</h2>
+ *
  * L1 libchaos-process primitive — one (selector = {@code POSIX_SPAWNP}, effect = {@code LATENCY})
  * tuple. Unlike errno annotations, the latency primitive always delegates to the real kernel after
  * the delay — no child creation is suppressed, no errno is injected. Compile-time safety: invalid
  * selector/effect combinations have no annotation class.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
- *       interposing the libc {@code posix_spawnp} wrapper at the dynamic-linker level.</li>
+ *       interposing the libc {@code posix_spawnp} wrapper at the dynamic-linker level.
  *   <li>On each {@code posix_spawnp} call the interposer sleeps for {@link #delayMs} milliseconds
- *       before issuing the real kernel call.</li>
+ *       before issuing the real kernel call.
  *   <li>The real {@code posix_spawnp} executes normally after the delay: PATH search runs, the
- *       binary is found, and the child process is created.</li>
+ *       binary is found, and the child process is created.
  *   <li>The calling code receives a normal return value and a valid pid, but the elapsed wall-clock
- *       time is increased by {@link #delayMs} ms on every spawn call.</li>
+ *       time is increased by {@link #delayMs} ms on every spawn call.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
- *   <li>Each {@code posix_spawnp} call succeeds but takes at least {@link #delayMs} ms; assert
- *       that the application's spawn-initiation timeout budget accounts for scheduling stall cost
- *       beyond the nominal PATH-search and fork latency — applications that set spawn timeouts
- *       based only on the nominal case will fail under realistic scheduler contention.</li>
+ *   <li>Each {@code posix_spawnp} call succeeds but takes at least {@link #delayMs} ms; assert that
+ *       the application's spawn-initiation timeout budget accounts for scheduling stall cost beyond
+ *       the nominal PATH-search and fork latency — applications that set spawn timeouts based only
+ *       on the nominal case will fail under realistic scheduler contention.
  *   <li>Applications that invoke helper utilities in a pipeline sequence (each stage spawned via
  *       spawnp) accumulate latency: N stages × {@link #delayMs} ms; assert that the pipeline's
  *       end-to-end timeout budget is derived from the worst-case per-stage latency, not the
  *       average; also assert that concurrent spawns do not open PATH-traversal directory fds for
- *       the duration of the delay, leaking fds held open across overlapping delayed spawns.</li>
+ *       the duration of the delay, leaking fds held open across overlapping delayed spawns.
  *   <li>Assert that the application's child-readiness detection (typically poll on a pipe or
  *       socket) uses wall-clock elapsed time from the moment the spawn call returns, not from the
  *       moment the spawn call is issued — the delay occurs before the fork, so the child does not
- *       start executing until after the full delay elapses.</li>
+ *       start executing until after the full delay elapses.
  * </ul>
- * Production failure mode: a build system invokes compiler and linker tools by name via
- * {@code posix_spawnp}; under heavy node load the kernel scheduler delays fork calls by tens of
+ *
+ * Production failure mode: a build system invokes compiler and linker tools by name via {@code
+ * posix_spawnp}; under heavy node load the kernel scheduler delays fork calls by tens of
  * milliseconds per invocation; a build with 500 tool invocations accumulates 10+ seconds of
  * scheduling stall not counted in the individual tool timeouts; the build system times out not
  * because any individual tool is slow, but because the aggregate scheduling delay exceeds the
  * build-level wall-clock budget.
  *
  * <h2>Deep technical dive</h2>
+ *
  * <p>{@code posix_spawnp} latency in production originates from three sources that this annotation
  * models in aggregate: (1) the {@code $PATH} directory traversal — glibc opens each PATH directory
  * with {@code opendir} and calls {@code stat} on candidate filenames; under cold page-cache
- * conditions or slow storage this adds tens of milliseconds per directory; (2) the kernel fork
- * call — CoW page-table duplication cost scales with the parent's virtual memory footprint and is
- * non-trivial for JVM-based parents; (3) the exec call — dynamic linker startup and security
- * module checks add overhead proportional to the binary's import table size. The {@link #delayMs}
- * delay is inserted before the real call, blocking the calling thread and modelling the combined
- * scheduling stall.
+ * conditions or slow storage this adds tens of milliseconds per directory; (2) the kernel fork call
+ * — CoW page-table duplication cost scales with the parent's virtual memory footprint and is
+ * non-trivial for JVM-based parents; (3) the exec call — dynamic linker startup and security module
+ * checks add overhead proportional to the binary's import table size. The {@link #delayMs} delay is
+ * inserted before the real call, blocking the calling thread and modelling the combined scheduling
+ * stall.
  *
  * <p>The delay fires on every {@code posix_spawnp} call, not at a configurable probability. This
  * makes latency injection deterministic: tests do not need to account for the fraction of calls
@@ -104,11 +109,12 @@ import com.macstab.chaos.process.model.ProcessSelector;
  * }</pre>
  *
  * <p><strong>Delay guidance:</strong> 50–200 ms simulates realistic kernel scheduler stall under
- * node load; values larger than the application's per-spawn timeout will cause all spawns to
- * appear timed out, which may be intentional for testing timeout escalation paths.
+ * node load; values larger than the application's per-spawn timeout will cause all spawns to appear
+ * timed out, which may be intentional for testing timeout escalation paths.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every process-chaos-capable container
- * in the test class.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container in
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ProcessLatencyBinding

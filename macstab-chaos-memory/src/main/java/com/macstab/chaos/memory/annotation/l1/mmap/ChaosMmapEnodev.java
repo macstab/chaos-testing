@@ -19,51 +19,56 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * memory-mapping operation.
  *
  * <h2>What this annotation is</h2>
- * L1 libchaos-memory primitive — one (selector = {@code MMAP}, errno = {@code ENODEV}) tuple.
- * The {@code MMAP} selector covers both anonymous and file-backed {@code mmap} calls; use
- * {@code ChaosMmapAnonEnodev} or {@code ChaosMmapFileEnodev} for narrower fault isolation.
- * Compile-time safety: invalid selector/errno combinations have no annotation class.
+ *
+ * L1 libchaos-memory primitive — one (selector = {@code MMAP}, errno = {@code ENODEV}) tuple. The
+ * {@code MMAP} selector covers both anonymous and file-backed {@code mmap} calls; use {@code
+ * ChaosMmapAnonEnodev} or {@code ChaosMmapFileEnodev} for narrower fault isolation. Compile-time
+ * safety: invalid selector/errno combinations have no annotation class.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
- *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
- *   <li>On each {@code mmap} call the interposer runs a Bernoulli trial with probability
- *       {@link #probability}.</li>
- *   <li>When the trial fires, the interposer sets {@code errno = ENODEV} and returns
- *       {@code MAP_FAILED} without issuing the real kernel call.</li>
- *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 19,
- *       {@code strerror}: "No such device".</li>
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.
+ *   <li>On each {@code mmap} call the interposer runs a Bernoulli trial with probability {@link
+ *       #probability}.
+ *   <li>When the trial fires, the interposer sets {@code errno = ENODEV} and returns {@code
+ *       MAP_FAILED} without issuing the real kernel call.
+ *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 19, {@code strerror}:
+ *       "No such device".
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
- *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = ENODEV} (19); both heap
- *       allocations and file-mapping operations observe a device-failure errno.</li>
+ *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = ENODEV} (19); both heap allocations
+ *       and file-mapping operations observe a device-failure errno.
  *   <li>File-mapping code should distinguish {@code ENODEV} (hardware failure) from {@code ENOMEM}
  *       (resource limit) — assert that diagnostics name "No such device" rather than "Out of
- *       memory".</li>
+ *       memory".
  *   <li>Assert that neither the allocator path nor the file-I/O path silently returns corrupt data
- *       after receiving {@code ENODEV}.</li>
+ *       after receiving {@code ENODEV}.
  * </ul>
+ *
  * Production failure mode: NUMA nodes, PMEM devices, or device-backed filesystems that are
- * hot-removed from a running host cause all subsequent {@code mmap} calls against affected
- * regions or files to fail with {@code ENODEV} — affecting both memory allocation and file I/O
+ * hot-removed from a running host cause all subsequent {@code mmap} calls against affected regions
+ * or files to fail with {@code ENODEV} — affecting both memory allocation and file I/O
  * simultaneously.
  *
  * <h2>Deep technical dive</h2>
- * <p>POSIX specifies {@code ENODEV} for {@code mmap} when the filesystem underlying the mapped
- * file does not support memory mapping (the file system's {@code mmap} operation pointer is
- * {@code NULL}). This is most commonly seen with filesystems that explicitly disable memory
- * mapping (e.g. certain network filesystems in degraded state, or pseudo-filesystems like
- * {@code /proc} entries that have no {@code mmap} implementation).
  *
- * <p>The broad {@code MMAP} selector simultaneously affects anonymous allocations (heap path)
- * and file-backed mappings (I/O path). For file-backed mappings, {@code ENODEV} from a real
- * kernel indicates that the backing filesystem or device cannot provide the mapping — a
- * hardware or filesystem failure, not a resource limit. This is catastrophic for applications
- * like RocksDB or LMDB that use memory-mapped files as their primary I/O mechanism; a fallback
- * to read/write I/O must be implemented and tested.
+ * <p>POSIX specifies {@code ENODEV} for {@code mmap} when the filesystem underlying the mapped file
+ * does not support memory mapping (the file system's {@code mmap} operation pointer is {@code
+ * NULL}). This is most commonly seen with filesystems that explicitly disable memory mapping (e.g.
+ * certain network filesystems in degraded state, or pseudo-filesystems like {@code /proc} entries
+ * that have no {@code mmap} implementation).
+ *
+ * <p>The broad {@code MMAP} selector simultaneously affects anonymous allocations (heap path) and
+ * file-backed mappings (I/O path). For file-backed mappings, {@code ENODEV} from a real kernel
+ * indicates that the backing filesystem or device cannot provide the mapping — a hardware or
+ * filesystem failure, not a resource limit. This is catastrophic for applications like RocksDB or
+ * LMDB that use memory-mapped files as their primary I/O mechanism; a fallback to read/write I/O
+ * must be implemented and tested.
  *
  * <p>For anonymous mappings, real kernel-level {@code ENODEV} is extremely rare because the
  * kernel's anonymous mapping path does not require a device. This annotation exercises the
@@ -89,6 +94,7 @@ import com.macstab.chaos.memory.model.MmapErrno;
  *
  * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; device-removal failures are rare but
  * catastrophic when unhandled — low probability is sufficient to exercise the error path.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
  * the test class.

@@ -28,14 +28,14 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
- *   <li>On each intercepted {@code fsync} call the interposer sleeps for {@link #delayMs} ms
- *       before issuing the real kernel call.
+ *   <li>On each intercepted {@code fsync} call the interposer sleeps for {@link #delayMs} ms before
+ *       issuing the real kernel call.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -50,12 +50,12 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *       throughput drops proportionally and that the application degrades gracefully rather than
  *       timing out or queuing commits unboundedly.
  *   <li>Applications that use group commit (batching multiple transactions' data into a single
- *       fsync to amortise the disk flush cost) may see their batch window fill up before the
- *       fsync completes; assert that the group commit logic correctly handles a slow fsync without
+ *       fsync to amortise the disk flush cost) may see their batch window fill up before the fsync
+ *       completes; assert that the group commit logic correctly handles a slow fsync without
  *       dropping pending transactions or sending commit acknowledgements before the fsync returns.
- *   <li>Assert that slow fsync calls do not block the application's write path: if the WAL fsync
- *       is on the critical path, a slow fsync stalls all new writes and exposes any unbounded
- *       write queue that fills during the stall.
+ *   <li>Assert that slow fsync calls do not block the application's write path: if the WAL fsync is
+ *       on the critical path, a slow fsync stalls all new writes and exposes any unbounded write
+ *       queue that fills during the stall.
  * </ul>
  *
  * <p>In production, slow {@code fsync} calls occur when the storage device's write cache is full
@@ -65,22 +65,22 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>{@code fsync(2)} waits until all dirty pages associated with the file descriptor's inode
- * have been written to the storage device and the device has acknowledged the write. On HDDs,
- * fsync latency is dominated by rotational latency and seek time (3–10 ms). On SSDs, fsync
- * latency is dominated by the device's internal write commit cycle (0.05–1 ms). On NVMe SSDs
- * with power-loss protection, fsync typically completes in under 100 µs.
+ * <p>{@code fsync(2)} waits until all dirty pages associated with the file descriptor's inode have
+ * been written to the storage device and the device has acknowledged the write. On HDDs, fsync
+ * latency is dominated by rotational latency and seek time (3–10 ms). On SSDs, fsync latency is
+ * dominated by the device's internal write commit cycle (0.05–1 ms). On NVMe SSDs with power-loss
+ * protection, fsync typically completes in under 100 µs.
  *
- * <p>This injection adds the delay before the kernel call, simulating the case where the device
- * is under heavy load and the flush must wait for the I/O queue to drain. The delay fires before
- * the kernel call, so the actual storage flush still happens at full speed after the delay; the
- * total fsync latency is delay + actual flush time. This makes the injection additive with the
- * real device latency, which is the correct model for queue-induced latency.
+ * <p>This injection adds the delay before the kernel call, simulating the case where the device is
+ * under heavy load and the flush must wait for the I/O queue to drain. The delay fires before the
+ * kernel call, so the actual storage flush still happens at full speed after the delay; the total
+ * fsync latency is delay + actual flush time. This makes the injection additive with the real
+ * device latency, which is the correct model for queue-induced latency.
  *
- * <p>Java's {@code FileDescriptor.sync()} and {@code FileChannel.force(boolean)} both call
- * {@code fsync(2)}. Applications that use {@code force(false)} (which calls {@code fdatasync})
- * rather than {@code force(true)} (which calls {@code fsync}) will not be affected by this
- * annotation but will be affected by {@link ChaosFdatasyncLatency}.
+ * <p>Java's {@code FileDescriptor.sync()} and {@code FileChannel.force(boolean)} both call {@code
+ * fsync(2)}. Applications that use {@code force(false)} (which calls {@code fdatasync}) rather than
+ * {@code force(true)} (which calls {@code fsync}) will not be affected by this annotation but will
+ * be affected by {@link ChaosFdatasyncLatency}.
  *
  * <h2>Example</h2>
  *

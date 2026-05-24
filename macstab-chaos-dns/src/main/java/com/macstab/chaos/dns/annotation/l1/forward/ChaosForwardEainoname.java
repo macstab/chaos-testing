@@ -19,22 +19,22 @@ import com.macstab.chaos.dns.model.EaiErrno;
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (selectorKind = {@code FORWARD}, errno =
- * {@code EAI_NONAME}) tuple. This annotation always fires on every intercepted forward lookup —
- * there is no per-call probability field. Use it when you need every resolution attempt to produce
- * an NXDOMAIN-equivalent failure so that the application's host-not-found handling is exercised.
- * No runtime selector-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (selectorKind = {@code FORWARD}, errno = {@code
+ * EAI_NONAME}) tuple. This annotation always fires on every intercepted forward lookup — there is
+ * no per-call probability field. Use it when you need every resolution attempt to produce an
+ * NXDOMAIN-equivalent failure so that the application's host-not-found handling is exercised. No
+ * runtime selector-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.DNS)} on the container definition causes the
- *       extension to upload {@code libchaos-dns.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-dns.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code getaddrinfo(3)} and {@code getnameinfo(3)} at the
  *       dynamic-linker level.
- *   <li>On every intercepted {@code getaddrinfo} call the interposer immediately returns
- *       {@code EAI_NONAME} without performing any real resolver query.
+ *   <li>On every intercepted {@code getaddrinfo} call the interposer immediately returns {@code
+ *       EAI_NONAME} without performing any real resolver query.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -43,28 +43,28 @@ import com.macstab.chaos.dns.model.EaiErrno;
  *   <li>Every forward resolution attempt fails as if the hostname does not exist; the application
  *       must not retry on {@code EAI_NONAME} as if it were a transient error — the name does not
  *       exist and retrying will produce the same result.
- *   <li>Service-discovery clients that expect the hostname to be present will fail to resolve
- *       and must either fall back to a hardcoded IP, use a service mesh sidecar, or surface an
- *       error to the caller.
- *   <li>Java's {@code InetAddress.getByName()} maps {@code EAI_NONAME} to an
- *       {@code UnknownHostException} with message "Name or service not known"; assert that the
- *       application catches this and emits a domain-specific error rather than an NPE.
- *   <li>Assert that the application correctly distinguishes between "name does not exist" and
- *       "name exists but cannot be reached" when constructing its diagnostic messages.
+ *   <li>Service-discovery clients that expect the hostname to be present will fail to resolve and
+ *       must either fall back to a hardcoded IP, use a service mesh sidecar, or surface an error to
+ *       the caller.
+ *   <li>Java's {@code InetAddress.getByName()} maps {@code EAI_NONAME} to an {@code
+ *       UnknownHostException} with message "Name or service not known"; assert that the application
+ *       catches this and emits a domain-specific error rather than an NPE.
+ *   <li>Assert that the application correctly distinguishes between "name does not exist" and "name
+ *       exists but cannot be reached" when constructing its diagnostic messages.
  * </ul>
  *
- * <p>In production, {@code EAI_NONAME} from {@code getaddrinfo} occurs when a DNS record is
- * deleted (service decommission), when the application connects to the wrong environment (e.g.
- * a development hostname in a production configuration), or when a Kubernetes service is deleted
+ * <p>In production, {@code EAI_NONAME} from {@code getaddrinfo} occurs when a DNS record is deleted
+ * (service decommission), when the application connects to the wrong environment (e.g. a
+ * development hostname in a production configuration), or when a Kubernetes service is deleted
  * while the application is running.
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>{@code EAI_NONAME} is defined by POSIX as "the node or service is not known". It is
- * returned when the authoritative DNS server responds with {@code NXDOMAIN} ({@code RCODE 3}),
- * meaning the queried name definitively does not exist in the zone. This is distinct from
- * {@code EAI_FAIL}, which signals a resolver infrastructure failure, and from {@code EAI_AGAIN},
- * which signals a transient failure.
+ * <p>{@code EAI_NONAME} is defined by POSIX as "the node or service is not known". It is returned
+ * when the authoritative DNS server responds with {@code NXDOMAIN} ({@code RCODE 3}), meaning the
+ * queried name definitively does not exist in the zone. This is distinct from {@code EAI_FAIL},
+ * which signals a resolver infrastructure failure, and from {@code EAI_AGAIN}, which signals a
+ * transient failure.
  *
  * <p>The glibc resolver maps {@code NXDOMAIN} to {@code h_errno = HOST_NOT_FOUND} and then to
  * {@code EAI_NONAME}. Applications that call the deprecated {@code gethostbyname(3)} instead of
@@ -74,9 +74,9 @@ import com.macstab.chaos.dns.model.EaiErrno;
  *
  * <p>Connection pools that pre-resolve hostnames at startup will fail to initialise under this
  * injection. Pools configured with lazy resolution (connect-on-first-use) will fail at the first
- * connection attempt. Injecting {@code EAI_NONAME} before pool initialisation is the most
- * thorough way to ensure that startup-time DNS failures are handled gracefully rather than causing
- * an unhandled exception in the pool's background thread.
+ * connection attempt. Injecting {@code EAI_NONAME} before pool initialisation is the most thorough
+ * way to ensure that startup-time DNS failures are handled gracefully rather than causing an
+ * unhandled exception in the pool's background thread.
  *
  * <h2>Example</h2>
  *

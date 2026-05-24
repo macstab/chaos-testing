@@ -14,30 +14,29 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code EIO} into {@code write(2)}, causing the call to return {@code -1} with
- * {@code errno = EIO} as if the storage device returned a hardware I/O error while writing
- * the data blocks — indicating a bad sector, storage controller failure, or network filesystem
- * backend write error.
+ * Injects {@code EIO} into {@code write(2)}, causing the call to return {@code -1} with {@code
+ * errno = EIO} as if the storage device returned a hardware I/O error while writing the data blocks
+ * — indicating a bad sector, storage controller failure, or network filesystem backend write error.
  *
  * <h2>What this annotation is</h2>
  *
  * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code WRITE}, errno = {@code EIO})
- * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
- * {@code write} call; when it fires the interposer returns {@code -1} with {@code errno = EIO}
- * without performing any real kernel operation. No runtime operation-errno validation is needed.
+ * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted {@code
+ * write} call; when it fires the interposer returns {@code -1} with {@code errno = EIO} without
+ * performing any real kernel operation. No runtime operation-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
- *   <li>On each intercepted {@code write} call a Bernoulli trial with probability {@link #probability}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = EIO}.
+ *   <li>On each intercepted {@code write} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = EIO}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -47,15 +46,15 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *       kernel's write buffer for the affected block range is lost. Assert that the application
  *       does not proceed as if the write succeeded — it must abort the operation and report the
  *       hardware error rather than continuing with a partially-written file.
- *   <li>Write-ahead logging (WAL) implementations must handle {@code EIO} on WAL writes by
- *       aborting all in-progress transactions and entering a recovery mode; assert that the WAL
- *       writer does not mark transactions as committed when the WAL write fails.
- *   <li>Applications that buffer writes in memory and flush periodically must handle {@code EIO}
- *       on the flush path; assert that un-flushed data is preserved in memory for retry (if
- *       possible) or that the data loss is reported to the caller.
- *   <li>Assert that the application marks the storage device as degraded and switches to a
- *       replica or backup storage path when it encounters {@code EIO} on write, enabling
- *       continued operation while the failing device is replaced.
+ *   <li>Write-ahead logging (WAL) implementations must handle {@code EIO} on WAL writes by aborting
+ *       all in-progress transactions and entering a recovery mode; assert that the WAL writer does
+ *       not mark transactions as committed when the WAL write fails.
+ *   <li>Applications that buffer writes in memory and flush periodically must handle {@code EIO} on
+ *       the flush path; assert that un-flushed data is preserved in memory for retry (if possible)
+ *       or that the data loss is reported to the caller.
+ *   <li>Assert that the application marks the storage device as degraded and switches to a replica
+ *       or backup storage path when it encounters {@code EIO} on write, enabling continued
+ *       operation while the failing device is replaced.
  * </ul>
  *
  * <p>In production, {@code EIO} from {@code write} occurs when a disk sector cannot be written
@@ -69,19 +68,19 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * without waiting for the data to reach the storage device. The actual storage write happens
  * asynchronously via the kernel's writeback mechanism. When the writeback encounters an I/O error,
  * the kernel marks the page as error-pending and sets the file's error flag. The error is delivered
- * to the application on the next {@code write} call that triggers an error check, or on
- * {@code fsync} if the application uses synchronous write patterns.
+ * to the application on the next {@code write} call that triggers an error check, or on {@code
+ * fsync} if the application uses synchronous write patterns.
  *
- * <p>For direct I/O ({@code O_DIRECT}), the write bypasses the page cache and goes directly to
- * the block device. If the block device returns an error, {@code write} returns {@code EIO}
+ * <p>For direct I/O ({@code O_DIRECT}), the write bypasses the page cache and goes directly to the
+ * block device. If the block device returns an error, {@code write} returns {@code EIO}
  * synchronously. This injection simulates the direct I/O failure path regardless of whether the
  * actual file was opened with {@code O_DIRECT}.
  *
  * <p>Java maps {@code EIO} from {@code write} to an {@code IOException} with the message
- * "Input/output error". The same message is used for read-side {@code EIO}; application code
- * should log whether the error occurred on a read or write operation, as the data loss
- * implications differ: a read-side EIO means data cannot be retrieved, while a write-side EIO
- * means data was not persisted.
+ * "Input/output error". The same message is used for read-side {@code EIO}; application code should
+ * log whether the error occurred on a read or write operation, as the data loss implications
+ * differ: a read-side EIO means data cannot be retrieved, while a write-side EIO means data was not
+ * persisted.
  *
  * <h2>Example</h2>
  *

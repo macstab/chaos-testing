@@ -29,14 +29,14 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
- *       extension to upload {@code libchaos-net.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
- *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
- *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
- *       {@code poll} at the dynamic-linker level.
- *   <li>On each intercepted {@code shutdown} call a Bernoulli trial with probability {@link #toxicity}
- *       is conducted; when it fires the interposer sleeps for {@link #delayMs} ms before issuing
- *       the real kernel call.
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket}, {@code
+ *       bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and {@code poll} at
+ *       the dynamic-linker level.
+ *   <li>On each intercepted {@code shutdown} call a Bernoulli trial with probability {@link
+ *       #toxicity} is conducted; when it fires the interposer sleeps for {@link #delayMs} ms before
+ *       issuing the real kernel call.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -44,12 +44,12 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * <ul>
  *   <li>Graceful shutdown sequences that call {@code shutdown(SHUT_WR)} to signal end-of-stream
  *       before reading the final response take longer to complete; assert that the application's
- *       total shutdown timeout accounts for the additional time spent waiting for the
- *       {@code shutdown} call to return.
+ *       total shutdown timeout accounts for the additional time spent waiting for the {@code
+ *       shutdown} call to return.
  *   <li>Connection pool teardown that calls {@code shutdown} on each evicted connection serialises
  *       on this delay if connections are closed sequentially; assert that the pool's shutdown
- *       completes within the configured teardown timeout even when each connection takes
- *       {@link #delayMs} longer to close.
+ *       completes within the configured teardown timeout even when each connection takes {@link
+ *       #delayMs} longer to close.
  *   <li>Server-side handlers that call {@code shutdown(SHUT_WR)} to signal the end of the response
  *       before calling {@code close} delay the FIN delivery to the client; assert that the client's
  *       read loop correctly waits for the FIN even when it arrives later than expected.
@@ -58,8 +58,8 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *       be exceeded if shutdown is unexpectedly slow.
  * </ul>
  *
- * <p>In production, slow {@code shutdown} calls occur when the kernel's TCP state machine must
- * wait for in-flight ACKs before transitioning to the half-closed state, when the process is CPU
+ * <p>In production, slow {@code shutdown} calls occur when the kernel's TCP state machine must wait
+ * for in-flight ACKs before transitioning to the half-closed state, when the process is CPU
  * throttled and waits to be scheduled before entering the kernel, and when connection teardown
  * coincides with high kernel memory pressure that slows socket buffer deallocation.
  *
@@ -76,13 +76,14 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * calls {@code shutdown(SHUT_WR)} and then waits for the remote peer to drain the connection and
  * respond with its own FIN. If the initial shutdown is delayed, the remote peer's draining period
  * starts later, and the total graceful shutdown time increases by the injected delay. This is
- * particularly relevant for HTTP/1.1 servers that use half-close to signal end-of-response
- * (sending FIN after the last response byte) and then wait for the client's acknowledgment.
+ * particularly relevant for HTTP/1.1 servers that use half-close to signal end-of-response (sending
+ * FIN after the last response byte) and then wait for the client's acknowledgment.
  *
  * <p>Java's {@code Socket.shutdownOutput()} translates directly to {@code shutdown(SHUT_WR)};
- * {@code Socket.shutdownInput()} translates to {@code shutdown(SHUT_RD)}; and {@code Socket.close()}
- * internally calls {@code shutdown(SHUT_RDWR)} before closing the file descriptor. All three paths
- * are intercepted by libchaos-net, so any of them will be delayed when this annotation is applied.
+ * {@code Socket.shutdownInput()} translates to {@code shutdown(SHUT_RD)}; and {@code
+ * Socket.close()} internally calls {@code shutdown(SHUT_RDWR)} before closing the file descriptor.
+ * All three paths are intercepted by libchaos-net, so any of them will be delayed when this
+ * annotation is applied.
  *
  * <h2>Example</h2>
  *

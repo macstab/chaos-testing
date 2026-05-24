@@ -16,8 +16,8 @@ import com.macstab.chaos.jvm.api.OperationType;
 /**
  * Intercepts {@code ServerSocket.accept()} and holds the calling thread for {@link #delayMs()}
  * milliseconds before the new inbound connection is dequeued from the kernel's TCP accept queue,
- * simulating a slow acceptor that causes the kernel backlog to fill and new connection attempts
- * to be dropped in blocking-socket server frameworks such as Tomcat's BIO connector.
+ * simulating a slow acceptor that causes the kernel backlog to fill and new connection attempts to
+ * be dropped in blocking-socket server frameworks such as Tomcat's BIO connector.
  *
  * <h2>What this annotation is</h2>
  *
@@ -31,8 +31,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <ol>
  *   <li>Before every call to {@code java.net.ServerSocket#accept()} inside the target container's
  *       JVM, the chaos agent intercepts the calling thread.
- *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()},
- *       {@link #maxDelayMs()}]; equal values produce a deterministic delay.
+ *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()}, {@link
+ *       #maxDelayMs()}]; equal values produce a deterministic delay.
  *   <li>Control returns and the underlying {@code accept()} executes normally, blocking until a
  *       connection is available in the kernel accept queue and returning the new {@code Socket}.
  * </ol>
@@ -41,11 +41,11 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>The accept loop is delayed; the kernel's TCP accept queue fills with completed handshakes
- *       that have not been dequeued; once full, the kernel drops SYN packets or sends RST;
- *       assert that connecting clients observe connection refused or connection timeout depending
- *       on the kernel's {@code tcp_abort_on_overflow} setting.
- *   <li>Tomcat BIO connector uses a dedicated acceptor thread that calls
- *       {@code serverSocket.accept()} in a loop; the delay here limits the maximum accept rate to
+ *       that have not been dequeued; once full, the kernel drops SYN packets or sends RST; assert
+ *       that connecting clients observe connection refused or connection timeout depending on the
+ *       kernel's {@code tcp_abort_on_overflow} setting.
+ *   <li>Tomcat BIO connector uses a dedicated acceptor thread that calls {@code
+ *       serverSocket.accept()} in a loop; the delay here limits the maximum accept rate to
  *       approximately {@code 1000 / delayMs} connections per second; assert that Tomcat's
  *       connection count metric grows slower than the client connection rate during the fault.
  *   <li>The accept rate reduction may cause Tomcat's {@code maxConnections} to be reached faster
@@ -63,25 +63,25 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p>The interception targets {@code java.net.ServerSocket#accept()}, the blocking-socket server
  * API. Unlike {@link ChaosNioChannelAcceptDelay} which targets {@code ServerSocketChannel.accept()}
- * used by NIO-based frameworks (Netty, Undertow), this annotation targets the blocking API used
- * by Tomcat BIO (pre-NIO), embedded Zookeeper servers, and custom server socket implementations.
+ * used by NIO-based frameworks (Netty, Undertow), this annotation targets the blocking API used by
+ * Tomcat BIO (pre-NIO), embedded Zookeeper servers, and custom server socket implementations.
  *
- * <p>{@code ServerSocket.accept()} blocks in the OS {@code accept(2)} syscall until a connection
- * is available. The chaos delay fires before this syscall, blocking the calling thread in the JVM
+ * <p>{@code ServerSocket.accept()} blocks in the OS {@code accept(2)} syscall until a connection is
+ * available. The chaos delay fires before this syscall, blocking the calling thread in the JVM
  * rather than in the OS. This means the thread is not blocked in an interruptible system call —
  * {@code Thread.interrupt()} will interrupt the sleep but not the subsequent {@code accept()} call.
  * Applications that rely on thread interruption to stop the acceptor loop must handle this
  * correctly.
  *
- * <p>The kernel's listen backlog has two independent queues on Linux: the incomplete-handshake
- * SYN queue and the complete-handshake accept queue. {@code ServerSocket.accept()} drains the
- * accept queue. When the accept queue is full (controlled by {@code SO_BACKLOG} and
- * {@code /proc/sys/net/core/somaxconn}), new SYN packets are dropped if
- * {@code /proc/sys/net/ipv4/tcp_abort_on_overflow} is {@code 0}, or new handshakes are RST-ed if
- * it is {@code 1}.
+ * <p>The kernel's listen backlog has two independent queues on Linux: the incomplete-handshake SYN
+ * queue and the complete-handshake accept queue. {@code ServerSocket.accept()} drains the accept
+ * queue. When the accept queue is full (controlled by {@code SO_BACKLOG} and {@code
+ * /proc/sys/net/core/somaxconn}), new SYN packets are dropped if {@code
+ * /proc/sys/net/ipv4/tcp_abort_on_overflow} is {@code 0}, or new handshakes are RST-ed if it is
+ * {@code 1}.
  *
- * <p>The accept delay models the same OS behaviour as a GC pause: both cause the acceptor thread
- * to stop running, both cause the accept queue to fill, and both result in client-visible connection
+ * <p>The accept delay models the same OS behaviour as a GC pause: both cause the acceptor thread to
+ * stop running, both cause the accept queue to fill, and both result in client-visible connection
  * drops when the queue overflows. The difference is that a chaos delay is deterministic and
  * controllable, while a GC pause is stochastic — making this annotation useful for ensuring the
  * application behaves correctly in the GC-pause scenario without needing to trigger an actual GC.
@@ -105,8 +105,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

@@ -14,50 +14,50 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Injects {@code EINVAL} into {@code bind(2)}, causing the call to return {@code -1} with
- * {@code errno = EINVAL} as if the socket is already bound to an address or the address structure
- * length is incorrect for the socket's address family.
+ * Injects {@code EINVAL} into {@code bind(2)}, causing the call to return {@code -1} with {@code
+ * errno = EINVAL} as if the socket is already bound to an address or the address structure length
+ * is incorrect for the socket's address family.
  *
  * <h2>What this annotation is</h2>
  *
  * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code BIND}, errno = {@code EINVAL})
- * tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted
- * {@code bind} call; when it fires the interposer returns {@code -1} with {@code errno = EINVAL}
- * without performing any real kernel operation. No runtime operation-errno validation is needed.
+ * tuple. A Bernoulli trial with probability {@link #toxicity} is run on each intercepted {@code
+ * bind} call; when it fires the interposer returns {@code -1} with {@code errno = EINVAL} without
+ * performing any real kernel operation. No runtime operation-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
- *       extension to upload {@code libchaos-net.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
- *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
- *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
- *       {@code poll} at the dynamic-linker level.
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket}, {@code
+ *       bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and {@code poll} at
+ *       the dynamic-linker level.
  *   <li>On each intercepted {@code bind} call a Bernoulli trial with probability {@link #toxicity}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = EINVAL}.
+ *       is conducted; when it fires the interposer returns {@code -1} and sets {@code errno =
+ *       EINVAL}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>{@code EINVAL} from {@code bind} indicates a programming error: the socket is already bound,
- *       the address-family does not match the socket type, or the address length is incorrect.
- *       Applications must treat this as a non-retriable fatal error.
- *   <li>Assert that the application does not retry on {@code EINVAL}; retrying will produce the same
- *       error indefinitely because the underlying condition (double-bind or mismatched address
+ *   <li>{@code EINVAL} from {@code bind} indicates a programming error: the socket is already
+ *       bound, the address-family does not match the socket type, or the address length is
+ *       incorrect. Applications must treat this as a non-retriable fatal error.
+ *   <li>Assert that the application does not retry on {@code EINVAL}; retrying will produce the
+ *       same error indefinitely because the underlying condition (double-bind or mismatched address
  *       family) cannot resolve itself.
  *   <li>Assert that the application logs the error at ERROR or FATAL level with enough context to
  *       identify the offending socket and address, so that operators can diagnose the configuration
  *       mismatch.
- *   <li>Server frameworks that catch all bind errors and retry will spin indefinitely on
- *       {@code EINVAL}; this injection verifies that the framework has a non-retriable error path.
+ *   <li>Server frameworks that catch all bind errors and retry will spin indefinitely on {@code
+ *       EINVAL}; this injection verifies that the framework has a non-retriable error path.
  * </ul>
  *
- * <p>In production, {@code EINVAL} from {@code bind} occurs when application code calls {@code bind}
- * twice on the same socket (a common mistake when a socket is reused across requests), when the
- * address structure is constructed for the wrong address family (e.g., passing an IPv6 address
+ * <p>In production, {@code EINVAL} from {@code bind} occurs when application code calls {@code
+ * bind} twice on the same socket (a common mistake when a socket is reused across requests), when
+ * the address structure is constructed for the wrong address family (e.g., passing an IPv6 address
  * structure to an IPv4 socket), or when a helper library wraps socket setup incorrectly.
  *
  * <h2>Deep technical dive</h2>
@@ -81,10 +81,10 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * injection verifies that the retry logic is conditioned on retriable errors (e.g., {@code EINTR})
  * rather than all {@code SocketException} subtypes.
  *
- * <p>This is the {@code bind}-specific analogue of {@code EINVAL} from {@code accept} and
- * {@code listen}: all three indicate a socket lifecycle invariant violation. The correct response in
- * all cases is to close the socket, create a new one, and restart the socket setup sequence from
- * the beginning.
+ * <p>This is the {@code bind}-specific analogue of {@code EINVAL} from {@code accept} and {@code
+ * listen}: all three indicate a socket lifecycle invariant violation. The correct response in all
+ * cases is to close the socket, create a new one, and restart the socket setup sequence from the
+ * beginning.
  *
  * <h2>Example</h2>
  *

@@ -20,38 +20,38 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code ACCEPT}, errno =
- * {@code ECONNRESET}) tuple. A Bernoulli trial with probability {@link #toxicity} is run on each
- * intercepted {@code accept} call; when it fires the interposer returns {@code -1} with
- * {@code errno = ECONNRESET} without performing any real kernel operation. No runtime
- * operation-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code ACCEPT}, errno = {@code
+ * ECONNRESET}) tuple. A Bernoulli trial with probability {@link #toxicity} is run on each
+ * intercepted {@code accept} call; when it fires the interposer returns {@code -1} with {@code
+ * errno = ECONNRESET} without performing any real kernel operation. No runtime operation-errno
+ * validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
- *       extension to upload {@code libchaos-net.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
- *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
- *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
- *       {@code poll} at the dynamic-linker level.
- *   <li>On every intercepted {@code accept} call a Bernoulli trial with probability
- *       {@link #toxicity} is conducted; when it fires the interposer returns {@code -1} and
- *       sets {@code errno = ECONNRESET}.
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket}, {@code
+ *       bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and {@code poll} at
+ *       the dynamic-linker level.
+ *   <li>On every intercepted {@code accept} call a Bernoulli trial with probability {@link
+ *       #toxicity} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = ECONNRESET}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>The server-side accept loop receives a reset error before a connection fd is obtained;
- *       no socket is accepted, so there is nothing to close — the server must simply log the
- *       event and continue accepting subsequent connections.
- *   <li>Server implementations that treat {@code ECONNRESET} from {@code accept} as a fatal
- *       error and stop accepting connections will fail to serve subsequent clients, revealing
- *       an incorrect error-recovery strategy.
- *   <li>Assert that the server's accept loop continues to accept connections after a
- *       {@code ECONNRESET} event and that the error is logged at the appropriate severity
- *       level (typically WARN, not ERROR or FATAL).
+ *   <li>The server-side accept loop receives a reset error before a connection fd is obtained; no
+ *       socket is accepted, so there is nothing to close — the server must simply log the event and
+ *       continue accepting subsequent connections.
+ *   <li>Server implementations that treat {@code ECONNRESET} from {@code accept} as a fatal error
+ *       and stop accepting connections will fail to serve subsequent clients, revealing an
+ *       incorrect error-recovery strategy.
+ *   <li>Assert that the server's accept loop continues to accept connections after a {@code
+ *       ECONNRESET} event and that the error is logged at the appropriate severity level (typically
+ *       WARN, not ERROR or FATAL).
  * </ul>
  *
  * <p>In production, {@code ECONNRESET} from {@code accept} occurs when a client sends a TCP RST

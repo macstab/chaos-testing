@@ -21,8 +21,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p>A JVM agent L1 chaos primitive targeting the {@code SYSTEM_CLOCK_NANOS} operation — one typed
  * annotation per (selector family, operation type, effect) tuple. Declared on a test class or
- * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until
- * {@code afterAll}/{@code afterEach} respectively.
+ * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until {@code
+ * afterAll}/{@code afterEach} respectively.
  *
  * <h2>What chaos this applies</h2>
  *
@@ -79,8 +79,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  * application an opportunity to demonstrate whether it has a hard CPU-spin ceiling.
  *
  * <p>Because the skew applies only inside the container JVM, the test side retains the true
- * monotonic clock, enabling precise measurement of how long the container took to detect an
- * anomaly such as a doubled timeout window.
+ * monotonic clock, enabling precise measurement of how long the container took to detect an anomaly
+ * such as a doubled timeout window.
  *
  * <h2>Example</h2>
  *
@@ -96,8 +96,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
- *       agent before the container JVM starts; omitting it causes an
- *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       agent before the container JVM starts; omitting it causes an {@code
+ *       ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
  *       {@code @JvmAgentChaos}.
  *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the

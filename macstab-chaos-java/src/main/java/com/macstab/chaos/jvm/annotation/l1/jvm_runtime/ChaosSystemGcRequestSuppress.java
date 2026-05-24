@@ -14,65 +14,64 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Silently suppresses every explicit {@code System.gc()} call, making the JVM behave as if
- * {@code -XX:+DisableExplicitGC} were active, so that application-driven GC pressure cannot be
- * relieved by explicit collections.
+ * Silently suppresses every explicit {@code System.gc()} call, making the JVM behave as if {@code
+ * -XX:+DisableExplicitGC} were active, so that application-driven GC pressure cannot be relieved by
+ * explicit collections.
  *
  * <h2>What this annotation is</h2>
  *
  * <p>A JVM agent L1 chaos primitive targeting the {@code SYSTEM_GC_REQUEST} operation — one typed
  * annotation per (selector family, operation type, effect) tuple. Declared on a test class or
- * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until
- * {@code afterAll}/{@code afterEach} respectively.
+ * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until {@code
+ * afterAll}/{@code afterEach} respectively.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>The chaos agent intercepts every call to {@code System.gc()} in the target container's
- *       JVM.
- *   <li>The interceptor returns immediately without forwarding to the JVM, making the call a
- *       no-op; no collection is triggered.
+ *   <li>The chaos agent intercepts every call to {@code System.gc()} in the target container's JVM.
+ *   <li>The interceptor returns immediately without forwarding to the JVM, making the call a no-op;
+ *       no collection is triggered.
  *   <li>The calling thread is not delayed; only the GC hint is discarded.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Off-heap memory not reclaimed.</strong> {@code DirectByteBuffer} objects that
- *       would be collected on an explicit GC will accumulate, eventually causing
- *       {@code OutOfMemoryError: Direct buffer memory}; assert that the application either caps
- *       its off-heap usage or falls back gracefully.
+ *   <li><strong>Off-heap memory not reclaimed.</strong> {@code DirectByteBuffer} objects that would
+ *       be collected on an explicit GC will accumulate, eventually causing {@code OutOfMemoryError:
+ *       Direct buffer memory}; assert that the application either caps its off-heap usage or falls
+ *       back gracefully.
  *   <li><strong>Finalizers never run on demand.</strong> Code that calls {@code System.gc()} to
  *       trigger finalizers (e.g. to close native resources) will see those finalizers deferred
  *       indefinitely; assert that resource cleanup uses explicit {@code close()} calls rather than
  *       finaliser reliance.
- *   <li><strong>RMI distributed GC broken.</strong> Java RMI's distributed GC mechanism depends
- *       on periodic {@code System.gc()} hints; with suppression, remote references may not be
+ *   <li><strong>RMI distributed GC broken.</strong> Java RMI's distributed GC mechanism depends on
+ *       periodic {@code System.gc()} hints; with suppression, remote references may not be
  *       collected and the server-side proxy map grows without bound.
- *   <li><strong>Production failure mode:</strong> Netty's pooled allocator and other NIO
- *       frameworks call {@code System.gc()} as a last resort before throwing OOM; suppression
- *       prevents that safety valve and causes the JVM to OOM without ever running the
- *       collection that would have freed enough memory to continue.
+ *   <li><strong>Production failure mode:</strong> Netty's pooled allocator and other NIO frameworks
+ *       call {@code System.gc()} as a last resort before throwing OOM; suppression prevents that
+ *       safety valve and causes the JVM to OOM without ever running the collection that would have
+ *       freed enough memory to continue.
  * </ul>
  *
  * <h2>Deep technical dive</h2>
  *
  * <p>{@code System.gc()} is implemented as a JVM intrinsic that, in HotSpot, ultimately calls
- * {@code Universe::heap()->collect()}. Suppressing it requires intercepting the Java-visible
- * {@code System.gc()} before the JNI boundary. The agent installs a Byte Buddy delegation stub
- * in the bootstrap class loader that checks whether the suppression rule is active and, if so,
- * returns without calling the native implementation.
+ * {@code Universe::heap()->collect()}. Suppressing it requires intercepting the Java-visible {@code
+ * System.gc()} before the JNI boundary. The agent installs a Byte Buddy delegation stub in the
+ * bootstrap class loader that checks whether the suppression rule is active and, if so, returns
+ * without calling the native implementation.
  *
  * <p>Suppression differs from setting {@code -XX:+DisableExplicitGC} in that it is dynamic: the
- * agent can activate and deactivate the suppression at runtime via the agent API, enabling tests
- * to alternate between suppressed and permitted GC windows within a single test class lifecycle.
- * This is useful for testing "GC arrives too late" scenarios where the application allocates for N
+ * agent can activate and deactivate the suppression at runtime via the agent API, enabling tests to
+ * alternate between suppressed and permitted GC windows within a single test class lifecycle. This
+ * is useful for testing "GC arrives too late" scenarios where the application allocates for N
  * seconds with suppression active, then GC is re-enabled to observe the catch-up behaviour.
  *
  * <p>Suppression does not affect JVM-initiated collections (minor GC, major GC, concurrent GC
- * cycles). Only the explicit {@code System.gc()} call from application code is intercepted. The
- * JVM remains free to collect at its own discretion, so the scenario is specifically "the
- * application asked for a GC and didn't get one", not "GC is entirely disabled".
+ * cycles). Only the explicit {@code System.gc()} call from application code is intercepted. The JVM
+ * remains free to collect at its own discretion, so the scenario is specifically "the application
+ * asked for a GC and didn't get one", not "GC is entirely disabled".
  *
  * <p>The interaction with {@link ChaosSystemGcRequestDelay} on the same operation type is
  * undefined; applying both to the same container at the same time should be avoided. Use the
@@ -92,8 +91,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
- *       agent before the container JVM starts; omitting it causes an
- *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       agent before the container JVM starts; omitting it causes an {@code
+ *       ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
  *       {@code @JvmAgentChaos}.
  *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the

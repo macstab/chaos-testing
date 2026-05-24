@@ -22,18 +22,18 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code POLL}, effect = LATENCY) tuple.
  * Unlike errno variants, the latency primitive always delegates to the real kernel call after the
  * configured extra delay — the poll result is authentic (it reflects actual socket readiness). A
- * Bernoulli trial with probability {@link #toxicity} gates whether the delay fires on each call.
- * No runtime operation-effect validation is needed.
+ * Bernoulli trial with probability {@link #toxicity} gates whether the delay fires on each call. No
+ * runtime operation-effect validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
- *       extension to upload {@code libchaos-net.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
- *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
- *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
- *       {@code poll} at the dynamic-linker level.
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket}, {@code
+ *       bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and {@code poll} at
+ *       the dynamic-linker level.
  *   <li>On each intercepted {@code poll} call a Bernoulli trial with probability {@link #toxicity}
  *       is conducted; when it fires the interposer sleeps for {@link #delayMs} ms before issuing
  *       the real kernel call.
@@ -72,11 +72,11 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * was not scheduled to consume it.
  *
  * <p>Netty, Vert.x, and other NIO-based frameworks use {@code epoll_wait} rather than {@code poll}
- * on Linux; this injection targets the POSIX {@code poll} wrapper, which may be called by
- * non-NIO code paths within the container (e.g., Redis's blocking command implementation). For
- * event-driven Java servers, {@link ChaosRecvLatency} and {@link ChaosConnectLatency} are more
- * relevant; {@code ChaosPollLatency} is most useful for testing C/C++ or Python servers that use
- * blocking {@code poll} calls.
+ * on Linux; this injection targets the POSIX {@code poll} wrapper, which may be called by non-NIO
+ * code paths within the container (e.g., Redis's blocking command implementation). For event-driven
+ * Java servers, {@link ChaosRecvLatency} and {@link ChaosConnectLatency} are more relevant; {@code
+ * ChaosPollLatency} is most useful for testing C/C++ or Python servers that use blocking {@code
+ * poll} calls.
  *
  * <h2>Example</h2>
  *

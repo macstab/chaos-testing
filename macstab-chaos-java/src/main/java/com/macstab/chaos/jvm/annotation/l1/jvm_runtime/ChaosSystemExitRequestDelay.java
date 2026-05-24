@@ -22,8 +22,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p>A JVM agent L1 chaos primitive targeting the {@code SYSTEM_EXIT_REQUEST} operation — one typed
  * annotation per (selector family, operation type, effect) tuple. Declared on a test class or
- * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until
- * {@code afterAll}/{@code afterEach} respectively.
+ * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until {@code
+ * afterAll}/{@code afterEach} respectively.
  *
  * <h2>What chaos this applies</h2>
  *
@@ -59,10 +59,10 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Deep technical dive</h2>
  *
  * <p>{@code System.exit()} ultimately calls {@code Runtime.halt()} (or the equivalent JVM
- * intrinsic) after running all registered shutdown hooks. Intercepting it at the
- * {@code System.exit()} level means the delay fires before any shutdown hook runs, extending the
- * entire shutdown sequence. Intercepting at the {@code Runtime.halt()} level would insert the delay
- * after hooks complete but before the JVM destroys its threads.
+ * intrinsic) after running all registered shutdown hooks. Intercepting it at the {@code
+ * System.exit()} level means the delay fires before any shutdown hook runs, extending the entire
+ * shutdown sequence. Intercepting at the {@code Runtime.halt()} level would insert the delay after
+ * hooks complete but before the JVM destroys its threads.
  *
  * <p>The agent wraps {@code System.exit()} with a Byte Buddy delegation that parks the invoking
  * thread for the configured duration, then delegates to the real implementation. Because the
@@ -93,8 +93,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
- *       agent before the container JVM starts; omitting it causes an
- *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       agent before the container JVM starts; omitting it causes an {@code
+ *       ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
  *       {@code @JvmAgentChaos}.
  *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the

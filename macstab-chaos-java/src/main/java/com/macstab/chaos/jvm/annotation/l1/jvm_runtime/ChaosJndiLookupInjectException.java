@@ -14,16 +14,15 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Throws a configurable exception (typically {@link javax.naming.NamingException}) at every
- * {@code InitialContext.lookup()} call site, simulating a misconfigured or unavailable JNDI
- * naming tree.
+ * Throws a configurable exception (typically {@link javax.naming.NamingException}) at every {@code
+ * InitialContext.lookup()} call site, simulating a misconfigured or unavailable JNDI naming tree.
  *
  * <h2>What this annotation is</h2>
  *
  * <p>A JVM agent L1 chaos primitive targeting the {@code JNDI_LOOKUP} operation — one typed
  * annotation per (selector family, operation type, effect) tuple. Declared on a test class or
- * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until
- * {@code afterAll}/{@code afterEach} respectively.
+ * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until {@code
+ * afterAll}/{@code afterEach} respectively.
  *
  * <h2>What chaos this applies</h2>
  *
@@ -55,8 +54,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>The natural exception type for JNDI failures is {@code javax.naming.NamingException} or one
- * of its subclasses: {@code NameNotFoundException} (name not bound), {@code CommunicationException}
+ * <p>The natural exception type for JNDI failures is {@code javax.naming.NamingException} or one of
+ * its subclasses: {@code NameNotFoundException} (name not bound), {@code CommunicationException}
  * (provider unreachable), or {@code AuthenticationException} (bad credentials). Each subclass
  * exercises a different branch of the application's exception handler and should be selected
  * according to the scenario being tested.
@@ -72,9 +71,9 @@ import com.macstab.chaos.jvm.api.OperationType;
  * pool initialisation), each thread will receive an independent exception. The chaos therefore
  * exercises concurrent exception handling, not just sequential error handling.
  *
- * <p>In Spring applications, JNDI lookups are often wrapped in a {@code JndiTemplate} that
- * converts {@code NamingException} to a {@code DataAccessException}; assert that this conversion
- * is visible in the application's error response and logs.
+ * <p>In Spring applications, JNDI lookups are often wrapped in a {@code JndiTemplate} that converts
+ * {@code NamingException} to a {@code DataAccessException}; assert that this conversion is visible
+ * in the application's error response and logs.
  *
  * <h2>Example</h2>
  *
@@ -92,8 +91,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
- *       agent before the container JVM starts; omitting it causes an
- *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       agent before the container JVM starts; omitting it causes an {@code
+ *       ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
  *       {@code @JvmAgentChaos}.
  *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the

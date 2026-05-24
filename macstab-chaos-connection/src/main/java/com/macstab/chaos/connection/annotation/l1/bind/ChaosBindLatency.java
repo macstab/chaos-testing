@@ -21,19 +21,19 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code BIND}, effect = LATENCY) tuple.
  * Unlike errno variants, the latency primitive always delegates to the real kernel call after the
- * configured extra delay — the bind succeeds and the socket is assigned the requested local address.
- * A Bernoulli trial with probability {@link #toxicity} gates whether the delay fires on each call.
- * No runtime operation-effect validation is needed.
+ * configured extra delay — the bind succeeds and the socket is assigned the requested local
+ * address. A Bernoulli trial with probability {@link #toxicity} gates whether the delay fires on
+ * each call. No runtime operation-effect validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.NET)} on the container definition causes the
- *       extension to upload {@code libchaos-net.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
- *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket},
- *       {@code bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and
- *       {@code poll} at the dynamic-linker level.
+ *       extension to upload {@code libchaos-net.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
+ *   <li>The shared library interposes {@code connect}, {@code accept}, {@code socket}, {@code
+ *       bind}, {@code listen}, {@code shutdown}, {@code send}, {@code recv}, and {@code poll} at
+ *       the dynamic-linker level.
  *   <li>On each intercepted {@code bind} call a Bernoulli trial with probability {@link #toxicity}
  *       is conducted; when it fires the interposer sleeps for {@link #delayMs} ms before issuing
  *       the real kernel call.
@@ -42,17 +42,18 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>Server startup takes longer when bind is delayed; assert that health-check or readiness-probe
- *       timeouts are generous enough to accommodate slow bind calls during startup under load.
+ *   <li>Server startup takes longer when bind is delayed; assert that health-check or
+ *       readiness-probe timeouts are generous enough to accommodate slow bind calls during startup
+ *       under load.
  *   <li>Applications that pipeline socket setup (socket → bind → listen → accept) in a sequence
  *       will see the delay propagate into the total startup time; assert that startup timeouts are
  *       configured to accommodate this latency.
- *   <li>Services that set up multiple listening sockets sequentially (e.g., binding to both HTTP and
- *       HTTPS ports) will accumulate per-bind delays; assert that the total startup time budget
+ *   <li>Services that set up multiple listening sockets sequentially (e.g., binding to both HTTP
+ *       and HTTPS ports) will accumulate per-bind delays; assert that the total startup time budget
  *       accounts for the number of sockets being bound.
  *   <li>Assert that the delay does not affect the established connections already being served —
- *       bind latency injected during a restart-in-place scenario should not cause in-flight requests
- *       to timeout.
+ *       bind latency injected during a restart-in-place scenario should not cause in-flight
+ *       requests to timeout.
  * </ul>
  *
  * <p>In production, slow {@code bind} calls occur when the kernel's routing subsystem is under load

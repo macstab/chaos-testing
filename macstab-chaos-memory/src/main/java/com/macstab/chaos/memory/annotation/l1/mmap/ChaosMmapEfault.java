@@ -19,59 +19,64 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * memory-mapping operation.
  *
  * <h2>What this annotation is</h2>
- * L1 libchaos-memory primitive — one (selector = {@code MMAP}, errno = {@code EFAULT}) tuple.
- * The {@code MMAP} selector covers both anonymous and file-backed {@code mmap} calls; use
- * {@code ChaosMmapAnonEfault} or {@code ChaosMmapFileEfault} for narrower fault isolation.
- * Compile-time safety: invalid selector/errno combinations have no annotation class.
+ *
+ * L1 libchaos-memory primitive — one (selector = {@code MMAP}, errno = {@code EFAULT}) tuple. The
+ * {@code MMAP} selector covers both anonymous and file-backed {@code mmap} calls; use {@code
+ * ChaosMmapAnonEfault} or {@code ChaosMmapFileEfault} for narrower fault isolation. Compile-time
+ * safety: invalid selector/errno combinations have no annotation class.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
- *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
- *   <li>On each {@code mmap} call the interposer runs a Bernoulli trial with probability
- *       {@link #probability}.</li>
- *   <li>When the trial fires, the interposer sets {@code errno = EFAULT} and returns
- *       {@code MAP_FAILED} without issuing the real kernel call.</li>
- *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 14,
- *       {@code strerror}: "Bad address".</li>
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.
+ *   <li>On each {@code mmap} call the interposer runs a Bernoulli trial with probability {@link
+ *       #probability}.
+ *   <li>When the trial fires, the interposer sets {@code errno = EFAULT} and returns {@code
+ *       MAP_FAILED} without issuing the real kernel call.
+ *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 14, {@code strerror}:
+ *       "Bad address".
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
  *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = EFAULT} (14); any code that
- *       dereferences the returned value will receive {@code SIGSEGV}.</li>
- *   <li>glibc {@code malloc} propagates {@code NULL}; JVM allocators raise {@code OutOfMemoryError};
- *       file-mapping code that does not check the return value will crash.</li>
- *   <li>Assert that no code path dereferences {@code MAP_FAILED} — verify the application
- *       produces a diagnostic rather than a segmentation fault.</li>
+ *       dereferences the returned value will receive {@code SIGSEGV}.
+ *   <li>glibc {@code malloc} propagates {@code NULL}; JVM allocators raise {@code
+ *       OutOfMemoryError}; file-mapping code that does not check the return value will crash.
+ *   <li>Assert that no code path dereferences {@code MAP_FAILED} — verify the application produces
+ *       a diagnostic rather than a segmentation fault.
  * </ul>
+ *
  * Production failure mode: JIT runtimes that pass stale or computed hint addresses to {@code mmap}
  * can receive {@code EFAULT} from a real kernel when the hint falls outside accessible address
  * space — a latent bug that is nearly impossible to reproduce without injection.
  *
  * <h2>Deep technical dive</h2>
+ *
  * <p>POSIX specifies {@code EFAULT} for {@code mmap} when the {@code addr} hint references
- * addresses outside the accessible process address space. The kernel validates the hint in
- * {@code do_mmap_pgoff} and returns {@code -EFAULT} if it falls in kernel space or in an
- * inaccessible region. For anonymous mappings with a {@code NULL} hint, {@code EFAULT} never
- * occurs naturally; for file-backed mappings with a non-null hint, it is possible when the
- * caller provides a garbage hint pointer from a stale cache.
+ * addresses outside the accessible process address space. The kernel validates the hint in {@code
+ * do_mmap_pgoff} and returns {@code -EFAULT} if it falls in kernel space or in an inaccessible
+ * region. For anonymous mappings with a {@code NULL} hint, {@code EFAULT} never occurs naturally;
+ * for file-backed mappings with a non-null hint, it is possible when the caller provides a garbage
+ * hint pointer from a stale cache.
  *
- * <p>The broad {@code MMAP} selector simultaneously affects anonymous allocations (heap path)
- * and file-backed mappings (I/O path). File-mapping code that caches the result of a previous
- * successful mapping and reuses it as a hint for subsequent mappings is particularly at risk:
- * if the mapping was unmapped between calls, the hint becomes stale and the kernel returns
- * {@code EFAULT}.
+ * <p>The broad {@code MMAP} selector simultaneously affects anonymous allocations (heap path) and
+ * file-backed mappings (I/O path). File-mapping code that caches the result of a previous
+ * successful mapping and reuses it as a hint for subsequent mappings is particularly at risk: if
+ * the mapping was unmapped between calls, the hint becomes stale and the kernel returns {@code
+ * EFAULT}.
  *
- * <p>The JVM uses {@code mmap} with explicit hint addresses for its internal allocators
- * (G1 region placement, code cache placement); these use carefully computed addresses that
- * should never produce {@code EFAULT} in practice. This annotation exercises the error-handling
- * code in the JVM's native allocator wrappers that has likely never been triggered in any
- * production deployment.
+ * <p>The JVM uses {@code mmap} with explicit hint addresses for its internal allocators (G1 region
+ * placement, code cache placement); these use carefully computed addresses that should never
+ * produce {@code EFAULT} in practice. This annotation exercises the error-handling code in the
+ * JVM's native allocator wrappers that has likely never been triggered in any production
+ * deployment.
  *
- * <p>At high probability values (approaching 1.0), {@code EFAULT} injection will cause the
- * dynamic linker itself to fail when loading shared libraries, producing unmaskable crashes.
- * Keep probability very low (1e-5 to 1e-4) for this annotation.
+ * <p>At high probability values (approaching 1.0), {@code EFAULT} injection will cause the dynamic
+ * linker itself to fail when loading shared libraries, producing unmaskable crashes. Keep
+ * probability very low (1e-5 to 1e-4) for this annotation.
  *
  * <h2>Example</h2>
  *
@@ -87,8 +92,9 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> very low rates (1e-5 to 1e-4); {@code EFAULT} at
- * high probability causes unmaskable process crashes.
+ * <p><strong>Probability guidance:</strong> very low rates (1e-5 to 1e-4); {@code EFAULT} at high
+ * probability causes unmaskable process crashes.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
  * the test class.

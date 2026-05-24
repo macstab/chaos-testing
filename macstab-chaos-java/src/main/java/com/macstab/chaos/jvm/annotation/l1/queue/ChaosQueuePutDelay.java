@@ -16,8 +16,8 @@ import com.macstab.chaos.jvm.api.OperationType;
 /**
  * Parks the calling thread for {@link #delayMs} to {@link #maxDelayMs} milliseconds before every
  * {@link java.util.concurrent.BlockingQueue#put(Object) BlockingQueue.put(item)} call, adding
- * artificial latency to the blocking enqueue path without preventing the item from eventually
- * being placed on the queue.
+ * artificial latency to the blocking enqueue path without preventing the item from eventually being
+ * placed on the queue.
  *
  * <h2>What this annotation is</h2>
  *
@@ -33,14 +33,14 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <h2>What chaos this applies</h2>
  *
- * <p>The JVM agent installs a Byte Buddy interceptor on {@code BlockingQueue.put(Object)}. When
- * the interceptor fires:
+ * <p>The JVM agent installs a Byte Buddy interceptor on {@code BlockingQueue.put(Object)}. When the
+ * interceptor fires:
  *
  * <ol>
  *   <li>The interceptor is entered on the calling thread before the queue's internal lock is
  *       acquired.
- *   <li>The delay effect calls {@code Thread.sleep(delayMs)} (or a random value in {@code
- *       [delayMs, maxDelayMs]}), parking the thread.
+ *   <li>The delay effect calls {@code Thread.sleep(delayMs)} (or a random value in {@code [delayMs,
+ *       maxDelayMs]}), parking the thread.
  *   <li>After the sleep, the original {@code put} body executes: the lock is acquired and the
  *       thread waits until space is available, then the item is enqueued and a consumer is
  *       notified.
@@ -59,11 +59,11 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       CPU usage during the delay but ties up the thread handle.
  * </ul>
  *
- * <p><strong>Production failure mode:</strong> a write-ahead-log producer calls {@code put} to
- * hand off log entries to a background flusher thread; a slow disk or lock contention on the
- * flusher side causes the queue to fill, forcing the producer's {@code put} to block — combined
- * with the injected delay, the producer stalls for the delay even when the queue has space,
- * causing upstream request latency to spike.
+ * <p><strong>Production failure mode:</strong> a write-ahead-log producer calls {@code put} to hand
+ * off log entries to a background flusher thread; a slow disk or lock contention on the flusher
+ * side causes the queue to fill, forcing the producer's {@code put} to block — combined with the
+ * injected delay, the producer stalls for the delay even when the queue has space, causing upstream
+ * request latency to spike.
  *
  * <h2>Deep technical dive</h2>
  *
@@ -77,10 +77,10 @@ import com.macstab.chaos.jvm.api.OperationType;
  * block time for the caller is therefore {@code delayMs + queue_wait_time}. If the consumer drains
  * quickly, the queue_wait_time is zero and only the delay is visible.
  *
- * <p><strong>Distinguishing from siblings.</strong> {@link ChaosQueuePutGate} blocks until the
- * test explicitly releases the producer — no auto-release. {@link ChaosQueueOfferDelay} targets
- * the non-blocking {@code offer} path. {@link ChaosQueueOfferSuppress} discards items silently.
- * This annotation preserves the blocking semantics of {@code put} but stretches its latency.
+ * <p><strong>Distinguishing from siblings.</strong> {@link ChaosQueuePutGate} blocks until the test
+ * explicitly releases the producer — no auto-release. {@link ChaosQueueOfferDelay} targets the
+ * non-blocking {@code offer} path. {@link ChaosQueueOfferSuppress} discards items silently. This
+ * annotation preserves the blocking semantics of {@code put} but stretches its latency.
  *
  * <h2>Example</h2>
  *
@@ -102,7 +102,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java container image — the container must run a JVM process.
  * </ul>

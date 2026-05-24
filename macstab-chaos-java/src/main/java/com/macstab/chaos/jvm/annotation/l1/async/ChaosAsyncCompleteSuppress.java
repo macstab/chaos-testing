@@ -71,8 +71,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <h2>Deep technical dive</h2>
  *
- * <p><strong>Interception point.</strong> The agent targets
- * {@code java.util.concurrent.CompletableFuture#complete(Object)} directly via a Byte Buddy method
+ * <p><strong>Interception point.</strong> The agent targets {@code
+ * java.util.concurrent.CompletableFuture#complete(Object)} directly via a Byte Buddy method
  * interceptor installed during the premain phase. Because {@code CompletableFuture} is a JDK class,
  * the agent uses the bootstrap class loader's instrumentation channel (retransformation of already
  * loaded classes). If the JVM has already loaded {@code CompletableFuture} before the agent
@@ -82,8 +82,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  * internally a compare-and-set on the result field (from {@code NIL} to the boxed value). The
  * suppress effect skips this CAS entirely — the method simply returns {@code false}. This is
  * indistinguishable from the case where a concurrent thread already completed the future, so
- * application code that inspects the return value of {@code complete} (idiomatic usage:
- * {@code if (!cf.complete(v)) handleRace()}) will silently enter the race-handling branch.
+ * application code that inspects the return value of {@code complete} (idiomatic usage: {@code if
+ * (!cf.complete(v)) handleRace()}) will silently enter the race-handling branch.
  *
  * <p><strong>Cascading effect on dependent stages.</strong> {@code CompletableFuture} stores its
  * completion stack as a linked list of {@code Completion} nodes. These nodes are processed only
@@ -92,15 +92,15 @@ import com.macstab.chaos.jvm.api.OperationType;
  * handle} — stays queued but never runs. If those stages are themselves awaited by further futures,
  * the stall propagates transitively through the entire pipeline.
  *
- * <p><strong>Virtual threads and structured concurrency.</strong> In Java 21+ code using
- * structured concurrency ({@code StructuredTaskScope}), a suppressed {@code complete} on the
- * scope's internal future can cause the scope's {@code join()} to block past the deadline set by
- * the scope's timeout, because the scope's completion latch is driven by the same
- * {@code CompletableFuture} machinery. Under Project Loom this ties up a virtual thread carrier
- * until interrupted — effectively a thread leak from the test's perspective.
+ * <p><strong>Virtual threads and structured concurrency.</strong> In Java 21+ code using structured
+ * concurrency ({@code StructuredTaskScope}), a suppressed {@code complete} on the scope's internal
+ * future can cause the scope's {@code join()} to block past the deadline set by the scope's
+ * timeout, because the scope's completion latch is driven by the same {@code CompletableFuture}
+ * machinery. Under Project Loom this ties up a virtual thread carrier until interrupted —
+ * effectively a thread leak from the test's perspective.
  *
- * <p><strong>Scope and selector.</strong> The agent applies the suppression to <em>all</em>
- * {@code CompletableFuture.complete} calls originating from the container JVM, not just ones on a
+ * <p><strong>Scope and selector.</strong> The agent applies the suppression to <em>all</em> {@code
+ * CompletableFuture.complete} calls originating from the container JVM, not just ones on a
  * particular future instance. If the target service uses multiple futures, all of them are
  * suppressed. To target a narrower scope, compose this annotation with a method-level scoping
  * annotation, or restrict the application window to a single {@code @Test} method (method-scope)
@@ -129,7 +129,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java container image — the container must run a JVM process.
  * </ul>

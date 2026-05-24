@@ -14,49 +14,49 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code EROFS} into {@code truncate(2)}, causing the call to return {@code -1} with
- * {@code errno = EROFS} as if the file's filesystem has been remounted read-only and the kernel
- * cannot modify the file's size because no modifications are permitted on a read-only filesystem.
+ * Injects {@code EROFS} into {@code truncate(2)}, causing the call to return {@code -1} with {@code
+ * errno = EROFS} as if the file's filesystem has been remounted read-only and the kernel cannot
+ * modify the file's size because no modifications are permitted on a read-only filesystem.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code TRUNCATE}, errno = {@code EROFS})
- * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code TRUNCATE}, errno = {@code
+ * EROFS}) tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
  * {@code truncate} call; when it fires the interposer returns {@code -1} with {@code errno = EROFS}
  * without performing any real kernel operation. No runtime operation-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
- *   <li>On each intercepted {@code truncate} call a Bernoulli trial with probability {@link #probability}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = EROFS}.
+ *   <li>On each intercepted {@code truncate} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = EROFS}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
  *   <li>{@code EROFS} from {@code truncate} indicates that the filesystem was remounted read-only,
- *       typically after detecting unrecoverable I/O errors; all subsequent write operations on
- *       the filesystem will fail with the same error. Assert that the application detects the
- *       read-only condition and transitions to a degraded state that prevents new write operations
- *       from accumulating without persistence.
+ *       typically after detecting unrecoverable I/O errors; all subsequent write operations on the
+ *       filesystem will fail with the same error. Assert that the application detects the read-only
+ *       condition and transitions to a degraded state that prevents new write operations from
+ *       accumulating without persistence.
  *   <li>Applications that use {@code truncate} as part of a write preparation sequence (size the
  *       file, then write) must handle {@code EROFS} by aborting the entire sequence and reporting
- *       the filesystem condition to the operator; assert that no partial write sequence is left
- *       in place when the truncate fails.
+ *       the filesystem condition to the operator; assert that no partial write sequence is left in
+ *       place when the truncate fails.
  *   <li>WAL pre-allocation patterns that use {@code truncate} to size the WAL file must handle
  *       {@code EROFS}; assert that the database fails to start or transitions to read-only mode
  *       rather than attempting to write to the unmodified WAL file.
- *   <li>Assert that the application's health check detects the read-only filesystem condition
- *       and returns a degraded status, enabling load balancers to redirect write traffic away
- *       from the instance.
+ *   <li>Assert that the application's health check detects the read-only filesystem condition and
+ *       returns a degraded status, enabling load balancers to redirect write traffic away from the
+ *       instance.
  * </ul>
  *
  * <p>In production, {@code EROFS} from {@code truncate} occurs when the kernel remounts a
@@ -67,13 +67,13 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>{@code truncate(2)} modifies the file's inode (to update the size field) and may allocate
- * or free data blocks. Both operations require the filesystem to be mounted read-write. When the
+ * <p>{@code truncate(2)} modifies the file's inode (to update the size field) and may allocate or
+ * free data blocks. Both operations require the filesystem to be mounted read-write. When the
  * filesystem is mounted read-only, the VFS layer rejects the modification before reaching the
- * filesystem-specific code, returning {@code EROFS} immediately. This check occurs before any
- * file permission checks, so {@code EROFS} takes precedence over {@code EACCES}: a process
- * without write permission on the file still receives {@code EROFS} rather than {@code EACCES}
- * when the filesystem is read-only.
+ * filesystem-specific code, returning {@code EROFS} immediately. This check occurs before any file
+ * permission checks, so {@code EROFS} takes precedence over {@code EACCES}: a process without write
+ * permission on the file still receives {@code EROFS} rather than {@code EACCES} when the
+ * filesystem is read-only.
  *
  * <p>Java's {@code FileChannel.truncate(long)} calls {@code ftruncate(2)} via an open file
  * descriptor and throws an {@code IOException} with the message "Read-only file system" when the

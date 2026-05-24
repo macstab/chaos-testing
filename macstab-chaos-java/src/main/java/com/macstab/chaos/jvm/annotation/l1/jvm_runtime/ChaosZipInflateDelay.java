@@ -14,15 +14,15 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Delays every {@code Inflater.inflate()} call by a configurable number of milliseconds,
- * simulating CPU-bound inflate decompression contention or a degraded decompression path.
+ * Delays every {@code Inflater.inflate()} call by a configurable number of milliseconds, simulating
+ * CPU-bound inflate decompression contention or a degraded decompression path.
  *
  * <h2>What this annotation is</h2>
  *
  * <p>A JVM agent L1 chaos primitive targeting the {@code ZIP_INFLATE} operation — one typed
  * annotation per (selector family, operation type, effect) tuple. Declared on a test class or
- * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until
- * {@code afterAll}/{@code afterEach} respectively.
+ * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until {@code
+ * afterAll}/{@code afterEach} respectively.
  *
  * <h2>What chaos this applies</h2>
  *
@@ -30,8 +30,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *   <li>The chaos agent intercepts every call to {@code java.util.zip.Inflater.inflate()} (all
  *       overloads) in the target container's JVM.
  *   <li>Before forwarding the call to the native zlib implementation, the interceptor parks the
- *       calling thread for a duration sampled uniformly between {@link #delayMs()} and
- *       {@link #maxDelayMs()} milliseconds.
+ *       calling thread for a duration sampled uniformly between {@link #delayMs()} and {@link
+ *       #maxDelayMs()} milliseconds.
  *   <li>After the delay, the real inflation executes and the decompressed bytes are written to the
  *       output buffer normally.
  * </ol>
@@ -39,10 +39,10 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>HTTP request body decompression slow.</strong> Servlet containers that
- *       decompress GZIP-encoded request bodies (backed by {@code Inflater}) will take longer to
- *       deliver the body to the request handler; assert that the request processing timeout is
- *       not exceeded before the body is fully read.
+ *   <li><strong>HTTP request body decompression slow.</strong> Servlet containers that decompress
+ *       GZIP-encoded request bodies (backed by {@code Inflater}) will take longer to deliver the
+ *       body to the request handler; assert that the request processing timeout is not exceeded
+ *       before the body is fully read.
  *   <li><strong>Compressed payload read from Kafka slow.</strong> Kafka consumers that read
  *       GZIP-compressed messages will decompress them slowly; assert that the consumer's poll
  *       interval is not exceeded and that the consumer does not trigger a session timeout.
@@ -60,8 +60,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p>{@code Inflater.inflate()} is the symmetric counterpart to {@code Deflater.deflate()}: it
  * calls the native zlib {@code inflate()} function via JNI, which decompresses data into the
- * supplied output buffer. Decompression is generally faster than compression for the same data,
- * but it is still CPU-bound and memory-intensive for large payloads.
+ * supplied output buffer. Decompression is generally faster than compression for the same data, but
+ * it is still CPU-bound and memory-intensive for large payloads.
  *
  * <p>The agent intercepts at the Java-visible {@code Inflater.inflate()} method before the JNI
  * transition, so the delay fires while the calling thread is still in managed code. If the thread
@@ -75,9 +75,9 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p>The delay is applied per-call to {@code inflate()}, not per-compressed-stream. A single
  * compressed stream may require many calls to {@code inflate()} if the output buffer is smaller
- * than the decompressed size; the total delay is therefore proportional to the number of
- * {@code inflate()} invocations needed to exhaust the stream. Tests should size the delay and the
- * payload accordingly.
+ * than the decompressed size; the total delay is therefore proportional to the number of {@code
+ * inflate()} invocations needed to exhaust the stream. Tests should size the delay and the payload
+ * accordingly.
  *
  * <h2>Example</h2>
  *
@@ -93,8 +93,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
- *       agent before the container JVM starts; omitting it causes an
- *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       agent before the container JVM starts; omitting it causes an {@code
+ *       ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
  *       {@code @JvmAgentChaos}.
  *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the

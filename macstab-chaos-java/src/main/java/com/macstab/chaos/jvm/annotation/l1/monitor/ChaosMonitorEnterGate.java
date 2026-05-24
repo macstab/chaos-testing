@@ -15,8 +15,8 @@ import com.macstab.chaos.jvm.api.OperationType;
 
 /**
  * Holds every thread attempting to enter a {@code synchronized} block in an indefinite park before
- * the {@code monitorenter} bytecode executes — all threads block at the lock-acquisition site
- * until the test releases the gate or {@code maxBlockMs} elapses.
+ * the {@code monitorenter} bytecode executes — all threads block at the lock-acquisition site until
+ * the test releases the gate or {@code maxBlockMs} elapses.
  *
  * <h2>What this annotation is</h2>
  *
@@ -25,8 +25,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  * monitorenter} sites and parks arriving threads on a test-controlled latch until the test releases
  * them, allowing precise control over lock-starvation windows. The annotation is declared on the
  * test class or method alongside a container annotation and is active for the lifetime of the
- * annotated scope (class-scope: {@code beforeAll} to {@code afterAll}; method-scope:
- * {@code beforeEach} to {@code afterEach}).
+ * annotated scope (class-scope: {@code beforeAll} to {@code afterAll}; method-scope: {@code
+ * beforeEach} to {@code afterEach}).
  *
  * <h2>What chaos this applies</h2>
  *
@@ -37,8 +37,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *   <li>Execution is captured before the thread attempts to acquire the monitor.
  *   <li>The gate effect calls {@code LockSupport.park(blocker)} on the current thread, blocking it
  *       on the gate's internal {@code CountDownLatch} or {@code Phaser}.
- *   <li>The thread remains parked until: (a) the test calls the gate release API, or (b) the
- *       {@code maxBlockMs} safety timeout elapses (default: 30 000 ms), whichever comes first.
+ *   <li>The thread remains parked until: (a) the test calls the gate release API, or (b) the {@code
+ *       maxBlockMs} safety timeout elapses (default: 30 000 ms), whichever comes first.
  *   <li>After release, the thread proceeds to the real {@code monitorenter} and acquires the
  *       monitor normally.
  * </ol>
@@ -48,9 +48,9 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <ul>
  *   <li>All threads that attempt to enter any {@code synchronized} block are parked — assert that
  *       requests submitted during the gate window do not complete, using a timeout assertion.
- *   <li>Thread dumps taken during the gate window show all application threads in
- *       {@code WAITING (parking)} state at the interceptor frame — assert using
- *       {@code ThreadMXBean.getThreadInfo}.
+ *   <li>Thread dumps taken during the gate window show all application threads in {@code WAITING
+ *       (parking)} state at the interceptor frame — assert using {@code
+ *       ThreadMXBean.getThreadInfo}.
  *   <li>After gate release, all parked threads compete normally for the real monitor — assert that
  *       eventually all requests complete successfully.
  *   <li>Threads parked beyond {@code maxBlockMs} are released automatically; assert that the
@@ -67,31 +67,30 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p><strong>Interception point.</strong> Byte Buddy wraps the entry of each {@code synchronized}
  * method and the enclosing method of each {@code synchronized} block. The gate interceptor calls
- * {@code LockSupport.park(gateObject)} rather than a timed park, so the thread appears as
- * {@code WAITING} (not {@code TIMED_WAITING}) in thread dumps and JFR events — exactly the
- * state a deadlocked thread would show.
+ * {@code LockSupport.park(gateObject)} rather than a timed park, so the thread appears as {@code
+ * WAITING} (not {@code TIMED_WAITING}) in thread dumps and JFR events — exactly the state a
+ * deadlocked thread would show.
  *
- * <p><strong>Gate release mechanism.</strong> The gate is a server-side agent construct exposed
- * via the agent's HTTP management API. The test calls the release endpoint (or waits for
- * {@code maxBlockMs}) to unpark all waiting threads simultaneously via
- * {@code LockSupport.unpark} on each parked thread. The unpark is broadcast — every thread
- * blocked at the gate is released at once, unlike a real monitor where threads are released one
- * at a time as the holder exits.
+ * <p><strong>Gate release mechanism.</strong> The gate is a server-side agent construct exposed via
+ * the agent's HTTP management API. The test calls the release endpoint (or waits for {@code
+ * maxBlockMs}) to unpark all waiting threads simultaneously via {@code LockSupport.unpark} on each
+ * parked thread. The unpark is broadcast — every thread blocked at the gate is released at once,
+ * unlike a real monitor where threads are released one at a time as the holder exits.
  *
- * <p><strong>Distinction from {@code ChaosMonitorEnterDelay}.</strong> The delay effect parks for
- * a fixed known duration. The gate effect parks indefinitely and requires an explicit external
+ * <p><strong>Distinction from {@code ChaosMonitorEnterDelay}.</strong> The delay effect parks for a
+ * fixed known duration. The gate effect parks indefinitely and requires an explicit external
  * release signal. Use the gate when the test needs to assert the system's state while all threads
  * are blocked, then trigger the release and assert recovery.
  *
- * <p><strong>AQS-based locks.</strong> This annotation targets only intrinsic monitors
- * ({@code synchronized}). {@link java.util.concurrent.locks.ReentrantLock} and other AQS
- * subclasses are not affected. To gate AQS-based lock acquisition, use {@code @ChaosThreadParkGate}
- * which targets {@code LockSupport.park} — the primitive underlying all AQS blocking.
+ * <p><strong>AQS-based locks.</strong> This annotation targets only intrinsic monitors ({@code
+ * synchronized}). {@link java.util.concurrent.locks.ReentrantLock} and other AQS subclasses are not
+ * affected. To gate AQS-based lock acquisition, use {@code @ChaosThreadParkGate} which targets
+ * {@code LockSupport.park} — the primitive underlying all AQS blocking.
  *
  * <p><strong>Virtual-thread pinning.</strong> Virtual threads that enter {@code synchronized}
- * blocks pin their carrier in JDK 21. The gate park fires <em>before</em> the
- * {@code monitorenter}, so the pre-gate park does not pin the carrier. Once the gate releases and
- * the thread reaches the real {@code monitorenter}, pinning may occur if the monitor is contended.
+ * blocks pin their carrier in JDK 21. The gate park fires <em>before</em> the {@code monitorenter},
+ * so the pre-gate park does not pin the carrier. Once the gate releases and the thread reaches the
+ * real {@code monitorenter}, pinning may occur if the monitor is contended.
  *
  * <h2>Example</h2>
  *
@@ -118,7 +117,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java container image — the container must run a JVM process.
  * </ul>

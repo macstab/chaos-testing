@@ -31,10 +31,10 @@ import com.macstab.chaos.jvm.api.OperationType;
  *   <li>Before every call to {@code java.net.http.HttpClient#send(HttpRequest,
  *       HttpResponse.BodyHandler)} inside the target container's JVM, the chaos agent intercepts
  *       the thread.
- *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()},
- *       {@link #maxDelayMs()}]. When both values are equal the delay is deterministic.
- *   <li>Control returns to the caller only after the sleep completes; the underlying HTTP send
- *       then executes normally.
+ *   <li>The thread sleeps for a duration drawn uniformly from [{@link #delayMs()}, {@link
+ *       #maxDelayMs()}]. When both values are equal the delay is deterministic.
+ *   <li>Control returns to the caller only after the sleep completes; the underlying HTTP send then
+ *       executes normally.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -42,11 +42,11 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <ul>
  *   <li>Every {@code HttpClient.send()} call takes at least {@link #delayMs()} ms longer than
  *       without the fault; assert response-time histograms exceed the injected threshold.
- *   <li>Client-side timeouts ({@code HttpClient.connectTimeout()} or per-request timeouts) that
- *       are shorter than the injected delay will now fire — assert that the application throws
- *       {@code HttpTimeoutException} and handles it gracefully.
- *   <li>Thread-pool exhaustion: if many threads are blocked in send simultaneously, executor
- *       queue depths grow — assert that the application does not deadlock or reject work.
+ *   <li>Client-side timeouts ({@code HttpClient.connectTimeout()} or per-request timeouts) that are
+ *       shorter than the injected delay will now fire — assert that the application throws {@code
+ *       HttpTimeoutException} and handles it gracefully.
+ *   <li>Thread-pool exhaustion: if many threads are blocked in send simultaneously, executor queue
+ *       depths grow — assert that the application does not deadlock or reject work.
  *   <li><strong>Production failure mode:</strong> a downstream service slows from 20 ms to 4 s;
  *       every API thread is now blocked inside {@code send()}, the Tomcat/Undertow thread pool
  *       saturates, health-checks time out, and the load balancer removes the instance from
@@ -55,28 +55,28 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>{@code HttpClient.send()} in the JDK 11+ implementation delegates through
- * {@code jdk.internal.net.http.HttpClientImpl#send}, which ultimately parks the calling thread
- * on a {@code CompletableFuture} that is completed by the HTTP/1.1 or HTTP/2 I/O event thread.
- * The chaos agent intercepts the public {@code send} method on {@code HttpClientImpl} via Byte
- * Buddy's {@code MethodDelegation} before the park occurs, so the artificial delay compounds with
- * any real network latency rather than overlapping it.
+ * <p>{@code HttpClient.send()} in the JDK 11+ implementation delegates through {@code
+ * jdk.internal.net.http.HttpClientImpl#send}, which ultimately parks the calling thread on a {@code
+ * CompletableFuture} that is completed by the HTTP/1.1 or HTTP/2 I/O event thread. The chaos agent
+ * intercepts the public {@code send} method on {@code HttpClientImpl} via Byte Buddy's {@code
+ * MethodDelegation} before the park occurs, so the artificial delay compounds with any real network
+ * latency rather than overlapping it.
  *
- * <p>The interception point is at the boundary between application code and the JDK's internal
- * HTTP implementation, meaning it captures all callers — Spring's {@code RestTemplate} backed by
- * a JDK client, Quarkus REST client, or raw {@code HttpClient} usage — without modifying any
- * application class. The agent installs a single retransformation of {@code HttpClientImpl} at
- * startup and keeps the overhead to a single {@code Thread.sleep} on the matched threads.
+ * <p>The interception point is at the boundary between application code and the JDK's internal HTTP
+ * implementation, meaning it captures all callers — Spring's {@code RestTemplate} backed by a JDK
+ * client, Quarkus REST client, or raw {@code HttpClient} usage — without modifying any application
+ * class. The agent installs a single retransformation of {@code HttpClientImpl} at startup and
+ * keeps the overhead to a single {@code Thread.sleep} on the matched threads.
  *
- * <p>When {@link #delayMs()} differs from {@link #maxDelayMs()}, the sleep duration is sampled
- * from a uniform distribution on each invocation, making this useful for jitter simulation. Jitter
- * is particularly effective at exposing retry-storm bugs: if a client retries immediately after a
+ * <p>When {@link #delayMs()} differs from {@link #maxDelayMs()}, the sleep duration is sampled from
+ * a uniform distribution on each invocation, making this useful for jitter simulation. Jitter is
+ * particularly effective at exposing retry-storm bugs: if a client retries immediately after a
  * timeout, and each retry hits another delay, requests pile up faster than they resolve.
  *
  * <p>The delay fires before the network call, so connection-pool accounting in frameworks like
  * Spring's {@code RestTemplate} or OkHttp is not disturbed — the pool slot is only claimed after
- * the sleep. This isolates pure latency effects from connection-pool exhaustion effects; use
- * {@link ChaosHttpClientSendGate} if you need the latter.
+ * the sleep. This isolates pure latency effects from connection-pool exhaustion effects; use {@link
+ * ChaosHttpClientSendGate} if you need the latter.
  *
  * <p>Unlike OS-level traffic shaping (e.g. {@code tc netem}), this injection is thread-precise:
  * only threads executing {@code HttpClient.send()} inside the target JVM are affected. Other
@@ -102,8 +102,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

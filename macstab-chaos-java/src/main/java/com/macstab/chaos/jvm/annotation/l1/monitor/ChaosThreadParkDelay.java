@@ -22,75 +22,74 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>What this annotation is</h2>
  *
  * <p>An L1 JVM chaos primitive targeting the {@code MONITOR} selector family with the {@code delay}
- * effect applied to the {@code THREAD_PARK} operation. It intercepts
- * {@code LockSupport.park(Object)} before the actual park — the primitive blocking call used by
- * all JUC concurrency constructs — and inserts an additional pre-park delay that inflates every
- * wait-based blocking operation. The annotation is declared on the test class or method alongside a
- * container annotation and is active for the lifetime of the annotated scope.
+ * effect applied to the {@code THREAD_PARK} operation. It intercepts {@code
+ * LockSupport.park(Object)} before the actual park — the primitive blocking call used by all JUC
+ * concurrency constructs — and inserts an additional pre-park delay that inflates every wait-based
+ * blocking operation. The annotation is declared on the test class or method alongside a container
+ * annotation and is active for the lifetime of the annotated scope.
  *
  * <h2>What chaos this applies</h2>
  *
- * <p>The JVM agent installs a Byte Buddy interceptor on {@code LockSupport.park(Object)} and
- * {@code LockSupport.parkNanos(Object, long)}. When the interceptor fires:
+ * <p>The JVM agent installs a Byte Buddy interceptor on {@code LockSupport.park(Object)} and {@code
+ * LockSupport.parkNanos(Object, long)}. When the interceptor fires:
  *
  * <ol>
  *   <li>Execution is captured before the native park stub executes.
  *   <li>The delay effect calls an inner {@code LockSupport.parkNanos} for the configured duration
  *       in milliseconds on the current thread.
- *   <li>After the pre-park delay returns, the real {@code LockSupport.park} (or
- *       {@code parkNanos}) is called with the original arguments, blocking normally.
+ *   <li>After the pre-park delay returns, the real {@code LockSupport.park} (or {@code parkNanos})
+ *       is called with the original arguments, blocking normally.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
  *   <li>{@code ReentrantLock.tryLock(timeout, unit)} times out earlier than expected because the
- *       pre-park delay consumes part of the timeout budget — assert that tryLock returns
- *       {@code false} when the timeout is shorter than {@code delayMs}.
- *   <li>{@code CompletableFuture.get(1, TimeUnit.SECONDS)} throws {@code TimeoutException} when
- *       the delay exceeds one second even if the future would have completed sooner — assert the
+ *       pre-park delay consumes part of the timeout budget — assert that tryLock returns {@code
+ *       false} when the timeout is shorter than {@code delayMs}.
+ *   <li>{@code CompletableFuture.get(1, TimeUnit.SECONDS)} throws {@code TimeoutException} when the
+ *       delay exceeds one second even if the future would have completed sooner — assert the
  *       exception.
  *   <li>{@code BlockingQueue.poll(duration, unit)} returns {@code null} prematurely for the same
  *       reason — assert the null return rather than the expected element.
- *   <li>AQS nodes queued in a {@code ReentrantLock}'s CLH queue accumulate; assert that the
- *       {@code ReentrantLock#getQueueLength()} metric spikes during the delay window.
+ *   <li>AQS nodes queued in a {@code ReentrantLock}'s CLH queue accumulate; assert that the {@code
+ *       ReentrantLock#getQueueLength()} metric spikes during the delay window.
  * </ul>
  *
  * <p><strong>Production failure mode this simulates:</strong> a Kubernetes node experiencing I/O
  * wait spikes that inflate OS futex-wake latency by 300 ms — a connection-pool checkout using
- * {@code ReentrantLock.tryLock(200, MILLISECONDS)} fails for every request, the pool returns
- * {@code null}, and the service logs {@code NullPointerException} until the node's I/O pressure
- * subsides.
+ * {@code ReentrantLock.tryLock(200, MILLISECONDS)} fails for every request, the pool returns {@code
+ * null}, and the service logs {@code NullPointerException} until the node's I/O pressure subsides.
  *
  * <h2>Deep technical dive</h2>
  *
  * <p><strong>Interception point.</strong> {@code LockSupport.park} is the single choke point for
- * all JUC blocking: {@code ReentrantLock}, {@code Semaphore}, {@code CountDownLatch},
- * {@code CompletableFuture.get()}, and {@code BlockingQueue} all ultimately call it. The agent
- * intercepts this method via the bootstrap class loader instrumentation channel and applies the
- * delay before the native park stub ({@code sun.misc.Unsafe.park}) executes.
+ * all JUC blocking: {@code ReentrantLock}, {@code Semaphore}, {@code CountDownLatch}, {@code
+ * CompletableFuture.get()}, and {@code BlockingQueue} all ultimately call it. The agent intercepts
+ * this method via the bootstrap class loader instrumentation channel and applies the delay before
+ * the native park stub ({@code sun.misc.Unsafe.park}) executes.
  *
- * <p><strong>AQS interaction.</strong> An AQS node is enqueued and its thread is stored in the
- * node before {@code LockSupport.park} is called. The pre-park delay means the node is in the CLH
- * queue but the thread has not yet yielded the CPU — from the AQS owner's perspective, the waiter
- * appears queued immediately but the thread consumes CPU for {@code delayMs} before sleeping.
- * This inflates CPU consumption during contended lock acquisition.
+ * <p><strong>AQS interaction.</strong> An AQS node is enqueued and its thread is stored in the node
+ * before {@code LockSupport.park} is called. The pre-park delay means the node is in the CLH queue
+ * but the thread has not yet yielded the CPU — from the AQS owner's perspective, the waiter appears
+ * queued immediately but the thread consumes CPU for {@code delayMs} before sleeping. This inflates
+ * CPU consumption during contended lock acquisition.
  *
- * <p><strong>Timed-park interaction.</strong> {@code LockSupport.parkNanos(blocker, nanos)} is
- * also intercepted. The pre-delay is applied before the timed park, consuming part of the
- * deadline. If {@code delayMs} exceeds the requested {@code nanos}, the timed park is entered with
- * a negative or zero deadline, causing it to return immediately — from the caller's view, the
- * wait timed out before any real waiting occurred.
+ * <p><strong>Timed-park interaction.</strong> {@code LockSupport.parkNanos(blocker, nanos)} is also
+ * intercepted. The pre-delay is applied before the timed park, consuming part of the deadline. If
+ * {@code delayMs} exceeds the requested {@code nanos}, the timed park is entered with a negative or
+ * zero deadline, causing it to return immediately — from the caller's view, the wait timed out
+ * before any real waiting occurred.
  *
- * <p><strong>Distinction from {@code ChaosMonitorEnterDelay}.</strong>
- * {@code ChaosMonitorEnterDelay} targets intrinsic monitors ({@code synchronized}). This
- * annotation targets {@code LockSupport.park}, covering all JUC constructs. Use both together to
- * inflate all locking latency; use only one to isolate intrinsic vs. explicit locking paths.
+ * <p><strong>Distinction from {@code ChaosMonitorEnterDelay}.</strong> {@code
+ * ChaosMonitorEnterDelay} targets intrinsic monitors ({@code synchronized}). This annotation
+ * targets {@code LockSupport.park}, covering all JUC constructs. Use both together to inflate all
+ * locking latency; use only one to isolate intrinsic vs. explicit locking paths.
  *
  * <p><strong>Virtual-thread interaction.</strong> Virtual threads park by yielding their carrier
  * via {@code LockSupport.park}. The pre-delay on a virtual thread causes the carrier to remain
- * occupied for {@code delayMs} before the virtual thread actually yields — temporarily reducing
- * the carrier pool's capacity to schedule other virtual threads.
+ * occupied for {@code delayMs} before the virtual thread actually yields — temporarily reducing the
+ * carrier pool's capacity to schedule other virtual threads.
  *
  * <h2>Example</h2>
  *
@@ -112,7 +111,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java container image — the container must run a JVM process.
  * </ul>

@@ -14,22 +14,22 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Throws a configurable exception (typically {@link UnsatisfiedLinkError}) at every
- * {@code System.loadLibrary()} or {@code System.load()} call site, simulating a missing or
- * incompatible native library.
+ * Throws a configurable exception (typically {@link UnsatisfiedLinkError}) at every {@code
+ * System.loadLibrary()} or {@code System.load()} call site, simulating a missing or incompatible
+ * native library.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>A JVM agent L1 chaos primitive targeting the {@code NATIVE_LIBRARY_LOAD} operation — one
- * typed annotation per (selector family, operation type, effect) tuple. Declared on a test class
- * or {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until
- * {@code afterAll}/{@code afterEach} respectively.
+ * <p>A JVM agent L1 chaos primitive targeting the {@code NATIVE_LIBRARY_LOAD} operation — one typed
+ * annotation per (selector family, operation type, effect) tuple. Declared on a test class or
+ * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until {@code
+ * afterAll}/{@code afterEach} respectively.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>The chaos agent intercepts every call to {@code System.loadLibrary(String)} and
- *       {@code System.load(String)} in the target container's JVM.
+ *   <li>The chaos agent intercepts every call to {@code System.loadLibrary(String)} and {@code
+ *       System.load(String)} in the target container's JVM.
  *   <li>Before the real OS-level library load, the interceptor instantiates the exception class
  *       named by {@link #exceptionClassName()} with {@link #message()} and throws it.
  *   <li>The calling thread unwinds from the throw site; the library is never loaded and no native
@@ -58,24 +58,24 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>The standard exception thrown by {@code System.loadLibrary()} on failure is
- * {@code java.lang.UnsatisfiedLinkError}, an {@code Error} (not a checked exception). Because it
- * is an {@code Error}, many application frameworks do not catch it in their normal exception
- * handlers, so an {@code UnsatisfiedLinkError} during static initialisation causes the class
- * loader to mark the class as failed and throws {@code NoClassDefFoundError} on any subsequent
- * attempt to use the class.
+ * <p>The standard exception thrown by {@code System.loadLibrary()} on failure is {@code
+ * java.lang.UnsatisfiedLinkError}, an {@code Error} (not a checked exception). Because it is an
+ * {@code Error}, many application frameworks do not catch it in their normal exception handlers, so
+ * an {@code UnsatisfiedLinkError} during static initialisation causes the class loader to mark the
+ * class as failed and throws {@code NoClassDefFoundError} on any subsequent attempt to use the
+ * class.
  *
  * <p>The agent throws the configured exception class at the method-entry point, before the JVM
  * attempts to find or open the native library file. This means the JVM's native-library table is
- * not updated, so even if the annotation is removed later (e.g. by a test teardown), the load
- * call will succeed on a retry. Tests that need to observe the "library available after retry"
- * scenario should combine this annotation with a probabilistic injection rate rather than
- * injecting on every call.
+ * not updated, so even if the annotation is removed later (e.g. by a test teardown), the load call
+ * will succeed on a retry. Tests that need to observe the "library available after retry" scenario
+ * should combine this annotation with a probabilistic injection rate rather than injecting on every
+ * call.
  *
- * <p>To test the "library not on java.library.path" scenario authentically, use the
- * {@code exceptionClassName = "java.lang.UnsatisfiedLinkError"} default. To test an
- * application-level exception handler that wraps the native load in a try-catch, use a custom
- * exception class from the application's own classpath.
+ * <p>To test the "library not on java.library.path" scenario authentically, use the {@code
+ * exceptionClassName = "java.lang.UnsatisfiedLinkError"} default. To test an application-level
+ * exception handler that wraps the native load in a try-catch, use a custom exception class from
+ * the application's own classpath.
  *
  * <h2>Example</h2>
  *
@@ -93,8 +93,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
- *       agent before the container JVM starts; omitting it causes an
- *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       agent before the container JVM starts; omitting it causes an {@code
+ *       ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
  *       {@code @JvmAgentChaos}.
  *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the

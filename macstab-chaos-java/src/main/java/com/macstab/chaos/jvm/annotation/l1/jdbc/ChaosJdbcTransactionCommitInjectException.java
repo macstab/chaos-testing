@@ -14,9 +14,9 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Intercepts {@code Connection.commit()} and throws the configured exception before the
- * transaction is written to the database, simulating a commit failure that leaves the
- * application's transactional state ambiguous — the most dangerous JDBC failure mode.
+ * Intercepts {@code Connection.commit()} and throws the configured exception before the transaction
+ * is written to the database, simulating a commit failure that leaves the application's
+ * transactional state ambiguous — the most dangerous JDBC failure mode.
  *
  * <h2>What this annotation is</h2>
  *
@@ -32,8 +32,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       JVM, the chaos agent intercepts the calling thread.
  *   <li>The agent reflectively instantiates the class named by {@link #exceptionClassName()} with
  *       the message from {@link #message()} and throws it immediately.
- *   <li>No commit is sent to the database; the transaction's changes are not persisted;
- *       row-level locks are released when the connection is eventually closed or rolled back.
+ *   <li>No commit is sent to the database; the transaction's changes are not persisted; row-level
+ *       locks are released when the connection is eventually closed or rolled back.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -42,10 +42,10 @@ import com.macstab.chaos.jvm.api.OperationType;
  *   <li>Every commit throws the configured exception; Spring's {@code DataSourceTransactionManager}
  *       translates it to {@code TransactionSystemException} — assert this exception type propagates
  *       correctly to the caller and is not silently swallowed.
- *   <li>The application must not assume data was persisted after a failed commit; assert that
- *       the application does not return HTTP 200 when the commit failed.
- *   <li>Event publishing after commit ({@code @TransactionalEventListener(AFTER_COMMIT)}) must
- *       not fire when commit throws; assert that downstream systems do not receive events for
+ *   <li>The application must not assume data was persisted after a failed commit; assert that the
+ *       application does not return HTTP 200 when the commit failed.
+ *   <li>Event publishing after commit ({@code @TransactionalEventListener(AFTER_COMMIT)}) must not
+ *       fire when commit throws; assert that downstream systems do not receive events for
  *       uncommitted data.
  *   <li><strong>Production failure mode:</strong> a network interruption during commit causes
  *       {@code SQLException: connection reset}; the application logs the error and returns HTTP
@@ -56,13 +56,13 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>A commit failure is the most dangerous JDBC failure mode because the application cannot
- * know whether the commit succeeded or not from the JDBC exception alone. If the network drops
- * after the database has written the transaction but before the ACK reaches the driver, the
- * driver throws {@code SQLException} with a "connection reset" message while the database
- * considers the transaction committed. This annotation injects that ambiguity synthetically,
- * allowing tests to verify that the application handles it correctly (e.g. by re-reading the
- * committed data, using idempotency keys, or surfacing the ambiguity to the caller).
+ * <p>A commit failure is the most dangerous JDBC failure mode because the application cannot know
+ * whether the commit succeeded or not from the JDBC exception alone. If the network drops after the
+ * database has written the transaction but before the ACK reaches the driver, the driver throws
+ * {@code SQLException} with a "connection reset" message while the database considers the
+ * transaction committed. This annotation injects that ambiguity synthetically, allowing tests to
+ * verify that the application handles it correctly (e.g. by re-reading the committed data, using
+ * idempotency keys, or surfacing the ambiguity to the caller).
  *
  * <p>Spring's commit failure handling: {@code DataSourceTransactionManager.doCommit()} catches
  * {@code SQLException} and wraps it in {@code TransactionSystemException}. The original
@@ -71,20 +71,20 @@ import com.macstab.chaos.jvm.api.OperationType;
  * {@code @Transactional} method will see {@code TransactionSystemException} on their call stack
  * even though the business logic completed successfully.
  *
- * <p>JPA / Hibernate: {@code EntityTransaction.commit()} delegates to the JDBC connection's
- * commit. A failure here causes Hibernate to mark the {@code EntityManager} as closed;
- * subsequent operations on the same {@code EntityManager} throw
- * {@code IllegalStateException: Session is closed}. Tests should verify that the application
- * does not attempt to reuse the entity manager after a commit failure.
+ * <p>JPA / Hibernate: {@code EntityTransaction.commit()} delegates to the JDBC connection's commit.
+ * A failure here causes Hibernate to mark the {@code EntityManager} as closed; subsequent
+ * operations on the same {@code EntityManager} throw {@code IllegalStateException: Session is
+ * closed}. Tests should verify that the application does not attempt to reuse the entity manager
+ * after a commit failure.
  *
- * <p>Outbox pattern: applications writing to a transactional outbox (events in the same
- * transaction as the state change) lose both the state change and the outbox entry if commit
- * fails. The commit-failure test must assert that the outbox is empty after the fault fires,
- * and that the event is not published to the downstream broker.
+ * <p>Outbox pattern: applications writing to a transactional outbox (events in the same transaction
+ * as the state change) lose both the state change and the outbox entry if commit fails. The
+ * commit-failure test must assert that the outbox is empty after the fault fires, and that the
+ * event is not published to the downstream broker.
  *
  * <p>Injecting {@code java.sql.SQLRecoverableException} tests the path where the application
- * attempts to reconnect and retry; injecting {@code java.sql.SQLNonTransientException} tests
- * the path where the application gives up and alerts an operator.
+ * attempts to reconnect and retry; injecting {@code java.sql.SQLNonTransientException} tests the
+ * path where the application gives up and alerts an operator.
  *
  * <h2>Example</h2>
  *
@@ -107,8 +107,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

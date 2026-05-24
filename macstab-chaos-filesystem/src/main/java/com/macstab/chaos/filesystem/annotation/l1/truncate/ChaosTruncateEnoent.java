@@ -15,28 +15,29 @@ import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
  * Injects {@code ENOENT} into {@code truncate(2)}, causing the call to return {@code -1} with
- * {@code errno = ENOENT} as if the named file does not exist or a component of the path prefix
- * is a directory that does not exist or is a dangling symbolic link.
+ * {@code errno = ENOENT} as if the named file does not exist or a component of the path prefix is a
+ * directory that does not exist or is a dangling symbolic link.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code TRUNCATE}, errno = {@code ENOENT})
- * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
- * {@code truncate} call; when it fires the interposer returns {@code -1} with {@code errno = ENOENT}
- * without performing any real kernel operation. No runtime operation-errno validation is needed.
+ * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code TRUNCATE}, errno = {@code
+ * ENOENT}) tuple. A Bernoulli trial with probability {@link #probability} is run on each
+ * intercepted {@code truncate} call; when it fires the interposer returns {@code -1} with {@code
+ * errno = ENOENT} without performing any real kernel operation. No runtime operation-errno
+ * validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
- *   <li>On each intercepted {@code truncate} call a Bernoulli trial with probability {@link #probability}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = ENOENT}.
+ *   <li>On each intercepted {@code truncate} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = ENOENT}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -68,16 +69,16 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * <h2>Deep technical dive</h2>
  *
  * <p>{@code truncate(2)} takes a path argument and resolves it through the VFS namespace at the
- * time of the call. If any component of the path has been removed or replaced since the
- * application last verified the path's existence, the call returns {@code ENOENT}. Unlike
- * {@code ftruncate(2)}, which uses an already-open file descriptor and is immune to path-level
- * changes, {@code truncate} is subject to the POSIX TOCTOU race condition.
+ * time of the call. If any component of the path has been removed or replaced since the application
+ * last verified the path's existence, the call returns {@code ENOENT}. Unlike {@code ftruncate(2)},
+ * which uses an already-open file descriptor and is immune to path-level changes, {@code truncate}
+ * is subject to the POSIX TOCTOU race condition.
  *
  * <p>The TOCTOU race between existence check and modification is particularly relevant for log
- * rotation, where an external log rotation daemon (logrotate, newsyslog) may rename the current
- * log file while the application's logger is about to truncate it. Applications should prefer
- * {@code ftruncate(2)} on an open file descriptor to avoid this race, or should be prepared to
- * handle {@code ENOENT} from {@code truncate} and recreate the file.
+ * rotation, where an external log rotation daemon (logrotate, newsyslog) may rename the current log
+ * file while the application's logger is about to truncate it. Applications should prefer {@code
+ * ftruncate(2)} on an open file descriptor to avoid this race, or should be prepared to handle
+ * {@code ENOENT} from {@code truncate} and recreate the file.
  *
  * <p>Java's {@code FileChannel.truncate(long)} uses {@code ftruncate(2)} via an open file
  * descriptor, so it is not affected by this annotation. Applications that call the path-based

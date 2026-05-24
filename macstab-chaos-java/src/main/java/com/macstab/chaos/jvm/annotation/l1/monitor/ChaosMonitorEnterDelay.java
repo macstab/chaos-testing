@@ -15,18 +15,18 @@ import com.macstab.chaos.jvm.api.OperationType;
 
 /**
  * Parks the thread attempting to enter a {@code synchronized} block for the configured number of
- * milliseconds before it competes for the monitor — every lock acquisition takes at least
- * {@code delayMs} longer than normal, inflating observed lock-contention time.
+ * milliseconds before it competes for the monitor — every lock acquisition takes at least {@code
+ * delayMs} longer than normal, inflating observed lock-contention time.
  *
  * <h2>What this annotation is</h2>
  *
  * <p>An L1 JVM chaos primitive targeting the {@code MONITOR} selector family with the {@code delay}
  * effect applied to the {@code MONITOR_ENTER} operation. It intercepts the JVM's {@code
- * monitorenter} bytecode (synthesised via a wrapping method injected by Byte Buddy around
- * {@code synchronized} entry points) and artificially inflates the latency of lock acquisition.
- * The annotation is declared on the test class or method alongside a container annotation and is
- * active for the lifetime of the annotated scope (class-scope: {@code beforeAll} to
- * {@code afterAll}; method-scope: {@code beforeEach} to {@code afterEach}).
+ * monitorenter} bytecode (synthesised via a wrapping method injected by Byte Buddy around {@code
+ * synchronized} entry points) and artificially inflates the latency of lock acquisition. The
+ * annotation is declared on the test class or method alongside a container annotation and is active
+ * for the lifetime of the annotated scope (class-scope: {@code beforeAll} to {@code afterAll};
+ * method-scope: {@code beforeEach} to {@code afterEach}).
  *
  * <h2>What chaos this applies</h2>
  *
@@ -44,9 +44,9 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>Time spent waiting for the lock (as reported by JMX
- *       {@code ThreadMXBean.getThreadInfo(...).getBlockedTime()}) is at least {@code delayMs}
- *       per acquisition — assert via a JMX client.
+ *   <li>Time spent waiting for the lock (as reported by JMX {@code
+ *       ThreadMXBean.getThreadInfo(...).getBlockedTime()}) is at least {@code delayMs} per
+ *       acquisition — assert via a JMX client.
  *   <li>Lock-protected critical sections complete normally; assert that results are correct to
  *       distinguish from a gate (which holds the lock indefinitely).
  *   <li>Throughput of lock-protected operations decreases proportionally to {@code delayMs} —
@@ -57,30 +57,30 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p><strong>Production failure mode this simulates:</strong> a JVM running on a host under
  * OS-level CPU throttling (e.g. a Kubernetes pod hitting its CPU limit) where the kernel's
- * futex-wait latency spikes by hundreds of milliseconds — a connection pool's checkout lock
- * becomes the bottleneck, causing request latency to degrade well beyond SLO thresholds while
- * thread dumps show every request thread {@code BLOCKED} on the pool's internal lock.
+ * futex-wait latency spikes by hundreds of milliseconds — a connection pool's checkout lock becomes
+ * the bottleneck, causing request latency to degrade well beyond SLO thresholds while thread dumps
+ * show every request thread {@code BLOCKED} on the pool's internal lock.
  *
  * <h2>Deep technical dive</h2>
  *
  * <p><strong>Interception point.</strong> The JVM executes {@code monitorenter} natively via the
  * mark-word CAS path (biased locking in JDK 8–14, lightweight locking in JDK 15+, or OS mutex
  * inflation for contended monitors). Byte Buddy cannot intercept a single bytecode instruction
- * directly; instead the agent wraps the entry of each {@code synchronized} method or the
- * enclosing method of each {@code synchronized} block. The delay fires on every such entry,
- * including re-entrant monitor acquisitions where the same thread already holds the monitor.
+ * directly; instead the agent wraps the entry of each {@code synchronized} method or the enclosing
+ * method of each {@code synchronized} block. The delay fires on every such entry, including
+ * re-entrant monitor acquisitions where the same thread already holds the monitor.
  *
  * <p><strong>Re-entrancy and nested locks.</strong> Java monitors are re-entrant: a thread holding
  * monitor {@code M} can enter a second {@code synchronized(M)} block without blocking. The delay
  * fires on re-entrant entries too, because the interceptor cannot distinguish a first acquisition
  * from a re-entrant one without inspecting the thread's monitor stack. In code with deeply nested
- * {@code synchronized} blocks the cumulative delay can be much larger than a single {@code delayMs}.
+ * {@code synchronized} blocks the cumulative delay can be much larger than a single {@code
+ * delayMs}.
  *
- * <p><strong>AQS-based locks.</strong> This annotation targets intrinsic monitors
- * ({@code synchronized}) only, not {@link java.util.concurrent.locks.ReentrantLock} or other
- * {@link java.util.concurrent.locks.AbstractQueuedSynchronizer} subclasses. Those are intercepted
- * via the {@code THREAD_PARK} operation family, because their blocking path calls
- * {@code LockSupport.park}.
+ * <p><strong>AQS-based locks.</strong> This annotation targets intrinsic monitors ({@code
+ * synchronized}) only, not {@link java.util.concurrent.locks.ReentrantLock} or other {@link
+ * java.util.concurrent.locks.AbstractQueuedSynchronizer} subclasses. Those are intercepted via the
+ * {@code THREAD_PARK} operation family, because their blocking path calls {@code LockSupport.park}.
  *
  * <p><strong>Distinction from {@code ChaosMonitorEnterGate}.</strong> The delay effect parks the
  * thread for a fixed duration and then releases it to compete for the monitor. The gate effect
@@ -88,9 +88,9 @@ import com.macstab.chaos.jvm.api.OperationType;
  * or starvation scenario. Use delay for latency testing; use gate for liveness testing.
  *
  * <p><strong>Virtual-thread interaction.</strong> Virtual threads that enter {@code synchronized}
- * blocks pin their carrier thread in JDK 21 (this restriction is lifted in JDK 24+). The delay
- * park fires before the {@code monitorenter}, so the park itself does not pin the carrier; only
- * the subsequent real {@code monitorenter} causes pinning if the monitor is contended.
+ * blocks pin their carrier thread in JDK 21 (this restriction is lifted in JDK 24+). The delay park
+ * fires before the {@code monitorenter}, so the park itself does not pin the carrier; only the
+ * subsequent real {@code monitorenter} causes pinning if the monitor is contended.
  *
  * <h2>Example</h2>
  *
@@ -112,7 +112,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java container image — the container must run a JVM process.
  * </ul>

@@ -34,8 +34,8 @@ import com.macstab.chaos.memory.annotation.l1.mmap_anon.ChaosMmapAnonEnomem;
  *       class-scope rule is <em>suspended</em> (removed from the config), and the method rule is
  *       written in its place with the {@code @0.5} suffix.
  *   <li>The method-scope rule is removed and the suspended class-scope rule is re-applied via
- *       {@link L1AnnotationProcessor#reapply} — config returns to the original state (no {@code
- *       @0.5} suffix).
+ *       {@link L1AnnotationProcessor#reapply} — config returns to the original state (no
+ *       {@code @0.5} suffix).
  * </ol>
  *
  * <p>This covers the gap identified in the L1 tier review: suspension semantics were previously
@@ -71,7 +71,8 @@ class L1MethodScopeSuspensionIntegrationTest {
       "method-scope rule suspends class-scope rule; class-scope restored after method exits")
   void methodScopeSuspendsAndRestoresClassScopeRule(final String image) throws Exception {
     try (final GenericContainer<?> container = prepared(image)) {
-      final List<ContainerHandle> handles = List.of(new ContainerHandle(container, "", Override.class));
+      final List<ContainerHandle> handles =
+          List.of(new ContainerHandle(container, "", Override.class));
       final ChaosApplicationReport report = new ChaosApplicationReport();
 
       // ── Step 1: apply class-scope rule (probability = 1.0) ──────────────────────────────────
@@ -90,7 +91,8 @@ class L1MethodScopeSuspensionIntegrationTest {
       // ── Step 2: apply method-scope rule (probability = 0.5); class rule must be suspended ───
       final Method method = MethodScopeFixture.class.getDeclaredMethod("withHalfProbability");
       final MethodLevelResult result =
-          L1AnnotationProcessor.applyMethodLevelWithSuspension(method, handles, classHandles, report);
+          L1AnnotationProcessor.applyMethodLevelWithSuspension(
+              method, handles, classHandles, report);
 
       assertThat(result.methodHandles()).hasSize(1);
       assertThat(result.suspended()).hasSize(1);
@@ -107,7 +109,10 @@ class L1MethodScopeSuspensionIntegrationTest {
           .satisfies(
               content -> {
                 final long linesWithEnomem =
-                    content.lines().filter(l -> l.contains("ENOMEM") && !l.contains("@0.5")).count();
+                    content
+                        .lines()
+                        .filter(l -> l.contains("ENOMEM") && !l.contains("@0.5"))
+                        .count();
                 assertThat(linesWithEnomem)
                     .as("class-scope line (no @0.5) absent from config")
                     .isZero();
@@ -132,10 +137,12 @@ class L1MethodScopeSuspensionIntegrationTest {
 
   @ParameterizedTest
   @ValueSource(strings = {DEBIAN, ALPINE})
-  @DisplayName("no conflict: method-scope rule on different annotation type leaves class rule active")
+  @DisplayName(
+      "no conflict: method-scope rule on different annotation type leaves class rule active")
   void noConflictWhenAnnotationTypeDiffers(final String image) throws Exception {
     try (final GenericContainer<?> container = prepared(image)) {
-      final List<ContainerHandle> handles = List.of(new ContainerHandle(container, "", Override.class));
+      final List<ContainerHandle> handles =
+          List.of(new ContainerHandle(container, "", Override.class));
       final ChaosApplicationReport report = new ChaosApplicationReport();
 
       // Apply class-scope @ChaosMmapAnonEnomem (prob=1.0)
@@ -145,7 +152,8 @@ class L1MethodScopeSuspensionIntegrationTest {
       assertThat(classHandles).hasSize(1);
 
       // Method has no L1 annotations — should not suspend anything
-      final Method noAnnotationMethod = MethodScopeFixture.class.getDeclaredMethod("withHalfProbability");
+      final Method noAnnotationMethod =
+          MethodScopeFixture.class.getDeclaredMethod("withHalfProbability");
       // Manually remove the @ChaosMmapAnonEnomem from the lookup by using a method with no L1
       // (simulate: a different @Test method with no L1 annotation).
       // We verify this indirectly: classHandles must still have the class-scope handle after
@@ -154,7 +162,8 @@ class L1MethodScopeSuspensionIntegrationTest {
       // Use a method from Object that carries no L1 annotations
       final Method plainMethod = Object.class.getDeclaredMethod("toString");
       final MethodLevelResult result =
-          L1AnnotationProcessor.applyMethodLevelWithSuspension(plainMethod, handles, classHandles, report);
+          L1AnnotationProcessor.applyMethodLevelWithSuspension(
+              plainMethod, handles, classHandles, report);
 
       assertThat(result.methodHandles()).isEmpty();
       assertThat(result.suspended()).isEmpty();

@@ -28,23 +28,23 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>Before every call to {@code java.nio.channels.SocketChannel#connect(SocketAddress)}
- *       inside the target container's JVM, the chaos agent intercepts the calling thread.
- *   <li>The agent throws {@code java.io.IOException} immediately — no SYN packet is sent, no
- *       file descriptor state is modified, and the channel remains in its pre-connect state.
- *   <li>The exception propagates to the NIO framework's connect-completion handler; Netty's
- *       {@code ChannelFuture} is completed exceptionally with this exception.
+ *   <li>Before every call to {@code java.nio.channels.SocketChannel#connect(SocketAddress)} inside
+ *       the target container's JVM, the chaos agent intercepts the calling thread.
+ *   <li>The agent throws {@code java.io.IOException} immediately — no SYN packet is sent, no file
+ *       descriptor state is modified, and the channel remains in its pre-connect state.
+ *   <li>The exception propagates to the NIO framework's connect-completion handler; Netty's {@code
+ *       ChannelFuture} is completed exceptionally with this exception.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>Netty's {@code Bootstrap.connect()} future completes with {@code IOException}; assert
- *       that the application's {@code ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE} path is
- *       invoked and that the channel is closed cleanly.
- *   <li>Connection pool warm-up in frameworks using Netty connection pools (Reactor Netty's
- *       {@code ConnectionPool}, Vert.x connection pools) will fail entirely; assert that the
- *       pool retries and eventually establishes a minimum-size pool after the fault window closes.
+ *   <li>Netty's {@code Bootstrap.connect()} future completes with {@code IOException}; assert that
+ *       the application's {@code ChannelFutureListener.FIRE_EXCEPTION_ON_FAILURE} path is invoked
+ *       and that the channel is closed cleanly.
+ *   <li>Connection pool warm-up in frameworks using Netty connection pools (Reactor Netty's {@code
+ *       ConnectionPool}, Vert.x connection pools) will fail entirely; assert that the pool retries
+ *       and eventually establishes a minimum-size pool after the fault window closes.
  *   <li>Outbound HTTP clients built on Reactor Netty (Spring WebClient, R2DBC) will surface the
  *       exception as a {@code WebClientRequestException}; assert this type propagates correctly.
  *   <li><strong>Production failure mode:</strong> a firewall rule is mistakenly applied, blocking
@@ -55,28 +55,28 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>The interception targets {@code sun.nio.ch.SocketChannelImpl#connect(SocketAddress)} via
- * Byte Buddy. When operating in non-blocking mode, {@code connect()} normally puts the channel
- * into {@code ConnectionPending} state and returns {@code false}; the application then registers
- * {@code SelectionKey.OP_CONNECT} interest and waits for the selector to signal connection
- * completion. The chaos reject fires before this state transition, so the channel never enters
- * {@code ConnectionPending} — it remains in its initial unconnected state.
+ * <p>The interception targets {@code sun.nio.ch.SocketChannelImpl#connect(SocketAddress)} via Byte
+ * Buddy. When operating in non-blocking mode, {@code connect()} normally puts the channel into
+ * {@code ConnectionPending} state and returns {@code false}; the application then registers {@code
+ * SelectionKey.OP_CONNECT} interest and waits for the selector to signal connection completion. The
+ * chaos reject fires before this state transition, so the channel never enters {@code
+ * ConnectionPending} — it remains in its initial unconnected state.
  *
  * <p>Netty's {@code NioSocketChannel.doConnect()} catches {@code Exception} from the underlying
  * channel connect and propagates it to the pipeline as a {@code ConnectException}. The
- * application's {@code ChannelHandler.exceptionCaught()} and any registered
- * {@code ChannelFutureListener}s will receive this signal. A correct Netty application must
- * close the channel in this handler; if it does not, the unclosed channel leaks a file descriptor.
+ * application's {@code ChannelHandler.exceptionCaught()} and any registered {@code
+ * ChannelFutureListener}s will receive this signal. A correct Netty application must close the
+ * channel in this handler; if it does not, the unclosed channel leaks a file descriptor.
  *
  * <p>Lettuce's Netty-based Redis driver uses exponential back-off reconnect logic; injecting this
- * fault will trigger the reconnect timer. If the fault window is shorter than the back-off
- * ceiling, the driver will successfully reconnect when the fault clears. If longer, the driver
- * may stop retrying and require a manual reconnect trigger — test both scenarios.
+ * fault will trigger the reconnect timer. If the fault window is shorter than the back-off ceiling,
+ * the driver will successfully reconnect when the fault clears. If longer, the driver may stop
+ * retrying and require a manual reconnect trigger — test both scenarios.
  *
- * <p>The {@code SelectionKey} readiness bit {@code OP_CONNECT} is never set in the selector's
- * ready set because the channel never reached {@code ConnectionPending}; {@code Selector.select()}
- * will not return this channel as ready. This is the correct behaviour for a rejected connect:
- * from the selector's perspective, the channel was never pending.
+ * <p>The {@code SelectionKey} readiness bit {@code OP_CONNECT} is never set in the selector's ready
+ * set because the channel never reached {@code ConnectionPending}; {@code Selector.select()} will
+ * not return this channel as ready. This is the correct behaviour for a rejected connect: from the
+ * selector's perspective, the channel was never pending.
  *
  * <p>Unlike {@link ChaosNioChannelConnectDelay} which inflates latency before success, this
  * annotation produces immediate hard failure, exercising the fast-fail code path in connection
@@ -101,8 +101,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

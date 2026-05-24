@@ -14,29 +14,29 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Discards every {@link Thread#sleep(long)} call so that the method returns immediately without
- * the calling thread waiting — code that relies on sleep-based pacing runs at full CPU speed with
- * no artificial pause.
+ * Discards every {@link Thread#sleep(long)} call so that the method returns immediately without the
+ * calling thread waiting — code that relies on sleep-based pacing runs at full CPU speed with no
+ * artificial pause.
  *
  * <h2>What this annotation is</h2>
  *
  * <p>An L1 JVM chaos primitive targeting the {@code THREAD} selector family with the {@code
- * suppress} effect applied to the {@code THREAD_SLEEP} operation. It intercepts
- * {@code Thread.sleep(long)} and {@code Thread.sleep(long, int)} and skips the actual sleep,
- * returning control to the caller as if the requested duration had already elapsed. The annotation
- * is declared on the test class or method alongside a container annotation and is active for the
+ * suppress} effect applied to the {@code THREAD_SLEEP} operation. It intercepts {@code
+ * Thread.sleep(long)} and {@code Thread.sleep(long, int)} and skips the actual sleep, returning
+ * control to the caller as if the requested duration had already elapsed. The annotation is
+ * declared on the test class or method alongside a container annotation and is active for the
  * lifetime of the annotated scope (class-scope: {@code beforeAll} to {@code afterAll};
  * method-scope: {@code beforeEach} to {@code afterEach}).
  *
  * <h2>What chaos this applies</h2>
  *
- * <p>The JVM agent installs a Byte Buddy interceptor on {@code Thread.sleep(long)} and
- * {@code Thread.sleep(long, int)}. When the interceptor fires:
+ * <p>The JVM agent installs a Byte Buddy interceptor on {@code Thread.sleep(long)} and {@code
+ * Thread.sleep(long, int)}. When the interceptor fires:
  *
  * <ol>
  *   <li>The interceptor captures the call before the native sleep stub executes.
- *   <li>The suppress effect skips the real sleep entirely — no native call is made, no park
- *       is issued, the calling thread does not yield.
+ *   <li>The suppress effect skips the real sleep entirely — no native call is made, no park is
+ *       issued, the calling thread does not yield.
  *   <li>The method returns {@code void} to the caller immediately, as if the sleep had completed
  *       normally; no {@code InterruptedException} is thrown.
  * </ol>
@@ -55,23 +55,23 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       application's own overload guard activates.
  * </ul>
  *
- * <p><strong>Production failure mode this simulates:</strong> a busy-wait polling loop whose
- * sleep is accidentally set to zero (e.g. after a misconfigured property resolves to "0ms") —
- * the loop spins at 100% CPU, starving other threads and triggering OS-level CPU throttling on
- * the container, degrading all concurrent requests until an operator intervenes.
+ * <p><strong>Production failure mode this simulates:</strong> a busy-wait polling loop whose sleep
+ * is accidentally set to zero (e.g. after a misconfigured property resolves to "0ms") — the loop
+ * spins at 100% CPU, starving other threads and triggering OS-level CPU throttling on the
+ * container, degrading all concurrent requests until an operator intervenes.
  *
  * <h2>Deep technical dive</h2>
  *
  * <p><strong>Interception point.</strong> {@code Thread.sleep} is a native method; the interceptor
- * wraps it at the Java bytecode level using Byte Buddy's {@code @SuperCall} skip pattern (the
- * super call is simply not issued). Both overloads ({@code sleep(long)} and
- * {@code sleep(long, int)}) are covered. Because the native stub is never called, the JVM's
- * internal per-thread sleep accounting (visible in thread dumps as "TIMED_WAITING") is bypassed —
- * profilers and flight recorder events that rely on that state will not see a sleep event.
+ * wraps it at the Java bytecode level using Byte Buddy's {@code @SuperCall} skip pattern (the super
+ * call is simply not issued). Both overloads ({@code sleep(long)} and {@code sleep(long, int)}) are
+ * covered. Because the native stub is never called, the JVM's internal per-thread sleep accounting
+ * (visible in thread dumps as "TIMED_WAITING") is bypassed — profilers and flight recorder events
+ * that rely on that state will not see a sleep event.
  *
- * <p><strong>Interrupt contract.</strong> The suppress effect never throws
- * {@code InterruptedException}. If the thread's interrupt flag is set when {@code sleep} is called,
- * the real {@code Thread.sleep} would clear the flag and throw; suppression skips this clearing,
+ * <p><strong>Interrupt contract.</strong> The suppress effect never throws {@code
+ * InterruptedException}. If the thread's interrupt flag is set when {@code sleep} is called, the
+ * real {@code Thread.sleep} would clear the flag and throw; suppression skips this clearing,
  * leaving the interrupt flag set in the calling thread. This means interrupt-aware callers that
  * check {@code Thread.interrupted()} after the sleep will see the flag and may behave differently
  * than they would without chaos — this is an intentional deviation that can expose missed interrupt
@@ -82,15 +82,15 @@ import com.macstab.chaos.jvm.api.OperationType;
  * the application correctly handles sleeping being skipped (e.g. tight retry loops) or to
  * accelerate test execution by removing artificial sleeps injected by the application under test.
  *
- * <p><strong>Virtual-thread interaction.</strong> Virtual threads in JDK 21+ implement
- * {@code Thread.sleep} via {@code LockSupport.parkNanos}, which yields the carrier. Suppressing
- * the sleep means the carrier is never yielded for the sleep duration — the virtual thread runs
- * continuously, reducing carrier sharing for other virtual threads during that window.
+ * <p><strong>Virtual-thread interaction.</strong> Virtual threads in JDK 21+ implement {@code
+ * Thread.sleep} via {@code LockSupport.parkNanos}, which yields the carrier. Suppressing the sleep
+ * means the carrier is never yielded for the sleep duration — the virtual thread runs continuously,
+ * reducing carrier sharing for other virtual threads during that window.
  *
  * <p><strong>Testing fast-path logic.</strong> Application code sometimes has branches that only
  * execute after a long sleep (e.g. "wait 5 minutes for the lease to expire"). Suppressing sleep
- * lets tests reach those branches in milliseconds without resorting to time-manipulation
- * frameworks or mocking, exercising the real application path.
+ * lets tests reach those branches in milliseconds without resorting to time-manipulation frameworks
+ * or mocking, exercising the real application path.
  *
  * <h2>Example</h2>
  *
@@ -115,7 +115,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java container image — the container must run a JVM process.
  * </ul>

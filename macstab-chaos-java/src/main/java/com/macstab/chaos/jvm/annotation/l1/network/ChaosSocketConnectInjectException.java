@@ -15,9 +15,9 @@ import com.macstab.chaos.jvm.api.OperationType;
 
 /**
  * Intercepts {@code Socket.connect()} and throws the configured exception before any TCP handshake
- * occurs, simulating a connection failure with a specific exception type such as
- * {@code ConnectException}, {@code SocketTimeoutException}, or a custom application-level error
- * at the blocking socket layer used by JDBC drivers and legacy HTTP clients.
+ * occurs, simulating a connection failure with a specific exception type such as {@code
+ * ConnectException}, {@code SocketTimeoutException}, or a custom application-level error at the
+ * blocking socket layer used by JDBC drivers and legacy HTTP clients.
  *
  * <h2>What this annotation is</h2>
  *
@@ -29,9 +29,9 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>Before every call to {@code java.net.Socket#connect(SocketAddress)} or
- *       {@code Socket#connect(SocketAddress, int)} inside the target container's JVM, the chaos
- *       agent intercepts the calling thread.
+ *   <li>Before every call to {@code java.net.Socket#connect(SocketAddress)} or {@code
+ *       Socket#connect(SocketAddress, int)} inside the target container's JVM, the chaos agent
+ *       intercepts the calling thread.
  *   <li>The agent reflectively instantiates the class named by {@link #exceptionClassName()} with
  *       the message from {@link #message()} and throws it; no SYN packet is sent and the socket
  *       remains in its pre-connect unbound state.
@@ -47,18 +47,18 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       (HikariCP, c3p0) receive the exception from the driver's {@code connect()} method and
  *       increment their connection-failure counter; assert that the pool's health metrics reflect
  *       the failure.
- *   <li>Inject {@code java.net.ConnectException} to simulate connection refused; inject
- *       {@code java.net.SocketTimeoutException} to simulate a connect timeout; each exception
- *       type exercises a different branch in the driver's retry and reconnect logic.
- *   <li>Apache HttpClient 4.x's {@code DefaultHttpRequestRetryHandler} retries on
- *       {@code IOException}; assert that the configured number of retries fires and that the retry
+ *   <li>Inject {@code java.net.ConnectException} to simulate connection refused; inject {@code
+ *       java.net.SocketTimeoutException} to simulate a connect timeout; each exception type
+ *       exercises a different branch in the driver's retry and reconnect logic.
+ *   <li>Apache HttpClient 4.x's {@code DefaultHttpRequestRetryHandler} retries on {@code
+ *       IOException}; assert that the configured number of retries fires and that the retry
  *       interval respects any backoff strategy.
  *   <li><strong>Production failure mode:</strong> a host's iptables rule is mistakenly deleted,
  *       causing the application to reach the database over a path that returns TCP RST; the JDBC
- *       driver sees {@code ConnectException: Connection refused} and wraps it in a
- *       {@code SQLRecoverableException}; HikariCP's connection validation fails; the pool is
- *       drained of all connections simultaneously and begins a reconnect storm against the
- *       database, compounding the original misconfiguration with heavy connection churn.
+ *       driver sees {@code ConnectException: Connection refused} and wraps it in a {@code
+ *       SQLRecoverableException}; HikariCP's connection validation fails; the pool is drained of
+ *       all connections simultaneously and begins a reconnect storm against the database,
+ *       compounding the original misconfiguration with heavy connection churn.
  * </ul>
  *
  * <h2>Deep technical dive</h2>
@@ -70,21 +70,21 @@ import com.macstab.chaos.jvm.api.OperationType;
  * classification logic.
  *
  * <p>The PostgreSQL JDBC driver's {@code org.postgresql.core.v3.ConnectionFactoryImpl} opens a
- * plain {@code Socket} and calls {@code connect(addr, loginTimeout * 1000)}. The injected
- * exception propagates up through the driver as {@code PSQLException} wrapping the original
- * {@code IOException}; Spring's {@code SQLExceptionTranslator} maps it to a
- * {@code DataAccessResourceFailureException}. Tests should assert this entire translation chain,
- * not just the raw exception.
+ * plain {@code Socket} and calls {@code connect(addr, loginTimeout * 1000)}. The injected exception
+ * propagates up through the driver as {@code PSQLException} wrapping the original {@code
+ * IOException}; Spring's {@code SQLExceptionTranslator} maps it to a {@code
+ * DataAccessResourceFailureException}. Tests should assert this entire translation chain, not just
+ * the raw exception.
  *
- * <p>MySQL Connector/J ({@code com.mysql.cj.protocol.StandardSocketFactory}) uses the same
- * {@code Socket.connect()} path. When the exception propagates, the connector re-throws it as a
- * {@code CJCommunicationsException} wrapping the {@code IOException}; Spring maps this to
- * {@code TransientDataAccessResourceException} if the SQL state is {@code 08S01}.
+ * <p>MySQL Connector/J ({@code com.mysql.cj.protocol.StandardSocketFactory}) uses the same {@code
+ * Socket.connect()} path. When the exception propagates, the connector re-throws it as a {@code
+ * CJCommunicationsException} wrapping the {@code IOException}; Spring maps this to {@code
+ * TransientDataAccessResourceException} if the SQL state is {@code 08S01}.
  *
- * <p>The distinction between this annotation and {@link ChaosSocketConnectReject} is exception
- * type specificity: the reject effect always throws a generic {@code IOException}; this effect
- * throws whatever class is configured, enabling injection of subtypes that trigger specific retry
- * or circuit-breaker logic that only activates for certain exception hierarchies.
+ * <p>The distinction between this annotation and {@link ChaosSocketConnectReject} is exception type
+ * specificity: the reject effect always throws a generic {@code IOException}; this effect throws
+ * whatever class is configured, enabling injection of subtypes that trigger specific retry or
+ * circuit-breaker logic that only activates for certain exception hierarchies.
  *
  * <h2>Example</h2>
  *
@@ -107,8 +107,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       it causes an {@code ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>The chaos agent JAR</strong> must be on the path configured in
  *       {@code @JvmAgentChaos}; it is attached before the container starts.
- *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the
- *       translator class can be resolved.
+ *   <li><strong>{@code macstab-chaos-java}</strong> must be on the test classpath so the translator
+ *       class can be resolved.
  *   <li><strong>Java container image</strong> — the target must run a JVM; the agent cannot
  *       intercept native executables.
  * </ul>

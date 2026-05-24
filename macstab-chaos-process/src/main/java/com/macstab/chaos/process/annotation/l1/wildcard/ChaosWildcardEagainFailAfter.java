@@ -16,55 +16,60 @@ import com.macstab.chaos.process.model.ProcessSelector;
 /**
  * After {@link #successesBeforeFailure} successful process-management syscall invocations across
  * all intercepted families, injects {@code EAGAIN} on every subsequent call, modelling a uid
- * process-count ceiling scenario where the uid process limit is hit after N successful process
- * and thread creations, causing all subsequent process-management operations to return
- * "Resource temporarily unavailable" permanently until load is shed.
+ * process-count ceiling scenario where the uid process limit is hit after N successful process and
+ * thread creations, causing all subsequent process-management operations to return "Resource
+ * temporarily unavailable" permanently until load is shed.
  *
  * <h2>What this annotation is</h2>
- * L1 libchaos-process primitive — one (selector = {@code WILDCARD}, errno = {@code EAGAIN},
- * effect = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N intercepted
+ *
+ * L1 libchaos-process primitive — one (selector = {@code WILDCARD}, errno = {@code EAGAIN}, effect
+ * = FAIL_AFTER) tuple. FAIL_AFTER is the counter-gated effect: the first N intercepted
  * process-management calls (across all families — fork, execve, posix_spawn, pthread_create,
  * waitpid) succeed, then the counter trips permanently and every subsequent call returns the error
  * code until the rule is removed. Compile-time safety: invalid selector/errno/effect combinations
  * have no annotation class.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-process.so} before the container process starts,
- *       interposing every process-management libc wrapper at the dynamic-linker level.</li>
+ *       interposing every process-management libc wrapper at the dynamic-linker level.
  *   <li>The interposer maintains a per-rule success counter shared across all intercepted syscall
  *       families; the counter does not reset automatically between test methods when the annotation
- *       is at class scope.</li>
+ *       is at class scope.
  *   <li>Once the counter reaches zero it trips permanently: every subsequent process-management
  *       call returns {@code -1} (or the errno value directly for pthread_create and posix_spawn)
- *       with {@code errno = EAGAIN}.</li>
+ *       with {@code errno = EAGAIN}.
  *   <li>The calling code receives: {@code fork()} returns {@code -1} with {@code errno = EAGAIN}
- *       (11); {@code pthread_create}/{@code posix_spawn} return {@code EAGAIN} directly;
- *       {@code strerror(EAGAIN)}: "Resource temporarily unavailable".</li>
+ *       (11); {@code pthread_create}/{@code posix_spawn} return {@code EAGAIN} directly; {@code
+ *       strerror(EAGAIN)}: "Resource temporarily unavailable".
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
  *   <li>The first {@link #successesBeforeFailure} process-management calls proceed normally; all
  *       subsequent calls return EAGAIN permanently; assert that the application's EAGAIN retry
  *       logic is bounded — an unbounded retry loop receiving EAGAIN from every process-management
- *       path simultaneously will spin indefinitely without recovering.</li>
- *   <li>FAIL_AFTER models the RLIMIT_NPROC ceiling: N process and thread creations succeed;
- *       the uid process count hits the kernel limit; all subsequent fork and pthread_create calls
- *       return EAGAIN — assert that the application detects the ceiling, sheds load by rejecting
- *       new requests, and alerts operators rather than continuing to spawn.</li>
- *   <li>Assert that the application does not treat EAGAIN from WILDCARD FAIL_AFTER as identical
- *       to transient EAGAIN (ERRNO variant) — FAIL_AFTER EAGAIN is sustained and will not resolve
+ *       path simultaneously will spin indefinitely without recovering.
+ *   <li>FAIL_AFTER models the RLIMIT_NPROC ceiling: N process and thread creations succeed; the uid
+ *       process count hits the kernel limit; all subsequent fork and pthread_create calls return
+ *       EAGAIN — assert that the application detects the ceiling, sheds load by rejecting new
+ *       requests, and alerts operators rather than continuing to spawn.
+ *   <li>Assert that the application does not treat EAGAIN from WILDCARD FAIL_AFTER as identical to
+ *       transient EAGAIN (ERRNO variant) — FAIL_AFTER EAGAIN is sustained and will not resolve
  *       without load reduction; the back-off strategy must be more aggressive than for transient
- *       pressure.</li>
+ *       pressure.
  * </ul>
+ *
  * Production failure mode: a container under load continuously spawns worker threads and
  * subprocesses; when the uid process count hits RLIMIT_NPROC all fork and pthread_create calls
- * return EAGAIN simultaneously; the application's per-path retry loops each spin independently
- * with short back-offs, each consuming scheduler cycles without releasing process slots; the
- * retry loops prevent the container from serving requests while maintaining the pressure.
+ * return EAGAIN simultaneously; the application's per-path retry loops each spin independently with
+ * short back-offs, each consuming scheduler cycles without releasing process slots; the retry loops
+ * prevent the container from serving requests while maintaining the pressure.
  *
  * <h2>Deep technical dive</h2>
+ *
  * <p>The WILDCARD FAIL_AFTER counter is shared across all process-management families. A fork call,
  * a pthread_create call, and a posix_spawn call each consume one counter unit. The EAGAIN phase
  * begins when the combined process-management call traffic from all families exhausts the counter.
@@ -74,15 +79,15 @@ import com.macstab.chaos.process.model.ProcessSelector;
  *
  * <p>The counter does not reset between test methods when the annotation is at class scope. The
  * first test method exercises the pre-ceiling phase (the application creates processes and threads
- * normally); subsequent test methods exercise the EAGAIN-ceiling phase (all process management
- * is blocked until load is shed). This enables sequential testing of the ceiling-hit and
- * load-shedding behaviors in separate test methods.
+ * normally); subsequent test methods exercise the EAGAIN-ceiling phase (all process management is
+ * blocked until load is shed). This enables sequential testing of the ceiling-hit and load-shedding
+ * behaviors in separate test methods.
  *
  * <p>EAGAIN from WILDCARD FAIL_AFTER is semantically sustained: unlike transient EAGAIN (which
  * resolves when another process exits and releases its process table slot), FAIL_AFTER EAGAIN
  * persists until the rule is removed. Applications that implement EAGAIN back-off with a maximum
- * retry count will correctly escalate after exhausting retries; applications that retry indefinitely
- * will spin until the test timeout fires.
+ * retry count will correctly escalate after exhausting retries; applications that retry
+ * indefinitely will spin until the test timeout fires.
  *
  * <h2>Example</h2>
  *
@@ -102,11 +107,12 @@ import com.macstab.chaos.process.model.ProcessSelector;
  *
  * <p><strong>Threshold guidance:</strong> set {@link #successesBeforeFailure} to the total number
  * of process-management calls (across all families) during the application's startup and
- * steady-state phase before the ceiling; values 20–500 cover typical workload sizes; 0 means
- * the ceiling is hit before the first process or thread can be created.
+ * steady-state phase before the ceiling; values 20–500 cover typical workload sizes; 0 means the
+ * ceiling is hit before the first process or thread can be created.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
- * {@code id}; the default empty string applies the rule to every process-chaos-capable container
- * in the test class.
+ * {@code id}; the default empty string applies the rule to every process-chaos-capable container in
+ * the test class.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ProcessFailAfterBinding

@@ -25,8 +25,8 @@ import com.macstab.chaos.time.annotation.l1.wildcard.ChaosWildcardLatency;
  * End-to-end integration test for the time L1 annotation path.
  *
  * <p>Exercises the full chain: L1 annotation on a fixture class → {@link L1AnnotationProcessor}
- * reflective dispatch → {@code TimeErrnoTranslator} / {@code TimeLatencyTranslator} →
- * {@code LibchaosTimeChaos.apply()} → config-file write inside a real running container.
+ * reflective dispatch → {@code TimeErrnoTranslator} / {@code TimeLatencyTranslator} → {@code
+ * LibchaosTimeChaos.apply()} → config-file write inside a real running container.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -52,7 +52,8 @@ class L1TimeAnnotationEndToEndTest {
 
   @ParameterizedTest
   @ValueSource(strings = {DEBIAN, ALPINE})
-  @DisplayName("@ChaosClockGettimeEfault writes clock_gettime:ERRNO:EFAULT to config and removes cleanly")
+  @DisplayName(
+      "@ChaosClockGettimeEfault writes clock_gettime:ERRNO:EFAULT to config and removes cleanly")
   void clockGettimeEfaultWrittenAndRemoved(final String image) throws Exception {
     try (final GenericContainer<?> container = prepared(image)) {
       final var handles = containers(container);
@@ -100,7 +101,8 @@ class L1TimeAnnotationEndToEndTest {
 
   @ParameterizedTest
   @ValueSource(strings = {DEBIAN, ALPINE})
-  @DisplayName("@ChaosTimeWildcardLatency writes wildcard LATENCY rule to config and removes cleanly")
+  @DisplayName(
+      "@ChaosTimeWildcardLatency writes wildcard LATENCY rule to config and removes cleanly")
   void wildcardLatencyWrittenAndRemoved(final String image) throws Exception {
     try (final GenericContainer<?> container = prepared(image)) {
       final var handles = containers(container);

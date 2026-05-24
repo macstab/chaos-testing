@@ -21,14 +21,13 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p>A JVM agent L1 chaos primitive targeting the {@code SYSTEM_GC_REQUEST} operation — one typed
  * annotation per (selector family, operation type, effect) tuple. Declared on a test class or
- * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until
- * {@code afterAll}/{@code afterEach} respectively.
+ * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until {@code
+ * afterAll}/{@code afterEach} respectively.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>The chaos agent intercepts every call to {@code System.gc()} in the target container's
- *       JVM.
+ *   <li>The chaos agent intercepts every call to {@code System.gc()} in the target container's JVM.
  *   <li>Before forwarding the call, the interceptor parks the calling thread for a duration sampled
  *       uniformly between {@link #delayMs()} and {@link #maxDelayMs()} milliseconds.
  *   <li>After the delay, the real {@code System.gc()} executes normally; the caller resumes after
@@ -38,25 +37,26 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li><strong>Off-heap cleanup stalls.</strong> NIO code that calls {@code System.gc()} to
- *       prompt collection of {@code DirectByteBuffer} objects will find that off-heap memory is not
- *       reclaimed promptly; assert that the application does not allocate unboundedly while waiting.
- *   <li><strong>Finalizer-dependent shutdown blocks.</strong> Shutdown hooks that rely on
- *       {@code System.gc()} to run finalizers before closing resources will hang for the injected
- *       delay; assert that the container still shuts down within the pod termination grace period.
- *   <li><strong>RMI / distributed GC heartbeat delayed.</strong> Java RMI uses periodic
- *       {@code System.gc()} calls to ensure distributed garbage collection; assert that remote
- *       references are not prematurely invalidated.
- *   <li><strong>Production failure mode:</strong> memory-sensitive libraries (e.g. Netty's
- *       pooled allocator) call {@code System.gc()} when off-heap pressure is high; delaying
- *       the response causes the allocator to throw {@code OutOfMemoryError: Direct buffer memory}
- *       while the GC is still blocked in the injected sleep.
+ *   <li><strong>Off-heap cleanup stalls.</strong> NIO code that calls {@code System.gc()} to prompt
+ *       collection of {@code DirectByteBuffer} objects will find that off-heap memory is not
+ *       reclaimed promptly; assert that the application does not allocate unboundedly while
+ *       waiting.
+ *   <li><strong>Finalizer-dependent shutdown blocks.</strong> Shutdown hooks that rely on {@code
+ *       System.gc()} to run finalizers before closing resources will hang for the injected delay;
+ *       assert that the container still shuts down within the pod termination grace period.
+ *   <li><strong>RMI / distributed GC heartbeat delayed.</strong> Java RMI uses periodic {@code
+ *       System.gc()} calls to ensure distributed garbage collection; assert that remote references
+ *       are not prematurely invalidated.
+ *   <li><strong>Production failure mode:</strong> memory-sensitive libraries (e.g. Netty's pooled
+ *       allocator) call {@code System.gc()} when off-heap pressure is high; delaying the response
+ *       causes the allocator to throw {@code OutOfMemoryError: Direct buffer memory} while the GC
+ *       is still blocked in the injected sleep.
  * </ul>
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>{@code System.gc()} is a hint to the JVM that the application believes it would be a good
- * time to run a full collection. In HotSpot the method is native and typically triggers a full
+ * <p>{@code System.gc()} is a hint to the JVM that the application believes it would be a good time
+ * to run a full collection. In HotSpot the method is native and typically triggers a full
  * stop-the-world collection unless {@code -XX:+DisableExplicitGC} is set. Intercepting it requires
  * the same native-method delegation pattern used for {@code System.currentTimeMillis()}: the agent
  * installs a Java-visible wrapper in the bootstrap class loader, injects the delay in that wrapper,
@@ -90,8 +90,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
- *       agent before the container JVM starts; omitting it causes an
- *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       agent before the container JVM starts; omitting it causes an {@code
+ *       ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
  *       {@code @JvmAgentChaos}.
  *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the

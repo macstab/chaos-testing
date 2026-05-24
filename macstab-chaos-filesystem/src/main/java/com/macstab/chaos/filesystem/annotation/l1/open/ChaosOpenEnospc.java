@@ -21,22 +21,22 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * <h2>What this annotation is</h2>
  *
  * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code OPEN}, errno = {@code ENOSPC})
- * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
- * {@code open} call; when it fires the interposer returns {@code -1} with {@code errno = ENOSPC}
- * without performing any real kernel operation. No runtime operation-errno validation is needed.
+ * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted {@code
+ * open} call; when it fires the interposer returns {@code -1} with {@code errno = ENOSPC} without
+ * performing any real kernel operation. No runtime operation-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
- *   <li>On each intercepted {@code open} call a Bernoulli trial with probability {@link #probability}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = ENOSPC}.
+ *   <li>On each intercepted {@code open} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = ENOSPC}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
@@ -47,14 +47,13 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *       and typically succeeds even on a full filesystem. Assert that the application treats open
  *       ENOSPC as a disk-full condition and triggers disk-pressure cleanup or log rotation.
  *   <li>Applications that create temporary files for atomic writes (write to temp, then rename)
- *       must handle {@code ENOSPC} on the temp-file creation path and propagate the disk-full
- *       error to the caller rather than leaving partial data behind.
+ *       must handle {@code ENOSPC} on the temp-file creation path and propagate the disk-full error
+ *       to the caller rather than leaving partial data behind.
  *   <li>Log rotation scripts that create new log files on a full disk will receive {@code ENOSPC};
  *       assert that the application's logger falls back to stderr or drops logs with a rate-limited
  *       warning rather than entering an infinite retry loop that fills the inode table.
- *   <li>Assert that the application emits a disk-pressure alert when it first encounters
- *       {@code ENOSPC} from {@code open}, enabling operators to trigger cleanup before data loss
- *       occurs.
+ *   <li>Assert that the application emits a disk-pressure alert when it first encounters {@code
+ *       ENOSPC} from {@code open}, enabling operators to trigger cleanup before data loss occurs.
  * </ul>
  *
  * <p>In production, {@code ENOSPC} from {@code open} on file creation occurs when the application's
@@ -71,16 +70,16 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * (block usage) are needed to identify the cause.
  *
  * <p>Ext4 reserves 5% of blocks for the root user by default (tunable with {@code tune2fs -m});
- * this reservation means that unprivileged processes receive {@code ENOSPC} when the filesystem
- * is 95% full, while root processes can still write. Containerized processes typically run as
+ * this reservation means that unprivileged processes receive {@code ENOSPC} when the filesystem is
+ * 95% full, while root processes can still write. Containerized processes typically run as
  * non-root, so they will encounter the 95% threshold even though the filesystem is not completely
  * full. This injection simulates the condition without waiting for the disk to fill.
  *
- * <p>Java maps {@code ENOSPC} from {@code open} to a {@code FileNotFoundException} or
- * {@code IOException} with the message "No space left on device". The exception class depends on
- * whether the Java API being used maps all open failures to {@code FileNotFoundException} or
- * distinguishes creation failures from access failures. {@code Files.createFile(path)} throws
- * {@code IOException("No space left on device")} rather than {@code FileNotFoundException}.
+ * <p>Java maps {@code ENOSPC} from {@code open} to a {@code FileNotFoundException} or {@code
+ * IOException} with the message "No space left on device". The exception class depends on whether
+ * the Java API being used maps all open failures to {@code FileNotFoundException} or distinguishes
+ * creation failures from access failures. {@code Files.createFile(path)} throws {@code
+ * IOException("No space left on device")} rather than {@code FileNotFoundException}.
  *
  * <h2>Example</h2>
  *

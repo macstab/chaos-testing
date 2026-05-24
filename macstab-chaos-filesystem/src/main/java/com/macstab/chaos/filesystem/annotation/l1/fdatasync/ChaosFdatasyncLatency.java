@@ -28,9 +28,9 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
@@ -49,21 +49,21 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *       single fdatasync) will see the batch window fill up during the slow fdatasync; assert that
  *       the group commit logic handles a slow fdatasync by waiting for it to complete (not by
  *       issuing another fdatasync concurrently, which is ineffective).
- *   <li>Database engines that distinguish between fdatasync latency and fsync latency (using
- *       {@code fdatasync} for WAL commits and {@code fsync} for checkpoint completion) should be
- *       tested with this annotation for WAL-path latency and with {@link ChaosFsyncLatency} for
+ *   <li>Database engines that distinguish between fdatasync latency and fsync latency (using {@code
+ *       fdatasync} for WAL commits and {@code fsync} for checkpoint completion) should be tested
+ *       with this annotation for WAL-path latency and with {@link ChaosFsyncLatency} for
  *       checkpoint-path latency independently.
- *   <li>Assert that a slow fdatasync on the WAL file does not prevent the WAL writer from
- *       accepting new WAL records from other transactions — the write path should be
- *       non-blocking with respect to the fdatasync completion.
+ *   <li>Assert that a slow fdatasync on the WAL file does not prevent the WAL writer from accepting
+ *       new WAL records from other transactions — the write path should be non-blocking with
+ *       respect to the fdatasync completion.
  * </ul>
  *
- * <p>In production, slow {@code fdatasync} calls occur under the same conditions as slow
- * {@code fsync} calls: storage device write cache full, cgroup I/O throttling, and NFS server
- * latency. The advantage of {@code fdatasync} over {@code fsync} is that it avoids flushing
- * metadata (saving the journal commit round-trip on journalled filesystems), making it faster
- * under normal conditions. Under I/O pressure, both are equally slow because the bottleneck is
- * the data flush to the storage device, not the metadata flush.
+ * <p>In production, slow {@code fdatasync} calls occur under the same conditions as slow {@code
+ * fsync} calls: storage device write cache full, cgroup I/O throttling, and NFS server latency. The
+ * advantage of {@code fdatasync} over {@code fsync} is that it avoids flushing metadata (saving the
+ * journal commit round-trip on journalled filesystems), making it faster under normal conditions.
+ * Under I/O pressure, both are equally slow because the bottleneck is the data flush to the storage
+ * device, not the metadata flush.
  *
  * <h2>Deep technical dive</h2>
  *
@@ -74,12 +74,11 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * {@code fdatasync} approximately 10–30% faster than {@code fsync} on HDDs on journalled
  * filesystems, because the journal commit for metadata-only changes is skipped.
  *
- * <p>Java's {@code FileChannel.force(false)} calls {@code fdatasync(2)} on Linux;
- * {@code FileChannel.force(true)} calls {@code fsync(2)}. Many WAL implementations use
- * {@code force(false)} for WAL record commits (data durability is sufficient, metadata timing
- * is not critical) and {@code force(true)} only for checkpoint completion (where the inode
- * update must also be durable for crash recovery). This annotation exercises the {@code force(false)}
- * path.
+ * <p>Java's {@code FileChannel.force(false)} calls {@code fdatasync(2)} on Linux; {@code
+ * FileChannel.force(true)} calls {@code fsync(2)}. Many WAL implementations use {@code
+ * force(false)} for WAL record commits (data durability is sufficient, metadata timing is not
+ * critical) and {@code force(true)} only for checkpoint completion (where the inode update must
+ * also be durable for crash recovery). This annotation exercises the {@code force(false)} path.
  *
  * <h2>Example</h2>
  *

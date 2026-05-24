@@ -14,56 +14,55 @@ import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**
- * Injects {@code ENFILE} into {@code open(2)}, causing the call to return {@code -1} with
- * {@code errno = ENFILE} as if the system-wide open file count has reached the kernel's global
- * limit ({@code fs.file-max}) and no new file descriptors can be allocated by any process on
- * the host.
+ * Injects {@code ENFILE} into {@code open(2)}, causing the call to return {@code -1} with {@code
+ * errno = ENFILE} as if the system-wide open file count has reached the kernel's global limit
+ * ({@code fs.file-max}) and no new file descriptors can be allocated by any process on the host.
  *
  * <h2>What this annotation is</h2>
  *
  * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code OPEN}, errno = {@code ENFILE})
- * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted
- * {@code open} call; when it fires the interposer returns {@code -1} with {@code errno = ENFILE}
- * without performing any real kernel operation. No runtime operation-errno validation is needed.
+ * tuple. A Bernoulli trial with probability {@link #probability} is run on each intercepted {@code
+ * open} call; when it fires the interposer returns {@code -1} with {@code errno = ENFILE} without
+ * performing any real kernel operation. No runtime operation-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
- *   <li>On each intercepted {@code open} call a Bernoulli trial with probability {@link #probability}
- *       is conducted; when it fires the interposer returns {@code -1} and sets
- *       {@code errno = ENFILE}.
+ *   <li>On each intercepted {@code open} call a Bernoulli trial with probability {@link
+ *       #probability} is conducted; when it fires the interposer returns {@code -1} and sets {@code
+ *       errno = ENFILE}.
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
  *   <li>{@code ENFILE} from {@code open} is a system-wide exhaustion condition affecting all
- *       processes on the host; unlike {@code EMFILE} (per-process limit), it cannot be resolved
- *       by the application closing its own file descriptors. Assert that the application treats
- *       {@code ENFILE} as a temporary host-wide shortage and backs off rather than failing
- *       permanently.
+ *       processes on the host; unlike {@code EMFILE} (per-process limit), it cannot be resolved by
+ *       the application closing its own file descriptors. Assert that the application treats {@code
+ *       ENFILE} as a temporary host-wide shortage and backs off rather than failing permanently.
  *   <li>Assert that the application distinguishes {@code ENFILE} from {@code EMFILE} in its error
  *       reporting — the remediation is different (host-level {@code sysctl fs.file-max} vs.
  *       process-level {@code ulimit -n}), and mixing the two in a "too many open files" catch-all
  *       delays incident response.
  *   <li>Startup sequences that open multiple configuration files, certificate stores, and log files
- *       concurrently must handle {@code ENFILE} by serializing the opens and retrying with back-off;
- *       assert that the startup does not fail permanently on transient host fd exhaustion.
+ *       concurrently must handle {@code ENFILE} by serializing the opens and retrying with
+ *       back-off; assert that the startup does not fail permanently on transient host fd
+ *       exhaustion.
  *   <li>Assert that the application emits a "system file descriptor limit reached" metric or alert
  *       with the current {@code /proc/sys/fs/file-max} value, enabling operators to tune the host
  *       limit or identify the tenant causing the exhaustion.
  * </ul>
  *
  * <p>In production, {@code ENFILE} from {@code open} occurs on Kubernetes nodes where multiple
- * containers collectively exhaust the host's {@code fs.file-max} limit. Because the limit is
- * shared across all cgroups on the node, a traffic spike on one container can cause {@code ENFILE}
- * for unrelated workloads on the same node — a noisy-neighbor failure mode that is difficult to
+ * containers collectively exhaust the host's {@code fs.file-max} limit. Because the limit is shared
+ * across all cgroups on the node, a traffic spike on one container can cause {@code ENFILE} for
+ * unrelated workloads on the same node — a noisy-neighbor failure mode that is difficult to
  * diagnose without host-level monitoring.
  *
  * <h2>Deep technical dive</h2>
@@ -74,9 +73,9 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * returns {@code ENFILE} to the calling process. This check is performed before the filesystem
  * layer is involved; the specific file type (regular file, socket, pipe) does not affect the check.
  *
- * <p>The distinction between file descriptions and file descriptors is important: a file description
- * is a kernel-internal object (referenced via {@code struct file}); a file descriptor is a
- * per-process integer that references a file description. {@code dup(2)} creates a new file
+ * <p>The distinction between file descriptions and file descriptors is important: a file
+ * description is a kernel-internal object (referenced via {@code struct file}); a file descriptor
+ * is a per-process integer that references a file description. {@code dup(2)} creates a new file
  * descriptor pointing to the same file description; the count in {@code /proc/sys/fs/file-nr}
  * counts file descriptions (not descriptors). {@code ENFILE} is triggered when file descriptions
  * are exhausted; {@code EMFILE} is triggered when a process's file descriptors are exhausted.

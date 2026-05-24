@@ -27,8 +27,8 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * <ol>
  *   <li>{@code @SyscallLevelChaos(LibchaosLib.TIME)} on the container definition causes the
- *       extension to upload {@code libchaos-time.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *       extension to upload {@code libchaos-time.so} into the container and prepend it to {@code
+ *       LD_PRELOAD} before the process starts.
  *   <li>The shared library interposes {@code clock_gettime}, {@code nanosleep}, and {@code usleep}
  *       at the dynamic-linker level.
  *   <li>On every intercepted {@code usleep} call the interposer first sleeps for an additional
@@ -42,8 +42,8 @@ import com.macstab.chaos.time.model.TimeSelector;
  * <ul>
  *   <li>Rate-limiting loops that use {@code usleep} for pacing will run more slowly than
  *       configured, reducing throughput below the target rate.
- *   <li>Polling loops in client libraries (database connectors, message broker clients) that
- *       sleep between polls will miss their desired poll interval, increasing latency.
+ *   <li>Polling loops in client libraries (database connectors, message broker clients) that sleep
+ *       between polls will miss their desired poll interval, increasing latency.
  *   <li>Connection keep-alive loops that sleep between heartbeats will miss intervals, potentially
  *       triggering server-side idle timeout disconnects.
  *   <li>Assert that SLA budgets account for scheduler jitter and that keep-alive intervals include
@@ -55,20 +55,20 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>{@code usleep(3)} is a microsecond-precision sleep wrapper over {@code nanosleep(2)};
- * its nominal precision is limited by kernel timer resolution (typically 1 ms on HZ=1000 kernels).
- * The extra latency injected by {@code libchaos-time.so} simulates the effect of the OS not
- * returning to the process promptly after the timer fires — a common occurrence when the CFS
- * runqueue is saturated or the CPU is being stolen by another VM.
+ * <p>{@code usleep(3)} is a microsecond-precision sleep wrapper over {@code nanosleep(2)}; its
+ * nominal precision is limited by kernel timer resolution (typically 1 ms on HZ=1000 kernels). The
+ * extra latency injected by {@code libchaos-time.so} simulates the effect of the OS not returning
+ * to the process promptly after the timer fires — a common occurrence when the CFS runqueue is
+ * saturated or the CPU is being stolen by another VM.
  *
- * <p>C libraries embedded in JNI (libcurl, librdkafka, libpq) frequently use {@code usleep}
- * in their connection retry and poll loops. Extending those sleeps forces the application to wait
+ * <p>C libraries embedded in JNI (libcurl, librdkafka, libpq) frequently use {@code usleep} in
+ * their connection retry and poll loops. Extending those sleeps forces the application to wait
  * longer than the library's configured retry interval, which can cascade into connection pool
  * exhaustion or request timeout failures at the application layer.
  *
- * <p>Sibling annotation: {@link ChaosNanosleepLatency} applies the same delay to the modern
- * {@code nanosleep} interface; {@link ChaosWildcardLatency} applies it to all interposed time
- * syscalls simultaneously.
+ * <p>Sibling annotation: {@link ChaosNanosleepLatency} applies the same delay to the modern {@code
+ * nanosleep} interface; {@link ChaosWildcardLatency} applies it to all interposed time syscalls
+ * simultaneously.
  *
  * <h2>Example</h2>
  *

@@ -19,59 +19,65 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * memory allocation.
  *
  * <h2>What this annotation is</h2>
+ *
  * L1 libchaos-memory primitive — one (selector = {@code MMAP_ANON}, errno = {@code ENFILE}) tuple.
  * Compile-time safety: this annotation exists only because {@code ENFILE} is a defined POSIX result
  * for {@code mmap}; invalid combinations have no annotation class and cannot be expressed.
  *
  * <h2>What chaos this applies</h2>
+ *
  * <ol>
  *   <li>{@code LD_PRELOAD} loads {@code libchaos-memory.so} before the container process starts,
- *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.</li>
+ *       interposing the libc {@code mmap} wrapper at the dynamic-linker level.
  *   <li>On each {@code mmap(MAP_ANONYMOUS)} call the interposer runs a Bernoulli trial with
- *       probability {@link #probability}.</li>
- *   <li>When the trial fires, the interposer sets {@code errno = ENFILE} and returns
- *       {@code MAP_FAILED} without issuing the real kernel call.</li>
- *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 23,
- *       {@code strerror}: "Too many open files in system".</li>
+ *       probability {@link #probability}.
+ *   <li>When the trial fires, the interposer sets {@code errno = ENFILE} and returns {@code
+ *       MAP_FAILED} without issuing the real kernel call.
+ *   <li>The calling code receives: {@code MAP_FAILED} return, {@code errno} 23, {@code strerror}:
+ *       "Too many open files in system".
  * </ol>
  *
  * <h2>Observable effects and what to assert in tests</h2>
+ *
  * <ul>
  *   <li>{@code mmap} returns {@code MAP_FAILED}; {@code errno = ENFILE} (23); callers should
- *       surface a resource-limit error distinct from OOM — many do not.</li>
- *   <li>glibc {@code malloc} propagates {@code NULL}; JVM allocators raise {@code OutOfMemoryError},
- *       losing the distinction between host-level fd exhaustion and heap pressure.</li>
+ *       surface a resource-limit error distinct from OOM — many do not.
+ *   <li>glibc {@code malloc} propagates {@code NULL}; JVM allocators raise {@code
+ *       OutOfMemoryError}, losing the distinction between host-level fd exhaustion and heap
+ *       pressure.
  *   <li>Assert that the application's error-handling code produces a diagnostic that distinguishes
  *       "too many open files in system" from "out of memory" — this distinction matters for
- *       operations runbooks.</li>
+ *       operations runbooks.
  * </ul>
- * Production failure mode: a Kubernetes node running many containers simultaneously can exhaust
- * the system-wide file descriptor table ({@code fs.file-max}); every process on the node then
- * receives {@code ENFILE} from any fd-creating syscall, causing all applications to fail in
- * ways that look identical to OOM unless error codes are preserved.
+ *
+ * Production failure mode: a Kubernetes node running many containers simultaneously can exhaust the
+ * system-wide file descriptor table ({@code fs.file-max}); every process on the node then receives
+ * {@code ENFILE} from any fd-creating syscall, causing all applications to fail in ways that look
+ * identical to OOM unless error codes are preserved.
  *
  * <h2>Deep technical dive</h2>
+ *
  * <p>POSIX specifies {@code ENFILE} when the system-wide limit on open files ({@code fs.file-max}
  * on Linux, default ~1 million) is reached. Unlike {@code EMFILE} (per-process), {@code ENFILE}
- * affects all processes on the host simultaneously. On Linux the global file table is a kernel
- * data structure that grows dynamically up to {@code fs.file-max}; exhausting it is rare on
- * modern hosts but becomes reachable under container-dense deployments on shared nodes.
+ * affects all processes on the host simultaneously. On Linux the global file table is a kernel data
+ * structure that grows dynamically up to {@code fs.file-max}; exhausting it is rare on modern hosts
+ * but becomes reachable under container-dense deployments on shared nodes.
  *
- * <p>Like {@code EMFILE}, the kernel does not check {@code fs.file-max} for pure anonymous
- * mappings ({@code MAP_ANONYMOUS}) because no file descriptor is allocated. This annotation
- * therefore intentionally exercises an error code that the kernel would not naturally return for
- * this specific syscall, targeting the correctness of error-handling code that must deal with
- * the code when it arrives from other, co-occurring syscalls on the same thread.
+ * <p>Like {@code EMFILE}, the kernel does not check {@code fs.file-max} for pure anonymous mappings
+ * ({@code MAP_ANONYMOUS}) because no file descriptor is allocated. This annotation therefore
+ * intentionally exercises an error code that the kernel would not naturally return for this
+ * specific syscall, targeting the correctness of error-handling code that must deal with the code
+ * when it arrives from other, co-occurring syscalls on the same thread.
  *
  * <p>The distinction between {@code EMFILE} and {@code ENFILE} is important for incident response:
  * {@code EMFILE} is correctable by the process itself (close unused fds, shrink connection pools);
  * {@code ENFILE} requires host-level intervention (increase {@code fs.file-max}, reduce container
- * density, or restart the most fd-heavy processes). Applications that do not log the specific
- * errno value leave operators guessing.
+ * density, or restart the most fd-heavy processes). Applications that do not log the specific errno
+ * value leave operators guessing.
  *
- * <p>Compared with {@code EMFILE}: same observable effect (allocation failure) but different
- * scope and remediation. Both should be handled in application error-recovery code; this
- * annotation exercises the {@code ENFILE} branch specifically.
+ * <p>Compared with {@code EMFILE}: same observable effect (allocation failure) but different scope
+ * and remediation. Both should be handled in application error-recovery code; this annotation
+ * exercises the {@code ENFILE} branch specifically.
  *
  * <h2>Example</h2>
  *
@@ -87,8 +93,9 @@ import com.macstab.chaos.memory.model.MmapErrno;
  * }
  * }</pre>
  *
- * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; system-wide limit exhaustion is rare
- * in production — low probability is sufficient to exercise the error-handling branch.
+ * <p><strong>Probability guidance:</strong> 1e-4 to 1e-3; system-wide limit exhaustion is rare in
+ * production — low probability is sufficient to exercise the error-handling branch.
+ *
  * <p><strong>Scope:</strong> {@link #id()} binds this rule to a single container by its declared
  * {@code id}; the default empty string applies the rule to every memory-chaos-capable container in
  * the test class.

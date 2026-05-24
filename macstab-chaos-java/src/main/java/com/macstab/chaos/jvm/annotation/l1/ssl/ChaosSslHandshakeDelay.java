@@ -15,19 +15,19 @@ import com.macstab.chaos.jvm.api.OperationType;
 
 /**
  * Parks the calling thread inside {@link javax.net.ssl.SSLEngine#beginHandshake()
- * SSLEngine.beginHandshake()} for the configured number of milliseconds before the JSSE TLS
- * state machine begins — every TLS handshake takes at least {@code delayMs} longer than the
- * network round-trip alone.
+ * SSLEngine.beginHandshake()} for the configured number of milliseconds before the JSSE TLS state
+ * machine begins — every TLS handshake takes at least {@code delayMs} longer than the network
+ * round-trip alone.
  *
  * <h2>What this annotation is</h2>
  *
  * <p>An L1 JVM chaos primitive targeting the {@code SSL} selector family with the {@code delay}
  * effect applied to the {@code SSL_HANDSHAKE} operation. It intercepts the JSSE handshake entry
- * point at the JVM level — specifically {@code SSLEngine.beginHandshake()} and
- * {@code SSLSocket.startHandshake()} — and artificially inflates the handshake initiation latency.
- * The annotation is declared on the test class or method alongside a container annotation and is
- * active for the lifetime of the annotated scope (class-scope: {@code beforeAll} to
- * {@code afterAll}; method-scope: {@code beforeEach} to {@code afterEach}).
+ * point at the JVM level — specifically {@code SSLEngine.beginHandshake()} and {@code
+ * SSLSocket.startHandshake()} — and artificially inflates the handshake initiation latency. The
+ * annotation is declared on the test class or method alongside a container annotation and is active
+ * for the lifetime of the annotated scope (class-scope: {@code beforeAll} to {@code afterAll};
+ * method-scope: {@code beforeEach} to {@code afterEach}).
  *
  * <h2>What chaos this applies</h2>
  *
@@ -35,8 +35,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  * {@code SSLSocket#startHandshake()}. When the interceptor fires:
  *
  * <ol>
- *   <li>Execution is captured before the JSSE state machine transitions from
- *       {@code HandshakeStatus.NOT_HANDSHAKING} to its initial handshake state.
+ *   <li>Execution is captured before the JSSE state machine transitions from {@code
+ *       HandshakeStatus.NOT_HANDSHAKING} to its initial handshake state.
  *   <li>The delay effect calls {@code LockSupport.parkNanos} on the calling thread for the
  *       configured duration in milliseconds.
  *   <li>After the park returns, the real handshake method executes — the TLS state machine
@@ -46,11 +46,11 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Observable effects and what to assert in tests</h2>
  *
  * <ul>
- *   <li>Total connection-establishment time for HTTPS or TLS connections is at least
- *       {@code delayMs} longer than the non-chaos baseline — assert via client-side timing.
- *   <li>HTTP clients with TLS-handshake timeouts shorter than {@code delayMs} throw
- *       {@code SSLException} or {@code SocketTimeoutException} before the handshake completes —
- *       assert the exception type.
+ *   <li>Total connection-establishment time for HTTPS or TLS connections is at least {@code
+ *       delayMs} longer than the non-chaos baseline — assert via client-side timing.
+ *   <li>HTTP clients with TLS-handshake timeouts shorter than {@code delayMs} throw {@code
+ *       SSLException} or {@code SocketTimeoutException} before the handshake completes — assert the
+ *       exception type.
  *   <li>Connection pools that validate connections with a TLS renegotiation on checkout show
  *       elevated checkout latency — assert via pool-checkout timing metrics.
  *   <li>The handshake completes successfully after the delay (assuming the network is healthy) —
@@ -64,23 +64,23 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <h2>Deep technical dive</h2>
  *
- * <p><strong>Interception point.</strong> JSSE implements TLS through the
- * {@code sun.security.ssl.SSLEngineImpl} and {@code sun.security.ssl.SSLSocketImpl} classes, both
- * of which expose {@code beginHandshake()} / {@code startHandshake()} as the entry point. The
- * agent instruments these methods via the bootstrap class loader channel. The delay fires before
- * the JSSE handshake state ({@code Handshaker} object) is initialised — the underlying
- * {@code SocketChannel} is not yet involved.
+ * <p><strong>Interception point.</strong> JSSE implements TLS through the {@code
+ * sun.security.ssl.SSLEngineImpl} and {@code sun.security.ssl.SSLSocketImpl} classes, both of which
+ * expose {@code beginHandshake()} / {@code startHandshake()} as the entry point. The agent
+ * instruments these methods via the bootstrap class loader channel. The delay fires before the JSSE
+ * handshake state ({@code Handshaker} object) is initialised — the underlying {@code SocketChannel}
+ * is not yet involved.
  *
  * <p><strong>TLS state-machine interaction.</strong> JSSE's TLS 1.3 state machine manages the
- * handshake through a series of {@code SSLEngineResult} statuses ({@code NEED_TASK},
- * {@code NEED_WRAP}, {@code NEED_UNWRAP}). The delay fires only at the initial
- * {@code beginHandshake()} call; it does not re-fire on each state-machine step. After the park,
- * the state machine runs at normal speed — only the initiation is delayed.
+ * handshake through a series of {@code SSLEngineResult} statuses ({@code NEED_TASK}, {@code
+ * NEED_WRAP}, {@code NEED_UNWRAP}). The delay fires only at the initial {@code beginHandshake()}
+ * call; it does not re-fire on each state-machine step. After the park, the state machine runs at
+ * normal speed — only the initiation is delayed.
  *
  * <p><strong>Session resumption.</strong> TLS session resumption (TLS 1.2 session IDs or TLS 1.3
- * session tickets) bypasses the full handshake, but still calls {@code beginHandshake()}. The
- * delay fires on resumed sessions too, adding {@code delayMs} to what would otherwise be a
- * fast resumption handshake.
+ * session tickets) bypasses the full handshake, but still calls {@code beginHandshake()}. The delay
+ * fires on resumed sessions too, adding {@code delayMs} to what would otherwise be a fast
+ * resumption handshake.
  *
  * <p><strong>Distinction from {@code ChaosSslHandshakeInjectException}.</strong> The delay effect
  * lets the handshake complete normally (with added latency); the TLS connection is eventually
@@ -115,7 +115,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li>{@code @JvmAgentChaos} on the container annotation — attaches the chaos agent before the
- *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       JVM starts; omitting it causes {@code ExtensionConfigurationException} at {@code
+ *       beforeAll}.
  *   <li>{@code macstab-chaos-java} on the test classpath — the translator class must be loadable.
  *   <li>A Java container image — the container must run a JVM process.
  * </ul>

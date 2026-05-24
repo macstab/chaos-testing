@@ -20,17 +20,17 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  * <h2>What this annotation is</h2>
  *
  * <p>L1 libchaos primitive. Encodes exactly one (operation = {@code ALLOCATE}, effect = LATENCY)
- * tuple. Unlike errno variants, the latency primitive always delegates to the real kernel call after
- * the configured extra delay — the pre-allocation completes normally. No probability gate is applied;
- * the delay fires on every intercepted {@code fallocate} call. No runtime operation-effect validation
- * is needed.
+ * tuple. Unlike errno variants, the latency primitive always delegates to the real kernel call
+ * after the configured extra delay — the pre-allocation completes normally. No probability gate is
+ * applied; the delay fires on every intercepted {@code fallocate} call. No runtime operation-effect
+ * validation is needed.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the
- *       extension to upload {@code libchaos-io.so} into the container and prepend it to
- *       {@code LD_PRELOAD} before the process starts.
+ *   <li>{@code @SyscallLevelChaos(LibchaosLib.IO)} on the container definition causes the extension
+ *       to upload {@code libchaos-io.so} into the container and prepend it to {@code LD_PRELOAD}
+ *       before the process starts.
  *   <li>The shared library interposes {@code open}, {@code read}, {@code write}, {@code close},
  *       {@code fsync}, {@code fdatasync}, {@code truncate}, {@code unlink}, {@code rename}, and
  *       {@code fallocate} at the dynamic-linker level.
@@ -46,15 +46,15 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *       slow pre-allocation on congested storage rather than assuming it completes within a fixed
  *       budget.
  *   <li>Database engines that roll over WAL segments and pre-allocate the next segment while
- *       writing to the current segment will see the background pre-allocation thread delayed; assert
- *       that a slow pre-allocation does not block the foreground write path or cause transaction
- *       commits to stall waiting for the next segment to be ready.
+ *       writing to the current segment will see the background pre-allocation thread delayed;
+ *       assert that a slow pre-allocation does not block the foreground write path or cause
+ *       transaction commits to stall waiting for the next segment to be ready.
  *   <li>Applications that pre-allocate temporary files before processing large batches will see the
  *       batch start time increase; assert that the batch processing timeout is measured from after
  *       the pre-allocation rather than from before it.
  *   <li>Assert that a slow {@code fallocate} on a background thread does not cause the main request
- *       path to time out; pre-allocation should always be performed asynchronously or with a timeout
- *       that falls back to writing without pre-allocation.
+ *       path to time out; pre-allocation should always be performed asynchronously or with a
+ *       timeout that falls back to writing without pre-allocation.
  * </ul>
  *
  * <p>In production, slow {@code fallocate} calls occur on storage systems under heavy write load
@@ -65,23 +65,23 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *
  * <h2>Deep technical dive</h2>
  *
- * <p>{@code fallocate(2)} modifies the file's on-disk block allocation by writing to the filesystem's
- * block allocation bitmap and the file's inode extent list, then commits these changes to the
- * journal. On a warm cache with low storage pressure, the journal commit completes in microseconds.
- * Under write pressure — many concurrent processes issuing metadata-heavy operations — the journal
- * commit queue can grow long, making even simple metadata operations like {@code fallocate} take
- * tens or hundreds of milliseconds.
+ * <p>{@code fallocate(2)} modifies the file's on-disk block allocation by writing to the
+ * filesystem's block allocation bitmap and the file's inode extent list, then commits these changes
+ * to the journal. On a warm cache with low storage pressure, the journal commit completes in
+ * microseconds. Under write pressure — many concurrent processes issuing metadata-heavy operations
+ * — the journal commit queue can grow long, making even simple metadata operations like {@code
+ * fallocate} take tens or hundreds of milliseconds.
  *
  * <p>The latency is proportional to the size of the requested allocation only when the block
- * allocator must initialise the allocated blocks (with {@code FALLOC_FL_ZERO_RANGE}) — for a
- * plain {@code fallocate} the kernel only records the block extents in the inode without touching
- * the data blocks, making the operation metadata-only and fast regardless of allocation size.
- * Slow plain {@code fallocate} indicates journal commit pressure, not a data write latency issue.
+ * allocator must initialise the allocated blocks (with {@code FALLOC_FL_ZERO_RANGE}) — for a plain
+ * {@code fallocate} the kernel only records the block extents in the inode without touching the
+ * data blocks, making the operation metadata-only and fast regardless of allocation size. Slow
+ * plain {@code fallocate} indicates journal commit pressure, not a data write latency issue.
  *
- * <p>Java's NIO {@code FileChannel} does not expose {@code fallocate} directly. Applications
- * using JNI-wrapped native libraries (SQLite, RocksDB, LMDB via JNI) that internally call
- * {@code fallocate} will see the injected delay surface as blocking time in the JNI call. The JVM's
- * own file I/O path does not call {@code fallocate}.
+ * <p>Java's NIO {@code FileChannel} does not expose {@code fallocate} directly. Applications using
+ * JNI-wrapped native libraries (SQLite, RocksDB, LMDB via JNI) that internally call {@code
+ * fallocate} will see the injected delay surface as blocking time in the JNI call. The JVM's own
+ * file I/O path does not call {@code fallocate}.
  *
  * <h2>Example</h2>
  *

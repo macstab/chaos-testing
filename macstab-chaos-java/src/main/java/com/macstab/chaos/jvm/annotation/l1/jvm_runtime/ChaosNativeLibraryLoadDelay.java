@@ -14,21 +14,21 @@ import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
 import com.macstab.chaos.jvm.api.OperationType;
 
 /**
- * Delays every {@code System.loadLibrary()} and {@code System.load()} call by a configurable
- * number of milliseconds, simulating a slow filesystem or a shared library resolver under load.
+ * Delays every {@code System.loadLibrary()} and {@code System.load()} call by a configurable number
+ * of milliseconds, simulating a slow filesystem or a shared library resolver under load.
  *
  * <h2>What this annotation is</h2>
  *
- * <p>A JVM agent L1 chaos primitive targeting the {@code NATIVE_LIBRARY_LOAD} operation — one
- * typed annotation per (selector family, operation type, effect) tuple. Declared on a test class
- * or {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until
- * {@code afterAll}/{@code afterEach} respectively.
+ * <p>A JVM agent L1 chaos primitive targeting the {@code NATIVE_LIBRARY_LOAD} operation — one typed
+ * annotation per (selector family, operation type, effect) tuple. Declared on a test class or
+ * {@code @Test} method, it is active from {@code beforeAll}/{@code beforeEach} until {@code
+ * afterAll}/{@code afterEach} respectively.
  *
  * <h2>What chaos this applies</h2>
  *
  * <ol>
- *   <li>The chaos agent intercepts every call to {@code System.loadLibrary(String)} and
- *       {@code System.load(String)} in the target container's JVM.
+ *   <li>The chaos agent intercepts every call to {@code System.loadLibrary(String)} and {@code
+ *       System.load(String)} in the target container's JVM.
  *   <li>Before forwarding the call, the interceptor parks the calling thread for a duration sampled
  *       uniformly between {@link #delayMs()} and {@link #maxDelayMs()} milliseconds.
  *   <li>After the delay, the real native library loading executes; the library is loaded normally
@@ -47,28 +47,28 @@ import com.macstab.chaos.jvm.api.OperationType;
  *       operation's configured timeout even when the load is slow.
  *   <li><strong>Container startup ordering exposed.</strong> If a sidecar or init container
  *       provides the native library via a shared volume, a slow load exposes timing assumptions
- *       about when the volume is available; assert that the application retries rather than
- *       failing permanently.
- *   <li><strong>Production failure mode:</strong> on a host with an overloaded NFS mount or a
- *       slow tmpfs, {@code dlopen} (which backs {@code loadLibrary}) can block for seconds;
- *       if the loading thread holds a class-loading lock, all class loading in the JVM stalls
- *       until the native load completes.
+ *       about when the volume is available; assert that the application retries rather than failing
+ *       permanently.
+ *   <li><strong>Production failure mode:</strong> on a host with an overloaded NFS mount or a slow
+ *       tmpfs, {@code dlopen} (which backs {@code loadLibrary}) can block for seconds; if the
+ *       loading thread holds a class-loading lock, all class loading in the JVM stalls until the
+ *       native load completes.
  * </ul>
  *
  * <h2>Deep technical dive</h2>
  *
  * <p>{@code System.loadLibrary()} delegates to the JVM's dynamic linker ({@code dlopen} on Linux,
- * {@code LoadLibrary} on Windows). The delay fires before the JVM calls the OS-level linker,
- * so it extends the time the class-loading lock is held if the call originates from a static
- * initialiser block. Because the JVM acquires a per-class-loader lock before running static
- * initialisers, a delayed native load can block any thread that attempts to use or define a class
- * in the same class loader until the delay expires and the library loads.
+ * {@code LoadLibrary} on Windows). The delay fires before the JVM calls the OS-level linker, so it
+ * extends the time the class-loading lock is held if the call originates from a static initialiser
+ * block. Because the JVM acquires a per-class-loader lock before running static initialisers, a
+ * delayed native load can block any thread that attempts to use or define a class in the same class
+ * loader until the delay expires and the library loads.
  *
  * <p>The agent intercepts both {@code System.loadLibrary(String)} (logical name, resolved against
  * {@code java.library.path}) and {@code System.load(String)} (absolute path). Both calls are
- * guarded by the JVM's native-library table lock, which is separate from the class-loading lock;
- * a long delay can therefore cause visible pauses even in threads that are not waiting for any
- * class initialisation.
+ * guarded by the JVM's native-library table lock, which is separate from the class-loading lock; a
+ * long delay can therefore cause visible pauses even in threads that are not waiting for any class
+ * initialisation.
  *
  * <p>Combining this annotation with {@link ChaosNativeLibraryLoadInjectException} (in a repeatable
  * form) allows a test to verify that the application first retries a slow load and then handles a
@@ -89,8 +89,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <ul>
  *   <li><strong>{@code @JvmAgentChaos}</strong> on the container annotation — attaches the chaos
- *       agent before the container JVM starts; omitting it causes an
- *       {@code ExtensionConfigurationException} at {@code beforeAll}.
+ *       agent before the container JVM starts; omitting it causes an {@code
+ *       ExtensionConfigurationException} at {@code beforeAll}.
  *   <li><strong>Chaos agent JAR</strong> accessible at the path configured in
  *       {@code @JvmAgentChaos}.
  *   <li><strong>{@code macstab-chaos-java} on the test classpath</strong> — required for the
