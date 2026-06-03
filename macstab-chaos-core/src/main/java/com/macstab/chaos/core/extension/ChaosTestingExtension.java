@@ -125,6 +125,16 @@ public final class ChaosTestingExtension
 
   private static final String L1_REPORT_KEY = "chaos-l1-report";
 
+  /** Persistent L2 handles (class-scope) — cleaned up in {@code afterAll}. */
+  private static final String L2_PERSISTENT_HANDLES_KEY = "chaos-l2-persistent-handles";
+
+  private static final String L2_METHOD_HANDLES_KEY = "chaos-l2-method-handles";
+
+  /** Persistent L3 handles (class-scope) — cleaned up in {@code afterAll}. */
+  private static final String L3_PERSISTENT_HANDLES_KEY = "chaos-l3-persistent-handles";
+
+  private static final String L3_METHOD_HANDLES_KEY = "chaos-l3-method-handles";
+
   private static final Map<Class<? extends Annotation>, ChaosPlugin<?>> PLUGINS = new HashMap<>();
 
   // ThreadLocal storage for programmatic access (by annotation type)
@@ -229,6 +239,8 @@ public final class ChaosTestingExtension
         "beforeAll: stored {} containers in context {}", containers.size(), context.getUniqueId());
 
     applyClassLevelL1Annotations(context, containers);
+    applyClassLevelL2Annotations(context, containers);
+    applyClassLevelL3Annotations(context, containers);
   }
 
   /**
@@ -281,6 +293,66 @@ public final class ChaosTestingExtension
   }
 
   /**
+   * Walks the test class for L2 scenario annotations (those carrying {@link ChaosL2}) and applies
+   * each via its declared {@link L2Composer}. Called once per test class at {@code beforeAll} after
+   * all containers have been started and L1 annotations applied.
+   */
+  private void applyClassLevelL2Annotations(
+      final ExtensionContext context, final List<ContainerInstance> containers) {
+
+    ChaosApplicationReport report =
+        context.getStore(NAMESPACE).get(L1_REPORT_KEY, ChaosApplicationReport.class);
+    if (report == null) {
+      report = new ChaosApplicationReport();
+      context.getStore(NAMESPACE).put(L1_REPORT_KEY, report);
+    }
+    final Class<?> testClass = context.getRequiredTestClass();
+    final List<L1AnnotationProcessor.ContainerHandle> handles = toL1ContainerHandles(containers);
+
+    final List<L2AnnotationProcessor.AppliedL2> l2Handles =
+        L2AnnotationProcessor.applyClassLevel(testClass, handles, report);
+
+    context.getStore(NAMESPACE).put(L2_PERSISTENT_HANDLES_KEY, l2Handles);
+
+    if (!l2Handles.isEmpty()) {
+      log.info(
+          "Applied {} class-scope L2 chaos scenario(s) on test class {}",
+          l2Handles.size(),
+          testClass.getSimpleName());
+    }
+  }
+
+  /**
+   * Walks the test class for L3 incident scenario annotations (those carrying {@link ChaosL3}) and
+   * applies each via its declared {@link L3Composer}. Called once per test class at {@code beforeAll}
+   * after L2 annotations have been applied.
+   */
+  private void applyClassLevelL3Annotations(
+      final ExtensionContext context, final List<ContainerInstance> containers) {
+
+    ChaosApplicationReport report =
+        context.getStore(NAMESPACE).get(L1_REPORT_KEY, ChaosApplicationReport.class);
+    if (report == null) {
+      report = new ChaosApplicationReport();
+      context.getStore(NAMESPACE).put(L1_REPORT_KEY, report);
+    }
+    final Class<?> testClass = context.getRequiredTestClass();
+    final List<L1AnnotationProcessor.ContainerHandle> handles = toL1ContainerHandles(containers);
+
+    final List<L3AnnotationProcessor.AppliedL3> l3Handles =
+        L3AnnotationProcessor.applyClassLevel(testClass, handles, report);
+
+    context.getStore(NAMESPACE).put(L3_PERSISTENT_HANDLES_KEY, l3Handles);
+
+    if (!l3Handles.isEmpty()) {
+      log.info(
+          "Applied {} class-scope L3 incident scenario(s) on test class {}",
+          l3Handles.size(),
+          testClass.getSimpleName());
+    }
+  }
+
+  /**
    * Walks the {@code @Test} method for L1 annotations and applies each via its declared translator.
    * Method-scope rules that conflict with an active persistent (class/field-scope) rule suspend the
    * persistent rule for the duration of this method; it is restored in {@code afterEach}.
@@ -327,6 +399,34 @@ public final class ChaosTestingExtension
           context.getRequiredTestClass().getSimpleName(),
           context.getRequiredTestMethod().getName(),
           result.suspended().size());
+    }
+
+    // Method-scope L2 scenarios
+    final List<L2AnnotationProcessor.AppliedL2> l2MethodHandles =
+        L2AnnotationProcessor.applyMethodLevel(
+            context.getRequiredTestMethod(), handles, report);
+    context.getStore(NAMESPACE).put(L2_METHOD_HANDLES_KEY, l2MethodHandles);
+
+    if (!l2MethodHandles.isEmpty()) {
+      log.debug(
+          "Applied {} method-scope L2 scenario(s) on {}#{}",
+          l2MethodHandles.size(),
+          context.getRequiredTestClass().getSimpleName(),
+          context.getRequiredTestMethod().getName());
+    }
+
+    // Method-scope L3 incident scenarios
+    final List<L3AnnotationProcessor.AppliedL3> l3MethodHandles =
+        L3AnnotationProcessor.applyMethodLevel(
+            context.getRequiredTestMethod(), handles, report);
+    context.getStore(NAMESPACE).put(L3_METHOD_HANDLES_KEY, l3MethodHandles);
+
+    if (!l3MethodHandles.isEmpty()) {
+      log.debug(
+          "Applied {} method-scope L3 incident scenario(s) on {}#{}",
+          l3MethodHandles.size(),
+          context.getRequiredTestClass().getSimpleName(),
+          context.getRequiredTestMethod().getName());
     }
   }
 
@@ -382,6 +482,42 @@ public final class ChaosTestingExtension
             context.getRequiredTestMethod().getName());
       }
     }
+
+    // Remove method-scope L2 handles
+    @SuppressWarnings("unchecked")
+    final List<L2AnnotationProcessor.AppliedL2> l2MethodHandles =
+        (List<L2AnnotationProcessor.AppliedL2>)
+            context.getStore(NAMESPACE).get(L2_METHOD_HANDLES_KEY);
+
+    if (l2MethodHandles != null && !l2MethodHandles.isEmpty()) {
+      final boolean allOk = L2AnnotationProcessor.removeAll(l2MethodHandles);
+      context.getStore(NAMESPACE).remove(L2_METHOD_HANDLES_KEY);
+
+      if (!allOk) {
+        log.warn(
+            "Some method-scope L2 removals failed on {}#{} — container chaos state may be inconsistent.",
+            context.getRequiredTestClass().getSimpleName(),
+            context.getRequiredTestMethod().getName());
+      }
+    }
+
+    // Remove method-scope L3 handles
+    @SuppressWarnings("unchecked")
+    final List<L3AnnotationProcessor.AppliedL3> l3MethodHandles =
+        (List<L3AnnotationProcessor.AppliedL3>)
+            context.getStore(NAMESPACE).get(L3_METHOD_HANDLES_KEY);
+
+    if (l3MethodHandles != null && !l3MethodHandles.isEmpty()) {
+      final boolean allOk = L3AnnotationProcessor.removeAll(l3MethodHandles);
+      context.getStore(NAMESPACE).remove(L3_METHOD_HANDLES_KEY);
+
+      if (!allOk) {
+        log.warn(
+            "Some method-scope L3 removals failed on {}#{} — container chaos state may be inconsistent.",
+            context.getRequiredTestClass().getSimpleName(),
+            context.getRequiredTestMethod().getName());
+      }
+    }
   }
 
   private static List<L1AnnotationProcessor.ContainerHandle> toL1ContainerHandles(
@@ -423,11 +559,33 @@ public final class ChaosTestingExtension
         L1AnnotationProcessor.removeAll(persistentHandles);
       }
 
+      // Persistent L3 cleanup BEFORE container stop — same requirement.
+      @SuppressWarnings("unchecked")
+      final List<L3AnnotationProcessor.AppliedL3> l3PersistentHandles =
+          (List<L3AnnotationProcessor.AppliedL3>)
+              context.getStore(NAMESPACE).get(L3_PERSISTENT_HANDLES_KEY);
+      if (l3PersistentHandles != null && !l3PersistentHandles.isEmpty()) {
+        L3AnnotationProcessor.removeAll(l3PersistentHandles);
+      }
+
+      // Persistent L2 cleanup BEFORE container stop — same requirement.
+      @SuppressWarnings("unchecked")
+      final List<L2AnnotationProcessor.AppliedL2> l2PersistentHandles =
+          (List<L2AnnotationProcessor.AppliedL2>)
+              context.getStore(NAMESPACE).get(L2_PERSISTENT_HANDLES_KEY);
+      if (l2PersistentHandles != null && !l2PersistentHandles.isEmpty()) {
+        L2AnnotationProcessor.removeAll(l2PersistentHandles);
+      }
+
       final ChaosApplicationReport report =
           context.getStore(NAMESPACE).get(L1_REPORT_KEY, ChaosApplicationReport.class);
-      if (report != null && (!report.applied().isEmpty() || !report.skipped().isEmpty())) {
+      if (report != null
+          && (!report.applied().isEmpty()
+              || !report.skipped().isEmpty()
+              || !report.l2Applied().isEmpty()
+              || !report.l3Applied().isEmpty())) {
         log.info(
-            "L1 chaos report for {}: {}",
+            "Chaos report for {}: {}",
             context.getRequiredTestClass().getSimpleName(),
             report.summary());
       }
