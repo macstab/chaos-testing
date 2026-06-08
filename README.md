@@ -1,6 +1,6 @@
 # Macstab Chaos Testing Framework
 
-**Industry-first annotation-driven chaos engineering for containerized integration tests.**
+**The only Java chaos testing framework where a single annotation reproduces a named production incident — in your JUnit 5 test, on any CI runner, with zero infrastructure.**
 
 [![Maven Central](https://img.shields.io/maven-central/v/com.macstab.chaos/macstab-chaos-core)](https://search.maven.org/search?q=g:com.macstab.chaos)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
@@ -14,6 +14,137 @@
 **License:** [Apache 2.0](LICENSE)
 
 ---
+
+## One annotation. One production incident. In your test.
+
+Three tiers, one framework — pick the level of abstraction that fits the job:
+
+```java
+// L1 — raw primitive (maximum control)
+@ChaosRecvEconnreset(toxicity = 0.3)
+@Test void test() { ... }
+
+// L2 — named composite (one domain)
+@CompositeChaosConnectionDrop
+@Test void test() { ... }
+
+// L3 — named production incident (multi-domain, the real power)
+@IncidentChaosJvmCarrierPinning        // JDK 21+: virtual thread starvation
+@IncidentChaosK8sDnsNdots5Storm        // k8s ndots:5 → 20s DNS timeouts
+@IncidentChaosHazelcastSplitBrain      // split writes, silent data loss
+@Test void test() { ... }
+```
+
+All three tiers run inside your normal `./gradlew test` pass. No cluster. No agent. No YAML pipeline.
+
+---
+
+## Three tiers, one framework
+
+| Tier | Abstraction | Count | Use when |
+|---|---|---|---|
+| **L1** | Raw syscall primitive | ~448 annotations | You need exact fault control — specific errno, exact toxicity |
+| **L2** | Named composite scenario | 92 annotations | One domain (network drop, timeout, reset) with sane defaults |
+| **L3** | Named production incident | 64 annotations | You want to reproduce a real outage pattern end-to-end |
+
+L3 is where this framework is unique. Each annotation encodes a complete incident — the combination of faults, their timing, and the layers they hit — distilled from real post-mortems.
+
+---
+
+## Why this is different
+
+| | Chaos Mesh | Gremlin | This framework |
+|---|---|---|---|
+| Setup | k8s operator + CRDs | Commercial agent | Add one dependency |
+| Use in CI | Complex YAML pipeline | Paid plan required | `./gradlew test` |
+| Type safety | None (YAML) | None (UI/API) | Full Java types + IDE |
+| JVM internals | ❌ | ❌ | ✅ (carrier pinning, code cache, G1 exhausted) |
+| Named incidents | ❌ | Limited | ✅ 64 production incidents |
+| Developer-owned | ❌ (ops team) | ❌ (ops team) | ✅ (lives in your test class) |
+
+Chaos Mesh and Gremlin are infrastructure tools owned by the ops team. This framework is a test library owned by the developer — it lives in the same repo as the code it protects, runs on every PR, and fails fast in development.
+
+### JVM stressor annotations (JDK 21+)
+
+The strongest differentiator is first-class support for JVM internals that no other chaos tool touches:
+
+- `@IncidentChaosJvmCarrierPinning` — exhausts carrier threads, starving virtual threads; the exact failure mode behind the [JDK 21 carrier pinning incidents](https://openjdk.org/jeps/453)
+- `@IncidentChaosJvmCodeCacheExhaustion` — fills the JIT code cache, forcing the JVM to fall back to interpreted mode under load
+- `@IncidentChaosJvmG1ToSpaceExhausted` — triggers G1 to-space exhaustion, inducing full GC pauses and allocation failures
+
+These faults are invisible to network-layer chaos tools. They only manifest under load, which is exactly when your service cannot afford them.
+
+---
+
+## Redis in one annotation
+
+A complete Redis Sentinel cluster — master, replicas, sentinels, and network chaos capability — from a single annotation on your test class:
+
+```java
+@RedisSentinel(replicas = 2, sentinels = 3, enableNetworkChaos = true)
+@IncidentChaosRedisNetworkFlap   // intermittent master→replica link failures
+@Test
+void redis_survives_network_flap() {
+    // Cluster is up: 1 master + 2 replicas + 3 sentinels
+    // NET_ADMIN granted, iproute2 + iptables installed
+    // Chaos is active — assert your application's resilience
+}
+```
+
+No Docker Compose file. No bash setup script. No separate chaos sidecar.
+
+---
+
+## Quick start
+
+**1. Add the dependency**
+
+```groovy
+// build.gradle
+testImplementation 'com.macstab.chaos:macstab-chaos-testpacks-l3-jvm:1.0.0'
+```
+
+**2. Write the test**
+
+```java
+@Testcontainers
+@ExtendWith(ChaosTestingExtension.class)
+@SyscallLevelChaos({LibchaosLib.NET})
+class MyServiceTest {
+
+    @Container @AppContainer
+    static GenericContainer<?> app = new GenericContainer<>("my-app:latest")
+        .withExposedPorts(8080);
+
+    @Test
+    @IncidentChaosJvmCarrierPinning   // reproduces JDK 21 virtual thread starvation
+    void service_survives_carrierPinning() {
+        // your assertion
+    }
+}
+```
+
+**3. Run**
+
+```bash
+./gradlew test
+```
+
+That is the complete setup. No infrastructure changes. No CI pipeline modifications.
+
+---
+
+## Documentation
+
+| Document | Description |
+|---|---|
+| [Getting Started](docs/getting-started.md) | Setup, Gradle/Maven, first test |
+| [Scoping Guide](docs/scoping-guide.md) | Container selection, class/method scope, @SyscallLevelChaos |
+| [L1 Reference](docs/l1-reference.md) | All ~448 raw syscall primitives |
+| [L2 Reference](docs/l2-reference.md) | All 92 composite scenarios |
+| [L3 Reference](docs/l3-reference.md) | All 64 named production incidents — start here |
+| [Redis Guide](docs/redis-guide.md) | @RedisStandalone, @RedisSentinel, chaos combinations |
+| [Redis Technical Reference](docs/REDIS_TESTING_TECHNICAL_REFERENCE.md) | Deep-dive: Sentinel architecture, quorum, security, performance |
 
 ---
 
