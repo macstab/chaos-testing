@@ -242,7 +242,7 @@ class LibchaosMemoryChaosUnitTest {
     @Test
     void simulateOomKiller() {
       chaos.simulateOomKiller(container, 0.05);
-      verify(transport).addRule(eq(container), anyString(), contains("*:ERRNO:ENOMEM@0.05"));
+      verify(transport).addRule(eq(container), anyString(), contains("mmap:ERRNO:ENOMEM@0.05"));
     }
 
     @Test

@@ -215,7 +215,7 @@ public final class LibchaosMemoryChaos implements AdvancedMemoryChaos, MemoryCha
   public RuleHandle simulateOomKiller(
       final GenericContainer<?> container, final double probability) {
     return apply(
-        container, MemoryRule.errno(MemorySelector.WILDCARD, MmapErrno.ENOMEM, probability));
+        container, MemoryRule.errno(MemorySelector.MMAP, MmapErrno.ENOMEM, probability));
   }
 
   @Override

@@ -44,12 +44,12 @@ class MemoryRuleSerializerTest {
   }
 
   @Test
-  @DisplayName("wildcard ENOMEM — OOM simulation")
-  void wildcardOom() {
+  @DisplayName("mmap ENOMEM — OOM simulation")
+  void mmapOom() {
     assertThat(
             MemoryRuleSerializer.serialize(
-                MemoryRule.errno(MemorySelector.WILDCARD, MmapErrno.ENOMEM, 0.05)))
-        .isEqualTo("*:ERRNO:ENOMEM@0.05");
+                MemoryRule.errno(MemorySelector.MMAP, MmapErrno.ENOMEM, 0.05)))
+        .isEqualTo("mmap:ERRNO:ENOMEM@0.05");
   }
 
   @Test
