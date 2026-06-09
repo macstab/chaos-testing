@@ -169,11 +169,11 @@ class LibchaosDnsChaosUnitTest {
     }
 
     @Test
-    @DisplayName("filterFamily renders AF_* numeric")
+    @DisplayName("filterFamily renders inet4/inet6 string token")
     void filterFamily() {
       chaos.filterFamily(container, "example.com", AddressFamily.INET);
       verify(transport)
-          .addRule(eq(container), anyString(), contains("dns://example.com:FILTER_FAMILY:2"));
+          .addRule(eq(container), anyString(), contains("dns://example.com:FILTER_FAMILY:inet4"));
     }
 
     @Test

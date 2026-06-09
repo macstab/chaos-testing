@@ -70,12 +70,12 @@ class DnsRuleSerializerTest {
   }
 
   @Test
-  @DisplayName("FILTER_FAMILY uses Linux AF_* numeric value")
+  @DisplayName("FILTER_FAMILY uses inet4/inet6 string tokens")
   void filterFamily() {
     assertThat(
             DnsRuleSerializer.serialize(
                 DnsRule.filterFamily(DnsSelector.host("h"), AddressFamily.INET6)))
-        .isEqualTo("dns://h:FILTER_FAMILY:10");
+        .isEqualTo("dns://h:FILTER_FAMILY:inet6");
   }
 
   @Test
