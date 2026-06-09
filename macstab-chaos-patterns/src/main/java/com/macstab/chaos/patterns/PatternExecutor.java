@@ -129,14 +129,16 @@ public final class PatternExecutor {
                       TimeUnit.NANOSECONDS));
             });
 
-    // Completion fires after totalDuration (or immediately if already stopped).
+    // Completion fires one sampleInterval after totalDuration so the last scheduled
+    // sample (also at totalDuration) has time to finish its apply+remove cycle before
+    // awaitUninterruptibly() returns.
     final ScheduledFuture<?> sentinel =
         executor.schedule(
             () -> {
               completion.complete(null);
               log.info("Pattern execution completed");
             },
-            totalDuration.toNanos(),
+            totalDuration.toNanos() + sampleInterval.toNanos(),
             TimeUnit.NANOSECONDS);
     scheduled.add(sentinel);
 

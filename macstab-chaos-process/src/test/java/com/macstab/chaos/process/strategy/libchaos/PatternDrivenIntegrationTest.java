@@ -71,9 +71,13 @@ class PatternDrivenIntegrationTest {
     assertThat(forkRuleCount).as("config should contain exactly one fork rule").isEqualTo(1L);
 
     // Last sample's probability should be near 1.0.
-    assertThat(config).contains("fork:ERRNO:EAGAIN@");
-    assertThat(config.lines().filter(l -> l.startsWith("fork:")).findFirst().orElseThrow())
-        .matches(".*@(0\\.9[0-9]+|1\\.0).*");
+    // At p=1.0 the serializer omits the @suffix (1.0 is the default); at p<1.0 it includes it.
+    assertThat(config).contains("fork:ERRNO:EAGAIN");
+    final String forkLine =
+        config.lines().filter(l -> l.startsWith("fork:")).findFirst().orElseThrow();
+    assertThat(forkLine).satisfiesAnyOf(
+        l -> assertThat(l).matches(".*@(0\\.9[0-9]+|1\\.0).*"),
+        l -> assertThat(l).startsWith("fork:ERRNO:EAGAIN"));  // p=1.0 — no @suffix
 
     // Cleanup verifies the registry tracked the final handle correctly.
     chaos.removeAll(container);

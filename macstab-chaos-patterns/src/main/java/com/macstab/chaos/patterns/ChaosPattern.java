@@ -136,12 +136,20 @@ public interface ChaosPattern<T> {
       return java.util.stream.IntStream.range(0, n)
           .boxed()
           .flatMap(
-              i ->
-                  self.generate(chunk, sampleInterval)
-                      .map(
-                          tv ->
-                              new TimedValue<>(
-                                  chunk.multipliedBy(i).plus(tv.timestamp()), tv.value())));
+              i -> {
+                java.util.stream.Stream<TimedValue<T>> s =
+                    self.generate(chunk, sampleInterval)
+                        .map(
+                            tv ->
+                                new TimedValue<>(
+                                    chunk.multipliedBy(i).plus(tv.timestamp()), tv.value()));
+                // Drop the boundary sample of non-last chunks to avoid duplicate timestamps
+                // where the end of chunk i and the start of chunk i+1 overlap.
+                if (i < n - 1) {
+                  s = s.filter(tv -> tv.timestamp().compareTo(chunk.multipliedBy(i + 1)) < 0);
+                }
+                return s;
+              });
     };
   }
 }
