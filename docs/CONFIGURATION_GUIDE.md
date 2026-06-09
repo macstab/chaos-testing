@@ -1,4 +1,5 @@
 # Configuration Guide
+
 **Complete Annotation Reference with Best Practices**
 
 **Last Updated:** 2026-03-21  
@@ -29,18 +30,19 @@ Starts a standalone Redis container for integration tests using Testcontainers.
 
 ### All Parameters
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `id` | String | `"default"` | Container ID (unique within test class) |
-| `version` | String | `"7.4"` | Redis Docker image version tag |
-| `port` | int | `0` | Exposed host port (0 = random, recommended for CI) |
-| `args` | String[] | `[]` | Additional Redis server command-line arguments |
-| `enableNetworkChaos` | boolean | `false` | Enable network chaos (latency, packet loss) |
-| `packages` | String[] | `[]` | Packages to install (curl, jq, vim, etc.) |
+| Parameter            | Type     | Default     | Description                                        |
+|----------------------|----------|-------------|----------------------------------------------------|
+| `id`                 | String   | `"default"` | Container ID (unique within test class)            |
+| `version`            | String   | `"7.4"`     | Redis Docker image version tag                     |
+| `port`               | int      | `0`         | Exposed host port (0 = random, recommended for CI) |
+| `args`               | String[] | `[]`        | Additional Redis server command-line arguments     |
+| `enableNetworkChaos` | boolean  | `false`     | Enable network chaos (latency, packet loss)        |
+| `packages`           | String[] | `[]`        | Packages to install (curl, jq, vim, etc.)          |
 
 ### Minimal Usage
 
 **Zero configuration:**
+
 ```java
 @RedisStandalone
 class MyRedisTest {
@@ -52,6 +54,7 @@ class MyRedisTest {
 ```
 
 **What you get:**
+
 - Redis 7.4 (latest stable)
 - Random available port
 - Standard configuration
@@ -60,6 +63,7 @@ class MyRedisTest {
 ### Typical Usage
 
 **Production-like configuration:**
+
 ```java
 @RedisStandalone(
     version = "7.4",
@@ -78,6 +82,7 @@ class CacheEvictionTest {
 ```
 
 **What you get:**
+
 - Redis 7.4
 - 256MB memory limit
 - LRU eviction policy
@@ -86,6 +91,7 @@ class CacheEvictionTest {
 ### Advanced Usage
 
 **Network chaos + debugging tools:**
+
 ```java
 @RedisStandalone(
     version = "7.4-alpine",
@@ -107,6 +113,7 @@ class AdvancedTest {
 ### Version Selection
 
 **Available versions:**
+
 ```java
 @RedisStandalone(version = "7.4")         // Latest 7.x (Debian-based)
 @RedisStandalone(version = "7.4-alpine")  // Alpine Linux (smaller)
@@ -116,11 +123,11 @@ class AdvancedTest {
 
 **Distribution trade-offs:**
 
-| Version | Base | Size | Startup | Use Case |
-|---------|------|------|---------|----------|
-| `7.4` | Debian | 116MB | 1-2s | Standard tests |
-| `7.4-alpine` | Alpine | 32MB | 0.5-1s | CI/CD (faster) |
-| `7.2` | Debian | 113MB | 1-2s | Compatibility testing |
+| Version      | Base   | Size  | Startup | Use Case              |
+|--------------|--------|-------|---------|-----------------------|
+| `7.4`        | Debian | 116MB | 1-2s    | Standard tests        |
+| `7.4-alpine` | Alpine | 32MB  | 0.5-1s  | CI/CD (faster)        |
+| `7.2`        | Debian | 113MB | 1-2s    | Compatibility testing |
 
 ### Redis Arguments
 
@@ -151,17 +158,21 @@ args = {
 ### Port Configuration
 
 **Random port (recommended):**
+
 ```java
 @RedisStandalone(port = 0)  // Default
 ```
+
 - Prevents port conflicts
 - Safe for parallel tests
 - CI/CD friendly
 
 **Fixed port (debugging only):**
+
 ```java
 @RedisStandalone(port = 6379)
 ```
+
 - Easy to connect with `redis-cli` locally
 - Fails if port already in use
 - NOT safe for CI/CD
@@ -169,6 +180,7 @@ args = {
 ### Network Chaos
 
 **Enable chaos testing:**
+
 ```java
 @RedisStandalone(enableNetworkChaos = true)
 class NetworkChaosTest {
@@ -183,11 +195,13 @@ class NetworkChaosTest {
 ```
 
 **What it does:**
+
 - Adds `NET_ADMIN` capability to container
 - Auto-installs `iproute2` + `iptables` packages
 - Enables latency injection, packet loss, partitions
 
 **Security model:**
+
 - ✅ Container-scoped only (network namespace isolation)
 - ✅ Cannot affect host or other containers
 - ❌ Does NOT use privileged mode
@@ -195,11 +209,13 @@ class NetworkChaosTest {
 ### Package Installation
 
 **Install debugging tools:**
+
 ```java
 @RedisStandalone(packages = {"curl", "jq", "vim"})
 ```
 
 **Install network tools:**
+
 ```java
 @RedisStandalone(
     packages = {"iproute2", "iptables"},
@@ -208,6 +224,7 @@ class NetworkChaosTest {
 ```
 
 **Supported distributions:**
+
 - Debian/Ubuntu → `apt-get`
 - Alpine → `apk`
 - Fedora/RHEL → `dnf`
@@ -225,20 +242,21 @@ Starts a full Redis Sentinel cluster (master + replicas + sentinels) for HA test
 
 ### All Parameters
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `id` | String | `"default"` | Cluster ID (unique within test class) |
-| `version` | String | `"7.4"` | Redis Docker image version tag |
-| `masterName` | String | `"mymaster"` | Sentinel master name |
-| `replicas` | int | `2` | Number of replica nodes |
-| `sentinels` | int | `3` | Number of Sentinel monitors |
-| `quorum` | int | `2` | Failover quorum (majority = (sentinels/2)+1) |
-| `enableNetworkChaos` | boolean | `false` | Enable network chaos for ALL containers |
-| `packages` | String[] | `[]` | Packages to install in ALL containers |
+| Parameter            | Type     | Default      | Description                                  |
+|----------------------|----------|--------------|----------------------------------------------|
+| `id`                 | String   | `"default"`  | Cluster ID (unique within test class)        |
+| `version`            | String   | `"7.4"`      | Redis Docker image version tag               |
+| `masterName`         | String   | `"mymaster"` | Sentinel master name                         |
+| `replicas`           | int      | `2`          | Number of replica nodes                      |
+| `sentinels`          | int      | `3`          | Number of Sentinel monitors                  |
+| `quorum`             | int      | `2`          | Failover quorum (majority = (sentinels/2)+1) |
+| `enableNetworkChaos` | boolean  | `false`      | Enable network chaos for ALL containers      |
+| `packages`           | String[] | `[]`         | Packages to install in ALL containers        |
 
 ### Minimal Usage
 
 **Zero configuration:**
+
 ```java
 @RedisSentinel
 class SentinelTest {
@@ -251,6 +269,7 @@ class SentinelTest {
 ```
 
 **What you get:**
+
 - 1 master
 - 2 replicas
 - 3 sentinels
@@ -261,6 +280,7 @@ class SentinelTest {
 ### Typical Usage
 
 **Production-like HA:**
+
 ```java
 @RedisSentinel(
     masterName = "prod-master",
@@ -281,6 +301,7 @@ class HATest {
 ### Advanced Usage
 
 **Network chaos + cross-region simulation:**
+
 ```java
 @RedisSentinel(
     replicas = 2,
@@ -303,25 +324,31 @@ class CrossRegionTest {
 ### Replica Configuration
 
 **Minimal (development):**
+
 ```java
 @RedisSentinel(replicas = 1, sentinels = 1, quorum = 1)
 ```
+
 - Fastest startup (~3s)
 - Minimal resources
 - NOT production-realistic
 
 **Balanced (testing):**
+
 ```java
 @RedisSentinel(replicas = 2, sentinels = 3, quorum = 2)  // Default
 ```
+
 - Production-realistic
 - Real quorum voting
 - ~5-7s startup
 
 **Production-like:**
+
 ```java
 @RedisSentinel(replicas = 3, sentinels = 5, quorum = 3)
 ```
+
 - High availability
 - Tolerates 2 failures
 - ~8-12s startup
@@ -333,23 +360,27 @@ class CrossRegionTest {
 **Examples:**
 
 | Sentinels | Recommended Quorum | Tolerated Failures |
-|-----------|-------------------|-------------------|
-| 1 | 1 | 0 (no HA) |
-| 3 | 2 | 1 |
-| 5 | 3 | 2 |
-| 7 | 4 | 3 |
+|-----------|--------------------|--------------------|
+| 1         | 1                  | 0 (no HA)          |
+| 3         | 2                  | 1                  |
+| 5         | 3                  | 2                  |
+| 7         | 4                  | 3                  |
 
 **Anti-pattern:**
+
 ```java
 @RedisSentinel(sentinels = 3, quorum = 1)  // ❌ Too low!
 ```
+
 - Quorum too small (1 Sentinel can trigger failover)
 - Risk of split-brain
 
 **Correct:**
+
 ```java
 @RedisSentinel(sentinels = 3, quorum = 2)  // ✅ Majority
 ```
+
 - Requires 2 Sentinels to agree
 - Safe from split-brain
 
@@ -366,12 +397,14 @@ class SentinelTest {
 ```
 
 **Why:**
+
 - Sentinel advertises container IPs (172.18.0.5)
 - macOS/Windows cannot route to container IPs (VM layer)
 - Linux has native Docker networking
 
 **Solution for macOS/Windows:**
 Use dev container:
+
 ```bash
 # VS Code: Command Palette → "Reopen in Container"
 # OR: docker compose up -d (in .devcontainer/)
@@ -380,6 +413,7 @@ Use dev container:
 ### Network Chaos (All Containers)
 
 **Enable chaos for entire cluster:**
+
 ```java
 @RedisSentinel(
     replicas = 2,
@@ -389,11 +423,13 @@ Use dev container:
 ```
 
 **What it does:**
+
 - Adds NET_ADMIN to master + replicas + sentinels
 - Installs iproute2/iptables in ALL containers
 - Enables per-container chaos
 
 **Use cases:**
+
 ```java
 // Slow replica
 control.network().injectLatency(cluster.getReplicas().get(0), Duration.ofMillis(100));
@@ -408,6 +444,7 @@ control.network().partitionFrom(cluster.getReplicas().get(0), cluster.getMaster(
 ### Package Installation (All Containers)
 
 **Install in ALL containers:**
+
 ```java
 @RedisSentinel(
     replicas = 2,
@@ -417,12 +454,14 @@ control.network().partitionFrom(cluster.getReplicas().get(0), cluster.getMaster(
 ```
 
 **Installed in:**
+
 - 1 master
 - 2 replicas
 - 3 sentinels
 - **Total:** 6 containers
 
 **Performance impact:**
+
 - 6 containers × 3s install time = ~18s
 - Use sparingly (only essential packages)
 
@@ -436,14 +475,15 @@ Install packages in ANY Testcontainer using universal package manager detection.
 
 ### Parameters
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `value` | String[] | (required) | Package names to install |
-| `verify` | boolean | `true` | Verify installation with `which` command |
+| Parameter | Type     | Default    | Description                              |
+|-----------|----------|------------|------------------------------------------|
+| `value`   | String[] | (required) | Package names to install                 |
+| `verify`  | boolean  | `true`     | Verify installation with `which` command |
 
 ### Basic Usage
 
 **Install utilities:**
+
 ```java
 @Container
 @InstallPackages({"curl", "jq", "vim"})
@@ -451,6 +491,7 @@ GenericContainer<?> postgres = new GenericContainer<>("postgres:16");
 ```
 
 **Install network tools:**
+
 ```java
 @Container
 @InstallPackages({"iproute2", "iptables"})
@@ -460,12 +501,14 @@ GenericContainer<?> redis = new GenericContainer<>("redis:7.4-alpine");
 ### Verification
 
 **Enabled (default):**
+
 ```java
 @InstallPackages({"curl", "jq"})  // Runs: which curl && which jq
 @InstallPackages(value = {"curl"}, verify = true)
 ```
 
 **Disabled (package name ≠ binary name):**
+
 ```java
 @InstallPackages(value = {"iproute2"}, verify = false)  // Binary is 'tc', 'ip'
 @InstallPackages(value = {"postgresql-client"}, verify = false)  // Binary is 'psql'
@@ -473,26 +516,27 @@ GenericContainer<?> redis = new GenericContainer<>("redis:7.4-alpine");
 
 ### Supported Distributions
 
-| Distribution | Package Manager | Example Image |
-|--------------|----------------|---------------|
-| Debian/Ubuntu | `apt-get` | `postgres:16`, `ubuntu:22.04` |
-| Alpine | `apk` | `redis:7.4-alpine`, `nginx:alpine` |
-| Fedora/RHEL 8+ | `dnf` | `fedora:39`, `ubi8` |
-| CentOS 7 | `yum` | `centos:7` |
-| Arch Linux | `pacman` | `archlinux:latest` |
-| openSUSE | `zypper` | `opensuse/leap:15` |
+| Distribution   | Package Manager | Example Image                      |
+|----------------|-----------------|------------------------------------|
+| Debian/Ubuntu  | `apt-get`       | `postgres:16`, `ubuntu:22.04`      |
+| Alpine         | `apk`           | `redis:7.4-alpine`, `nginx:alpine` |
+| Fedora/RHEL 8+ | `dnf`           | `fedora:39`, `ubi8`                |
+| CentOS 7       | `yum`           | `centos:7`                         |
+| Arch Linux     | `pacman`        | `archlinux:latest`                 |
+| openSUSE       | `zypper`        | `opensuse/leap:15`                 |
 
 ### Performance
 
-| Distribution | Install Time | Speedup (cached) |
-|--------------|--------------|------------------|
-| Debian/Ubuntu | 4-5s | 80% (layer cache) |
-| Alpine | 2-3s | 90% (smaller index) |
-| Fedora | 5-6s | 70% (larger cache) |
+| Distribution  | Install Time | Speedup (cached)    |
+|---------------|--------------|---------------------|
+| Debian/Ubuntu | 4-5s         | 80% (layer cache)   |
+| Alpine        | 2-3s         | 90% (smaller index) |
+| Fedora        | 5-6s         | 70% (larger cache)  |
 
 ### Best Practices
 
 **✅ Good:**
+
 ```java
 // Minimal packages
 @InstallPackages({"curl", "jq"})
@@ -506,6 +550,7 @@ GenericContainer<?> redis = new GenericContainer<>("redis:7.4-alpine");
 ```
 
 **❌ Bad:**
+
 ```java
 // Too many packages (slow tests)
 @InstallPackages({"curl", "vim", "emacs", "htop", "git", "gcc", ...})
@@ -528,6 +573,7 @@ Programmatic access to containers started by annotations.
 ### Single Instance
 
 **Default instance:**
+
 ```java
 @RedisStandalone
 class Test {
@@ -540,6 +586,7 @@ class Test {
 ```
 
 **Named instance:**
+
 ```java
 @RedisStandalone(id = "master")
 class Test {
@@ -553,6 +600,7 @@ class Test {
 ### Multi-Instance
 
 **Get all instances:**
+
 ```java
 @RedisSentinel(id = "primary", replicas = 3)
 @RedisSentinel(id = "secondary", replicas = 2)
@@ -570,6 +618,7 @@ class Test {
 ```
 
 **Get by ID:**
+
 ```java
 @Test
 void testSpecific() {
@@ -581,6 +630,7 @@ void testSpecific() {
 ### Smart Default Resolution
 
 **Single instance (any ID):**
+
 ```java
 @RedisSentinel(id = "my-cluster")  // Not "default"
 class Test {
@@ -592,6 +642,7 @@ class Test {
 ```
 
 **Multiple instances (explicit default required):**
+
 ```java
 @RedisSentinel(id = "default")  // Explicit required
 @RedisSentinel(id = "secondary")
@@ -610,6 +661,7 @@ class Test {
 ### Standalone Multi-Instance
 
 **Multiple Redis instances:**
+
 ```java
 @RedisStandalone(id = "cache", version = "7.4")
 @RedisStandalone(id = "session", version = "7.2")
@@ -624,6 +676,7 @@ class MultiInstanceTest {
 ```
 
 **Use cases:**
+
 - Cache + session store
 - Rate limiter + pub/sub
 - Multi-tenancy testing
@@ -631,6 +684,7 @@ class MultiInstanceTest {
 ### Sentinel Multi-Cluster
 
 **Multiple HA clusters:**
+
 ```java
 @RedisSentinel(id = "primary", replicas = 3, sentinels = 5)
 @RedisSentinel(id = "secondary", replicas = 2, sentinels = 3)
@@ -646,6 +700,7 @@ class MultiClusterTest {
 ```
 
 **Use cases:**
+
 - Geo-distributed deployments
 - Multi-region failover
 - Read/write separation
@@ -653,6 +708,7 @@ class MultiClusterTest {
 ### Mixed Topology
 
 **Sentinel + Standalone:**
+
 ```java
 @RedisSentinel(id = "ha-cluster", replicas = 2)
 @RedisStandalone(id = "cache")
@@ -670,6 +726,7 @@ class MixedTest {
 ```
 
 **Use cases:**
+
 - Production-realistic architectures
 - HA for critical data + cache for performance
 - Mixed redundancy requirements
@@ -681,6 +738,7 @@ class MixedTest {
 ### Latency Injection
 
 **Fixed delay:**
+
 ```java
 @RedisStandalone(enableNetworkChaos = true)
 @Test
@@ -690,6 +748,7 @@ void testLatency(RedisConnectionInfo redis, ControlFacade control) {
 ```
 
 **Jitter (variable latency):**
+
 ```java
 control.network().injectLatencyWithJitter(
     redis.getContainer(),
@@ -701,11 +760,13 @@ control.network().injectLatencyWithJitter(
 ### Packet Loss
 
 **Random loss:**
+
 ```java
 control.network().injectPacketLoss(redis.getContainer(), 0.05);  // 5% loss
 ```
 
 **Burst loss (Gilbert-Elliott):**
+
 ```java
 control.network().injectPacketLoss(
     redis.getContainer(),
@@ -717,6 +778,7 @@ control.network().injectPacketLoss(
 ### Network Partitions
 
 **Isolate replica from master:**
+
 ```java
 @RedisSentinel(replicas = 2, enableNetworkChaos = true)
 @Test
@@ -733,6 +795,7 @@ void testPartition(SentinelCluster cluster, ControlFacade control) {
 ### Bandwidth Limiting
 
 **Rate limit to 1 Mbps:**
+
 ```java
 control.network().limitBandwidth(redis.getContainer(), "1mbit");
 ```
@@ -740,11 +803,13 @@ control.network().limitBandwidth(redis.getContainer(), "1mbit");
 ### Reset Chaos
 
 **Remove all chaos:**
+
 ```java
 control.network().reset(redis.getContainer());
 ```
 
 **Reset all containers:**
+
 ```java
 control.network().resetAll();
 ```
@@ -756,6 +821,7 @@ control.network().resetAll();
 ### Annotation Configuration
 
 **✅ Good:**
+
 ```java
 // Minimal configuration (fast tests)
 @RedisStandalone
@@ -771,6 +837,7 @@ control.network().resetAll();
 ```
 
 **❌ Bad:**
+
 ```java
 // Fixed port (conflicts in CI)
 @RedisStandalone(port = 6379)
@@ -788,6 +855,7 @@ control.network().resetAll();
 ### Package Installation
 
 **✅ Good:**
+
 ```java
 // Minimal packages
 @RedisStandalone(packages = {"curl", "jq"})
@@ -800,6 +868,7 @@ control.network().resetAll();
 ```
 
 **❌ Bad:**
+
 ```java
 // Too many packages
 @RedisStandalone(packages = {"curl", "vim", "emacs", "htop", "git", "gcc", "make", ...})
@@ -812,6 +881,7 @@ control.network().resetAll();
 ### Multi-Instance
 
 **✅ Good:**
+
 ```java
 // Clear IDs
 @RedisStandalone(id = "cache")
@@ -824,6 +894,7 @@ control.network().resetAll();
 ```
 
 **❌ Bad:**
+
 ```java
 // Ambiguous IDs
 @RedisStandalone(id = "redis1")
@@ -838,6 +909,7 @@ control.network().resetAll();
 ### Network Chaos
 
 **✅ Good:**
+
 ```java
 // Explicit chaos operations
 control.network().injectLatency(container, Duration.ofMillis(100));
@@ -854,6 +926,7 @@ control.network().injectLatency(replica2, Duration.ofMillis(100));
 ```
 
 **❌ Bad:**
+
 ```java
 // Extreme values (unrealistic)
 control.network().injectLatency(container, Duration.ofSeconds(60));  // 1 minute!
@@ -880,16 +953,19 @@ void test() {
 ### Container Startup
 
 **Fast (minimal):**
+
 ```java
 @RedisStandalone  // 1-2s startup
 ```
 
 **Slower (HA):**
+
 ```java
 @RedisSentinel(replicas = 2, sentinels = 3)  // 5-7s startup
 ```
 
 **Slow (HA + packages):**
+
 ```java
 @RedisSentinel(replicas = 2, sentinels = 3, packages = {"curl", "jq"})  // 10-15s
 ```
@@ -897,6 +973,7 @@ void test() {
 ### Parallel Startup
 
 **Automatic for multi-instance:**
+
 ```java
 @RedisStandalone(id = "instance1")
 @RedisStandalone(id = "instance2")
@@ -907,11 +984,13 @@ void test() {
 ### Disable Persistence
 
 **Faster tests:**
+
 ```java
 @RedisStandalone(args = {"--save", "", "--appendonly", "no"})
 ```
 
 **Impact:**
+
 - 20-30% faster writes
 - No fsync() overhead
 - Safe for ephemeral test data
@@ -919,11 +998,13 @@ void test() {
 ### Image Selection
 
 **Smallest/fastest:**
+
 ```java
 @RedisStandalone(version = "7.4-alpine")  // 32MB, ~0.5s startup
 ```
 
 **Standard:**
+
 ```java
 @RedisStandalone(version = "7.4")  // 116MB, ~1s startup
 ```
@@ -935,12 +1016,14 @@ void test() {
 ### Common Issues
 
 **Issue: Tests skipped on macOS/Windows**
+
 ```
 SentinelTest > testFailover() SKIPPED
 Reason: Redis Sentinel tests require native Docker networking
 ```
 
 **Solution:** Use dev container
+
 ```bash
 # VS Code
 Command Palette → "Reopen in Container"
@@ -953,11 +1036,13 @@ docker compose up -d
 ---
 
 **Issue: Port conflicts**
+
 ```
 ERROR: Port 6379 is already in use
 ```
 
 **Solution:** Use random ports (default)
+
 ```java
 @RedisStandalone(port = 0)  // Random port (default)
 ```
@@ -965,11 +1050,13 @@ ERROR: Port 6379 is already in use
 ---
 
 **Issue: Package installation fails**
+
 ```
 PackageInstallationException: Package 'iproute2222' not found
 ```
 
 **Solution:** Fix package name typo
+
 ```java
 @RedisStandalone(packages = {"iproute2"})  // Correct spelling
 ```
@@ -977,6 +1064,7 @@ PackageInstallationException: Package 'iproute2222' not found
 ---
 
 **Issue: Package verification fails on Fedora/RHEL minimal images** ⚠️
+
 ```
 PackageInstallationException: Package verification failed: 'iproute2' binary not found in PATH
 exec: "which": executable file not found in $PATH
@@ -994,6 +1082,7 @@ exec: "which": executable file not found in $PATH
 ```
 
 **OR** programmatically:
+
 ```java
 @Test
 void test() {
@@ -1011,11 +1100,13 @@ void test() {
 ---
 
 **Issue: Network chaos fails**
+
 ```
 NetworkChaosException: Container missing NET_ADMIN capability
 ```
 
 **Solution:** Enable network chaos
+
 ```java
 @RedisStandalone(enableNetworkChaos = true)  // Required!
 ```
@@ -1023,11 +1114,13 @@ NetworkChaosException: Container missing NET_ADMIN capability
 ---
 
 **Issue: Resource budget exceeded**
+
 ```
 ResourceBudgetExceededException: Too many containers: 26 > 20 (max)
 ```
 
 **Solution:** Reduce replicas/sentinels or split into multiple test classes
+
 ```java
 // Before: 2 large clusters (26 containers)
 @RedisSentinel(id = "cluster1", replicas = 5, sentinels = 7)
@@ -1046,7 +1139,8 @@ ResourceBudgetExceededException: Too many containers: 26 > 20 (max)
 
 ## About the Developer
 
-**Christian Schnapka** — Principal+ Embedded Engineer with 30 years of experience specializing in configuration design, API ergonomics, and developer experience optimization.
+**Christian Schnapka** — Principal+ Embedded Engineer with 30 years of experience specializing in configuration design,
+API ergonomics, and developer experience optimization.
 
 - **Company:** [Macstab GmbH](https://macstab.com)
 - **Email:** info@macstab.com

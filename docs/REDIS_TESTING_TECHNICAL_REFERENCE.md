@@ -1,27 +1,32 @@
 # Redis Testing Framework — Technical Reference
+
 **Distinguished Engineer / Senior Fellow Level Documentation**
 
 **Author:** Christian Schnapka, Principal+ Embedded Engineer (30 years) @ [Macstab](https://macstab.com)  
 **Organization:** Macstab GmbH  
 **Module:** `macstab-chaos-redis`  
 **Package:** `com.macstab.chaos.redis`  
-**Specification Level:** Production-Ready, JUnit 5 Extension Architecture  
+**Specification Level:** Production-Ready, JUnit 5 Extension Architecture
 
 ---
 
 ## Reading Guide
 
 **For developers writing Redis tests:**
+
 - Sections 1–5 → Annotations, usage patterns, API design
 
 **For architects evaluating Sentinel orchestration:**
+
 - Sections 6–7 → Cluster topology, failover mechanics, quorum mathematics
 
 **For performance engineers:**
+
 - Section 10 → Parallel startup optimization, resource budgets
 - Section 14 → Complete execution path (annotation → JUnit → Docker → Redis)
 
 **For security auditors:**
+
 - Section 9 → Security model, network isolation, container boundaries
 
 **You do not need to read all sections sequentially.** Jump to the section matching your concern.
@@ -53,15 +58,24 @@
 
 ### 1.1 Purpose
 
-**Problem:** Testing Redis-based applications requires orchestrating Redis clusters (Sentinel, Cluster mode), handling failovers, simulating network conditions, and tracking command routing. Manual setup with Testcontainers requires 50-100 lines of boilerplate per test class. Existing solutions (embedded-redis, Spring Data Redis Test) don't support Sentinel, network chaos, or production-realistic topologies.
+**Problem:** Testing Redis-based applications requires orchestrating Redis clusters (Sentinel, Cluster mode), handling
+failovers, simulating network conditions, and tracking command routing. Manual setup with Testcontainers requires 50-100
+lines of boilerplate per test class. Existing solutions (embedded-redis, Spring Data Redis Test) don't support Sentinel,
+network chaos, or production-realistic topologies.
 
-**Solution:** Annotation-driven Redis testing framework with zero-config cluster orchestration, automatic network chaos integration, and command-level observability. Single annotation (`@RedisSentinel`) starts 1 master + N replicas + M sentinels with correct quorum configuration.
+**Solution:** Annotation-driven Redis testing framework with zero-config cluster orchestration, automatic network chaos
+integration, and command-level observability. Single annotation (`@RedisSentinel`) starts 1 master + N replicas + M
+sentinels with correct quorum configuration.
 
-**Innovation:** **Industry-first annotation-driven Redis Sentinel testing with network chaos integration.** No equivalent exists in Testcontainers, Spring Test, or any Redis testing library. Multi-instance parallel startup (40-50% faster than sequential), resource budget validation (prevents CI memory exhaustion), and MONITOR-based command tracking (proves read routing to replicas).
+**Innovation:** **Industry-first annotation-driven Redis Sentinel testing with network chaos integration.** No
+equivalent exists in Testcontainers, Spring Test, or any Redis testing library. Multi-instance parallel startup (40-50%
+faster than sequential), resource budget validation (prevents CI memory exhaustion), and MONITOR-based command
+tracking (proves read routing to replicas).
 
 ### 1.2 Scope
 
 **In Scope:**
+
 - **Standalone Redis:** Single instance with configurable version
 - **Sentinel Clusters:** Master + replicas + sentinels with automatic quorum
 - **Multi-Instance:** Parallel startup of multiple clusters/standalone instances
@@ -73,6 +87,7 @@
 - **Platform Awareness:** Auto-skip Sentinel tests on macOS/Windows (Docker networking limitations)
 
 **Out of Scope:**
+
 - **Redis Cluster mode:** OSS Cluster protocol (slot-based sharding) — planned v1.1
 - **Redis Enterprise:** Commercial Redis features (Active-Active, RediSearch)
 - **Redis modules:** RedisJSON, RedisGraph, RedisTimeSeries (use custom Docker images)
@@ -155,15 +170,18 @@ end note
 ### 2.2 Dependencies
 
 **Compile Dependencies:**
+
 - `com.macstab.chaos:macstab-chaos-core` (package manager utilities)
 - `org.testcontainers:testcontainers` (1.19.0+)
 - `org.junit.jupiter:junit-jupiter-api` (5.9.0+)
 - `org.slf4j:slf4j-api` (2.0.0+)
 
 **Optional Dependencies (compileOnly):**
+
 - `com.macstab.chaos:macstab-chaos-network` (network chaos, only if `enableNetworkChaos = true`)
 
 **No Redis Client Required:**
+
 - Framework manages containers only
 - Tests bring own Redis client (Lettuce, Jedis, Spring Data Redis)
 
@@ -205,6 +223,7 @@ end note
 ```
 
 **Trust Model:**
+
 - **Trusted:** Test code, JUnit extensions, Docker daemon
 - **Isolated:** Redis containers (separate network namespace per test)
 - **Conditionally Trusted:** Containers with NET_ADMIN (only when chaos enabled)
@@ -215,31 +234,44 @@ end note
 
 ### 3.1 Glossary
 
-| Term | Definition | Specification |
-|------|------------|---------------|
-| **JUnit 5 Extension** | Pluggable test lifecycle hooks (before/after test, parameter injection) | [JUnit 5 User Guide: Extensions](https://junit.org/junit5/docs/current/user-guide/#extensions) |
-| **Meta-Annotation** | Annotation that bundles multiple annotations | [JLS §9.6 Annotation Types](https://docs.oracle.com/javase/specs/jls/se21/html/jls-9.html#jls-9.6) |
-| **Extension Context** | JUnit API for accessing test class/method metadata | [ExtensionContext JavaDoc](https://junit.org/junit5/docs/current/api/org.junit.jupiter.api/org/junit/jupiter/api/extension/ExtensionContext.html) |
-| **Store (JUnit)** | Test-scoped state storage (namespace-based key-value map) | [JUnit 5 Store API](https://junit.org/junit5/docs/current/user-guide/#extensions-keeping-state) |
-| **Redis Sentinel** | High-availability system with automatic failover (1 master + N replicas + M sentinels) | [Redis Sentinel Documentation](https://redis.io/docs/management/sentinel/) |
-| **Quorum** | Minimum number of Sentinels required to agree on failover decision | [Sentinel Quorum](https://redis.io/docs/management/sentinel/#example-2-basic-setup-with-three-boxes) |
-| **MONITOR Command** | Redis debugging command streaming all commands executed | [MONITOR Command Reference](https://redis.io/commands/monitor/) |
-| **Lettuce** | Async Redis client for Java (thread-safe, reactive) | [Lettuce Documentation](https://lettuce.io/) |
-| **Replication Lag** | Time delay between write to master and propagation to replica | N/A (measured via timestamps) |
+| Term                  | Definition                                                                             | Specification                                                                                                                                     |
+|-----------------------|----------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
+| **JUnit 5 Extension** | Pluggable test lifecycle hooks (before/after test, parameter injection)                | [JUnit 5 User Guide: Extensions](https://junit.org/junit5/docs/current/user-guide/#extensions)                                                    |
+| **Meta-Annotation**   | Annotation that bundles multiple annotations                                           | [JLS §9.6 Annotation Types](https://docs.oracle.com/javase/specs/jls/se21/html/jls-9.html#jls-9.6)                                                |
+| **Extension Context** | JUnit API for accessing test class/method metadata                                     | [ExtensionContext JavaDoc](https://junit.org/junit5/docs/current/api/org.junit.jupiter.api/org/junit/jupiter/api/extension/ExtensionContext.html) |
+| **Store (JUnit)**     | Test-scoped state storage (namespace-based key-value map)                              | [JUnit 5 Store API](https://junit.org/junit5/docs/current/user-guide/#extensions-keeping-state)                                                   |
+| **Redis Sentinel**    | High-availability system with automatic failover (1 master + N replicas + M sentinels) | [Redis Sentinel Documentation](https://redis.io/docs/management/sentinel/)                                                                        |
+| **Quorum**            | Minimum number of Sentinels required to agree on failover decision                     | [Sentinel Quorum](https://redis.io/docs/management/sentinel/#example-2-basic-setup-with-three-boxes)                                              |
+| **MONITOR Command**   | Redis debugging command streaming all commands executed                                | [MONITOR Command Reference](https://redis.io/commands/monitor/)                                                                                   |
+| **Lettuce**           | Async Redis client for Java (thread-safe, reactive)                                    | [Lettuce Documentation](https://lettuce.io/)                                                                                                      |
+| **Replication Lag**   | Time delay between write to master and propagation to replica                          | N/A (measured via timestamps)                                                                                                                     |
 
 ### 3.2 JUnit 5 Extension Model
 
 **Extension Points:**
+
 ```java
 // Lifecycle hooks
-interface BeforeAllCallback { void beforeAll(ExtensionContext); }
-interface AfterAllCallback { void afterAll(ExtensionContext); }
-interface BeforeEachCallback { void beforeEach(ExtensionContext); }
-interface AfterEachCallback { void afterEach(ExtensionContext); }
+interface BeforeAllCallback {
+    void beforeAll(ExtensionContext);
+}
+
+interface AfterAllCallback {
+    void afterAll(ExtensionContext);
+}
+
+interface BeforeEachCallback {
+    void beforeEach(ExtensionContext);
+}
+
+interface AfterEachCallback {
+    void afterEach(ExtensionContext);
+}
 
 // Parameter injection
 interface ParameterResolver {
     boolean supportsParameter(ParameterContext, ExtensionContext);
+
     Object resolveParameter(ParameterContext, ExtensionContext);
 }
 
@@ -250,17 +282,20 @@ interface ExecutionCondition {
 ```
 
 **Extension Registration:**
+
 ```java
 @ExtendWith(RedisContainerExtension.class)  // Declarative (annotation)
 ```
 
 **Reference:**
+
 - [JUnit 5 Extension Model](https://junit.org/junit5/docs/current/user-guide/#extensions)
 - [Extension Context API](https://junit.org/junit5/docs/current/api/org.junit.jupiter.api/org/junit/jupiter/api/extension/ExtensionContext.html)
 
 ### 3.3 Redis Sentinel Topology
 
 **Components:**
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ Docker Bridge Network (172.18.0.0/16)                       │
@@ -290,12 +325,14 @@ interface ExecutionCondition {
 ```
 
 **Key Properties:**
+
 - **Master:** Accepts writes, asynchronous replication to replicas
 - **Replicas:** Read-only (by default), eventual consistency
 - **Sentinels:** Monitor master health, vote on failover, notify clients of topology changes
 - **Quorum:** `(sentinels / 2) + 1` (e.g., 3 sentinels → quorum 2)
 
 **Reference:**
+
 - [Redis Replication](https://redis.io/docs/management/replication/)
 - [Redis Sentinel Configuration](https://redis.io/docs/management/sentinel/#configuring-sentinel)
 
@@ -568,6 +605,7 @@ deactivate Ext
     ```
 
 **Total Latency:**
+
 - Master startup: 1-2s
 - Replica startup (parallel): 1-2s
 - Sentinel startup: 1s
@@ -583,6 +621,7 @@ deactivate Ext
 **Pattern:** JUnit 5 Extension (BeforeAllCallback + AfterAllCallback + ParameterResolver)
 
 **Responsibilities:**
+
 1. Parse `@RedisStandalone` annotation
 2. Create standalone Redis container
 3. Optionally enable network chaos (NET_ADMIN + package installation)
@@ -590,51 +629,53 @@ deactivate Ext
 5. Clean up container after test
 
 **Design Decision: Single Container Extension**
+
 - **Justification:** Standalone Redis is simple (1 container), no coordination needed
 - **Trade-off:** Cannot reuse for Sentinel (different topology, separate extension)
 - **Pattern:** Facade over Testcontainers GenericContainer
 
 **Structure:**
+
 ```java
-public class RedisContainerExtension implements 
-        BeforeAllCallback, 
-        AfterAllCallback, 
+public class RedisContainerExtension implements
+        BeforeAllCallback,
+        AfterAllCallback,
         ParameterResolver {
-    
+
     @Override
     public void beforeAll(ExtensionContext context) {
         RedisStandalone annotation = findAnnotation(context);
-        
+
         GenericContainer<?> redis = new GenericContainer<>("redis:" + annotation.version())
-            .withExposedPorts(6379);
-        
+                .withExposedPorts(6379);
+
         if (annotation.enableNetworkChaos()) {
             redis.withCreateContainerCmdModifier(cmd ->
-                cmd.getHostConfig().withCapAdd(Capability.NET_ADMIN)
+                    cmd.getHostConfig().withCapAdd(Capability.NET_ADMIN)
             );
         }
-        
+
         redis.start();
-        
+
         // Auto-install packages if requested
         if (annotation.enableNetworkChaos()) {
             PackageManager.detect(redis).install(redis, "iproute2", "iptables");
         }
-        
+
         context.getStore(namespace).put("redis", redis);
     }
-    
+
     @Override
     public void afterAll(ExtensionContext context) {
         GenericContainer<?> redis = context.getStore(namespace).get("redis", GenericContainer.class);
         redis.stop();
     }
-    
+
     @Override
     public boolean supportsParameter(ParameterContext param, ExtensionContext context) {
         return param.getParameter().getType() == GenericContainer.class;
     }
-    
+
     @Override
     public Object resolveParameter(ParameterContext param, ExtensionContext context) {
         return context.getStore(namespace).get("redis");
@@ -647,6 +688,7 @@ public class RedisContainerExtension implements
 **Pattern:** JUnit 5 Extension + Orchestrator
 
 **Responsibilities:**
+
 1. Parse `@RedisSentinel` annotation (replicas, sentinels, quorum)
 2. Validate resource budget (prevent memory exhaustion)
 3. Create master container
@@ -657,46 +699,48 @@ public class RedisContainerExtension implements
 8. Clean up all containers + network
 
 **Design Decision: Complex Orchestration**
+
 - **Justification:** Sentinel requires precise startup order (master → replicas → sentinels)
 - **Trade-off:** Complex lifecycle vs declarative API for users
 - **Pattern:** Orchestrator + Builder
 
 **Startup Sequence:**
+
 ```java
-public class SentinelContainerExtension implements 
-        BeforeAllCallback, 
-        AfterAllCallback, 
+public class SentinelContainerExtension implements
+        BeforeAllCallback,
+        AfterAllCallback,
         ParameterResolver {
-    
+
     @Override
     public void beforeAll(ExtensionContext context) {
         RedisSentinel annotation = findAnnotation(context);
-        
+
         // 1. Resource budget check
         ResourceBudget.validateSentinelCluster(annotation.replicas(), annotation.sentinels());
-        
+
         // 2. Create network
         Network network = Network.newNetwork();
-        
+
         // 3. Start master
         GenericContainer<?> master = createMaster(network);
         waitForRedisReady(master);
-        
+
         // 4. Start replicas (parallel)
         List<GenericContainer<?>> replicas = createReplicas(
-            network, master.getNetworkAliases().get(0), annotation.replicas()
+                network, master.getNetworkAliases().get(0), annotation.replicas()
         );
         waitForReplicationSync(replicas);
-        
+
         // 5. Start sentinels
         List<GenericContainer<?>> sentinels = createSentinels(
-            network, master.getNetworkAliases().get(0), annotation.sentinels(), annotation.quorum()
+                network, master.getNetworkAliases().get(0), annotation.sentinels(), annotation.quorum()
         );
         waitForSentinelQuorum(sentinels);
-        
+
         // 6. Create cluster object
         SentinelCluster cluster = new SentinelCluster(master, replicas, sentinels, network);
-        
+
         // 7. Store in JUnit Store
         context.getStore(namespace).put("cluster", cluster);
     }
@@ -708,46 +752,49 @@ public class SentinelContainerExtension implements
 **Pattern:** Validator + Guard
 
 **Responsibilities:**
+
 1. Prevent excessive container creation (CI memory limits)
 2. Validate resource requests before starting containers
 3. Provide clear error messages with limits
 
 **Design Decision: Fail-Fast Validation**
+
 - **Justification:** Better to fail immediately than OOM during container startup
 - **Trade-off:** Conservative limits (20 containers) vs flexibility
 - **Pattern:** Guard Clause
 
 **Implementation:**
+
 ```java
 public final class ResourceBudget {
     private static final int MAX_CONTAINERS = 20;           // CI-safe limit
     private static final int MAX_SENTINEL_CLUSTERS = 3;     // Memory-intensive
     private static final int MAX_STANDALONE_INSTANCES = 5;  // Lightweight
-    
+
     public static void validateSentinelCluster(int replicas, int sentinels) {
         int totalContainers = 1 + replicas + sentinels;  // master + replicas + sentinels
-        
+
         if (totalContainers > MAX_CONTAINERS) {
             throw new ResourceBudgetExceededException(
-                String.format(
-                    "Sentinel cluster exceeds container limit: %d > %d (max). " +
-                    "Requested: 1 master + %d replicas + %d sentinels.",
-                    totalContainers, MAX_CONTAINERS, replicas, sentinels
-                )
+                    String.format(
+                            "Sentinel cluster exceeds container limit: %d > %d (max). " +
+                                    "Requested: 1 master + %d replicas + %d sentinels.",
+                            totalContainers, MAX_CONTAINERS, replicas, sentinels
+                    )
             );
         }
-        
+
         // Estimate memory (rough: 50MB base + 10MB per container)
         long estimatedMemory = 50 + (totalContainers * 10);  // MB
         long availableMemory = getAvailableMemory();         // MB
-        
+
         if (estimatedMemory > availableMemory * 0.8) {  // Leave 20% headroom
             throw new ResourceBudgetExceededException(
-                String.format(
-                    "Insufficient memory for cluster: %d MB required, %d MB available. " +
-                    "Reduce replicas/sentinels or increase Docker memory limit.",
-                    estimatedMemory, availableMemory
-                )
+                    String.format(
+                            "Insufficient memory for cluster: %d MB required, %d MB available. " +
+                                    "Reduce replicas/sentinels or increase Docker memory limit.",
+                            estimatedMemory, availableMemory
+                    )
             );
         }
     }
@@ -759,6 +806,7 @@ public final class ResourceBudget {
 **Pattern:** Observer + MONITOR Protocol
 
 **Responsibilities:**
+
 1. Start MONITOR on Redis container
 2. Parse MONITOR output stream
 3. Count commands by type (GET, SET, MGET, etc.)
@@ -766,55 +814,57 @@ public final class ResourceBudget {
 5. Measure replication lag (master write → replica read)
 
 **Design Decision: MONITOR-Based (Not Mocking)**
+
 - **Justification:** Proves actual Redis behavior, not mock assumptions
 - **Trade-off:** Performance overhead (MONITOR is expensive) vs real verification
 - **Pattern:** Observer (passive monitoring)
 
 **Implementation:**
+
 ```java
 public class RedisCommandTracker implements AutoCloseable {
     private final GenericContainer<?> container;
     private final BlockingQueue<String> commandQueue;
     private volatile boolean monitoring;
     private Thread monitorThread;
-    
+
     public void start() {
         ExecResult result = container.execInContainerAsync(
-            "redis-cli", "MONITOR"
+                "redis-cli", "MONITOR"
         );
-        
+
         monitorThread = new Thread(() -> {
             BufferedReader reader = new BufferedReader(
-                new InputStreamReader(result.getStdout())
+                    new InputStreamReader(result.getStdout())
             );
-            
+
             String line;
             while (monitoring && (line = reader.readLine()) != null) {
                 // Parse: 1710338400.123456 [0 172.18.0.5:45678] "GET" "user:1234"
                 commandQueue.offer(line);
             }
         });
-        
+
         monitoring = true;
         monitorThread.start();
     }
-    
+
     public long countCommand(String commandName) {
         return commandQueue.stream()
-            .filter(line -> line.contains("\"" + commandName + "\""))
-            .count();
+                .filter(line -> line.contains("\"" + commandName + "\""))
+                .count();
     }
-    
+
     public long countCommandsMatchingKeyPattern(String command, String keyPattern) {
         Pattern pattern = Pattern.compile(
-            "\"" + command + "\" \"" + keyPattern.replace("*", ".*") + "\""
+                "\"" + command + "\" \"" + keyPattern.replace("*", ".*") + "\""
         );
-        
+
         return commandQueue.stream()
-            .filter(line -> pattern.matcher(line).find())
-            .count();
+                .filter(line -> pattern.matcher(line).find())
+                .count();
     }
-    
+
     @Override
     public void close() {
         monitoring = false;
@@ -824,32 +874,35 @@ public class RedisCommandTracker implements AutoCloseable {
 ```
 
 **Usage:**
+
 ```java
+
 @Test
 void testReplicaReads(SentinelCluster cluster) throws Exception {
     RedisCommandTracker masterTracker = new RedisCommandTracker(cluster.getMaster());
     RedisCommandTracker replicaTracker = new RedisCommandTracker(cluster.getReplicas().get(0));
-    
+
     masterTracker.start();
     replicaTracker.start();
-    
+
     // Execute 1000 reads
     for (int i = 0; i < 1000; i++) {
         redisTemplate.opsForValue().get("key:" + i);
     }
-    
+
     masterTracker.stop();
     replicaTracker.stop();
-    
+
     // Verify reads went to replica (not master)
     long masterReads = masterTracker.countCommand("GET");
     long replicaReads = replicaTracker.countCommand("GET");
-    
+
     assertThat(replicaReads).isGreaterThan(masterReads * 4);  // 80%+ on replica
 }
 ```
 
 **Reference:**
+
 - [Redis MONITOR Command](https://redis.io/commands/monitor/)
 - **Warning:** MONITOR has high performance cost (5-15% throughput reduction)
 
@@ -860,6 +913,7 @@ void testReplicaReads(SentinelCluster cluster) throws Exception {
 ### 6.1 Extension Lifecycle
 
 **JUnit 5 Test Execution Phases:**
+
 ```
 Test Class Discovery
   ↓
@@ -879,100 +933,114 @@ afterAll() callbacks          ← SentinelContainerExtension stops containers
 ```
 
 **Extension Context Store:**
+
 ```java
 // Store data (test-scoped)
-context.getStore(namespace).put("cluster", clusterObject);
+context.getStore(namespace).
+
+put("cluster",clusterObject);
 
 // Retrieve data
 SentinelCluster cluster = context.getStore(namespace).get("cluster", SentinelCluster.class);
 
 // Namespace prevents collisions
 ExtensionContext.Namespace namespace = ExtensionContext.Namespace.create(
-    SentinelContainerExtension.class, context.getRequiredTestClass()
+        SentinelContainerExtension.class, context.getRequiredTestClass()
 );
 ```
 
 **Reference:**
+
 - [JUnit 5 Extension Lifecycle](https://junit.org/junit5/docs/current/user-guide/#extensions-lifecycle-callbacks)
 - [ExtensionContext.Store](https://junit.org/junit5/docs/current/api/org.junit.jupiter.api/org/junit/jupiter/api/extension/ExtensionContext.Store.html)
 
 ### 6.2 Parameter Injection
 
 **ParameterResolver Interface:**
+
 ```java
 public interface ParameterResolver extends Extension {
-    boolean supportsParameter(ParameterContext parameterContext, ExtensionContext extensionContext) 
-        throws ParameterResolutionException;
-    
-    Object resolveParameter(ParameterContext parameterContext, ExtensionContext extensionContext) 
-        throws ParameterResolutionException;
+    boolean supportsParameter(ParameterContext parameterContext, ExtensionContext extensionContext)
+            throws ParameterResolutionException;
+
+    Object resolveParameter(ParameterContext parameterContext, ExtensionContext extensionContext)
+            throws ParameterResolutionException;
 }
 ```
 
 **Implementation:**
+
 ```java
+
 @Override
 public boolean supportsParameter(ParameterContext paramCtx, ExtensionContext extCtx) {
     Class<?> type = paramCtx.getParameter().getType();
-    
+
     // Support SentinelCluster
     if (type == SentinelCluster.class) {
         return true;
     }
-    
+
     // Support GenericContainer<?> (standalone mode)
     if (type == GenericContainer.class) {
         return true;
     }
-    
+
     // Support List<GenericContainer<?>> (multi-instance)
     if (type == List.class) {
         ParameterizedType paramType = (ParameterizedType) paramCtx.getParameter().getParameterizedType();
         Type typeArg = paramType.getActualTypeArguments()[0];
         return typeArg == GenericContainer.class;
     }
-    
+
     return false;
 }
 
 @Override
 public Object resolveParameter(ParameterContext paramCtx, ExtensionContext extCtx) {
     Class<?> type = paramCtx.getParameter().getType();
-    
+
     if (type == SentinelCluster.class) {
         return extCtx.getStore(namespace).get("cluster", SentinelCluster.class);
     }
-    
+
     if (type == GenericContainer.class) {
         return extCtx.getStore(namespace).get("redis", GenericContainer.class);
     }
-    
+
     if (type == List.class) {
         return extCtx.getStore(namespace).get("instances", List.class);
     }
-    
+
     throw new ParameterResolutionException("Unsupported parameter type: " + type);
 }
 ```
 
 **Usage:**
+
 ```java
-@Test
-void test1(SentinelCluster cluster) { }                         // Injected
 
 @Test
-void test2(GenericContainer<?> redis) { }                       // Injected
+void test1(SentinelCluster cluster) {
+}                         // Injected
 
 @Test
-void test3(List<GenericContainer<?>> instances) { }             // Injected
+void test2(GenericContainer<?> redis) {
+}                       // Injected
 
 @Test
-void test4(SentinelCluster cluster, TestInfo testInfo) { }      // Multiple injectors
+void test3(List<GenericContainer<?>> instances) {
+}             // Injected
+
+@Test
+void test4(SentinelCluster cluster, TestInfo testInfo) {
+}      // Multiple injectors
 ```
 
 ### 6.3 Conditional Execution
 
 **ExecutionCondition Interface:**
+
 ```java
 public interface ExecutionCondition extends Extension {
     ConditionEvaluationResult evaluateExecutionCondition(ExtensionContext context);
@@ -980,35 +1048,38 @@ public interface ExecutionCondition extends Extension {
 ```
 
 **Platform Detection:**
+
 ```java
 public class DisabledOnNonLinuxHostCondition implements ExecutionCondition {
-    
+
     @Override
     public ConditionEvaluationResult evaluateExecutionCondition(ExtensionContext context) {
         if (isLinuxHost() || isDevContainer()) {
             return ConditionEvaluationResult.enabled("Linux host or dev container detected");
         }
-        
+
         String reason = "Sentinel tests require native Docker networking (Linux host or dev container). " +
-                        "Current OS: " + System.getProperty("os.name") + ". " +
-                        "Use dev container or skip Sentinel tests.";
-        
+                "Current OS: " + System.getProperty("os.name") + ". " +
+                "Use dev container or skip Sentinel tests.";
+
         return ConditionEvaluationResult.disabled(reason);
     }
-    
+
     private boolean isLinuxHost() {
         return System.getProperty("os.name").toLowerCase().contains("linux");
     }
-    
+
     private boolean isDevContainer() {
-        return System.getenv("REMOTE_CONTAINERS") != null || 
-               Files.exists(Paths.get("/.dockerenv"));
+        return System.getenv("REMOTE_CONTAINERS") != null ||
+                Files.exists(Paths.get("/.dockerenv"));
     }
 }
 ```
 
 **Annotation:**
+
 ```java
+
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @ExtendWith(DisabledOnNonLinuxHostCondition.class)
@@ -1018,7 +1089,9 @@ public @interface DisabledOnNonLinuxHost {
 ```
 
 **Usage:**
+
 ```java
+
 @RedisSentinel  // Already includes @DisabledOnNonLinuxHost internally
 class SentinelTest {
     // Automatically skipped on macOS/Windows
@@ -1026,6 +1099,7 @@ class SentinelTest {
 ```
 
 **Result (macOS):**
+
 ```
 SentinelTest > testFailover() SKIPPED
 Reason: Sentinel tests require native Docker networking (Linux host or dev container).
@@ -1039,7 +1113,9 @@ Reason: Sentinel tests require native Docker networking (Linux host or dev conta
 ### 7.1 Repeatable Annotations
 
 **Java Repeating Annotations (JLS §9.6.3):**
+
 ```java
+
 @Repeatable(RedisStandalones.class)
 public @interface RedisStandalone {
     String id();
@@ -1054,12 +1130,14 @@ public @interface RedisStandalones {
 ```
 
 **Usage:**
+
 ```java
+
 @RedisStandalone(id = "cache", version = "7.4")
 @RedisStandalone(id = "session", version = "7.2")
 @RedisStandalone(id = "rate-limiter", version = "7.4")
 class MultiInstanceTest {
-    
+
     @Test
     void test(List<GenericContainer<?>> instances) {
         assertThat(instances).hasSize(3);
@@ -1071,45 +1149,54 @@ class MultiInstanceTest {
 ```
 
 **Reference:**
+
 - [JLS §9.6.3 Repeatable Annotation Types](https://docs.oracle.com/javase/specs/jls/se21/html/jls-9.html#jls-9.6.3)
 
 ### 7.2 Parallel Startup
 
 **Sequential Startup (Slow):**
+
 ```java
 // Old approach: 3 instances × 2s = 6s total
-for (String id : instanceIds) {
-    GenericContainer<?> container = createContainer(id);
-    container.start();  // Blocks for 2s
-    instances.add(container);
+for(String id :instanceIds){
+GenericContainer<?> container = createContainer(id);
+    container.
+
+start();  // Blocks for 2s
+    instances.
+
+add(container);
 }
 ```
 
 **Parallel Startup (Fast):**
+
 ```java
 // New approach: max(2s, 2s, 2s) = 2s total (3× speedup)
 List<CompletableFuture<GenericContainer<?>>> futures = instanceIds.stream()
-    .map(id -> CompletableFuture.supplyAsync(() -> {
-        GenericContainer<?> container = createContainer(id);
-        container.start();
-        return container;
-    }, executorService))
-    .toList();
+                .map(id -> CompletableFuture.supplyAsync(() -> {
+                    GenericContainer<?> container = createContainer(id);
+                    container.start();
+                    return container;
+                }, executorService))
+                .toList();
 
 List<GenericContainer<?>> instances = futures.stream()
-    .map(CompletableFuture::join)
-    .toList();
+        .map(CompletableFuture::join)
+        .toList();
 ```
 
 **Executor Configuration:**
+
 ```java
 private static final ExecutorService executorService = Executors.newFixedThreadPool(
-    Math.min(10, Runtime.getRuntime().availableProcessors() * 2),
-    new ThreadFactoryBuilder().setNameFormat("redis-startup-%d").build()
+        Math.min(10, Runtime.getRuntime().availableProcessors() * 2),
+        new ThreadFactoryBuilder().setNameFormat("redis-startup-%d").build()
 );
 ```
 
 **Measurements (3 Standalone Instances):**
+
 - Sequential: 6.2s
 - Parallel: 2.4s
 - **Speedup:** 2.58× (61% reduction)
@@ -1117,15 +1204,16 @@ private static final ExecutorService executorService = Executors.newFixedThreadP
 ### 7.3 Resource Budget Enforcement
 
 **Multi-Instance Validation:**
+
 ```java
 public static void validateMultipleStandalone(int count) {
     if (count > MAX_STANDALONE_INSTANCES) {
         throw new ResourceBudgetExceededException(
-            String.format(
-                "Too many standalone instances: %d > %d (max). " +
-                "Split into separate test classes or reduce instances.",
-                count, MAX_STANDALONE_INSTANCES
-            )
+                String.format(
+                        "Too many standalone instances: %d > %d (max). " +
+                                "Split into separate test classes or reduce instances.",
+                        count, MAX_STANDALONE_INSTANCES
+                )
         );
     }
 }
@@ -1133,26 +1221,29 @@ public static void validateMultipleStandalone(int count) {
 public static void validateMultipleSentinel(int count) {
     if (count > MAX_SENTINEL_CLUSTERS) {
         throw new ResourceBudgetExceededException(
-            String.format(
-                "Too many Sentinel clusters: %d > %d (max). " +
-                "Each cluster requires 3-10 containers. " +
-                "Use single cluster with multiple replicas instead.",
-                count, MAX_SENTINEL_CLUSTERS
-            )
+                String.format(
+                        "Too many Sentinel clusters: %d > %d (max). " +
+                                "Each cluster requires 3-10 containers. " +
+                                "Use single cluster with multiple replicas instead.",
+                        count, MAX_SENTINEL_CLUSTERS
+                )
         );
     }
 }
 ```
 
 **Automatic Enforcement:**
+
 ```java
+
 @RedisStandalone(id = "1")
 @RedisStandalone(id = "2")
 @RedisStandalone(id = "3")
 @RedisStandalone(id = "4")
 @RedisStandalone(id = "5")
 @RedisStandalone(id = "6")  // FAILS: Exceeds MAX_STANDALONE_INSTANCES (5)
-class TooManyInstancesTest { }
+class TooManyInstancesTest {
+}
 
 // Exception thrown in beforeAll():
 // ResourceBudgetExceededException: Too many standalone instances: 6 > 5 (max).
@@ -1162,30 +1253,33 @@ class TooManyInstancesTest { }
 ### 7.4 Mixed Topology Support
 
 **Sentinel + Standalone:**
+
 ```java
+
 @RedisSentinel(id = "ha-cluster", replicas = 2, sentinels = 3)
 @RedisStandalone(id = "cache")
 @RedisStandalone(id = "session")
 class MixedTopologyTest {
-    
+
     @Test
     void test(
-        List<SentinelCluster> sentinels,
-        List<GenericContainer<?>> standalones
+            List<SentinelCluster> sentinels,
+            List<GenericContainer<?>> standalones
     ) {
         assertThat(sentinels).hasSize(1);
         assertThat(standalones).hasSize(2);
-        
+
         SentinelCluster haCluster = sentinels.get(0);
         GenericContainer<?> cache = standalones.get(0);
         GenericContainer<?> session = standalones.get(1);
-        
+
         // Test application with HA cluster + cache + sessions
     }
 }
 ```
 
 **Parameter Injection Rules:**
+
 1. `List<SentinelCluster>` → All Sentinel clusters
 2. `List<GenericContainer<?>>` → All standalone instances
 3. `SentinelCluster` → Single Sentinel cluster (fails if multiple)
@@ -1198,35 +1292,41 @@ class MixedTopologyTest {
 ### 8.1 Thread Safety Guarantees
 
 **JUnit 5 Test Execution:**
+
 - **Single-threaded per test class** (default)
 - Extensions run on same thread as test methods
 - **No concurrency within test class** (sequential test methods)
 
 **Parallel Container Startup:**
+
 - **Multi-threaded** (ExecutorService with fixed pool)
 - Each container start() runs on separate thread
 - **Thread-safe:** GenericContainer is thread-safe for start/stop
 
 **Store Access:**
+
 - **Thread-confined:** ExtensionContext.Store accessed only from JUnit thread
 - **No synchronization needed:** Single-threaded access guaranteed
 
 ### 8.2 Parallel Test Execution (Advanced)
 
 **JUnit 5 Parallel Execution:**
+
 ```java
 // junit-platform.properties
-junit.jupiter.execution.parallel.enabled = true
-junit.jupiter.execution.parallel.mode.default = concurrent
-junit.jupiter.execution.parallel.mode.classes.default = concurrent
+junit.jupiter.execution.parallel.enabled =true
+junit.jupiter.execution.parallel.mode .default =concurrent
+junit.jupiter.execution.parallel.mode.classes .default =concurrent
 ```
 
 **Isolation Requirements:**
+
 - Each test class gets isolated network (no cross-contamination)
 - Containers identified by test class name (namespace in Store)
 - **Safe for parallel execution** (independent resources)
 
 **Limitation:**
+
 - Resource budget applies per test class (not globally)
 - 10 test classes × 5 instances = 50 containers (may exceed Docker limits)
 
@@ -1273,6 +1373,7 @@ end note
 **Scenario 1: Docker Daemon Unreachable**
 
 **Symptom:**
+
 ```
 ClusterCreationException: Failed to start master container
 Caused by: com.github.dockerjava.api.exception.DockerException: 
@@ -1280,28 +1381,36 @@ Caused by: com.github.dockerjava.api.exception.DockerException:
 ```
 
 **Root Cause:**
+
 - Docker daemon not running
 - User lacks permissions (not in docker group)
 - Docker socket not mounted (dev container misconfiguration)
 
 **Detection:**
+
 ```java
-try {
-    GenericContainer<?> master = new GenericContainer<>("redis:7.4-alpine");
-    master.start();
-} catch (Exception e) {
-    throw new ClusterCreationException(
-        "Docker daemon unavailable. " +
-        "Ensure Docker is running and accessible. " +
-        "Check: docker ps",
+try{
+GenericContainer<?> master = new GenericContainer<>("redis:7.4-alpine");
+    master.
+
+start();
+}catch(
+Exception e){
+        throw new
+
+ClusterCreationException(
+        "Docker daemon unavailable. "+
+                "Ensure Docker is running and accessible. "+
+                "Check: docker ps",
         e
-    );
+        );
 }
 ```
 
 **Scenario 2: Sentinel Quorum Timeout**
 
 **Symptom:**
+
 ```
 ClusterTopologyException: Sentinel quorum not reached after 30s
   Sentinels: 3 (expected quorum: 2)
@@ -1310,11 +1419,13 @@ ClusterTopologyException: Sentinel quorum not reached after 30s
 ```
 
 **Root Cause:**
+
 - Master IP incorrect in Sentinel config
 - Network isolation (Sentinels cannot reach master)
 - Sentinel misconfiguration (wrong quorum value)
 
 **Diagnosis:**
+
 ```bash
 # Check sentinel status
 docker exec <sentinel> redis-cli -p 26379 SENTINEL MASTER mymaster
@@ -1335,6 +1446,7 @@ docker exec <sentinel> redis-cli -p 26379 SENTINEL MASTER mymaster
 **Scenario 3: Replication Lag**
 
 **Symptom:**
+
 ```
 ClusterStartupException: Replica replication sync timeout after 30s
   Replica: 172.18.0.6:6379
@@ -1343,11 +1455,13 @@ ClusterStartupException: Replica replication sync timeout after 30s
 ```
 
 **Root Cause:**
+
 - Network partition (replica cannot reach master)
 - Master overloaded (slow replication)
 - Incorrect master IP in replica config
 
 **Diagnosis:**
+
 ```bash
 # Check replication status on replica
 docker exec <replica> redis-cli info replication
@@ -1367,6 +1481,7 @@ docker exec <replica> redis-cli info replication
 ### 10.1 Threat Model
 
 **Threats:**
+
 1. **Test Data Leakage:** Sensitive data written to Redis persists after test
 2. **Container Escape:** Malicious Redis image exploits kernel vulnerability
 3. **Network Interference:** Test containers access production systems
@@ -1375,6 +1490,7 @@ docker exec <replica> redis-cli info replication
 **Mitigations:**
 
 **1. Ephemeral Containers (Data Isolation)**
+
 ```java
 // Containers destroyed after each test class
 @AfterAll
@@ -1384,10 +1500,13 @@ void cleanup() {
 ```
 
 **2. Network Isolation (External Access Prevention)**
+
 ```java
 // Each test class gets isolated bridge network
 Network network = Network.newNetwork();
-container.withNetwork(network);
+container.
+
+withNetwork(network);
 
 // Containers cannot reach:
 // - Host network (no access to localhost)
@@ -1396,31 +1515,46 @@ container.withNetwork(network);
 ```
 
 **3. Resource Limits (DOS Prevention)**
+
 ```java
 // Container limits
 container.withCreateContainerCmdModifier(cmd ->
-    cmd.getHostConfig()
-        .withMemory(512 * 1024 * 1024L)       // 512MB RAM
-        .withCpuQuota(50000L)                 // 50% CPU
-        .withPidsLimit(100L)                  // Max 100 processes
+        cmd.
+
+getHostConfig()
+        .
+
+withMemory(512*1024*1024L)       // 512MB RAM
+        .
+
+withCpuQuota(50000L)                 // 50% CPU
+        .
+
+withPidsLimit(100L)                  // Max 100 processes
 );
 
 // Budget limits
-ResourceBudget.MAX_CONTAINERS = 20;           // CI-safe
+ResourceBudget.MAX_CONTAINERS =20;           // CI-safe
 ```
 
 **4. Read-Only Filesystem (Where Possible)**
+
 ```java
 // Redis requires write access to /data (AOF/RDB)
 // But can make /etc, /usr read-only
 container.withCreateContainerCmdModifier(cmd ->
-    cmd.getHostConfig().withReadonlyRootfs(false)  // Must be writable
+        cmd.
+
+getHostConfig().
+
+withReadonlyRootfs(false)  // Must be writable
 );
 ```
 
 ### 10.2 Security Recommendations
 
 **DO:**
+
 - ✅ Use official Redis images (Docker Hub verified)
 - ✅ Pin image versions (`redis:7.4.0` not `redis:latest`)
 - ✅ Destroy containers after test (default behavior)
@@ -1428,6 +1562,7 @@ container.withCreateContainerCmdModifier(cmd ->
 - ✅ Apply resource limits (memory, CPU, PIDs)
 
 **DON'T:**
+
 - ❌ Use unverified third-party images
 - ❌ Share networks between test classes
 - ❌ Reuse containers across tests (state contamination)
@@ -1442,43 +1577,46 @@ container.withCreateContainerCmdModifier(cmd ->
 
 **Standalone Redis:**
 
-| Phase | Duration | Bottleneck |
-|-------|----------|------------|
-| Image pull (first run) | 5-30s | Network (registry download) |
-| Container create | 50-200ms | Docker API |
-| Redis startup | 100-500ms | Process initialization |
-| Health check (PING) | 50-200ms | Poll interval |
-| **Total (cached image)** | **0.2-1s** | Process initialization |
+| Phase                    | Duration   | Bottleneck                  |
+|--------------------------|------------|-----------------------------|
+| Image pull (first run)   | 5-30s      | Network (registry download) |
+| Container create         | 50-200ms   | Docker API                  |
+| Redis startup            | 100-500ms  | Process initialization      |
+| Health check (PING)      | 50-200ms   | Poll interval               |
+| **Total (cached image)** | **0.2-1s** | Process initialization      |
 
 **Sentinel Cluster (2 replicas, 3 sentinels):**
 
-| Phase | Duration | Bottleneck |
-|-------|----------|------------|
-| Master startup | 0.2-1s | Process init |
-| Replica startup (parallel) | 0.5-1.5s | Replication sync |
-| Sentinel startup | 0.3-0.8s | Process init |
-| Sentinel quorum check | 1-3s | Poll interval |
-| **Total** | **2-6.3s** | Sentinel quorum |
+| Phase                      | Duration   | Bottleneck       |
+|----------------------------|------------|------------------|
+| Master startup             | 0.2-1s     | Process init     |
+| Replica startup (parallel) | 0.5-1.5s   | Replication sync |
+| Sentinel startup           | 0.3-0.8s   | Process init     |
+| Sentinel quorum check      | 1-3s       | Poll interval    |
+| **Total**                  | **2-6.3s** | Sentinel quorum  |
 
 **Parallel vs Sequential (3 Standalone):**
 
-| Approach | Duration | Speedup |
-|----------|----------|---------|
-| Sequential | 3 × 1s = 3s | Baseline |
-| Parallel | max(1s, 1s, 1s) = 1s | **3× faster** |
+| Approach   | Duration             | Speedup       |
+|------------|----------------------|---------------|
+| Sequential | 3 × 1s = 3s          | Baseline      |
+| Parallel   | max(1s, 1s, 1s) = 1s | **3× faster** |
 
 ### 11.2 Memory Footprint
 
 **Per Container:**
+
 - Redis process: 5-10MB (empty dataset)
 - Container overhead: 10-20MB (kernel structures)
 - **Total:** ~15-30MB per container
 
 **Sentinel Cluster:**
+
 - 1 master + 2 replicas + 3 sentinels = 6 containers
 - Memory: 6 × 25MB = **150MB**
 
 **Resource Budget:**
+
 ```
 Standalone: 5 instances × 25MB = 125MB
 Sentinel:   3 clusters × 150MB = 450MB
@@ -1490,14 +1628,15 @@ Headroom:   1.5GB available for application
 
 **Breakdown (Typical Test):**
 
-| Phase | Duration | % of Total |
-|-------|----------|------------|
-| Container startup | 2-6s | 60-80% |
-| Test execution | 0.5-2s | 10-30% |
-| Container cleanup | 0.5-1s | 10-20% |
-| **Total** | **3-9s** | 100% |
+| Phase             | Duration | % of Total |
+|-------------------|----------|------------|
+| Container startup | 2-6s     | 60-80%     |
+| Test execution    | 0.5-2s   | 10-30%     |
+| Container cleanup | 0.5-1s   | 10-20%     |
+| **Total**         | **3-9s** | 100%       |
 
 **Optimization:**
+
 - Use `@BeforeAll` (1 cluster per class) vs `@BeforeEach` (1 cluster per method)
 - Parallel startup for multi-instance
 - Cached Docker images (skip pull)
@@ -1509,6 +1648,7 @@ Headroom:   1.5GB available for application
 ### 12.1 Logging Strategy
 
 **Container Logs (Auto-Captured):**
+
 ```java
 // Testcontainers automatically follows logs
 container.followOutput(new Slf4jLogConsumer(log));
@@ -1518,31 +1658,47 @@ container.followOutput(new Slf4jLogConsumer(log));
 ```
 
 **Diagnostic Logs:**
+
 ```java
 private static final Logger log = LoggerFactory.getLogger(SentinelContainerExtension.class);
 
-log.debug("🚀 Creating Sentinel cluster: {} replicas, {} sentinels, quorum={}", 
-          replicas, sentinels, quorum);
+log.
 
-log.info("✓ Master started: container={}, ip={}, port={}", 
-         master.getContainerId().substring(0, 12), 
-         master.getContainerIpAddress(), 
-         master.getFirstMappedPort());
+debug("🚀 Creating Sentinel cluster: {} replicas, {} sentinels, quorum={}",
+      replicas, sentinels, quorum);
 
-log.warn("⚠ Sentinel quorum check delayed: attempt {} of {}", attemptCount, maxAttempts);
+log.
 
-log.error("✗ Cluster creation failed: {}", e.getMessage(), e);
+info("✓ Master started: container={}, ip={}, port={}",
+     master.getContainerId().
+
+substring(0,12), 
+         master.
+
+getContainerIpAddress(), 
+         master.
+
+getFirstMappedPort());
+
+        log.
+
+warn("⚠ Sentinel quorum check delayed: attempt {} of {}",attemptCount, maxAttempts);
+
+log.
+
+error("✗ Cluster creation failed: {}",e.getMessage(),e);
 ```
 
 ### 12.2 Health Checks
 
 **Redis PING:**
+
 ```java
 public static boolean isRedisReady(GenericContainer<?> redis) {
     try {
         ExecResult result = redis.execInContainer("redis-cli", "ping");
-        return result.getStdout().trim().equals("PONG") && 
-               result.getExitCode() == 0;
+        return result.getStdout().trim().equals("PONG") &&
+                result.getExitCode() == 0;
     } catch (Exception e) {
         return false;
     }
@@ -1550,13 +1706,14 @@ public static boolean isRedisReady(GenericContainer<?> redis) {
 ```
 
 **Replication Status:**
+
 ```java
 public static boolean isReplicationSynced(GenericContainer<?> replica) {
     try {
         ExecResult result = replica.execInContainer("redis-cli", "info", "replication");
         String output = result.getStdout();
         return output.contains("master_link_status:up") &&
-               output.contains("master_sync_in_progress:0");
+                output.contains("master_sync_in_progress:0");
     } catch (Exception e) {
         return false;
     }
@@ -1564,11 +1721,12 @@ public static boolean isReplicationSynced(GenericContainer<?> replica) {
 ```
 
 **Sentinel Quorum:**
+
 ```java
 public static boolean isSentinelQuorumReached(GenericContainer<?> sentinel, String masterName) {
     try {
         ExecResult result = sentinel.execInContainer(
-            "redis-cli", "-p", "26379", "SENTINEL", "CKQUORUM", masterName
+                "redis-cli", "-p", "26379", "SENTINEL", "CKQUORUM", masterName
         );
         return result.getStdout().contains("OK");
     } catch (Exception e) {
@@ -1580,31 +1738,37 @@ public static boolean isSentinelQuorumReached(GenericContainer<?> sentinel, Stri
 ### 12.3 Troubleshooting Commands
 
 **Check Container Status:**
+
 ```bash
 docker ps --filter "name=redis"
 ```
 
 **View Container Logs:**
+
 ```bash
 docker logs <container_id>
 ```
 
 **Execute Redis CLI:**
+
 ```bash
 docker exec -it <container> redis-cli
 ```
 
 **Check Replication:**
+
 ```bash
 docker exec <replica> redis-cli info replication
 ```
 
 **Check Sentinel Status:**
+
 ```bash
 docker exec <sentinel> redis-cli -p 26379 SENTINEL MASTERS
 ```
 
 **Network Debugging:**
+
 ```bash
 # From container
 docker exec <container> ping <other_container_ip>
@@ -1620,7 +1784,9 @@ docker network inspect <network_id>
 ### 13.1 @RedisStandalone
 
 **Full Signature:**
+
 ```java
+
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
@@ -1628,33 +1794,42 @@ docker network inspect <network_id>
 @Repeatable(RedisStandalones.class)
 public @interface RedisStandalone {
     String id() default "default";
+
     String version() default "7.4";
+
     int database() default 0;
+
     boolean enableNetworkChaos() default false;
 }
 ```
 
 **Parameters:**
+
 - `id`: Unique identifier (required for multi-instance)
 - `version`: Redis Docker image tag
 - `database`: Redis database number (0-15)
 - `enableNetworkChaos`: Add NET_ADMIN + install tc/iptables
 
 **Usage:**
+
 ```java
+
 @RedisStandalone(
-    id = "cache",
-    version = "7.2-alpine",
-    database = 1,
-    enableNetworkChaos = true
+        id = "cache",
+        version = "7.2-alpine",
+        database = 1,
+        enableNetworkChaos = true
 )
-class CacheTest { }
+class CacheTest {
+}
 ```
 
 ### 13.2 @RedisSentinel
 
 **Full Signature:**
+
 ```java
+
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
@@ -1663,16 +1838,23 @@ class CacheTest { }
 @DisabledOnNonLinuxHost("Sentinel requires native Docker networking")
 public @interface RedisSentinel {
     String id() default "default";
+
     String version() default "7.4";
+
     String masterName() default "mymaster";
+
     int replicas() default 2;
+
     int sentinels() default 3;
+
     int quorum() default 2;
+
     boolean enableNetworkChaos() default false;
 }
 ```
 
 **Parameters:**
+
 - `id`: Unique identifier (required for multi-cluster)
 - `version`: Redis Docker image tag
 - `masterName`: Sentinel master name (used in config)
@@ -1682,6 +1864,7 @@ public @interface RedisSentinel {
 - `enableNetworkChaos`: Add NET_ADMIN to all containers
 
 **Recommended Configurations:**
+
 ```java
 // Development (minimal)
 @RedisSentinel(replicas = 1, sentinels = 1, quorum = 1)
@@ -1696,7 +1879,9 @@ public @interface RedisSentinel {
 ### 13.3 @InstallPackages
 
 **Signature:**
+
 ```java
+
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
@@ -1707,7 +1892,9 @@ public @interface InstallPackages {
 ```
 
 **Usage:**
+
 ```java
+
 @RedisStandalone
 @InstallPackages({"curl", "jq", "netcat"})
 class DebugTest {
@@ -1727,23 +1914,25 @@ class DebugTest {
 ### 14.1 Custom Redis Configuration
 
 **Provide Custom redis.conf:**
+
 ```java
+
 @RedisStandalone
 class CustomConfigTest {
-    
+
     @BeforeAll
     static void setupConfig(GenericContainer<?> redis) {
         String config = """
-            maxmemory 256mb
-            maxmemory-policy allkeys-lru
-            save ""
-            """;
-        
+                maxmemory 256mb
+                maxmemory-policy allkeys-lru
+                save ""
+                """;
+
         redis.copyFileToContainer(
-            MountableFile.forContent(config, 0644),
-            "/etc/redis/redis.conf"
+                MountableFile.forContent(config, 0644),
+                "/etc/redis/redis.conf"
         );
-        
+
         redis.withCommand("redis-server", "/etc/redis/redis.conf");
     }
 }
@@ -1752,33 +1941,34 @@ class CustomConfigTest {
 ### 14.2 Custom Failover Logic
 
 **Trigger Failover:**
+
 ```java
 public class FailoverHelper {
-    
+
     public static void triggerFailover(SentinelCluster cluster) throws Exception {
         GenericContainer<?> sentinel = cluster.getSentinels().get(0);
-        
+
         ExecResult result = sentinel.execInContainer(
-            "redis-cli", "-p", "26379",
-            "SENTINEL", "FAILOVER", cluster.getMasterName()
+                "redis-cli", "-p", "26379",
+                "SENTINEL", "FAILOVER", cluster.getMasterName()
         );
-        
+
         if (result.getExitCode() != 0) {
             throw new FailoverException(
-                "Failover command failed: " + result.getStderr()
+                    "Failover command failed: " + result.getStderr()
             );
         }
     }
-    
+
     public static void waitForPromotion(SentinelCluster cluster, Duration timeout) {
         String oldMasterIp = cluster.getMaster().getContainerIpAddress();
-        
+
         Awaitility.await()
-            .atMost(timeout)
-            .until(() -> {
-                String newMasterIp = getCurrentMasterIp(cluster);
-                return !newMasterIp.equals(oldMasterIp);
-            });
+                .atMost(timeout)
+                .until(() -> {
+                    String newMasterIp = getCurrentMasterIp(cluster);
+                    return !newMasterIp.equals(oldMasterIp);
+                });
     }
 }
 ```
@@ -1786,6 +1976,7 @@ public class FailoverHelper {
 ### 14.3 Stability Guarantees
 
 **Public API (Stable):**
+
 - `@RedisStandalone` annotation
 - `@RedisSentinel` annotation
 - `@InstallPackages` annotation
@@ -1794,6 +1985,7 @@ public class FailoverHelper {
 - `ResourceBudget` class
 
 **Internal API (Unstable):**
+
 - Extension implementations (may refactor lifecycle)
 - Container creation logic (may optimize startup)
 - Health check intervals (may tune performance)
@@ -1805,82 +1997,88 @@ public class FailoverHelper {
 ### 15.1 Complete Call Stack (Sentinel Cluster Creation)
 
 **Layer 1: Test Discovery (JUnit Platform)**
+
 ```java
 // org.junit.jupiter.engine.discovery.ClassSelector
 TestDescriptor discover(EngineDiscoveryRequest request) {
     Class<?> testClass = request.getSelectorsByType(ClassSelector.class)
-        .get(0)
-        .getJavaClass();
-    
+            .get(0)
+            .getJavaClass();
+
     // SentinelTest.class
     return new ClassTestDescriptor(testClass);
 }
 ```
 
 **Layer 2: Extension Registration**
+
 ```java
 // org.junit.jupiter.engine.descriptor.ClassBasedTestDescriptor
 void registerExtensions(ExtensionRegistry registry) {
     // Find @RedisSentinel
     RedisSentinel annotation = testClass.getAnnotation(RedisSentinel.class);
-    
+
     // Extract @ExtendWith from meta-annotation
     ExtendWith extWith = RedisSentinel.class.getAnnotation(ExtendWith.class);
-    
+
     // Register: SentinelContainerExtension.class
     registry.registerExtension(new SentinelContainerExtension());
 }
 ```
 
 **Layer 3: beforeAll Hook**
+
 ```java
 // SentinelContainerExtension.beforeAll()
 public void beforeAll(ExtensionContext context) {
     // Parse annotation
     RedisSentinel annotation = findAnnotation(context);
-    
+
     // Create cluster (blocks for 5-7s)
     SentinelCluster cluster = createCluster(annotation);
-    
+
     // Store in JUnit Store
     context.getStore(namespace).put("cluster", cluster);
 }
 ```
 
 **Layer 4: Container Creation (Testcontainers)**
+
 ```java
 // org.testcontainers.containers.GenericContainer
 public void start() {
     // Create container via Docker API
     String containerId = dockerClient.createContainerCmd(imageName)
-        .withNetworkMode(network.getId())
-        .withCmd(command)
-        .exec()
-        .getId();
-    
+            .withNetworkMode(network.getId())
+            .withCmd(command)
+            .exec()
+            .getId();
+
     // Start container
     dockerClient.startContainerCmd(containerId).exec();
-    
+
     // Wait for healthy
     waitUntilContainerStarted();
 }
 ```
 
 **Layer 5: Docker Java Client**
+
 ```java
 // com.github.dockerjava.core.command.StartContainerCmdImpl
 public Void exec() {
     // POST /containers/{id}/start
     Response response = webTarget
-        .path("/containers/" + containerId + "/start")
-        .request()
-        .post(null);
-    
+            .path("/containers/" + containerId + "/start")
+            .request()
+            .post(null);
+
     return null;
 }
 ```
 
 **Layer 6: Docker Daemon (Go)**
+
 ```go
 // moby/daemon/start.go
 func (daemon *Daemon) ContainerStart(name string) error {
@@ -1903,6 +2101,7 @@ func (daemon *Daemon) containerStart(container *Container) error {
 ```
 
 **Layer 7: OCI Runtime (runc)**
+
 ```c
 // runc/libcontainer/container_linux.go
 func (c *linuxContainer) start(process *Process) error {
@@ -1921,6 +2120,7 @@ func (c *linuxContainer) start(process *Process) error {
 ```
 
 **Layer 8: Linux Kernel (Process Creation)**
+
 ```c
 // kernel/fork.c
 SYSCALL_DEFINE5(clone, unsigned long, clone_flags, ...) {
@@ -1943,6 +2143,7 @@ SYSCALL_DEFINE5(clone, unsigned long, clone_flags, ...) {
 ```
 
 **Layer 9: Redis Process Startup**
+
 ```c
 // redis/src/server.c
 int main(int argc, char **argv) {
@@ -1968,6 +2169,7 @@ void initServer(void) {
 ```
 
 **Layer 10: Redis Accepts Connections**
+
 ```c
 // redis/src/networking.c
 void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
@@ -1982,6 +2184,7 @@ void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
 ```
 
 **Layer 11: Test Parameter Injection**
+
 ```java
 // JUnit Platform
 Object[] args = resolveParameters(testMethod, context);
@@ -1990,7 +2193,9 @@ Object[] args = resolveParameters(testMethod, context);
 SentinelCluster cluster = context.getStore(namespace).get("cluster", SentinelCluster.class);
 
 // Invoke test method
-testMethod.invoke(testInstance, cluster);  // @Test void test(SentinelCluster cluster) { }
+testMethod.
+
+invoke(testInstance, cluster);  // @Test void test(SentinelCluster cluster) { }
 ```
 
 **Total Stack Depth:** 11 layers (JUnit → Kernel → Redis)
@@ -2002,6 +2207,7 @@ testMethod.invoke(testInstance, cluster);  // @Test void test(SentinelCluster cl
 **Q: Why does Sentinel cluster startup take 5-7s?**
 
 **A:** Sequential dependencies:
+
 1. Master must start first: 1-2s (Docker create + Redis init)
 2. Replicas wait for master: 1-2s (replication sync)
 3. Sentinels wait for replicas: 1-2s (topology discovery)
@@ -2012,6 +2218,7 @@ testMethod.invoke(testInstance, cluster);  // @Test void test(SentinelCluster cl
 **Q: Why does multi-instance save 40-50% time?**
 
 **A:** Independent resources allow parallelization:
+
 - 3 standalone instances: No dependencies
 - Start on 3 threads: wall-clock = max(2s, 2s, 2s) = 2s
 - Sequential: 3 × 2s = 6s
@@ -2020,6 +2227,7 @@ testMethod.invoke(testInstance, cluster);  // @Test void test(SentinelCluster cl
 **Q: Why auto-skip Sentinel tests on macOS/Windows?**
 
 **A:** Docker networking architecture:
+
 - **Linux:** Native namespaces, containers see real IPs (172.18.0.5)
 - **macOS/Windows:** VM layer (HyperKit/WSL2), host cannot reach container IPs
 - **Sentinel:** Advertises container IP (172.18.0.5:6379) to clients
@@ -2034,25 +2242,30 @@ testMethod.invoke(testInstance, cluster);  // @Test void test(SentinelCluster cl
 ### 16.1 Specifications
 
 **JUnit 5:**
+
 - [JUnit 5 User Guide](https://junit.org/junit5/docs/current/user-guide/)
 - [Extension Model](https://junit.org/junit5/docs/current/user-guide/#extensions)
 - [ExtensionContext API](https://junit.org/junit5/docs/current/api/org.junit.jupiter.api/org/junit/jupiter/api/extension/ExtensionContext.html)
 
 **Redis:**
+
 - [Redis Sentinel Documentation](https://redis.io/docs/management/sentinel/)
 - [Redis Replication](https://redis.io/docs/management/replication/)
 - [MONITOR Command](https://redis.io/commands/monitor/)
 
 **Java:**
+
 - [JLS §9.6 Annotation Types](https://docs.oracle.com/javase/specs/jls/se21/html/jls-9.html#jls-9.6)
 - [JLS §9.6.3 Repeatable Annotation Types](https://docs.oracle.com/javase/specs/jls/se21/html/jls-9.html#jls-9.6.3)
 
 **Testcontainers:**
+
 - [Testcontainers Documentation](https://www.testcontainers.org/)
 - [GenericContainer API](https://www.testcontainers.org/features/creating_container/)
 - [Networking](https://www.testcontainers.org/features/networking/)
 
 **Docker:**
+
 - [Docker Engine API](https://docs.docker.com/engine/api/)
 - [Docker Networking](https://docs.docker.com/network/)
 - [OCI Runtime Specification](https://github.com/opencontainers/runtime-spec)
@@ -2072,7 +2285,8 @@ This framework solves it with one line: `@RedisSentinel(replicas = 2, sentinels 
 **What makes this approach engineering-sound:**
 
 1. **Correct quorum mathematics:**  
-   Quorum = `floor(sentinels / 2) + 1`. Framework calculates automatically. No off-by-one errors. No manual Sentinel configuration files.
+   Quorum = `floor(sentinels / 2) + 1`. Framework calculates automatically. No off-by-one errors. No manual Sentinel
+   configuration files.
 
 2. **Parallel startup optimization:**  
    Sequential startup: 8-12 seconds (master → replica → replica → sentinel → sentinel → sentinel).  
@@ -2086,30 +2300,35 @@ This framework solves it with one line: `@RedisSentinel(replicas = 2, sentinels 
    **Result:** Zero manual lifecycle management. Tests can't leak containers.
 
 4. **Chaos integration:**  
-   One flag (`enableNetworkChaos = true`) installs `tc` + `iptables` across all distributions (Debian, Alpine, Fedora). No manual package installation scripts.
+   One flag (`enableNetworkChaos = true`) installs `tc` + `iptables` across all distributions (Debian, Alpine, Fedora).
+   No manual package installation scripts.
 
 ### Engineering Trade-Off
 
 This framework prioritizes **realism over speed**.
 
 **Accept:**
+
 - 4-7 second startup (vs <1s for embedded-redis)
 - 6+ containers per Sentinel cluster (resource cost)
 - Docker dependency (no Windows/macOS native)
 - Linux-only network chaos
 
 **Gain:**
+
 - Real failover behavior (Sentinel quorum votes, election)
 - Real replication lag (not mocked timers)
 - Real command routing (read-from-replica verification)
 - Confidence that production topologies work
 
-**The philosophy:** Mocks test your assumptions. Real Redis tests reality. This framework makes real Redis testing practical.
+**The philosophy:** Mocks test your assumptions. Real Redis tests reality. This framework makes real Redis testing
+practical.
 
 ### Final Assessment
 
 **Before this framework:**  
-Developers avoided Sentinel testing (too complex). Production failovers failed (untested quorum configs, wrong timeout values, missing health checks).
+Developers avoided Sentinel testing (too complex). Production failovers failed (untested quorum configs, wrong timeout
+values, missing health checks).
 
 **With this framework:**  
 Sentinel testing is one annotation. Failover logic validates in CI/CD. Configuration errors caught before deploy.
@@ -2124,11 +2343,14 @@ Sentinel testing is one annotation. Failover logic validates in CI/CD. Configura
 
 ## About the Developer
 
-**Christian Schnapka** — Principal+ Embedded Engineer with 30 years of experience in distributed systems, testing frameworks, JUnit extensions, and Redis high-availability architectures.
+**Christian Schnapka** — Principal+ Embedded Engineer with 30 years of experience in distributed systems, testing
+frameworks, JUnit extensions, and Redis high-availability architectures.
 
 - **Company:** [Macstab GmbH](https://macstab.com)
 - **Email:** christian.schnapka@macstab.com
-- **Expertise:** Kubernetes, Cloud (AWS, Azure, GCP, OpenShift), Java/Python/Kotlin/C++/Node.js development, JUnit 5 extension architecture, Redis Sentinel orchestration, annotation-driven testing, parallel container startup, chaos engineering integration
+- **Expertise:** Kubernetes, Cloud (AWS, Azure, GCP, OpenShift), Java/Python/Kotlin/C++/Node.js development, JUnit 5
+  extension architecture, Redis Sentinel orchestration, annotation-driven testing, parallel container startup, chaos
+  engineering integration
 
 ---
 

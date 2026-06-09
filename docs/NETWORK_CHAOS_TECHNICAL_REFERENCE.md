@@ -4,7 +4,7 @@
 **Organization:** Macstab GmbH  
 **Module:** `macstab-chaos-network`  
 **Package:** `com.macstab.chaos.network`  
-**Specification Level:** Production-Ready, Kernel-Deep Analysis  
+**Specification Level:** Production-Ready, Kernel-Deep Analysis
 
 ---
 
@@ -32,15 +32,19 @@
 ## Reading Guide
 
 **For developers implementing chaos tests:**
+
 - Sections 1–5 → Architecture, usage patterns, API design
 
 **For architects evaluating kernel-level accuracy:**
+
 - Sections 6–7 → Linux Traffic Control internals, qdisc algorithms
 
 **For security auditors:**
+
 - Section 10 → Security model, namespace isolation, capability boundaries
 
 **For performance engineers:**
+
 - Section 11 → Performance measurements, overhead analysis, bottlenecks
 - Section 15 → Complete execution path (JVM → Kernel → NIC hardware)
 
@@ -52,15 +56,22 @@
 
 ### 1.1 Purpose
 
-**Problem:** Production systems fail due to network degradation (latency spikes, packet loss, partitions) that never appears in perfect test environments. Traditional integration tests assume zero network failures, creating false confidence that evaporates in production.
+**Problem:** Production systems fail due to network degradation (latency spikes, packet loss, partitions) that never
+appears in perfect test environments. Traditional integration tests assume zero network failures, creating false
+confidence that evaporates in production.
 
-**Solution:** Programmatic network fault injection inside ephemeral test containers using Linux Traffic Control (`tc`) subsystem. Enables testing real-world failure scenarios (cross-region replication lag, lossy mobile networks, network partitions) with zero infrastructure beyond Docker.
+**Solution:** Programmatic network fault injection inside ephemeral test containers using Linux Traffic Control (`tc`)
+subsystem. Enables testing real-world failure scenarios (cross-region replication lag, lossy mobile networks, network
+partitions) with zero infrastructure beyond Docker.
 
-**Innovation:** **A novel approach combining annotation-driven chaos with container-native tc execution.** No equivalent exists in Testcontainers, JUnit, Chaos Mesh (Kubernetes-only), Toxiproxy (proxy-based, not container-native), or Pumba (CLI-only, no programmatic API).
+**Innovation:** **A novel approach combining annotation-driven chaos with container-native tc execution.** No equivalent
+exists in Testcontainers, JUnit, Chaos Mesh (Kubernetes-only), Toxiproxy (proxy-based, not container-native), or Pumba (
+CLI-only, no programmatic API).
 
 ### 1.2 Scope
 
 **In Scope:**
+
 - Latency injection (fixed delay, jitter, distribution-based)
 - Packet loss simulation (random, burst, correlation models)
 - Network partitioning (container isolation via iptables)
@@ -70,6 +81,7 @@
 - Declarative API via annotations (`@RedisStandalone(enableNetworkChaos = true)`)
 
 **Out of Scope:**
+
 - Network corruption (TCP checksum errors) — requires kernel module
 - DNS resolution failures — requires custom DNS server configuration
 - SSL/TLS errors (certificate validation failures) — requires MITM proxy
@@ -97,53 +109,64 @@
 **Use kernel-level tc-based chaos injection when:**
 
 1. **You need L3/L4 network behavior:**  
-   Testing distributed systems (Redis replication, Kafka, database clusters) where TCP retransmissions, congestion control, and realistic packet scheduling matter.
+   Testing distributed systems (Redis replication, Kafka, database clusters) where TCP retransmissions, congestion
+   control, and realistic packet scheduling matter.
 
 2. **You want kernel-accurate behavior:**  
-   Toxiproxy operates at L7 (application layer) and cannot reproduce kernel-level TCP behavior such as retransmission timeouts, congestion window adjustments, or packet reordering under loss.
+   Toxiproxy operates at L7 (application layer) and cannot reproduce kernel-level TCP behavior such as retransmission
+   timeouts, congestion window adjustments, or packet reordering under loss.
 
 3. **You test stateful replication protocols:**  
-   Redis Sentinel failover, Raft consensus, database WAL replication — all sensitive to precise latency and loss characteristics that proxies cannot emulate.
+   Redis Sentinel failover, Raft consensus, database WAL replication — all sensitive to precise latency and loss
+   characteristics that proxies cannot emulate.
 
 **Do NOT use this approach when:**
 
 1. **You need HTTP/gRPC protocol-level errors:**  
-   Use Toxiproxy or WireMock for simulating HTTP 503 responses, gRPC `UNAVAILABLE` status codes, or malformed payloads. These are application-layer concerns outside tc's scope.
+   Use Toxiproxy or WireMock for simulating HTTP 503 responses, gRPC `UNAVAILABLE` status codes, or malformed payloads.
+   These are application-layer concerns outside tc's scope.
 
 2. **You run tests on macOS without Linux containers:**  
-   macOS Docker Desktop uses a Linux VM, but `tc` operations inside containers cannot affect the host network stack. Use Linux CI agents or dev containers for realistic testing.
+   macOS Docker Desktop uses a Linux VM, but `tc` operations inside containers cannot affect the host network stack. Use
+   Linux CI agents or dev containers for realistic testing.
 
 3. **You need deterministic discrete-event simulation:**  
-   Network simulators (ns-3, OMNeT++) provide reproducible, clock-controlled simulation. tc-based chaos uses real kernel scheduling (subject to CPU load, jitter).
+   Network simulators (ns-3, OMNeT++) provide reproducible, clock-controlled simulation. tc-based chaos uses real kernel
+   scheduling (subject to CPU load, jitter).
 
 ### 1.6 Comparison to Alternatives
 
-| Approach | Layer | Kernel-Accurate | TCP Behavior | Application Errors | Portability |
-|----------|-------|-----------------|--------------|-------------------|-------------|
-| **tc (this framework)** | L3/L4 | ✅ Yes | ✅ Retransmissions, congestion control | ❌ No | Linux only |
-| **Toxiproxy** | L7 | ❌ No | ❌ Proxy adds buffering | ✅ HTTP/gRPC errors | Cross-platform |
-| **Chaos Mesh** | L3/L4 | ✅ Yes | ✅ Kernel-level | ❌ No | Kubernetes only |
-| **Pumba** | L3/L4 | ✅ Yes | ✅ Kernel-level | ❌ No | CLI-only (no API) |
+| Approach                | Layer | Kernel-Accurate | TCP Behavior                          | Application Errors | Portability       |
+|-------------------------|-------|-----------------|---------------------------------------|--------------------|-------------------|
+| **tc (this framework)** | L3/L4 | ✅ Yes           | ✅ Retransmissions, congestion control | ❌ No               | Linux only        |
+| **Toxiproxy**           | L7    | ❌ No            | ❌ Proxy adds buffering                | ✅ HTTP/gRPC errors | Cross-platform    |
+| **Chaos Mesh**          | L3/L4 | ✅ Yes           | ✅ Kernel-level                        | ❌ No               | Kubernetes only   |
+| **Pumba**               | L3/L4 | ✅ Yes           | ✅ Kernel-level                        | ❌ No               | CLI-only (no API) |
 
 **Conclusion:**  
-For testing distributed systems under real network conditions, kernel-level tc-based injection is the most accurate approach. Proxies introduce artificial buffering and cannot reproduce TCP state machine behavior.
+For testing distributed systems under real network conditions, kernel-level tc-based injection is the most accurate
+approach. Proxies introduce artificial buffering and cannot reproduce TCP state machine behavior.
 
 ### 1.7 Trade-offs
 
 **Advantages:**
+
 - ✅ **Kernel-accurate network behavior:** Real TCP retransmissions, congestion control, packet reordering
 - ✅ **Zero external dependencies:** No proxy processes, no sidecar containers
 - ✅ **Namespace isolation:** tc operations confined to container network stack under standard Docker isolation
 - ✅ **Annotation-driven:** One flag (`enableNetworkChaos = true`) activates full chaos capability
 
 **Disadvantages:**
+
 - ❌ **Requires NET_ADMIN capability:** Security trade-off (mitigated by namespace isolation, see §10)
 - ❌ **Not portable to non-Linux environments:** macOS/Windows Docker containers lack `tc` support
 - ❌ **Setup overhead:** ~100-150ms per chaos operation (Docker exec + tc invocation)
 - ❌ **Non-deterministic:** Kernel scheduler jitter affects precise latency values (<10ms unreliable)
 
 **Engineering Decision:**  
-This framework prioritizes **realism over convenience**. If you need cross-platform testing or sub-10ms precision, use Toxiproxy or network simulators. If you need production-realistic TCP behavior, accept the Linux requirement and setup overhead.
+This framework prioritizes **realism over convenience**. If you need cross-platform testing or sub-10ms precision, use
+Toxiproxy or network simulators. If you need production-realistic TCP behavior, accept the Linux requirement and setup
+overhead.
 
 ---
 
@@ -213,19 +236,22 @@ end note
 ### 2.2 Dependencies
 
 **Compile Dependencies:**
+
 - `com.macstab.chaos:macstab-chaos-core` (package manager utilities)
 - `org.testcontainers:testcontainers` (1.19.0+)
 - `org.slf4j:slf4j-api` (2.0.0+)
 
 **Runtime Dependencies (Container-Internal):**
+
 - `iproute2` package (provides `tc` command)
-  - Debian/Ubuntu: `iproute2`
-  - Alpine: `iproute2`
-  - Fedora/RHEL: `iproute` (no "2" suffix)
+    - Debian/Ubuntu: `iproute2`
+    - Alpine: `iproute2`
+    - Fedora/RHEL: `iproute` (no "2" suffix)
 - `iptables` package (network partitioning)
 - Linux kernel 3.10+ with `sch_netem` module loaded
 
 **Kernel Module Dependencies:**
+
 ```bash
 # Check if netem module available
 lsmod | grep sch_netem
@@ -235,6 +261,7 @@ modprobe sch_netem
 ```
 
 **No External Services Required:**
+
 - Operates entirely within container network namespace
 - No cloud APIs, no infrastructure controllers
 
@@ -276,11 +303,13 @@ end note
 ```
 
 **Trust Model:**
+
 - **Trusted:** Test code, Docker daemon, kernel
 - **Partially Trusted:** Container with NET_ADMIN (can modify its own network stack)
 - **Isolation Guarantee:** Network namespace ensures chaos limited to container scope
 
 **Security Invariants:**
+
 1. Container with NET_ADMIN **cannot** affect host network stack
 2. Container with NET_ADMIN **cannot** affect other containers' network stacks (separate namespaces)
 3. Container **cannot** escape via tc/iptables exploit (namespace isolation + seccomp)
@@ -292,18 +321,18 @@ end note
 
 ### 3.1 Glossary
 
-| Term | Definition | Specification |
-|------|------------|---------------|
-| **Traffic Control (tc)** | Linux kernel subsystem for packet scheduling, shaping, and policing | [iproute2 tc(8)](https://man7.org/linux/man-pages/man8/tc.8.html) |
-| **Qdisc (Queueing Discipline)** | Kernel object that holds and schedules network packets before transmission | [Linux net/sched/](https://elixir.bootlin.com/linux/latest/source/net/sched) |
-| **netem** | Network emulator qdisc: adds latency, loss, corruption, duplication | [netem(8)](https://man7.org/linux/man-pages/man8/tc-netem.8.html) |
-| **TBF (Token Bucket Filter)** | Rate-limiting qdisc using token bucket algorithm | [tc-tbf(8)](https://man7.org/linux/man-pages/man8/tc-tbf.8.html) |
-| **HTB (Hierarchical Token Bucket)** | Classful qdisc for hierarchical bandwidth allocation | [tc-htb(8)](https://man7.org/linux/man-pages/man8/tc-htb.8.html) |
-| **Network Namespace** | Linux kernel feature isolating network stack (interfaces, routing, iptables) | [network_namespaces(7)](https://man7.org/linux/man-pages/man7/network_namespaces.7.html) |
-| **NET_ADMIN Capability** | Linux capability allowing network administration (tc, iptables, route) | [capabilities(7)](https://man7.org/linux/man-pages/man7/capabilities.7.html) |
-| **Netlink** | Kernel/userspace communication protocol for network configuration | [netlink(7)](https://man7.org/linux/man-pages/man7/netlink.7.html) |
-| **RTNetlink** | Routing netlink family for tc/routing/interface configuration | [rtnetlink(7)](https://man7.org/linux/man-pages/man7/rtnetlink.7.html) |
-| **veth (Virtual Ethernet)** | Virtual network interface pair connecting namespaces | [veth(4)](https://man7.org/linux/man-pages/man4/veth.4.html) |
+| Term                                | Definition                                                                   | Specification                                                                            |
+|-------------------------------------|------------------------------------------------------------------------------|------------------------------------------------------------------------------------------|
+| **Traffic Control (tc)**            | Linux kernel subsystem for packet scheduling, shaping, and policing          | [iproute2 tc(8)](https://man7.org/linux/man-pages/man8/tc.8.html)                        |
+| **Qdisc (Queueing Discipline)**     | Kernel object that holds and schedules network packets before transmission   | [Linux net/sched/](https://elixir.bootlin.com/linux/latest/source/net/sched)             |
+| **netem**                           | Network emulator qdisc: adds latency, loss, corruption, duplication          | [netem(8)](https://man7.org/linux/man-pages/man8/tc-netem.8.html)                        |
+| **TBF (Token Bucket Filter)**       | Rate-limiting qdisc using token bucket algorithm                             | [tc-tbf(8)](https://man7.org/linux/man-pages/man8/tc-tbf.8.html)                         |
+| **HTB (Hierarchical Token Bucket)** | Classful qdisc for hierarchical bandwidth allocation                         | [tc-htb(8)](https://man7.org/linux/man-pages/man8/tc-htb.8.html)                         |
+| **Network Namespace**               | Linux kernel feature isolating network stack (interfaces, routing, iptables) | [network_namespaces(7)](https://man7.org/linux/man-pages/man7/network_namespaces.7.html) |
+| **NET_ADMIN Capability**            | Linux capability allowing network administration (tc, iptables, route)       | [capabilities(7)](https://man7.org/linux/man-pages/man7/capabilities.7.html)             |
+| **Netlink**                         | Kernel/userspace communication protocol for network configuration            | [netlink(7)](https://man7.org/linux/man-pages/man7/netlink.7.html)                       |
+| **RTNetlink**                       | Routing netlink family for tc/routing/interface configuration                | [rtnetlink(7)](https://man7.org/linux/man-pages/man7/rtnetlink.7.html)                   |
+| **veth (Virtual Ethernet)**         | Virtual network interface pair connecting namespaces                         | [veth(4)](https://man7.org/linux/man-pages/man4/veth.4.html)                             |
 
 ### 3.2 Linux Traffic Control Architecture
 
@@ -349,22 +378,26 @@ end note
 ```
 
 **Reference:**
+
 - [Linux Kernel Documentation: tc](https://www.kernel.org/doc/Documentation/networking/tc.txt)
 - [iproute2 Source: tc/](https://git.kernel.org/pub/scm/network/iproute2/iproute2.git/tree/tc)
 
 ### 3.3 Qdisc Hierarchy
 
 **Classless Qdiscs (Leaf Nodes):**
+
 - `pfifo_fast`: Default qdisc, 3-band priority FIFO
 - `netem`: Network emulator (delay, loss, corruption)
 - `TBF`: Token bucket filter (rate limiting)
 
 **Classful Qdiscs (Internal Nodes):**
+
 - `HTB`: Hierarchical token bucket (bandwidth allocation)
 - `CBQ`: Class-based queueing (deprecated, HTB preferred)
 - `HFSC`: Hierarchical fair-service curve
 
 **Default Hierarchy (No Chaos):**
+
 ```
 root qdisc pfifo_fast (handle 1:)
 ├─ Band 0 (priority 0, TOS=0x0)
@@ -373,6 +406,7 @@ root qdisc pfifo_fast (handle 1:)
 ```
 
 **Chaos Hierarchy (With Netem):**
+
 ```
 root qdisc netem (handle 1:)
   └─ delay 100ms
@@ -630,6 +664,7 @@ end note
     ```
 
 **Total Latency:**
+
 - Validation: 50ms (exec overhead)
 - Command construction: 10ms
 - Netlink communication: 30ms
@@ -637,6 +672,7 @@ end note
 - **Total setup:** ~100ms
 
 **Per-Packet Overhead:**
+
 - Enqueue: 500-2000ns (loss check + time calculation)
 - Dequeue: 300-1000ns (time comparison + hrtimer setup)
 
@@ -649,17 +685,20 @@ end note
 **Pattern:** Facade Pattern
 
 **Responsibilities:**
+
 1. Coordinate chaos operations across multiple containers
 2. Track chaos state (what chaos active on which container)
 3. Provide unified API for latency, loss, jitter, partitions
 4. Ensure cleanup on reset/destroy
 
 **Design Decision: Stateful Facade**
+
 - **Justification:** Needs to track which containers have chaos active (for resetAll())
 - **Trade-off:** Mutable state (thread-safety required) vs simpler stateless design
 - **Alternative rejected:** Stateless design would require caller to track chaos state
 
 **Structure:**
+
 ```java
 public class NetworkChaosController {
     private final List<GenericContainer<?>> allContainers;
@@ -689,6 +728,7 @@ public class NetworkChaosController {
 ```
 
 **Thread Safety:**
+
 - `chaosStateMap`: ConcurrentHashMap (concurrent reads/writes)
 - `allContainers`: Immutable (List.copyOf() in constructor)
 - Methods: Synchronized per-container (synchronized on containerId string)
@@ -698,11 +738,13 @@ public class NetworkChaosController {
 **Pattern:** Builder Pattern + Command Pattern
 
 **Responsibilities:**
+
 1. Construct valid tc command arrays
 2. Validate parameters (delay > 0, loss 0-100%, etc.)
 3. Handle distribution-specific tc syntax variations
 
 **Design Decision: Fluent Builder**
+
 ```java
 public class TCCommandBuilder {
     private String device = "eth0";
@@ -759,6 +801,7 @@ public class TCCommandBuilder {
 ```
 
 **Usage:**
+
 ```java
 String[] cmd = new TCCommandBuilder()
     .device("eth0")
@@ -776,11 +819,13 @@ container.execInContainer(cmd);
 **Pattern:** Immutable Value Object
 
 **Responsibilities:**
+
 1. Represent chaos configuration applied to container
 2. Timestamp chaos application for duration tracking
 3. Enable chaos state queries
 
 **Structure:**
+
 ```java
 public final class ChaosState {
     private final ChaosType type;        // LATENCY, PACKET_LOSS, PARTITION
@@ -805,6 +850,7 @@ public final class ChaosState {
 ```
 
 **Why Immutable:**
+
 - Thread-safe without synchronization
 - Safe to share across threads
 - Cannot be modified after construction (predictable state)
@@ -814,9 +860,11 @@ public final class ChaosState {
 ## 5.4 Real Scenario Walkthrough: Redis Replication Under Latency
 
 **Scenario:**  
-Primary Redis container + replica container. Inject 100ms latency on replica's network interface to simulate cross-region replication lag (US-west → EU-central).
+Primary Redis container + replica container. Inject 100ms latency on replica's network interface to simulate
+cross-region replication lag (US-west → EU-central).
 
 **Setup:**
+
 ```java
 @RedisSentinel(replicas = 1, enableNetworkChaos = true)
 class ReplicationLatencyTest {
@@ -866,37 +914,39 @@ class ReplicationLatencyTest {
 Injected latency affects multiple layers:
 
 - **TCP layer:**
-  - Increased RTT → slower congestion window growth (TCP slow start takes longer)
-  - Retransmission timeouts triggered if delay > RTO (200ms default Linux)
+    - Increased RTT → slower congestion window growth (TCP slow start takes longer)
+    - Retransmission timeouts triggered if delay > RTO (200ms default Linux)
 
 - **Redis replication:**
-  - Replication buffer grows (primary accumulates commands faster than replica consumes)
-  - Risk of buffer overflow if latency sustained + high write rate
+    - Replication buffer grows (primary accumulates commands faster than replica consumes)
+    - Risk of buffer overflow if latency sustained + high write rate
 
 - **Application layer (connection pools):**
-  - Threads block longer waiting for responses
-  - Pool exhaustion possible if request rate > (pool size / average response time)
-  - Circuit breakers may trip if timeout thresholds not tuned for latency
+    - Threads block longer waiting for responses
+    - Pool exhaustion possible if request rate > (pool size / average response time)
+    - Circuit breakers may trip if timeout thresholds not tuned for latency
 
 - **Retry mechanisms:**
-  - Exponential backoff strategies activated
-  - Cascading latency amplification (retry after 100ms → 200ms → 400ms)
+    - Exponential backoff strategies activated
+    - Cascading latency amplification (retry after 100ms → 200ms → 400ms)
 
 - **Distributed coordination (Sentinel):**
-  - Leader election delays (Raft consensus requires majority ACKs over slow network)
-  - Quorum votes timeout more frequently
-  - False-positive failure detection if heartbeat interval < network latency
+    - Leader election delays (Raft consensus requires majority ACKs over slow network)
+    - Quorum votes timeout more frequently
+    - False-positive failure detection if heartbeat interval < network latency
 
 **Conclusion:**
 
 This test reveals whether your application:
+
 - ✅ **Handles replication lag gracefully:** Timeouts configured with margin (e.g., 5× expected latency)
 - ✅ **Retries intelligently:** Exponential backoff with jitter (avoids thundering herd)
 - ✅ **Degrades gracefully:** Circuit breaker prevents cascading failures
 - ❌ **Fails catastrophically:** Connection pool exhaustion, database overload, data corruption from stale reads
 
 **Engineering Value:**  
-Without chaos testing, you discover these failure modes in production during Black Friday. With chaos testing, you discover them in CI/CD and fix configuration before deploy.
+Without chaos testing, you discover these failure modes in production during Black Friday. With chaos testing, you
+discover them in CI/CD and fix configuration before deploy.
 
 ---
 
@@ -907,6 +957,7 @@ Without chaos testing, you discover these failure modes in production during Bla
 **Source Code Location:** `net/sched/` in Linux kernel tree
 
 **Key Files:**
+
 - `net/sched/sch_api.c` — TC core (qdisc registration, netlink handler)
 - `net/sched/sch_netem.c` — Network emulator qdisc (delay, loss)
 - `net/sched/sch_tbf.c` — Token bucket filter (rate limiting)
@@ -960,6 +1011,7 @@ struct Qdisc {
 ```
 
 **Registration:**
+
 ```c
 // net/sched/sch_netem.c
 static struct Qdisc_ops netem_qdisc_ops __read_mostly = {
@@ -988,11 +1040,13 @@ module_init(netem_module_init);
 **Protocol Family:** `NETLINK_ROUTE` (RTNetlink)
 
 **Message Types:**
+
 - `RTM_NEWQDISC` (24) — Create/modify qdisc
 - `RTM_DELQDISC` (25) — Delete qdisc
 - `RTM_GETQDISC` (26) — Query qdisc
 
 **Message Structure:**
+
 ```c
 // Netlink message header (all netlink messages)
 struct nlmsghdr {
@@ -1022,6 +1076,7 @@ struct nlattr {
 ```
 
 **Example Netlink Message (Add Netem with 100ms Delay):**
+
 ```
 +---------------------------+
 | nlmsghdr                  |
@@ -1056,6 +1111,7 @@ struct nlattr {
 ```
 
 **Kernel Processing:**
+
 ```c
 // net/sched/sch_api.c
 static int rtnetlink_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh) {
@@ -1071,6 +1127,7 @@ static int rtnetlink_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh) {
 ```
 
 **Reference:**
+
 - [RFC 3549: Linux Netlink as an IP Services Protocol](https://www.rfc-editor.org/rfc/rfc3549.html)
 - [Netlink(7) Manual](https://man7.org/linux/man-pages/man7/netlink.7.html)
 - [RTNetlink(7) Manual](https://man7.org/linux/man-pages/man7/rtnetlink.7.html)
@@ -1086,6 +1143,7 @@ static int rtnetlink_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh) {
 **Source:** `net/sched/sch_netem.c`
 
 **Parameters:**
+
 ```c
 struct tc_netem_qopt {
     __u32 latency;      // Added latency (in clock ticks, 1 tick = 1µs)
@@ -1103,33 +1161,33 @@ struct tc_netem_qopt {
    ```bash
    tc qdisc add dev eth0 root netem delay 100ms
    ```
-   - Every packet delayed exactly 100ms
-   - Implementation: `cb->time_to_send = now + latency`
+    - Every packet delayed exactly 100ms
+    - Implementation: `cb->time_to_send = now + latency`
 
 2. **Uniform Jitter:**
    ```bash
    tc qdisc add dev eth0 root netem delay 100ms 25ms
    ```
-   - Delay uniformly distributed: [75ms, 125ms]
-   - Implementation:
-     ```c
-     jitter_ns = prandom_u32() % (2 * q->jitter) - q->jitter;
-     delay = q->latency + jitter_ns;
-     ```
+    - Delay uniformly distributed: [75ms, 125ms]
+    - Implementation:
+      ```c
+      jitter_ns = prandom_u32() % (2 * q->jitter) - q->jitter;
+      delay = q->latency + jitter_ns;
+      ```
 
 3. **Normal Distribution (Experimental):**
    ```bash
    tc qdisc add dev eth0 root netem delay 100ms 25ms distribution normal
    ```
-   - Delay follows Gaussian: μ=100ms, σ=25ms
-   - Uses pre-computed CDF table (`net/sched/normal.c`)
-   - Implementation:
-     ```c
-     // Sample from CDF using inverse transform
-     u32 rnd = prandom_u32() % NETEM_DIST_SIZE;
-     s32 offset = q->delay_dist[rnd];
-     delay = q->latency + offset;
-     ```
+    - Delay follows Gaussian: μ=100ms, σ=25ms
+    - Uses pre-computed CDF table (`net/sched/normal.c`)
+    - Implementation:
+      ```c
+      // Sample from CDF using inverse transform
+      u32 rnd = prandom_u32() % NETEM_DIST_SIZE;
+      s32 offset = q->delay_dist[rnd];
+      delay = q->latency + offset;
+      ```
 
 **Packet Loss Models:**
 
@@ -1137,47 +1195,48 @@ struct tc_netem_qopt {
    ```bash
    tc qdisc add dev eth0 root netem loss 5%
    ```
-   - Each packet has independent 5% drop probability
-   - Implementation:
-     ```c
-     if (prandom_u32() < q->loss) {
-         qdisc_drop(skb, sch);
-         return NET_XMIT_SUCCESS | __NET_XMIT_BYPASS;
-     }
-     ```
+    - Each packet has independent 5% drop probability
+    - Implementation:
+      ```c
+      if (prandom_u32() < q->loss) {
+          qdisc_drop(skb, sch);
+          return NET_XMIT_SUCCESS | __NET_XMIT_BYPASS;
+      }
+      ```
 
 2. **Burst Loss (Gilbert-Elliott Model):**
    ```bash
    tc qdisc add dev eth0 root netem loss 5% 25%
    ```
-   - 5% average loss, 25% correlation
-   - Models bursty loss (realistic for wireless)
-   - State machine:
-     ```
-     State: GOOD ──(5%)──> BAD
-                 <─(1-25%)──
-     ```
-   - Implementation:
-     ```c
-     if (q->loss_model == GE_MODEL) {
-         if (q->in_loss_state) {
-             // In BAD state, always drop
-             drop = 1;
-             // Transition GOOD with probability (1 - correlation)
-             if (prandom_u32() > q->loss_corr) {
-                 q->in_loss_state = 0;
-             }
-         } else {
-             // In GOOD state, drop with base probability
-             if (prandom_u32() < q->loss) {
-                 drop = 1;
-                 q->in_loss_state = 1;  // Transition to BAD
-             }
-         }
-     }
-     ```
+    - 5% average loss, 25% correlation
+    - Models bursty loss (realistic for wireless)
+    - State machine:
+      ```
+      State: GOOD ──(5%)──> BAD
+                  <─(1-25%)──
+      ```
+    - Implementation:
+      ```c
+      if (q->loss_model == GE_MODEL) {
+          if (q->in_loss_state) {
+              // In BAD state, always drop
+              drop = 1;
+              // Transition GOOD with probability (1 - correlation)
+              if (prandom_u32() > q->loss_corr) {
+                  q->in_loss_state = 0;
+              }
+          } else {
+              // In GOOD state, drop with base probability
+              if (prandom_u32() < q->loss) {
+                  drop = 1;
+                  q->in_loss_state = 1;  // Transition to BAD
+              }
+          }
+      }
+      ```
 
 **Internal Queue Management:**
+
 ```c
 // Enqueue with delay
 static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch, 
@@ -1230,6 +1289,7 @@ static struct sk_buff *netem_dequeue(struct Qdisc *sch) {
 ```
 
 **Reference:**
+
 - [netem(8) Manual](https://man7.org/linux/man-pages/man8/tc-netem.8.html)
 - [NetEm Documentation](https://www.kernel.org/doc/Documentation/networking/netem.txt)
 - [Gilbert-Elliott Model (IEEE)](https://ieeexplore.ieee.org/document/1054041)
@@ -1241,6 +1301,7 @@ static struct sk_buff *netem_dequeue(struct Qdisc *sch) {
 **Source:** `net/sched/sch_tbf.c`
 
 **Algorithm:**
+
 ```
 bucket_size = rate × burst_time
 tokens = min(bucket_size, tokens + rate × Δt)
@@ -1253,6 +1314,7 @@ else:
 ```
 
 **Parameters:**
+
 ```bash
 tc qdisc add dev eth0 root tbf rate 1mbit burst 32kbit latency 400ms
 ```
@@ -1262,6 +1324,7 @@ tc qdisc add dev eth0 root tbf rate 1mbit burst 32kbit latency 400ms
 - `latency`: Max queueing delay before drop
 
 **Token Accumulation:**
+
 ```c
 // net/sched/sch_tbf.c
 static s64 tbf_tokens_update(struct tbf_sched_data *q, s64 *ptoks, s64 now) {
@@ -1284,6 +1347,7 @@ static s64 tbf_tokens_update(struct tbf_sched_data *q, s64 *ptoks, s64 now) {
 ```
 
 **Enqueue Decision:**
+
 ```c
 static int tbf_enqueue(struct sk_buff *skb, struct Qdisc *sch, 
                        struct sk_buff **to_free) {
@@ -1312,6 +1376,7 @@ static int tbf_enqueue(struct sk_buff *skb, struct Qdisc *sch,
 ```
 
 **Reference:**
+
 - [tc-tbf(8) Manual](https://man7.org/linux/man-pages/man8/tc-tbf.8.html)
 - [RFC 2697: Single Rate Three Color Marker (srTCM)](https://www.rfc-editor.org/rfc/rfc2697.html)
 - [RFC 2698: Two Rate Three Color Marker (trTCM)](https://www.rfc-editor.org/rfc/rfc2698.html)
@@ -1323,6 +1388,7 @@ static int tbf_enqueue(struct sk_buff *skb, struct Qdisc *sch,
 **Source:** `net/sched/sch_htb.c`
 
 **Hierarchy:**
+
 ```
 root HTB
 ├─ class 1:1 (rate 10mbit, ceil 12mbit)
@@ -1332,6 +1398,7 @@ root HTB
 ```
 
 **Class Structure:**
+
 ```c
 struct htb_class {
     struct Qdisc_class_common common;
@@ -1353,6 +1420,7 @@ struct htb_class {
 ```
 
 **Scheduling Algorithm:**
+
 ```c
 static struct sk_buff *htb_dequeue(struct Qdisc *sch) {
     struct htb_sched *q = qdisc_priv(sch);
@@ -1381,6 +1449,7 @@ static struct sk_buff *htb_dequeue(struct Qdisc *sch) {
 ```
 
 **Reference:**
+
 - [tc-htb(8) Manual](https://man7.org/linux/man-pages/man8/tc-htb.8.html)
 - [HTB Documentation](https://luxik.cdi.cz/~devik/qos/htb/)
 
@@ -1391,12 +1460,14 @@ static struct sk_buff *htb_dequeue(struct Qdisc *sch) {
 ### 8.1 Thread Safety Guarantees
 
 **NetworkChaosController:**
+
 - **Mutable State:** `chaosStateMap` (ConcurrentHashMap)
 - **Synchronization:** Per-container lock (synchronized on containerId)
 - **Safe Operations:** Concurrent chaos on **different containers**
 - **Unsafe Operations:** Concurrent chaos on **same container**
 
 **Implementation:**
+
 ```java
 public void injectLatency(GenericContainer<?> container, Duration delay) {
     String containerId = container.getContainerId();
@@ -1418,6 +1489,7 @@ public void injectLatency(GenericContainer<?> container, Duration delay) {
 ```
 
 **Why `intern()`:**
+
 - `containerId` is new String instance each call
 - `synchronized (containerId)` locks on different object each time (WRONG)
 - `synchronized (containerId.intern())` ensures same String instance (CORRECT)
@@ -1426,6 +1498,7 @@ public void injectLatency(GenericContainer<?> container, Duration delay) {
 ### 8.2 Race Conditions
 
 **Scenario 1: Concurrent Reset + Inject (SAFE)**
+
 ```java
 // Thread 1
 chaos.injectLatency(container, Duration.ofMillis(100));
@@ -1435,11 +1508,13 @@ chaos.reset(container);
 ```
 
 **Analysis:**
+
 - Both acquire same lock (containerId.intern())
 - Sequential execution guaranteed
 - **Result:** Either latency applied then reset, or reset then latency applied
 
 **Scenario 2: Concurrent Inject Different Containers (SAFE)**
+
 ```java
 // Thread 1
 chaos.injectLatency(container1, Duration.ofMillis(100));
@@ -1449,11 +1524,13 @@ chaos.injectLatency(container2, Duration.ofMillis(200));
 ```
 
 **Analysis:**
+
 - Different container IDs → different locks
 - Parallel execution
 - **Result:** Both operations succeed concurrently
 
 **Scenario 3: Concurrent tc Operations Same Container (KERNEL-LEVEL RACE)**
+
 ```java
 // Thread 1
 container.execInContainer("tc", "qdisc", "add", "dev", "eth0", "root", "netem", "delay", "100ms");
@@ -1463,6 +1540,7 @@ container.execInContainer("tc", "qdisc", "del", "dev", "eth0", "root");
 ```
 
 **Analysis:**
+
 - Both threads send RTM_NEWQDISC / RTM_DELQDISC to kernel concurrently
 - Kernel serializes operations via qdisc lock (`qdisc_lock()`)
 - **Result:** Undefined (last operation wins, or error if qdisc modified mid-operation)
@@ -1474,18 +1552,21 @@ container.execInContainer("tc", "qdisc", "del", "dev", "eth0", "root");
 **Happens-Before Relationships:**
 
 1. **Lock acquisition:** `synchronized (containerId.intern())`
-   - **Guarantee:** All writes before lock release visible after lock acquisition
-   - **Spec:** [JLS §17.4.4 Synchronization Order](https://docs.oracle.com/javase/specs/jls/se21/html/jls-17.html#jls-17.4.4)
+    - **Guarantee:** All writes before lock release visible after lock acquisition
+    - **Spec:
+      ** [JLS §17.4.4 Synchronization Order](https://docs.oracle.com/javase/specs/jls/se21/html/jls-17.html#jls-17.4.4)
 
 2. **ConcurrentHashMap put/get:**
-   - **Guarantee:** `put()` happens-before subsequent `get()` on same key
-   - **Implementation:** Uses volatile + CAS (JSR-133 semantics)
+    - **Guarantee:** `put()` happens-before subsequent `get()` on same key
+    - **Implementation:** Uses volatile + CAS (JSR-133 semantics)
 
 3. **Final field freeze (ChaosState):**
-   - **Guarantee:** Final fields visible to all threads after construction
-   - **Spec:** [JLS §17.5 final Field Semantics](https://docs.oracle.com/javase/specs/jls/se21/html/jls-17.html#jls-17.5)
+    - **Guarantee:** Final fields visible to all threads after construction
+    - **Spec:
+      ** [JLS §17.5 final Field Semantics](https://docs.oracle.com/javase/specs/jls/se21/html/jls-17.html#jls-17.5)
 
 **No Data Races:**
+
 - All shared mutable state protected by synchronization
 - Immutable objects (ChaosState) safe to share
 - Container instances thread-confined (single owner thread)
@@ -1532,16 +1613,19 @@ end note
 **Scenario 1: Missing NET_ADMIN Capability**
 
 **Symptom:**
+
 ```
 tc qdisc add dev eth0 root netem delay 100ms
 RTNETLINK answers: Operation not permitted
 ```
 
 **Root Cause:**
+
 - Container created without NET_ADMIN capability
 - Kernel rejects RTM_NEWQDISC (requires CAP_NET_ADMIN)
 
 **Detection:**
+
 ```java
 ExecResult result = container.execInContainer("tc", "qdisc", "add", ...);
 if (result.getStderr().contains("Operation not permitted")) {
@@ -1554,6 +1638,7 @@ if (result.getStderr().contains("Operation not permitted")) {
 ```
 
 **Solution:**
+
 ```java
 GenericContainer<?> container = new GenericContainer<>("redis:7.4-alpine")
     .withCreateContainerCmdModifier(cmd ->
@@ -1564,15 +1649,18 @@ GenericContainer<?> container = new GenericContainer<>("redis:7.4-alpine")
 **Scenario 2: Missing tc Binary**
 
 **Symptom:**
+
 ```
 ExecResult{exitCode=127, stderr="sh: tc: not found"}
 ```
 
 **Root Cause:**
+
 - Container image doesn't include iproute2 package
 - Alpine/Debian/Ubuntu require explicit installation
 
 **Detection:**
+
 ```java
 ExecResult checkTC = container.execInContainer("which", "tc");
 if (checkTC.getExitCode() != 0) {
@@ -1584,6 +1672,7 @@ if (checkTC.getExitCode() != 0) {
 ```
 
 **Automatic Fix:**
+
 ```java
 public void injectLatency(GenericContainer<?> container, Duration delay) {
     // Auto-install tools if missing
@@ -1597,16 +1686,19 @@ public void injectLatency(GenericContainer<?> container, Duration delay) {
 **Scenario 3: Qdisc Already Exists**
 
 **Symptom:**
+
 ```
 tc qdisc add dev eth0 root netem delay 100ms
 RTNETLINK answers: File exists
 ```
 
 **Root Cause:**
+
 - Attempted to add qdisc when one already attached to eth0 root
 - tc requires `change` or `replace` instead of `add`
 
 **Solution:**
+
 ```java
 // Option 1: Delete existing qdisc first
 container.execInContainer("tc", "qdisc", "del", "dev", "eth0", "root");
@@ -1619,16 +1711,19 @@ container.execInContainer("tc", "qdisc", "replace", "dev", "eth0", "root", "nete
 **Scenario 4: Invalid Parameters**
 
 **Symptom:**
+
 ```
 tc qdisc add dev eth0 root netem delay -100ms
 Illegal "delay"
 ```
 
 **Root Cause:**
+
 - Negative delay parameter
 - tc validates parameters before sending to kernel
 
 **Prevention:**
+
 ```java
 public void injectLatency(GenericContainer<?> container, Duration delay) {
     if (delay.isNegative()) {
@@ -1648,6 +1743,7 @@ public void injectLatency(GenericContainer<?> container, Duration delay) {
 ### 9.3 Idempotency & Retry Safety
 
 **NOT Idempotent by Default:**
+
 ```java
 // First call
 chaos.injectLatency(container, Duration.ofMillis(100));  // Success
@@ -1657,6 +1753,7 @@ chaos.injectLatency(container, Duration.ofMillis(200));  // FAILS (qdisc exists)
 ```
 
 **Idempotent with Replace:**
+
 ```java
 public void injectLatency(GenericContainer<?> container, Duration delay) {
     String[] cmd = new String[] {
@@ -1670,6 +1767,7 @@ public void injectLatency(GenericContainer<?> container, Duration delay) {
 ```
 
 **Now idempotent:**
+
 ```java
 chaos.injectLatency(container, Duration.ofMillis(100));  // Success
 chaos.injectLatency(container, Duration.ofMillis(200));  // Success (replaces 100ms with 200ms)
@@ -1682,12 +1780,14 @@ chaos.injectLatency(container, Duration.ofMillis(200));  // Success (replaces 10
 ### 10.1 Threat Model
 
 **Threats:**
+
 1. **Container Escape via tc Exploit:** Kernel vulnerability in tc subsystem exploited to escape namespace
 2. **Host Network Manipulation:** Container with NET_ADMIN affects host network
 3. **Other Container Interference:** Container with NET_ADMIN affects other containers
 4. **Resource Exhaustion:** Malicious qdisc consumes kernel memory
 
 **Attack Vectors:**
+
 ```plantuml
 @startuml
 actor Attacker
@@ -1716,6 +1816,7 @@ end note
 **1. Network Namespace Isolation**
 
 **Guarantee:** Operations limited to container's network namespace
+
 ```c
 // Container creation
 clone(CLONE_NEWNET | CLONE_NEWPID | ...);
@@ -1726,6 +1827,7 @@ execve("/sbin/tc", ...);
 ```
 
 **Test:**
+
 ```bash
 # Host
 ip link show
@@ -1745,6 +1847,7 @@ tc qdisc show dev eth0  # (host eth0 unchanged)
 **2. Capability Restriction (Principle of Least Privilege)**
 
 **Only Grant NET_ADMIN:**
+
 ```java
 container.withCreateContainerCmdModifier(cmd ->
     cmd.getHostConfig()
@@ -1754,12 +1857,14 @@ container.withCreateContainerCmdModifier(cmd ->
 ```
 
 **What NET_ADMIN Allows (in namespace):**
+
 - Configure network interfaces
 - Add/remove tc qdiscs
 - Modify iptables rules
 - Change routes
 
 **What NET_ADMIN Cannot Do:**
+
 - Access host network stack (namespace isolation)
 - Load kernel modules (requires CAP_SYS_MODULE)
 - Mount filesystems (requires CAP_SYS_ADMIN)
@@ -1768,11 +1873,13 @@ container.withCreateContainerCmdModifier(cmd ->
 **3. Seccomp Profile (Defense in Depth)**
 
 **Docker Default Seccomp:**
+
 - Blocks ~44 dangerous syscalls (e.g., `reboot`, `swapon`, `mount`)
 - Allows networking syscalls (socket, sendto, recvfrom)
 - tc uses allowed syscalls only (socket, sendto for netlink)
 
 **Custom Seccomp (Stricter):**
+
 ```json
 {
   "defaultAction": "SCMP_ACT_ERRNO",
@@ -1787,6 +1894,7 @@ container.withCreateContainerCmdModifier(cmd ->
 **4. Read-Only Root Filesystem (Where Possible)**
 
 **Limitation:** tc requires no persistent storage (operates via netlink only)
+
 ```java
 container.withCreateContainerCmdModifier(cmd ->
     cmd.getHostConfig().withReadonlyRootfs(true)
@@ -1798,6 +1906,7 @@ container.withCreateContainerCmdModifier(cmd ->
 ### 10.3 Security Recommendations
 
 **DO:**
+
 - ✅ Use official base images (verified publishers)
 - ✅ Drop all capabilities except NET_ADMIN
 - ✅ Enable Docker Content Trust (image signing)
@@ -1806,6 +1915,7 @@ container.withCreateContainerCmdModifier(cmd ->
 - ✅ Apply least privilege (minimal capabilities)
 
 **DON'T:**
+
 - ❌ Use privileged mode (`--privileged`)
 - ❌ Share network namespace with host (`--network host`)
 - ❌ Disable seccomp (`--security-opt seccomp=unconfined`)
@@ -1813,6 +1923,7 @@ container.withCreateContainerCmdModifier(cmd ->
 - ❌ Grant unnecessary capabilities (SYS_ADMIN, SYS_MODULE)
 
 **Reference:**
+
 - [CIS Docker Benchmark 5.3: Verify Linux kernel capabilities](https://www.cisecurity.org/benchmark/docker)
 - [NIST SP 800-190: Application Container Security Guide](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-190.pdf)
 
@@ -1824,25 +1935,26 @@ container.withCreateContainerCmdModifier(cmd ->
 
 **Operation: Inject 100ms Latency**
 
-| Phase | Duration | Bottleneck | Optimization |
-|-------|----------|------------|--------------|
-| Validation (NET_ADMIN check) | 20-50ms | Docker exec overhead | Cache result (skip after first check) |
-| Tool installation check | 10-30ms | `which tc` exec | Auto-install on first use only |
-| TC command construction | <1ms | String concatenation | Negligible |
-| Docker exec (tc qdisc add) | 30-80ms | Process fork + netlink roundtrip | Batch operations if possible |
-| Kernel qdisc setup | 5-20ms | Memory allocation + registration | Unavoidable |
-| **Total Setup** | **65-180ms** | Docker exec dominates | Pre-validate, cache checks |
+| Phase                        | Duration     | Bottleneck                       | Optimization                          |
+|------------------------------|--------------|----------------------------------|---------------------------------------|
+| Validation (NET_ADMIN check) | 20-50ms      | Docker exec overhead             | Cache result (skip after first check) |
+| Tool installation check      | 10-30ms      | `which tc` exec                  | Auto-install on first use only        |
+| TC command construction      | <1ms         | String concatenation             | Negligible                            |
+| Docker exec (tc qdisc add)   | 30-80ms      | Process fork + netlink roundtrip | Batch operations if possible          |
+| Kernel qdisc setup           | 5-20ms       | Memory allocation + registration | Unavoidable                           |
+| **Total Setup**              | **65-180ms** | Docker exec dominates            | Pre-validate, cache checks            |
 
 **Per-Packet Overhead (Steady State):**
 
-| Operation | Duration | Impact |
-|-----------|----------|--------|
-| Enqueue (netem_enqueue) | 500-2000ns | Loss check + time calculation |
-| RB-tree insert (delay queue) | 200-800ns | O(log n) insertion |
-| Dequeue (netem_dequeue) | 300-1000ns | Time comparison + hrtimer setup |
-| **Total Per-Packet** | **1-4µs** | Negligible vs 100ms delay |
+| Operation                    | Duration   | Impact                          |
+|------------------------------|------------|---------------------------------|
+| Enqueue (netem_enqueue)      | 500-2000ns | Loss check + time calculation   |
+| RB-tree insert (delay queue) | 200-800ns  | O(log n) insertion              |
+| Dequeue (netem_dequeue)      | 300-1000ns | Time comparison + hrtimer setup |
+| **Total Per-Packet**         | **1-4µs**  | Negligible vs 100ms delay       |
 
 **Measurements (Alpine 3.19, 1000 packets):**
+
 ```
 Baseline (no chaos):   RTT = 0.3ms (container → container)
 With 100ms delay:      RTT = 100.3ms
@@ -1856,20 +1968,22 @@ Packet processing:
 ### 11.2 Throughput Impact
 
 **Bandwidth Overhead (netem qdisc):**
+
 - **CPU:** <1% per Gbps (kernel efficiently scheduled)
 - **Memory:** ~64KB per 1000 queued packets (sk_buff structures)
 
 **Comparison (1 Gbps link, 1500-byte MTU):**
 
-| Scenario | Throughput | Packet Rate | CPU Usage |
-|----------|------------|-------------|-----------|
-| No qdisc | 1000 Mbps | ~83k pps | 0.5% |
-| pfifo_fast (default) | 1000 Mbps | ~83k pps | 0.6% |
-| netem (delay only) | 1000 Mbps | ~83k pps | 0.8% |
-| netem (delay + loss) | 1000 Mbps | ~83k pps | 1.2% |
-| TBF (rate limit) | 100 Mbps | ~8.3k pps | 0.7% |
+| Scenario             | Throughput | Packet Rate | CPU Usage |
+|----------------------|------------|-------------|-----------|
+| No qdisc             | 1000 Mbps  | ~83k pps    | 0.5%      |
+| pfifo_fast (default) | 1000 Mbps  | ~83k pps    | 0.6%      |
+| netem (delay only)   | 1000 Mbps  | ~83k pps    | 0.8%      |
+| netem (delay + loss) | 1000 Mbps  | ~83k pps    | 1.2%      |
+| TBF (rate limit)     | 100 Mbps   | ~8.3k pps   | 0.7%      |
 
 **Memory Footprint (Kernel):**
+
 ```c
 sizeof(struct Qdisc) = 256 bytes               // Qdisc object
 sizeof(struct netem_sched_data) = 128 bytes    // Private data
@@ -1882,15 +1996,18 @@ Example (1000 packets queued):
 ### 11.3 Scalability Limits
 
 **Maximum Concurrent Qdiscs:**
+
 - **Per Interface:** 1 root + unlimited child qdiscs (classful qdiscs like HTB)
 - **Per System:** Limited by kernel memory (~10,000+ qdiscs feasible)
 
 **Maximum Queue Length:**
+
 - **netem Default:** 1000 packets
 - **Kernel Max:** 2^32 - 1 packets (4.3 billion, impractical due to memory)
 - **Realistic Max:** ~100,000 packets (~19 GB memory for 192 KB per 1000 packets)
 
 **Maximum Delay:**
+
 - **netem Limit:** 2^32 clock ticks = ~4,294 seconds (71 minutes)
 - **Practical Limit:** ~60 seconds (beyond this, TCP timeouts trigger)
 
@@ -1901,6 +2018,7 @@ Example (1000 packets queued):
 ### 12.1 Logging Strategy
 
 **SLF4J Integration:**
+
 ```java
 private static final Logger log = LoggerFactory.getLogger(NetworkChaosController.class);
 
@@ -1924,6 +2042,7 @@ public void injectLatency(GenericContainer<?> container, Duration delay) {
 ```
 
 **Structured Logging (Logback JSON):**
+
 ```json
 {
   "timestamp": "2026-03-21T12:00:00.123Z",
@@ -1940,6 +2059,7 @@ public void injectLatency(GenericContainer<?> container, Duration delay) {
 ### 12.2 Metrics (Micrometer Integration)
 
 **Planned Metrics:**
+
 ```java
 // Counter: Total chaos operations
 Counter.builder("chaos.network.operations")
@@ -1963,12 +2083,14 @@ Gauge.builder("chaos.network.active_containers", activeChaos, AtomicInteger::get
 ### 12.3 Diagnostic Commands
 
 **Verify Qdisc Applied:**
+
 ```bash
 docker exec <container> tc qdisc show dev eth0
 # qdisc netem 1: root refcnt 2 limit 1000 delay 100.0ms
 ```
 
 **Check Qdisc Statistics:**
+
 ```bash
 docker exec <container> tc -s qdisc show dev eth0
 # qdisc netem 1: root refcnt 2 limit 1000 delay 100.0ms
@@ -1977,6 +2099,7 @@ docker exec <container> tc -s qdisc show dev eth0
 ```
 
 **Measure Actual Latency:**
+
 ```bash
 # From host to container
 docker exec <container> ping -c 10 <target_ip>
@@ -1984,6 +2107,7 @@ docker exec <container> ping -c 10 <target_ip>
 ```
 
 **Trace Packet Flow (ftrace):**
+
 ```bash
 # Enable netem tracing
 echo 1 > /sys/kernel/debug/tracing/events/qdisc/enable
@@ -2003,29 +2127,35 @@ cat /sys/kernel/debug/tracing/trace
 **Issue: Chaos Appears Inactive (No Latency Observed)**
 
 **Step 1: Verify Qdisc Attached**
+
 ```bash
 docker exec <container> tc qdisc show dev eth0
 ```
 
 **Expected:**
+
 ```
 qdisc netem 1: root refcnt 2 limit 1000 delay 100.0ms
 ```
 
 **If shows `qdisc pfifo_fast`:**
+
 - Chaos not applied (check logs for errors)
 - Verify NET_ADMIN capability
 
 **Step 2: Check Interface Name**
+
 ```bash
 docker exec <container> ip link show
 ```
 
 **If primary interface is NOT `eth0`:**
+
 - Update `NetworkChaosController` with correct interface
 - Or auto-detect via `ip route show default`
 
 **Step 3: Test Latency**
+
 ```bash
 # Ping from container to external host
 docker exec <container> ping -c 5 8.8.8.8
@@ -2034,15 +2164,18 @@ docker exec <container> ping -c 5 8.8.8.8
 **Expected:** RTT ~100ms higher than baseline
 
 **If RTT unchanged:**
+
 - Qdisc may be on wrong interface
 - Ping may use different route (check routing table)
 
 **Step 4: Check Kernel Module**
+
 ```bash
 docker exec <container> lsmod | grep sch_netem
 ```
 
 **If missing:**
+
 ```bash
 # Load module (requires host privileges)
 modprobe sch_netem
@@ -2055,6 +2188,7 @@ modprobe sch_netem
 ### 13.1 Annotation-Based Configuration
 
 **@RedisStandalone with Network Chaos:**
+
 ```java
 @RedisStandalone(
     version = "7.4-alpine",
@@ -2074,6 +2208,7 @@ class NetworkChaosTest {
 ```
 
 **What `enableNetworkChaos = true` Does:**
+
 1. Adds NET_ADMIN capability to container
 2. Auto-installs `iproute2` and `iptables` packages
 3. Verifies `tc` command availability
@@ -2082,6 +2217,7 @@ class NetworkChaosTest {
 ### 13.2 Manual Configuration
 
 **Container Setup:**
+
 ```java
 GenericContainer<?> container = new GenericContainer<>("alpine:3.19")
     .withNetwork(network)
@@ -2104,6 +2240,7 @@ NetworkChaosController chaos = new NetworkChaosController(
 ### 13.3 Chaos Parameters
 
 **Latency:**
+
 ```java
 // Fixed delay
 chaos.injectLatency(container, Duration.ofMillis(100));
@@ -2117,6 +2254,7 @@ chaos.injectLatencyWithJitter(
 ```
 
 **Packet Loss:**
+
 ```java
 // Random loss
 chaos.injectPacketLoss(container, 0.05);  // 5% loss
@@ -2130,6 +2268,7 @@ chaos.injectPacketLoss(
 ```
 
 **Bandwidth Limiting:**
+
 ```java
 // Rate limit to 1 Mbps
 chaos.limitBandwidth(container, "1mbit");
@@ -2143,6 +2282,7 @@ chaos.limitBandwidth(
 ```
 
 **Network Partition:**
+
 ```java
 // Block all traffic between two containers
 chaos.partitionFrom(containerA, containerB);
@@ -2176,6 +2316,7 @@ public class PacketDuplicationController {
 ```
 
 **Usage:**
+
 ```java
 duplicationCtrl.injectDuplication(container, 10.0);  // 10% packets duplicated
 ```
@@ -2185,6 +2326,7 @@ duplicationCtrl.injectDuplication(container, 10.0);  // 10% packets duplicated
 **Example: Pareto Distribution (Heavy-Tailed Latency)**
 
 **Step 1: Generate Distribution Table**
+
 ```python
 import numpy as np
 from scipy.stats import pareto
@@ -2204,6 +2346,7 @@ with open('pareto.dist', 'wb') as f:
 ```
 
 **Step 2: Load into Container**
+
 ```java
 // Copy distribution table to container
 container.copyFileToContainer(
@@ -2225,6 +2368,7 @@ container.execInContainer(cmd);
 ### 14.3 Stability Guarantees
 
 **Public API (Stable):**
+
 - `NetworkChaosController.injectLatency()`
 - `NetworkChaosController.injectPacketLoss()`
 - `NetworkChaosController.reset()`
@@ -2232,11 +2376,13 @@ container.execInContainer(cmd);
 - `ChaosState` value object
 
 **Internal API (Unstable):**
+
 - `TCCommandBuilder` (may refactor command construction)
 - Network interface detection logic (may improve auto-detection)
 - Qdisc selection (may add HTB/CBQ support)
 
 **Compatibility:**
+
 - Minimum Java: 21
 - Minimum Docker Engine: 20.10 (API 1.41)
 - Minimum Linux Kernel: 3.10 (netem support)
@@ -2248,6 +2394,7 @@ container.execInContainer(cmd);
 ### 15.1 Complete Call Stack (Latency Injection)
 
 **Layer 1: Test Code (JVM Userspace)**
+
 ```java
 // Test method
 @Test
@@ -2262,6 +2409,7 @@ void testLatency() {
 ```
 
 **Stack:**
+
 ```
 NetworkChaosController.injectLatency()
   → TCCommandBuilder.build()
@@ -2269,6 +2417,7 @@ NetworkChaosController.injectLatency()
 ```
 
 **Layer 2: Testcontainers (Java Client)**
+
 ```java
 // org.testcontainers.containers.GenericContainer
 public ExecResult execInContainer(String... command) throws Exception {
@@ -2293,6 +2442,7 @@ public ExecResult execInContainer(String... command) throws Exception {
 ```
 
 **Layer 3: Docker Java Client (HTTP/Unix Socket)**
+
 ```java
 // com.github.dockerjava.core.command.ExecStartCmdImpl
 public Void exec(ResultCallback callback) {
@@ -2314,6 +2464,7 @@ public Void exec(ResultCallback callback) {
 ```
 
 **HTTP Request:**
+
 ```http
 POST /v1.41/exec/exec-abc123/start HTTP/1.1
 Host: /var/run/docker.sock
@@ -2326,6 +2477,7 @@ Content-Type: application/json
 ```
 
 **Layer 4: Docker Daemon (Go Runtime)**
+
 ```go
 // moby/daemon/exec.go
 func (daemon *Daemon) ContainerExecStart(ctx context.Context, name string, stdin io.ReadCloser, stdout io.Writer, stderr io.Writer) error {
@@ -2347,6 +2499,7 @@ func (daemon *Daemon) ContainerExecStart(ctx context.Context, name string, stdin
 ```
 
 **Layer 5: Linux Kernel (Process Creation)**
+
 ```c
 // kernel/fork.c
 SYSCALL_DEFINE5(clone, ...) {
@@ -2364,6 +2517,7 @@ SYSCALL_DEFINE5(clone, ...) {
 ```
 
 **Layer 6: Namespace Entry**
+
 ```c
 // kernel/nsproxy.c
 void switch_task_namespaces(struct task_struct *p, struct nsproxy *new) {
@@ -2380,6 +2534,7 @@ void switch_task_namespaces(struct task_struct *p, struct nsproxy *new) {
 ```
 
 **Layer 7: tc Binary Execution**
+
 ```c
 // iproute2/tc/tc.c
 int main(int argc, char **argv) {
@@ -2404,6 +2559,7 @@ int main(int argc, char **argv) {
 ```
 
 **Layer 8: Netlink Socket**
+
 ```c
 // glibc/socket/sendto.c
 ssize_t sendto(int sockfd, const void *buf, size_t len, int flags,
@@ -2414,6 +2570,7 @@ ssize_t sendto(int sockfd, const void *buf, size_t len, int flags,
 ```
 
 **Layer 9: Kernel Netlink Handler**
+
 ```c
 // net/netlink/af_netlink.c
 static int netlink_sendmsg(struct socket *sock, struct msghdr *msg, size_t len) {
@@ -2430,6 +2587,7 @@ static int netlink_sendmsg(struct socket *sock, struct msghdr *msg, size_t len) 
 ```
 
 **Layer 10: RTNetlink Receiver**
+
 ```c
 // net/core/rtnetlink.c
 static int rtnetlink_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh,
@@ -2445,6 +2603,7 @@ static int rtnetlink_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh,
 ```
 
 **Layer 11: TC Modify Qdisc**
+
 ```c
 // net/sched/sch_api.c
 static int tc_modify_qdisc(struct sk_buff *skb, struct nlmsghdr *n) {
@@ -2463,6 +2622,7 @@ static int tc_modify_qdisc(struct sk_buff *skb, struct nlmsghdr *n) {
 ```
 
 **Layer 12: Netem Qdisc Initialization**
+
 ```c
 // net/sched/sch_netem.c
 static int netem_init(struct Qdisc *sch, struct nlattr *opt) {
@@ -2487,6 +2647,7 @@ static int netem_init(struct Qdisc *sch, struct nlattr *opt) {
 ```
 
 **Layer 13: Packet Enqueue (Steady State)**
+
 ```c
 // net/sched/sch_netem.c
 static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch,
@@ -2507,6 +2668,7 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch,
 ```
 
 **Layer 14: hrtimer Callback (Dequeue Trigger)**
+
 ```c
 // net/sched/sch_netem.c
 static enum hrtimer_restart netem_watchdog(struct hrtimer *timer) {
@@ -2520,6 +2682,7 @@ static enum hrtimer_restart netem_watchdog(struct hrtimer *timer) {
 ```
 
 **Layer 15: Packet Dequeue**
+
 ```c
 // net/sched/sch_netem.c
 static struct sk_buff *netem_dequeue(struct Qdisc *sch) {
@@ -2544,6 +2707,7 @@ static struct sk_buff *netem_dequeue(struct Qdisc *sch) {
 ```
 
 **Layer 16: Network Device Driver**
+
 ```c
 // drivers/net/ethernet/.../driver.c (e.g., Intel igb)
 static netdev_tx_t igb_xmit_frame(struct sk_buff *skb, struct net_device *netdev) {
@@ -2562,6 +2726,7 @@ static netdev_tx_t igb_xmit_frame(struct sk_buff *skb, struct net_device *netdev
 ```
 
 **Layer 17: Physical NIC (Hardware)**
+
 - DMA engine reads packet from RAM
 - Ethernet framing (preamble, destination MAC, source MAC, EtherType, FCS)
 - PHY layer encoding (Manchester, 4B/5B, 8B/10B)
@@ -2574,6 +2739,7 @@ static netdev_tx_t igb_xmit_frame(struct sk_buff *skb, struct net_device *netdev
 **Q: Why does latency injection take 100-150ms?**
 
 **A:** Docker exec overhead dominates:
+
 1. HTTP request over Unix socket: 5ms
 2. Docker daemon namespace entry: 10ms
 3. Process fork (clone syscall): 15ms
@@ -2590,6 +2756,7 @@ static netdev_tx_t igb_xmit_frame(struct sk_buff *skb, struct net_device *netdev
 **Q: Why does each packet add only 1-4µs overhead?**
 
 **A:** Qdisc operations are highly optimized:
+
 1. Enqueue: O(1) loss check + O(1) time calculation + O(log n) RB-tree insert
 2. CPU cache hot (qdisc frequently accessed)
 3. No syscalls (pure kernel code path)
@@ -2600,6 +2767,7 @@ static netdev_tx_t igb_xmit_frame(struct sk_buff *skb, struct net_device *netdev
 **Q: Why can't we inject <10ms latency reliably?**
 
 **A:** hrtimer resolution limits:
+
 - Linux hrtimer resolution: ~100ns (nanosleep granularity)
 - But context switch overhead: ~5µs (scheduler latency)
 - Packet processing jitter: ~2-10µs (interrupt handling, cache misses)
@@ -2614,6 +2782,7 @@ static netdev_tx_t igb_xmit_frame(struct sk_buff *skb, struct net_device *netdev
 ### 16.1 Specifications
 
 **Linux Kernel:**
+
 - [Linux Kernel Documentation: tc](https://www.kernel.org/doc/Documentation/networking/tc.txt)
 - [Linux Source: net/sched/](https://elixir.bootlin.com/linux/latest/source/net/sched)
 - [Linux Namespaces(7)](https://man7.org/linux/man-pages/man7/namespaces.7.html)
@@ -2621,25 +2790,30 @@ static netdev_tx_t igb_xmit_frame(struct sk_buff *skb, struct net_device *netdev
 - [Capabilities(7)](https://man7.org/linux/man-pages/man7/capabilities.7.html)
 
 **Traffic Control:**
+
 - [tc(8) Manual](https://man7.org/linux/man-pages/man8/tc.8.html)
 - [tc-netem(8) Manual](https://man7.org/linux/man-pages/man8/tc-netem.8.html)
 - [tc-tbf(8) Manual](https://man7.org/linux/man-pages/man8/tc-tbf.8.html)
 - [tc-htb(8) Manual](https://man7.org/linux/man-pages/man8/tc-htb.8.html)
 
 **Netlink Protocol:**
+
 - [RFC 3549: Linux Netlink as an IP Services Protocol](https://www.rfc-editor.org/rfc/rfc3549.html)
 - [Netlink(7) Manual](https://man7.org/linux/man-pages/man7/netlink.7.html)
 - [RTNetlink(7) Manual](https://man7.org/linux/man-pages/man7/rtnetlink.7.html)
 
 **Docker:**
+
 - [Docker Engine API 1.41](https://docs.docker.com/engine/api/v1.41/)
 - [OCI Runtime Specification](https://github.com/opencontainers/runtime-spec)
 
 **Security:**
+
 - [CIS Docker Benchmark](https://www.cisecurity.org/benchmark/docker)
 - [NIST SP 800-190: Application Container Security Guide](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-190.pdf)
 
 **Algorithms:**
+
 - [Gilbert-Elliott Model (IEEE 1960)](https://ieeexplore.ieee.org/document/1054041)
 - [Token Bucket Algorithm (RFC 2697)](https://www.rfc-editor.org/rfc/rfc2697.html)
 - [Hierarchical Token Bucket (Devik 2002)](https://luxik.cdi.cz/~devik/qos/htb/)
@@ -2647,10 +2821,12 @@ static netdev_tx_t igb_xmit_frame(struct sk_buff *skb, struct net_device *netdev
 ### 16.2 Tools & Libraries
 
 **iproute2:**
+
 - [iproute2 Git Repository](https://git.kernel.org/pub/scm/network/iproute2/iproute2.git/)
 - [iproute2 Documentation](https://wiki.linuxfoundation.org/networking/iproute2)
 
 **Testcontainers:**
+
 - [Testcontainers Java](https://www.testcontainers.org/)
 - [Testcontainers API Reference](https://www.testcontainers.org/features/networking/)
 
@@ -2662,33 +2838,41 @@ static netdev_tx_t igb_xmit_frame(struct sk_buff *skb, struct net_device *netdev
 
 **Most integration tests assume perfect networks. Production networks are never perfect.**
 
-This framework solves a fundamental problem in distributed systems testing: **the testing gap between idealized local environments and chaotic production reality.**
+This framework solves a fundamental problem in distributed systems testing: **the testing gap between idealized local
+environments and chaotic production reality.**
 
 **What makes this framework unique:**
 
 1. **Kernel-level accuracy:**  
-   Proxies (Toxiproxy) add artificial buffering and cannot reproduce TCP state machine behavior. This framework uses Linux Traffic Control directly — the same subsystem managing production network stacks. Tests see real retransmissions, real congestion control, real packet scheduling.
+   Proxies (Toxiproxy) add artificial buffering and cannot reproduce TCP state machine behavior. This framework uses
+   Linux Traffic Control directly — the same subsystem managing production network stacks. Tests see real
+   retransmissions, real congestion control, real packet scheduling.
 
 2. **Zero infrastructure:**  
-   No Kubernetes. No chaos mesh operators. No separate environments. One annotation (`enableNetworkChaos = true`) activates full chaos capability inside ephemeral test containers.
+   No Kubernetes. No chaos mesh operators. No separate environments. One annotation (`enableNetworkChaos = true`)
+   activates full chaos capability inside ephemeral test containers.
 
 3. **Production-realistic failure modes:**  
-   Cross-region replication lag (100-300ms). Intercontinental packet loss (3-8%). Datacenter failover partitions. Pod drainage latency spikes. These are not edge cases — they are Tuesday afternoon in production.
+   Cross-region replication lag (100-300ms). Intercontinental packet loss (3-8%). Datacenter failover partitions. Pod
+   drainage latency spikes. These are not edge cases — they are Tuesday afternoon in production.
 
 4. **Annotation-driven simplicity:**  
-   Compare legacy chaos infrastructure (6-12 months setup, separate environments, manual orchestration) to this framework (5 minutes, CI/CD native, declarative API). Same chaos engineering principles — 100× faster time-to-value.
+   Compare legacy chaos infrastructure (6-12 months setup, separate environments, manual orchestration) to this
+   framework (5 minutes, CI/CD native, declarative API). Same chaos engineering principles — 100× faster time-to-value.
 
 ### Engineering Trade-Off
 
 This framework prioritizes **realism over convenience**.
 
 **Accept:**
+
 - Linux-only (tc unavailable on macOS/Windows containers)
 - NET_ADMIN capability requirement (mitigated by namespace isolation)
 - ~100-150ms setup overhead per chaos operation (Docker exec latency)
 - Non-deterministic timing (<10ms latency unreliable due to kernel jitter)
 
 **Gain:**
+
 - Production-accurate TCP behavior (retransmissions, congestion control, packet reordering)
 - Zero external dependencies (no proxy processes, no sidecar containers)
 - Tests that fail in development instead of production
@@ -2698,10 +2882,12 @@ This framework prioritizes **realism over convenience**.
 ### Final Assessment
 
 **Before this framework:**  
-Chaos engineering was exclusive to tech giants with dedicated infrastructure teams. Testing realistic network failures required months of setup and separate production-like environments.
+Chaos engineering was exclusive to tech giants with dedicated infrastructure teams. Testing realistic network failures
+required months of setup and separate production-like environments.
 
 **With this framework:**  
-Production-grade chaos testing is accessible to every development team. One annotation. Five minutes. Immediate feedback in CI/CD.
+Production-grade chaos testing is accessible to every development team. One annotation. Five minutes. Immediate feedback
+in CI/CD.
 
 **This is chaos engineering democratized.**
 
@@ -2713,11 +2899,13 @@ Production-grade chaos testing is accessible to every development team. One anno
 
 ## About the Developer
 
-**Christian Schnapka** — Principal+ Embedded Engineer with 30 years of experience in distributed systems, network chaos engineering, Linux kernel internals, and high-performance computing.
+**Christian Schnapka** — Principal+ Embedded Engineer with 30 years of experience in distributed systems, network chaos
+engineering, Linux kernel internals, and high-performance computing.
 
 - **Company:** [Macstab GmbH](https://macstab.com)
 - **Email:** christian.schnapka@macstab.com
-- **Expertise:** Kubernetes, Cloud (AWS, Azure, GCP, OpenShift), Java/Python/Kotlin/C++/Node.js development, Linux Traffic Control, qdisc algorithms, network namespace isolation, kernel-level chaos engineering
+- **Expertise:** Kubernetes, Cloud (AWS, Azure, GCP, OpenShift), Java/Python/Kotlin/C++/Node.js development, Linux
+  Traffic Control, qdisc algorithms, network namespace isolation, kernel-level chaos engineering
 
 ---
 
@@ -2725,5 +2913,6 @@ Production-grade chaos testing is accessible to every development team. One anno
 **Document Version:** 1.0 | **Last Updated:** 2026-03-21  
 Licensed under [Apache License 2.0](../LICENSE)
 
-*This documentation represents distinguished level technical depth covering the complete stack from JVM → Kernel → NIC hardware.*
+*This documentation represents distinguished level technical depth covering the complete stack from JVM → Kernel → NIC
+hardware.*
 

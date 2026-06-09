@@ -1,24 +1,27 @@
 # Redis Testing — Standalone, Sentinel, and Chaos
 
-The `macstab-chaos-redis` module provides two container provisioning annotations: `@RedisStandalone` for single-node Redis and `@RedisSentinel` for a full HA cluster (master + replicas + sentinel monitors). Both integrate with the chaos framework so you can inject faults at the connection, network, or syscall layer on top of any Redis topology.
+The `macstab-chaos-redis` module provides two container provisioning annotations: `@RedisStandalone` for single-node
+Redis and `@RedisSentinel` for a full HA cluster (master + replicas + sentinel monitors). Both integrate with the chaos
+framework so you can inject faults at the connection, network, or syscall layer on top of any Redis topology.
 
 ---
 
 ## `@RedisStandalone`
 
-Starts a single Redis container before all tests in the class and stops it after all tests complete. The container is shared across all tests in the class (singleton scope).
+Starts a single Redis container before all tests in the class and stops it after all tests complete. The container is
+shared across all tests in the class (singleton scope).
 
 ### Attributes
 
-| Attribute | Type | Default | Description |
-|---|---|---|---|
-| `id` | `String` | `"default"` | Unique identifier for this container within the test class. Required when multiple `@RedisStandalone` annotations are used on the same class. |
-| `version` | `String` | `"7.4"` | Docker image tag, e.g. `"7.4"`, `"7.2-alpine"`, `"6.2"`. |
-| `port` | `int` | `0` | Host port to expose Redis on. `0` = random available port (recommended for CI). |
-| `args` | `String[]` | `{}` | Additional `redis-server` CLI arguments, e.g. `{"--maxmemory", "256mb"}`. Do not use `--port` here — the module resolves the mapped port via the default Redis port. |
-| `enableNetworkChaos` | `boolean` | `false` | Adds `NET_ADMIN` capability to the container, enabling kernel-level network fault injection via `tc/netem` + `iptables`. Requires a Linux host or dev container. |
-| `enableConnectionChaos` | `boolean` | `false` | Injects `libchaos-net` via `LD_PRELOAD` before container start, enabling per-syscall errno injection on `connect`, `bind`, `accept`, `send`, `recv`, and `poll`. The Toxiproxy fallback inside `CompositeConnectionChaos` lazy-spawns on the first verb that requires it (e.g. bandwidth shaping). Orthogonal to `enableNetworkChaos` — both may be `true` simultaneously. |
-| `packages` | `String[]` | `{}` | Packages to install in the container after it starts. The framework auto-detects the Linux distribution and selects the appropriate package manager (apt, apk, dnf, yum, pacman, zypper). |
+| Attribute               | Type       | Default     | Description                                                                                                                                                                                                                                                                                                                                                                |
+|-------------------------|------------|-------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `id`                    | `String`   | `"default"` | Unique identifier for this container within the test class. Required when multiple `@RedisStandalone` annotations are used on the same class.                                                                                                                                                                                                                              |
+| `version`               | `String`   | `"7.4"`     | Docker image tag, e.g. `"7.4"`, `"7.2-alpine"`, `"6.2"`.                                                                                                                                                                                                                                                                                                                   |
+| `port`                  | `int`      | `0`         | Host port to expose Redis on. `0` = random available port (recommended for CI).                                                                                                                                                                                                                                                                                            |
+| `args`                  | `String[]` | `{}`        | Additional `redis-server` CLI arguments, e.g. `{"--maxmemory", "256mb"}`. Do not use `--port` here — the module resolves the mapped port via the default Redis port.                                                                                                                                                                                                       |
+| `enableNetworkChaos`    | `boolean`  | `false`     | Adds `NET_ADMIN` capability to the container, enabling kernel-level network fault injection via `tc/netem` + `iptables`. Requires a Linux host or dev container.                                                                                                                                                                                                           |
+| `enableConnectionChaos` | `boolean`  | `false`     | Injects `libchaos-net` via `LD_PRELOAD` before container start, enabling per-syscall errno injection on `connect`, `bind`, `accept`, `send`, `recv`, and `poll`. The Toxiproxy fallback inside `CompositeConnectionChaos` lazy-spawns on the first verb that requires it (e.g. bandwidth shaping). Orthogonal to `enableNetworkChaos` — both may be `true` simultaneously. |
+| `packages`              | `String[]` | `{}`        | Packages to install in the container after it starts. The framework auto-detects the Linux distribution and selects the appropriate package manager (apt, apk, dnf, yum, pacman, zypper).                                                                                                                                                                                  |
 
 ### Minimal example
 
@@ -53,7 +56,9 @@ class CacheEvictionTest {
 
 ## `@RedisStandalone` repeated — multiple standalone instances
 
-`@RedisStandalone` is a repeatable annotation. Place it multiple times on the same class to start independent Redis instances. The Java compiler wraps them in `@RedisStandalones` automatically — you never write `@RedisStandalones` directly.
+`@RedisStandalone` is a repeatable annotation. Place it multiple times on the same class to start independent Redis
+instances. The Java compiler wraps them in `@RedisStandalones` automatically — you never write `@RedisStandalones`
+directly.
 
 ```java
 @RedisStandalone(id = "cache",   version = "7.4")
@@ -73,7 +78,10 @@ class MultiInstanceTest {
 }
 ```
 
-Use multiple standalone instances when you need independent, isolated Redis nodes in the same test class — for example, testing failover between two separate caches, verifying that data written to one instance is not visible in another, or simulating multi-region independent stores. For genuine HA failover with Sentinel promotion, use `@RedisSentinel` instead.
+Use multiple standalone instances when you need independent, isolated Redis nodes in the same test class — for example,
+testing failover between two separate caches, verifying that data written to one instance is not visible in another, or
+simulating multi-region independent stores. For genuine HA failover with Sentinel promotion, use `@RedisSentinel`
+instead.
 
 Up to 5 standalone instances may be started per test class (resource budget). All instances start in parallel.
 
@@ -81,7 +89,8 @@ Up to 5 standalone instances may be started per test class (resource budget). Al
 
 ## `@RedisSentinel`
 
-Starts a full Redis Sentinel HA cluster: one master, N replicas, and M sentinel monitors, all connected on a shared Docker network. The entire cluster is provisioned before all tests in the class and torn down afterwards.
+Starts a full Redis Sentinel HA cluster: one master, N replicas, and M sentinel monitors, all connected on a shared
+Docker network. The entire cluster is provisioned before all tests in the class and torn down afterwards.
 
 ### Platform requirement
 
@@ -92,21 +101,22 @@ Starts a full Redis Sentinel HA cluster: one master, N replicas, and M sentinel 
 - ❌ macOS host with Docker Desktop (uses a lightweight Linux VM that breaks host-mode networking)
 - ❌ Windows host with Docker Desktop (WSL2/Hyper-V has the same restriction)
 
-`@RedisSentinel` includes `@DisabledOnNonLinuxHost`, so tests are automatically **skipped** (not failed) on unsupported hosts with a clear diagnostic message.
+`@RedisSentinel` includes `@DisabledOnNonLinuxHost`, so tests are automatically **skipped** (not failed) on unsupported
+hosts with a clear diagnostic message.
 
 ### Attributes
 
-| Attribute | Type | Default | Description |
-|---|---|---|---|
-| `id` | `String` | `"default"` | Cluster identifier within the test class. Required when multiple `@RedisSentinel` annotations are used. |
-| `version` | `String` | `"7.4"` | Docker image tag for all cluster nodes. |
-| `masterName` | `String` | `"mymaster"` | Sentinel master name used in `sentinel monitor` configuration and in client connection strings. |
-| `replicas` | `int` | `2` | Number of replica nodes (minimum 1 for HA). |
-| `sentinels` | `int` | `3` | Number of Sentinel monitor instances (3 recommended for real quorum). |
-| `quorum` | `int` | `2` | Minimum Sentinels that must agree before a failover is initiated. Recommended: `(sentinels / 2) + 1`. |
-| `enableNetworkChaos` | `boolean` | `false` | Adds `NET_ADMIN` capability to every node (master, replicas, sentinels). Enables per-container `tc/netem` latency, packet loss, and jitter injection. |
-| `enableConnectionChaos` | `boolean` | `false` | Injects `libchaos-net` via `LD_PRELOAD` into every node before start. Enables per-syscall errno injection at the libc socket layer on all cluster nodes. Orthogonal to `enableNetworkChaos`. |
-| `packages` | `String[]` | `{}` | Packages installed in every node (master + all replicas + all sentinels) after the cluster starts. |
+| Attribute               | Type       | Default      | Description                                                                                                                                                                                  |
+|-------------------------|------------|--------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `id`                    | `String`   | `"default"`  | Cluster identifier within the test class. Required when multiple `@RedisSentinel` annotations are used.                                                                                      |
+| `version`               | `String`   | `"7.4"`      | Docker image tag for all cluster nodes.                                                                                                                                                      |
+| `masterName`            | `String`   | `"mymaster"` | Sentinel master name used in `sentinel monitor` configuration and in client connection strings.                                                                                              |
+| `replicas`              | `int`      | `2`          | Number of replica nodes (minimum 1 for HA).                                                                                                                                                  |
+| `sentinels`             | `int`      | `3`          | Number of Sentinel monitor instances (3 recommended for real quorum).                                                                                                                        |
+| `quorum`                | `int`      | `2`          | Minimum Sentinels that must agree before a failover is initiated. Recommended: `(sentinels / 2) + 1`.                                                                                        |
+| `enableNetworkChaos`    | `boolean`  | `false`      | Adds `NET_ADMIN` capability to every node (master, replicas, sentinels). Enables per-container `tc/netem` latency, packet loss, and jitter injection.                                        |
+| `enableConnectionChaos` | `boolean`  | `false`      | Injects `libchaos-net` via `LD_PRELOAD` into every node before start. Enables per-syscall errno injection at the libc socket layer on all cluster nodes. Orthogonal to `enableNetworkChaos`. |
+| `packages`              | `String[]` | `{}`         | Packages installed in every node (master + all replicas + all sentinels) after the cluster starts.                                                                                           |
 
 ### Full example with Sentinel-aware client configuration
 
@@ -156,13 +166,16 @@ class MultiClusterTest {
 }
 ```
 
-Up to 3 Sentinel clusters may be started per test class. Clusters start in parallel (40–50% faster than sequential startup).
+Up to 3 Sentinel clusters may be started per test class. Clusters start in parallel (40–50% faster than sequential
+startup).
 
 ---
 
 ## Chaos + Redis — the combination
 
-The `macstab-chaos-testpacks-l3-redis` module provides L3 incident scenarios purpose-built for Redis: network flaps, failover storms, OOM eviction pressure, clock drift, cache avalanche, and slowlog spikes. These compose multiple low-level rules across connection, time, and memory domains simultaneously.
+The `macstab-chaos-testpacks-l3-redis` module provides L3 incident scenarios purpose-built for Redis: network flaps,
+failover storms, OOM eviction pressure, clock drift, cache avalanche, and slowlog spikes. These compose multiple
+low-level rules across connection, time, and memory domains simultaneously.
 
 ### Complete example
 
@@ -199,35 +212,37 @@ class RedisSentinelChaosTest {
 
 ### Annotation responsibilities
 
-| Annotation | Role |
-|---|---|
-| `@Testcontainers` | Testcontainers JUnit 5 lifecycle. |
-| `@ExtendWith(ChaosTestingExtension.class)` | Activates chaos rule injection and teardown around each test. |
-| `@SyscallLevelChaos({LibchaosLib.NET})` | Injects `libchaos-net` before container start. Required for network-syscall-level L3 scenarios. |
-| `@RedisSentinel(...)` | Provisions the full HA cluster before the test class runs. |
-| `@IncidentChaosRedisNetworkFlap` | Method-level L3 incident — applies the multi-domain flap scenario for this test only. |
+| Annotation                                 | Role                                                                                            |
+|--------------------------------------------|-------------------------------------------------------------------------------------------------|
+| `@Testcontainers`                          | Testcontainers JUnit 5 lifecycle.                                                               |
+| `@ExtendWith(ChaosTestingExtension.class)` | Activates chaos rule injection and teardown around each test.                                   |
+| `@SyscallLevelChaos({LibchaosLib.NET})`    | Injects `libchaos-net` before container start. Required for network-syscall-level L3 scenarios. |
+| `@RedisSentinel(...)`                      | Provisions the full HA cluster before the test class runs.                                      |
+| `@IncidentChaosRedisNetworkFlap`           | Method-level L3 incident — applies the multi-domain flap scenario for this test only.           |
 
 ### Available L3 Redis incident annotations
 
-| Annotation | What it simulates |
-|---|---|
-| `@IncidentChaosRedisNetworkFlap` | Intermittent connection breaks between cluster nodes, triggering Sentinel re-election. |
-| `@IncidentChaosRedisFailoverStorm` | Rapid cascading failover — master loss followed by cascading replica promotion attempts. |
-| `@IncidentChaosRedisOomEviction` | Memory pressure leading to aggressive key eviction (requires `enableNetworkChaos` or a memory limit). |
-| `@IncidentChaosRedisClockDrift` | Clock skew between nodes — exercises TTL expiry race conditions and Sentinel timeout miscalculation. |
-| `@IncidentChaosRedisCacheAvalanche` | Simultaneous key expiry storm under high read concurrency. |
-| `@IncidentChaosRedisSlowlog` | Injected latency that pushes operations into slowlog territory. |
+| Annotation                          | What it simulates                                                                                     |
+|-------------------------------------|-------------------------------------------------------------------------------------------------------|
+| `@IncidentChaosRedisNetworkFlap`    | Intermittent connection breaks between cluster nodes, triggering Sentinel re-election.                |
+| `@IncidentChaosRedisFailoverStorm`  | Rapid cascading failover — master loss followed by cascading replica promotion attempts.              |
+| `@IncidentChaosRedisOomEviction`    | Memory pressure leading to aggressive key eviction (requires `enableNetworkChaos` or a memory limit). |
+| `@IncidentChaosRedisClockDrift`     | Clock skew between nodes — exercises TTL expiry race conditions and Sentinel timeout miscalculation.  |
+| `@IncidentChaosRedisCacheAvalanche` | Simultaneous key expiry storm under high read concurrency.                                            |
+| `@IncidentChaosRedisSlowlog`        | Injected latency that pushes operations into slowlog territory.                                       |
 
 ---
 
 ## Dependency
 
 **Gradle:**
+
 ```groovy
 testImplementation 'com.macstab.chaos:macstab-chaos-redis:1.0.0'
 ```
 
 **Maven:**
+
 ```xml
 <dependency>
   <groupId>com.macstab.chaos</groupId>
@@ -240,11 +255,13 @@ testImplementation 'com.macstab.chaos:macstab-chaos-redis:1.0.0'
 For the L3 Redis incident annotations, also add:
 
 **Gradle:**
+
 ```groovy
 testImplementation 'com.macstab.chaos:macstab-chaos-testpacks-l3-redis:1.0.0'
 ```
 
 **Maven:**
+
 ```xml
 <dependency>
   <groupId>com.macstab.chaos</groupId>
