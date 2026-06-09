@@ -113,13 +113,16 @@ class L1ProcessAnnotationEndToEndTest {
 
       assertThat(applied).hasSize(1);
 
-      final var conf = container.execInContainer("/bin/sh", "-c", "cat " + CONF);
+      // Strip LD_PRELOAD so the WILDCARD rule doesn't block the execve of `cat` itself.
+      final var conf = container.execInContainer(
+          "env", "-u", "LD_PRELOAD", "/bin/sh", "-c", "cat " + CONF);
       assertThat(conf.getStdout()).contains("EACCES");
 
       assertThat(L1AnnotationProcessor.removeAll(applied)).isTrue();
 
       final var after =
           container.execInContainer(
+              "env", "-u", "LD_PRELOAD",
               "/bin/sh", "-c", "[ -f " + CONF + " ] && cat " + CONF + " || true");
       assertThat(after.getStdout()).doesNotContain("EACCES");
     }
