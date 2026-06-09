@@ -18,8 +18,8 @@ class ProcessErrnoTest {
   }
 
   @Test
-  @DisplayName("12 errnos in the union across all process symbols")
+  @DisplayName("14 errnos in the union across all process symbols")
   void paletteBound() {
-    assertThat(ProcessErrno.values()).hasSize(12);
+    assertThat(ProcessErrno.values()).hasSize(14);
   }
 }
