@@ -2,6 +2,7 @@
 package com.macstab.chaos.jvm.annotation.l1.nio;
 
 import java.lang.annotation.ElementType;
+import java.lang.annotation.Repeatable;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
@@ -115,6 +116,7 @@ import com.macstab.chaos.jvm.api.OperationType;
  * @see ChaosNioChannelReadDelay
  * @see ChaosNioChannelConnectDelay
  */
+@Repeatable(ChaosNioSelectorSelectDelay.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.TYPE, ElementType.METHOD, ElementType.FIELD})
 @ChaosL1(translator = "com.macstab.chaos.jvm.annotation.l1.translators.DelayTranslator")
@@ -142,4 +144,14 @@ public @interface ChaosNioSelectorSelectDelay {
    * @return policy when the JVM agent is not active on the container
    */
   OnMissingEnv onMissingEnv() default OnMissingEnv.ERROR;
+
+  @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME)
+  @java.lang.annotation.Target({
+    java.lang.annotation.ElementType.TYPE,
+    java.lang.annotation.ElementType.METHOD,
+    java.lang.annotation.ElementType.FIELD
+  })
+  @interface Repeatable {
+    ChaosNioSelectorSelectDelay[] value();
+  }
 }
