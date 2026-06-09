@@ -237,7 +237,8 @@ public final class TcNetworkChaos implements NetworkChaos {
               "root",
               "netem",
               "loss",
-              String.format("%.2f%% %.2f%%", percent, corr));
+              String.format("%.2f%%", percent),
+              String.format("%.2f%%", corr));
 
       if (result.getExitCode() != 0) {
         throw new ChaosOperationFailedException(
