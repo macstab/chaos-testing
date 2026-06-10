@@ -288,6 +288,165 @@ No infrastructure changes. No CI pipeline modifications. No Docker Compose file.
 
 ---
 
+## Showcase — what you can test in 30 seconds
+
+### The one that kills JDK 21 apps silently
+
+JVM code cache fills over days under load. The JIT compiler stops compiling new methods. The JVM falls back to the interpreter. Throughput drops 10–50×. No exception. No OutOfMemoryError. No log line. Just a gradual slowdown that looks like a traffic spike until it isn't.
+
+```java
+@AppContainer
+@JvmAgentChaos
+@IncidentChaosJvmCodeCacheExhaustion  // fills JIT code cache → JVM falls back to interpreter
+class CodeCacheExhaustionTest {
+
+    @Test
+    void throughput_does_not_collapse_when_code_cache_is_full() {
+        final long p99LatencyMs = measureP99LatencyMs(app, Duration.ofSeconds(10));
+        // Without a fix, p99 climbs from 5ms to 250ms+ as interpreted code runs 10-50x slower
+        assertThat(p99LatencyMs).isLessThan(50);
+    }
+}
+```
+
+This failure accumulated silently for weeks before the Atlassian Confluence incident. No other testing tool can reproduce it — it requires injecting synthetic classes directly into the JVM until the code cache segment fills.
+
+---
+
+### The one that looks like a traffic spike
+
+CPU at 100%. Throughput at 30%. Health endpoint responds. No errors in logs. On-call spends 2 hours looking at dashboards before someone notices the safepoint log.
+
+```java
+@AppContainer
+@SyscallLevelChaos({LibchaosLib.NET, LibchaosLib.DNS})
+@JvmAgentChaos
+@IncidentChaosJvmSafepointCascade
+// What this annotation composes:
+//   1. SafepointStormStressor — repeated System.gc() → real STW safepoint pauses
+//   2. connection ECONNRESET — HikariCP connection validation fails during the pause
+//   3. dns EAI_AGAIN — ZooKeeper session expiry because DNS fails during pause
+//   All three fire simultaneously, the way they do in production.
+class SafepointCascadeTest {
+
+    @Test
+    void connection_pool_recovers_after_safepoint_cascade() {
+        // Start a safepoint storm in the background
+        // Assert: HikariCP reconnects, ZK session re-established, no request loss
+        assertThat(callService()).isEqualTo(200);
+    }
+}
+```
+
+---
+
+### The one no one believes until their pod dies
+
+G1 heap is at 60%. Application is running normally. OOM kill in the logs. No Java OOM. Exit code 137.
+
+```java
+@AppContainer
+@SyscallLevelChaos(LibchaosLib.MEMORY)
+@JvmAgentChaos
+@IncidentChaosK8sOomKillMidGc
+// G1 temporarily exceeds Xmx during GC region evacuation.
+// RSS spikes above the cgroup memory limit → OOM kill from the kernel, not from the JVM.
+// Heap metrics show 60% used. The JVM never threw OutOfMemoryError.
+class OomKillMidGcTest {
+
+    @Test
+    void service_restarts_cleanly_after_oom_kill() {
+        // Assert: liveness probe triggers restart, application recovers, no data corruption
+        assertThat(serviceIsHealthy()).isTrue();
+    }
+}
+```
+
+---
+
+### The one that freezes silently on JDK 21
+
+All carrier threads pinned. Virtual threads waiting. Request queue growing. Zero thread pool warnings. Zero stack traces. Health endpoint times out. Pod killed. Root cause never found in logs.
+
+```java
+@AppContainer
+@JvmAgentChaos
+@IncidentChaosJvmCarrierPinning
+// VirtualThreadCarrierPinningStressor creates daemon threads holding synchronized monitors.
+// With all ForkJoinPool carriers pinned, scheduled virtual threads can't run.
+// Only reproducible with JVM-internal access — no network tool touches this.
+class CarrierPinningTest {
+
+    @Test
+    void request_processing_continues_under_carrier_saturation() {
+        final var response = callService(Duration.ofSeconds(5));
+        // Fails if the application uses synchronized on a hot path with virtual threads.
+        // Fix: replace synchronized with ReentrantLock or restructure the code.
+        assertThat(response.statusCode()).isEqualTo(200);
+    }
+}
+```
+
+The annotation alone tells the story of the fix: if this test fails, you have a `synchronized` block on a hot path that will pin carriers in production under load.
+
+---
+
+### The one that corrupts data silently at 2am
+
+Hazelcast network partition. Two partitions form. Both accept writes. Partition heals. One side's writes survive. The other side's writes are gone. The application logged zero errors throughout.
+
+```java
+@AppContainer
+@SyscallLevelChaos({LibchaosLib.NET, LibchaosLib.DNS})
+@IncidentChaosHazelcastSplitBrain
+// connection ECONNRESET — member-to-member heartbeats fail → partition forms
+// dns EAI_AGAIN — discovery fails → partitions can't find each other to merge
+class HazelcastSplitBrainTest {
+
+    @Test
+    void distributed_map_survives_split_brain_without_data_loss() {
+        writeToAllNodes(Map.of("order-42", "CONFIRMED"));
+        triggerPartition();
+        writeToPartitionA(Map.of("order-42", "SHIPPED"));
+        writeToPartitionB(Map.of("order-42", "CANCELLED"));
+        healPartition();
+
+        // Only one write can survive. Assert your merge policy handles this correctly.
+        final var order = readFromAnyNode("order-42");
+        assertThat(order).isIn("SHIPPED", "CANCELLED");  // not missing, not duplicated
+    }
+}
+```
+
+---
+
+### The Feign retry amplification bomb
+
+One user request fails with ECONNREFUSED. Feign retries 3 times. Resilience4j retries 3 times. Nine upstream calls go out for one user request. Upstream is in brownout. All nine calls fail. The retry storm makes the brownout worse. Exponential traffic amplification from linear load.
+
+```java
+@AppContainer
+@SyscallLevelChaos(LibchaosLib.NET)
+@IncidentChaosFeignRetryAmplification
+// ChaosConnectEconnrefused on 50% of connect() calls — simulates the upstream brownout.
+// At Feign retry=3 × Resilience4j retry=3: 9 upstream calls per user request.
+class FeignRetryAmplificationTest {
+
+    @Test
+    void retry_storm_does_not_amplify_during_brownout() {
+        final var upstreamCallsBefore = upstreamCallCount();
+        sendUserRequests(100);
+        final var upstreamCallsAfter = upstreamCallCount();
+
+        // Assert: circuit breaker engaged before 9x amplification.
+        // Without a circuit breaker, 100 user requests → 900 upstream calls.
+        assertThat(upstreamCallsAfter - upstreamCallsBefore).isLessThan(300);
+    }
+}
+```
+
+---
+
 ## Documentation
 
 | Document | Description |
