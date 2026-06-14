@@ -11,20 +11,22 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Throws a configurable exception at the entry point of every method in the target container's
- * JVM whose class name starts with {@link #classPattern()} and whose method name starts with
- * {@link #methodNamePattern()}, providing a general-purpose fault-injection escape hatch for
+ * JVM whose class name starts with {@link #classPattern()} and whose method name starts with {@link
+ * #methodNamePattern()}, providing a general-purpose fault-injection escape hatch for
  * application-level methods.
  *
  * <h2>How it's created</h2>
  *
- * <p>Intercepts {@code METHOD_ENTER} operations via the JVM chaos agent using prefix-match
- * patterns for class and method names. The exception class is instantiated with the configured
- * message. In production, arbitrary method failures occur when a transient dependency (network,
- * disk, external API) becomes unavailable — this scenario simulates exactly that entry-point
- * failure without requiring the dependency to be broken.
+ * <p>Intercepts {@code METHOD_ENTER} operations via the JVM chaos agent using prefix-match patterns
+ * for class and method names. The exception class is instantiated with the configured message. In
+ * production, arbitrary method failures occur when a transient dependency (network, disk, external
+ * API) becomes unavailable — this scenario simulates exactly that entry-point failure without
+ * requiring the dependency to be broken.
  *
  * <h2>How bad it is</h2>
  *
@@ -65,15 +67,15 @@ import com.macstab.chaos.core.extension.Severity;
 public @interface CompositeChaosMethodExceptionInjection {
 
   /**
-   * Prefix matched against the binary class name (e.g. {@code "com.example.service"}).
-   * Defaults to {@code "*"} — matches every class. Override to scope the fault to a specific
-   * package or class prefix.
+   * Prefix matched against the binary class name (e.g. {@code "com.example.service"}). Defaults to
+   * {@code "*"} — matches every class. Override to scope the fault to a specific package or class
+   * prefix.
    */
   String classPattern() default "*";
 
   /**
-   * Prefix matched against the method name (e.g. {@code "save"}). Defaults to {@code "*"} —
-   * matches every method. Override to target a specific method name or prefix.
+   * Prefix matched against the method name (e.g. {@code "save"}). Defaults to {@code "*"} — matches
+   * every method. Override to target a specific method name or prefix.
    */
   String methodNamePattern() default "*";
 

@@ -32,10 +32,7 @@ public final class ThunderingHerdComposer implements L2Composer<CompositeChaosTh
             .apply(
                 container,
                 NetRule.errno(
-                    endpoint,
-                    NetOperation.CONNECT,
-                    Errno.ECONNREFUSED,
-                    annotation.toxicity()));
+                    endpoint, NetOperation.CONNECT, Errno.ECONNREFUSED, annotation.toxicity()));
     return List.of(handle);
   }
 

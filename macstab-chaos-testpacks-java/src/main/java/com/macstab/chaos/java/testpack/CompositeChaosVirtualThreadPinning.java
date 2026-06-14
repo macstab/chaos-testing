@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Pins virtual-thread carrier threads by holding them inside a {@code synchronized} block for
@@ -30,8 +32,8 @@ import com.macstab.chaos.core.extension.Severity;
  * <p>Severity: <strong>Moderate</strong><br>
  * Virtual threads queued behind pinned carriers cannot make progress. The effective parallelism of
  * the application drops to (carrier pool size − pinned count). Applications that assume unlimited
- * virtual-thread concurrency will stall. Symptoms are easy to detect via JFR
- * {@code jdk.VirtualThreadPinned} events.
+ * virtual-thread concurrency will stall. Symptoms are easy to detect via JFR {@code
+ * jdk.VirtualThreadPinned} events.
  *
  * <h2>Industry references</h2>
  *

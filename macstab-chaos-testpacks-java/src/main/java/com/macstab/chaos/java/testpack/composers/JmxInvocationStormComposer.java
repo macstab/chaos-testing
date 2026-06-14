@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosJmxInvocationStorm;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
@@ -14,13 +15,13 @@ import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
 import com.macstab.chaos.jvm.api.OperationType;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
 
 /** L2 composer for {@link CompositeChaosJmxInvocationStorm}. */
 @Slf4j
-public final class JmxInvocationStormComposer implements L2Composer<CompositeChaosJmxInvocationStorm> {
+public final class JmxInvocationStormComposer
+    implements L2Composer<CompositeChaosJmxInvocationStorm> {
 
   /** Public no-arg constructor required by the L2 composer contract. */
   public JmxInvocationStormComposer() {}
@@ -35,11 +36,14 @@ public final class JmxInvocationStormComposer implements L2Composer<CompositeCha
         JvmSelectorKind.JVM_RUNTIME.build(EnumSet.of(OperationType.JMX_INVOKE));
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: JMX invocation storm — ReflectionException injected at probability "
-                + annotation.probability())
+            .description(
+                "L2: JMX invocation storm — ReflectionException injected at probability "
+                    + annotation.probability())
             .selector(selector)
-            .effect(ChaosEffect.injectException("javax.management.ReflectionException",
-                "injected JMX invocation failure by chaos L2"))
+            .effect(
+                ChaosEffect.injectException(
+                    "javax.management.ReflectionException",
+                    "injected JMX invocation failure by chaos L2"))
             .activationPolicy(ActivationPolicy.always())
             .build();
     final String scenarioId = JvmPlanAccumulator.instance().addScenario(container, scenario);

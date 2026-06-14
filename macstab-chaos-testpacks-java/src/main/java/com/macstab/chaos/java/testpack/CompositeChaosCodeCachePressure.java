@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Fills the JVM code cache by generating and JIT-compiling large numbers of synthetic methods,
@@ -21,9 +23,9 @@ import com.macstab.chaos.core.extension.Severity;
  *
  * <p>Applies a {@code CODE_CACHE_PRESSURE} stressor via the JVM chaos agent, which generates
  * synthetic class bytecode with many methods and triggers their JIT compilation. The target
- * footprint is approximately {@link #targetMb()} MB. In production, code-cache exhaustion occurs
- * in long-running services that perform heavy dynamic proxy generation (Spring, cglib, ByteBuddy)
- * or hot-deploy in containers without restarting the JVM.
+ * footprint is approximately {@link #targetMb()} MB. In production, code-cache exhaustion occurs in
+ * long-running services that perform heavy dynamic proxy generation (Spring, cglib, ByteBuddy) or
+ * hot-deploy in containers without restarting the JVM.
  *
  * <h2>How bad it is</h2>
  *

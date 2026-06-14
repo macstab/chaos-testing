@@ -11,11 +11,13 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>A single bit is flipped in the buffer returned by {@code read()} after libc returns
- * successfully. The corruption is applied with a very low probability ({@code toxicity=0.01}) —
- * 1 in 100 reads — to match real-world silent data corruption rates on failing storage hardware.
+ * successfully. The corruption is applied with a very low probability ({@code toxicity=0.01}) — 1
+ * in 100 reads — to match real-world silent data corruption rates on failing storage hardware.
  *
  * <h2>How it's created</h2>
  *
@@ -34,11 +36,11 @@ import com.macstab.chaos.core.extension.Severity;
  *
  * <h2>Industry references</h2>
  *
- * <p>Barroso et al. (Google, USENIX FAST 2008) measured DRAM error rates of 1–8 errors per
- * gigabyte per year in production fleets. Checksum-less storage layers (pre-ext4, certain SSDs)
- * can return wrong data without an I/O error; POSIX makes no guarantee of payload integrity on
- * {@code read()} success. Netflix Chaos Engineering explicitly tests for this via read-corruption
- * faults in their storage resilience suite.
+ * <p>Barroso et al. (Google, USENIX FAST 2008) measured DRAM error rates of 1–8 errors per gigabyte
+ * per year in production fleets. Checksum-less storage layers (pre-ext4, certain SSDs) can return
+ * wrong data without an I/O error; POSIX makes no guarantee of payload integrity on {@code read()}
+ * success. Netflix Chaos Engineering explicitly tests for this via read-corruption faults in their
+ * storage resilience suite.
  *
  * <h2>Example</h2>
  *

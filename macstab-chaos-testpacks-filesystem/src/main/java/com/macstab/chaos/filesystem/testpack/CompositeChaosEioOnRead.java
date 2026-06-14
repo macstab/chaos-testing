@@ -11,19 +11,21 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>A fraction of {@code read()} calls on paths under the target prefix fail with {@code EIO} —
- * input/output error. The probability defaults to {@code 0.5} (50 % of reads fail), modelling
- * a partially-degraded storage device where some sectors are still readable but others are not.
+ * input/output error. The probability defaults to {@code 0.5} (50 % of reads fail), modelling a
+ * partially-degraded storage device where some sectors are still readable but others are not.
  *
  * <h2>How it's created</h2>
  *
  * <p>Injects {@code IoRule.errno(path, READ, EIO, 0.5)} via libchaos-io. In production, EIO on
- * reads is produced by: bad sectors on spinning disk (HDD SMART reallocated sector event), an
- * NVMe flash-cell wearing out, a SAN fabric transient, or an iSCSI multipath failure leaving only
- * a degraded path. Unlike ENOSPC (no space) the EIO error is spatial — some reads succeed, some
- * do not, making it far harder to detect without systematic retry coverage.
+ * reads is produced by: bad sectors on spinning disk (HDD SMART reallocated sector event), an NVMe
+ * flash-cell wearing out, a SAN fabric transient, or an iSCSI multipath failure leaving only a
+ * degraded path. Unlike ENOSPC (no space) the EIO error is spatial — some reads succeed, some do
+ * not, making it far harder to detect without systematic retry coverage.
  *
  * <h2>How bad it is</h2>
  *
@@ -36,9 +38,9 @@ import com.macstab.chaos.core.extension.Severity;
  *
  * <h2>Industry references</h2>
  *
- * <p>The POSIX specification for {@code read(2)} lists EIO as the return value for a physical
- * I/O error. AWS EBS surface EIO when a volume enters the "error" state during a host migration
- * stall. Google Colossus design principles explicitly budget for per-chunk EIO during disk fleet
+ * <p>The POSIX specification for {@code read(2)} lists EIO as the return value for a physical I/O
+ * error. AWS EBS surface EIO when a volume enters the "error" state during a host migration stall.
+ * Google Colossus design principles explicitly budget for per-chunk EIO during disk fleet
  * replacement cycles (Google Cloud Storage reliability whitepaper, 2022).
  *
  * <h2>Example</h2>

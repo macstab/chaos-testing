@@ -5,13 +5,13 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosSafepointStorm;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.api.ActivationPolicy;
 import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -30,9 +30,13 @@ public final class SafepointStormComposer implements L2Composer<CompositeChaosSa
             .mintScenarioId(CompositeChaosSafepointStorm.class.getSimpleName());
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: safepoint storm — forced STW safepoints every " + annotation.intervalMs() + " ms")
+            .description(
+                "L2: safepoint storm — forced STW safepoints every "
+                    + annotation.intervalMs()
+                    + " ms")
             .selector(ChaosSelector.stress(ChaosSelector.StressTarget.SAFEPOINT_STORM))
-            .effect(ChaosEffect.safepointStorm(java.time.Duration.ofMillis(annotation.intervalMs())))
+            .effect(
+                ChaosEffect.safepointStorm(java.time.Duration.ofMillis(annotation.intervalMs())))
             .activationPolicy(ActivationPolicy.always())
             .build();
     final String scenarioId = JvmPlanAccumulator.instance().addScenario(container, scenario);
@@ -55,7 +59,9 @@ public final class SafepointStormComposer implements L2Composer<CompositeChaosSa
   @Override
   public List<String> describe(final CompositeChaosSafepointStorm annotation) {
     return List.of(
-        "safepoint storm — forced stop-the-world safepoints every " + annotation.intervalMs() + " ms",
+        "safepoint storm — forced stop-the-world safepoints every "
+            + annotation.intervalMs()
+            + " ms",
         "severity=SEVERE — all application threads pause simultaneously; throughput collapses");
   }
 }

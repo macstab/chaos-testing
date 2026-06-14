@@ -32,10 +32,7 @@ public final class PortAlreadyInUseComposer implements L2Composer<CompositeChaos
             .apply(
                 container,
                 NetRule.errno(
-                    endpoint,
-                    NetOperation.BIND,
-                    Errno.EADDRINUSE,
-                    annotation.toxicity()));
+                    endpoint, NetOperation.BIND, Errno.EADDRINUSE, annotation.toxicity()));
     return List.of(handle);
   }
 

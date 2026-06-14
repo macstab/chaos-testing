@@ -31,64 +31,77 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public final class GrpcGoawayStormComposer implements L3Composer<IncidentChaosGrpcGoawayStorm> {
 
-    /** Public no-arg constructor required by the L3 composer contract. */
-    public GrpcGoawayStormComposer() {}
+  /** Public no-arg constructor required by the L3 composer contract. */
+  public GrpcGoawayStormComposer() {}
 
-    @Override
-    public List<Object> apply(
-            final GenericContainer<?> container, final IncidentChaosGrpcGoawayStorm annotation) {
-        final List<Object> handles = new ArrayList<>();
+  @Override
+  public List<Object> apply(
+      final GenericContainer<?> container, final IncidentChaosGrpcGoawayStorm annotation) {
+    final List<Object> handles = new ArrayList<>();
 
-        final RuleHandle recvResetHandle = CompositeConnectionChaos.standard().advanced()
-                .apply(container, NetRule.errno(
-                        Endpoint.wildcard(),
-                        NetOperation.RECV,
-                        Errno.ECONNRESET,
-                        annotation.toxicity()));
-        handles.add(recvResetHandle);
+    final RuleHandle recvResetHandle =
+        CompositeConnectionChaos.standard()
+            .advanced()
+            .apply(
+                container,
+                NetRule.errno(
+                    Endpoint.wildcard(),
+                    NetOperation.RECV,
+                    Errno.ECONNRESET,
+                    annotation.toxicity()));
+    handles.add(recvResetHandle);
 
-        final String scenarioId = JvmPlanAccumulator.instance()
-                .mintScenarioId(IncidentChaosGrpcGoawayStorm.class.getSimpleName());
-        final NamePattern cls = annotation.classPattern().isBlank()
-                ? NamePattern.any()
-                : NamePattern.prefix(annotation.classPattern());
-        final ChaosScenario scenario = ChaosScenario.builder(scenarioId)
-                .description("L3 gRPC GOAWAY storm — maxConnectionAge cycling UNAVAILABLE on in-flight streams")
-                .selector(ChaosSelector.method(EnumSet.of(OperationType.METHOD_EXIT), cls, NamePattern.any()))
-                .effect(ChaosEffect.injectException(
-                        "io.grpc.StatusRuntimeException", "UNAVAILABLE: connection closed by GOAWAY"))
-                .activationPolicy(ActivationPolicy.always())
-                .build();
-        handles.add(JvmPlanAccumulator.instance().addScenario(container, scenario));
+    final String scenarioId =
+        JvmPlanAccumulator.instance()
+            .mintScenarioId(IncidentChaosGrpcGoawayStorm.class.getSimpleName());
+    final NamePattern cls =
+        annotation.classPattern().isBlank()
+            ? NamePattern.any()
+            : NamePattern.prefix(annotation.classPattern());
+    final ChaosScenario scenario =
+        ChaosScenario.builder(scenarioId)
+            .description(
+                "L3 gRPC GOAWAY storm — maxConnectionAge cycling UNAVAILABLE on in-flight streams")
+            .selector(
+                ChaosSelector.method(EnumSet.of(OperationType.METHOD_EXIT), cls, NamePattern.any()))
+            .effect(
+                ChaosEffect.injectException(
+                    "io.grpc.StatusRuntimeException", "UNAVAILABLE: connection closed by GOAWAY"))
+            .activationPolicy(ActivationPolicy.always())
+            .build();
+    handles.add(JvmPlanAccumulator.instance().addScenario(container, scenario));
 
-        return handles;
-    }
+    return handles;
+  }
 
-    @Override
-    public void removeAll(final GenericContainer<?> container, final List<Object> handles) {
-        for (final Object h : handles) {
-            if (h instanceof RuleHandle rh) {
-                try {
-                    new LibchaosTransport(LibchaosLib.NET).removeRules(container, rh.owner());
-                } catch (final Exception e) {
-                    log.warn("GrpcGoawayStormComposer.removeAll: failed to remove connection rule", e);
-                }
-            } else if (h instanceof String scenarioId) {
-                try {
-                    JvmPlanAccumulator.instance().removeScenario(container, scenarioId);
-                } catch (final Exception e) {
-                    log.warn("GrpcGoawayStormComposer.removeAll: failed to remove JVM scenario {}", scenarioId, e);
-                }
-            }
+  @Override
+  public void removeAll(final GenericContainer<?> container, final List<Object> handles) {
+    for (final Object h : handles) {
+      if (h instanceof RuleHandle rh) {
+        try {
+          new LibchaosTransport(LibchaosLib.NET).removeRules(container, rh.owner());
+        } catch (final Exception e) {
+          log.warn("GrpcGoawayStormComposer.removeAll: failed to remove connection rule", e);
         }
+      } else if (h instanceof String scenarioId) {
+        try {
+          JvmPlanAccumulator.instance().removeScenario(container, scenarioId);
+        } catch (final Exception e) {
+          log.warn(
+              "GrpcGoawayStormComposer.removeAll: failed to remove JVM scenario {}", scenarioId, e);
+        }
+      }
     }
+  }
 
-    @Override
-    public List<String> describe(final IncidentChaosGrpcGoawayStorm annotation) {
-        return List.of(
-                "gRPC GOAWAY Storm — maxConnectionAge cycling causes UNAVAILABLE on in-flight streams",
-                "connection: RECV ECONNRESET toxicity=" + annotation.toxicity(),
-                "jvm: StatusRuntimeException(UNAVAILABLE) on class prefix '" + annotation.classPattern() + "' (METHOD_EXIT)",
-                "severity=SEVERE — steady 10-20 UNAVAILABLE errors/hour; no transparent retry (grpc-java #9566)");
-    }
+  @Override
+  public List<String> describe(final IncidentChaosGrpcGoawayStorm annotation) {
+    return List.of(
+        "gRPC GOAWAY Storm — maxConnectionAge cycling causes UNAVAILABLE on in-flight streams",
+        "connection: RECV ECONNRESET toxicity=" + annotation.toxicity(),
+        "jvm: StatusRuntimeException(UNAVAILABLE) on class prefix '"
+            + annotation.classPattern()
+            + "' (METHOD_EXIT)",
+        "severity=SEVERE — steady 10-20 UNAVAILABLE errors/hour; no transparent retry (grpc-java #9566)");
+  }
 }

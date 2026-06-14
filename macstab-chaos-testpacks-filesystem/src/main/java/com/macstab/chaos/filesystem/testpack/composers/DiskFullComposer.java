@@ -30,7 +30,9 @@ public final class DiskFullComposer implements L2Composer<CompositeChaosDiskFull
     final RuleHandle handle =
         CompositeFilesystemChaos.standard()
             .advanced()
-            .apply(container, IoRule.errno(path, IoOperation.WRITE, Errno.ENOSPC, annotation.toxicity()));
+            .apply(
+                container,
+                IoRule.errno(path, IoOperation.WRITE, Errno.ENOSPC, annotation.toxicity()));
     final List<Object> handles = new ArrayList<>();
     handles.add(handle);
     return handles;

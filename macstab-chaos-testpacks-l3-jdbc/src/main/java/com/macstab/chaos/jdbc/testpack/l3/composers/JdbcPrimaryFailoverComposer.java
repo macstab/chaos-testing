@@ -33,77 +33,96 @@ import lombok.extern.slf4j.Slf4j;
 
 /** L3 composer for {@link IncidentChaosJdbcPrimaryFailover}. */
 @Slf4j
-public final class JdbcPrimaryFailoverComposer implements L3Composer<IncidentChaosJdbcPrimaryFailover> {
+public final class JdbcPrimaryFailoverComposer
+    implements L3Composer<IncidentChaosJdbcPrimaryFailover> {
 
-    /** Public no-arg constructor required by the L3 composer contract. */
-    public JdbcPrimaryFailoverComposer() {}
+  /** Public no-arg constructor required by the L3 composer contract. */
+  public JdbcPrimaryFailoverComposer() {}
 
-    @Override
-    public List<Object> apply(
-            final GenericContainer<?> container, final IncidentChaosJdbcPrimaryFailover annotation) {
-        final List<Object> handles = new ArrayList<>();
+  @Override
+  public List<Object> apply(
+      final GenericContainer<?> container, final IncidentChaosJdbcPrimaryFailover annotation) {
+    final List<Object> handles = new ArrayList<>();
 
-        final RuleHandle connHandle = CompositeConnectionChaos.standard().advanced()
-                .apply(container, NetRule.errno(
-                        Endpoint.wildcard(),
-                        NetOperation.CONNECT,
-                        Errno.ECONNREFUSED,
-                        annotation.toxicity()));
-        handles.add(connHandle);
+    final RuleHandle connHandle =
+        CompositeConnectionChaos.standard()
+            .advanced()
+            .apply(
+                container,
+                NetRule.errno(
+                    Endpoint.wildcard(),
+                    NetOperation.CONNECT,
+                    Errno.ECONNREFUSED,
+                    annotation.toxicity()));
+    handles.add(connHandle);
 
-        final com.macstab.chaos.dns.api.RuleHandle dnsHandle = CompositeDnsChaos.standard().advanced()
-                .apply(container, DnsRule.eai(DnsSelector.anyForward(), EaiErrno.EAI_AGAIN));
-        handles.add(dnsHandle);
+    final com.macstab.chaos.dns.api.RuleHandle dnsHandle =
+        CompositeDnsChaos.standard()
+            .advanced()
+            .apply(container, DnsRule.eai(DnsSelector.anyForward(), EaiErrno.EAI_AGAIN));
+    handles.add(dnsHandle);
 
-        final String scenarioId = JvmPlanAccumulator.instance()
-                .mintScenarioId(IncidentChaosJdbcPrimaryFailover.class.getSimpleName());
-        final NamePattern cls = annotation.classPattern().isBlank()
-                ? NamePattern.any()
-                : NamePattern.prefix(annotation.classPattern());
-        final ChaosScenario scenario = ChaosScenario.builder(scenarioId)
-                .description("L3 JDBC primary failover — ECONNREFUSED + EAI_AGAIN + transient connection exception")
-                .selector(ChaosSelector.method(EnumSet.of(OperationType.METHOD_ENTER), cls, NamePattern.any()))
-                .effect(ChaosEffect.injectException(
-                        "java.sql.SQLTransientConnectionException", "primary failover in progress"))
-                .activationPolicy(ActivationPolicy.always())
-                .build();
-        handles.add(JvmPlanAccumulator.instance().addScenario(container, scenario));
+    final String scenarioId =
+        JvmPlanAccumulator.instance()
+            .mintScenarioId(IncidentChaosJdbcPrimaryFailover.class.getSimpleName());
+    final NamePattern cls =
+        annotation.classPattern().isBlank()
+            ? NamePattern.any()
+            : NamePattern.prefix(annotation.classPattern());
+    final ChaosScenario scenario =
+        ChaosScenario.builder(scenarioId)
+            .description(
+                "L3 JDBC primary failover — ECONNREFUSED + EAI_AGAIN + transient connection exception")
+            .selector(
+                ChaosSelector.method(
+                    EnumSet.of(OperationType.METHOD_ENTER), cls, NamePattern.any()))
+            .effect(
+                ChaosEffect.injectException(
+                    "java.sql.SQLTransientConnectionException", "primary failover in progress"))
+            .activationPolicy(ActivationPolicy.always())
+            .build();
+    handles.add(JvmPlanAccumulator.instance().addScenario(container, scenario));
 
-        return handles;
-    }
+    return handles;
+  }
 
-    @Override
-    public void removeAll(final GenericContainer<?> container, final List<Object> handles) {
-        for (final Object h : handles) {
-            if (h instanceof RuleHandle rh) {
-                try {
-                    new LibchaosTransport(LibchaosLib.NET).removeRules(container, rh.owner());
-                } catch (final Exception e) {
-                    log.warn("JdbcPrimaryFailoverComposer.removeAll: failed to remove connection rule", e);
-                }
-            } else if (h instanceof com.macstab.chaos.dns.api.RuleHandle dnsRh) {
-                try {
-                    new LibchaosTransport(LibchaosLib.DNS).removeRules(container, dnsRh.owner());
-                } catch (final Exception e) {
-                    log.warn("JdbcPrimaryFailoverComposer.removeAll: failed to remove DNS rule", e);
-                }
-            } else if (h instanceof String scenarioId) {
-                try {
-                    JvmPlanAccumulator.instance().removeScenario(container, scenarioId);
-                } catch (final Exception e) {
-                    log.warn("JdbcPrimaryFailoverComposer.removeAll: failed to remove JVM scenario {}", scenarioId, e);
-                }
-            }
+  @Override
+  public void removeAll(final GenericContainer<?> container, final List<Object> handles) {
+    for (final Object h : handles) {
+      if (h instanceof RuleHandle rh) {
+        try {
+          new LibchaosTransport(LibchaosLib.NET).removeRules(container, rh.owner());
+        } catch (final Exception e) {
+          log.warn("JdbcPrimaryFailoverComposer.removeAll: failed to remove connection rule", e);
         }
+      } else if (h instanceof com.macstab.chaos.dns.api.RuleHandle dnsRh) {
+        try {
+          new LibchaosTransport(LibchaosLib.DNS).removeRules(container, dnsRh.owner());
+        } catch (final Exception e) {
+          log.warn("JdbcPrimaryFailoverComposer.removeAll: failed to remove DNS rule", e);
+        }
+      } else if (h instanceof String scenarioId) {
+        try {
+          JvmPlanAccumulator.instance().removeScenario(container, scenarioId);
+        } catch (final Exception e) {
+          log.warn(
+              "JdbcPrimaryFailoverComposer.removeAll: failed to remove JVM scenario {}",
+              scenarioId,
+              e);
+        }
+      }
     }
+  }
 
-    @Override
-    public List<String> describe(final IncidentChaosJdbcPrimaryFailover annotation) {
-        return List.of(
-                "L3 incident: JDBC primary failover — replica promotion lag with DNS flap",
-                "connection: CONNECT ECONNREFUSED toxicity=" + annotation.toxicity(),
-                "dns: EAI_AGAIN on anyForward() — replica promotion DNS rebind",
-                "jvm: injectException(java.sql.SQLTransientConnectionException) on class='" + annotation.classPattern() + "'",
-                "severity=CRITICAL — all clients lose connectivity for duration of promotion window");
-    }
+  @Override
+  public List<String> describe(final IncidentChaosJdbcPrimaryFailover annotation) {
+    return List.of(
+        "L3 incident: JDBC primary failover — replica promotion lag with DNS flap",
+        "connection: CONNECT ECONNREFUSED toxicity=" + annotation.toxicity(),
+        "dns: EAI_AGAIN on anyForward() — replica promotion DNS rebind",
+        "jvm: injectException(java.sql.SQLTransientConnectionException) on class='"
+            + annotation.classPattern()
+            + "'",
+        "severity=CRITICAL — all clients lose connectivity for duration of promotion window");
+  }
 }

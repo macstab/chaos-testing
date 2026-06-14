@@ -11,18 +11,20 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
- * <p>Simulates a dramatic backward clock jump on {@code CLOCK_REALTIME} — "time travel" into
- * the past. The clock appears to jump backward by {@link #skewMs} milliseconds on every
- * {@code clock_gettime(CLOCK_REALTIME)} call, as if NTP stepped the clock backward after a
- * prolonged drift correction, or a VM was restored from a snapshot taken in the past.
+ * <p>Simulates a dramatic backward clock jump on {@code CLOCK_REALTIME} — "time travel" into the
+ * past. The clock appears to jump backward by {@link #skewMs} milliseconds on every {@code
+ * clock_gettime(CLOCK_REALTIME)} call, as if NTP stepped the clock backward after a prolonged drift
+ * correction, or a VM was restored from a snapshot taken in the past.
  *
  * <h2>How it is created</h2>
  *
- * <p>Applies one libchaos-time rule: {@code clock_gettime/realtime:OFFSET:-<skewMs>}. The offset
- * is applied deterministically (probability 1.0) to every realtime read. {@code CLOCK_MONOTONIC}
- * is untouched, creating a large negative delta between wall time and monotonic time — the exact
+ * <p>Applies one libchaos-time rule: {@code clock_gettime/realtime:OFFSET:-<skewMs>}. The offset is
+ * applied deterministically (probability 1.0) to every realtime read. {@code CLOCK_MONOTONIC} is
+ * untouched, creating a large negative delta between wall time and monotonic time — the exact
  * condition that breaks code assuming the two move in the same direction.
  *
  * <h2>How bad it is</h2>
@@ -32,9 +34,9 @@ import com.macstab.chaos.core.extension.Severity;
  * Consequences include: JWTs and signed URLs that were issued in the application's future appear
  * immediately expired; Redis TTLs computed from wall time expire instantly because the remaining
  * TTL computes as negative; Cassandra's LWT uses wall time for token comparison and may reject
- * writes from a node whose clock jumped back; Raft lease-based read optimizations fail because
- * the leader's lease expiry appears to be in the past. The default {@link #skewMs} of one hour
- * is chosen to exceed most token validity windows and TTL budgets.
+ * writes from a node whose clock jumped back; Raft lease-based read optimizations fail because the
+ * leader's lease expiry appears to be in the past. The default {@link #skewMs} of one hour is
+ * chosen to exceed most token validity windows and TTL budgets.
  *
  * <h2>Industry references</h2>
  *
@@ -70,8 +72,8 @@ import com.macstab.chaos.core.extension.Severity;
 public @interface CompositeChaosTimeTravel {
 
   /**
-   * Magnitude of the backward jump applied to {@code CLOCK_REALTIME}. Must be positive here —
-   * the composer negates it before building the rule. Defaults to 3 600 000 ms (one hour).
+   * Magnitude of the backward jump applied to {@code CLOCK_REALTIME}. Must be positive here — the
+   * composer negates it before building the rule. Defaults to 3 600 000 ms (one hour).
    *
    * @return jump magnitude in milliseconds; the realtime clock will appear this many ms in the past
    */

@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Injects a permanent circular monitor deadlock among {@link #threadCount()} synthetic daemon
@@ -19,10 +21,10 @@ import com.macstab.chaos.core.extension.Severity;
  *
  * <h2>How it's created</h2>
  *
- * <p>Applies a {@code DEADLOCK} stressor scenario via the JVM chaos agent. The agent spawns
- * {@code threadCount} synthetic threads in a lock-acquisition ring: thread 0 holds lock 0 and
- * waits for lock 1, thread 1 holds lock 1 and waits for lock 2, …, thread N-1 holds lock N-1
- * and waits for lock 0. All threads remain in the BLOCKED state for the lifetime of the rule.
+ * <p>Applies a {@code DEADLOCK} stressor scenario via the JVM chaos agent. The agent spawns {@code
+ * threadCount} synthetic threads in a lock-acquisition ring: thread 0 holds lock 0 and waits for
+ * lock 1, thread 1 holds lock 1 and waits for lock 2, …, thread N-1 holds lock N-1 and waits for
+ * lock 0. All threads remain in the BLOCKED state for the lifetime of the rule.
  *
  * <h2>How bad it is</h2>
  *

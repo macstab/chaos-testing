@@ -4,9 +4,9 @@
  *
  * <p>This package contains twelve named, pre-tuned {@code @CompositeChaos<X>} annotations covering
  * the canonical connection-level failure modes encountered in cloud-native production systems. Each
- * annotation composes one or more libchaos-net rules via a
- * {@link com.macstab.chaos.core.extension.L2Composer} implementation and ships with
- * industry-canonical documentation, severity classification, and sane defaults.
+ * annotation composes one or more libchaos-net rules via a {@link
+ * com.macstab.chaos.core.extension.L2Composer} implementation and ships with industry-canonical
+ * documentation, severity classification, and sane defaults.
  *
  * <h2>Scenario catalogue</h2>
  *
@@ -78,10 +78,10 @@
  * <h2>Prerequisites</h2>
  *
  * <p>All scenarios in this package operate at the syscall level via libchaos-net. The target
- * container <strong>must</strong> be prepared with the libchaos-net {@code .so} before
- * {@code container.start()} — the dynamic loader honours {@code LD_PRELOAD} only at process launch.
- * Annotate the test class with {@code @SyscallLevelChaos(LibchaosLib.NET)};
- * {@code ChaosTestingExtension} drives preparation automatically.
+ * container <strong>must</strong> be prepared with the libchaos-net {@code .so} before {@code
+ * container.start()} — the dynamic loader honours {@code LD_PRELOAD} only at process launch.
+ * Annotate the test class with {@code @SyscallLevelChaos(LibchaosLib.NET)}; {@code
+ * ChaosTestingExtension} drives preparation automatically.
  *
  * @author Christian Schnapka - Macstab GmbH
  */

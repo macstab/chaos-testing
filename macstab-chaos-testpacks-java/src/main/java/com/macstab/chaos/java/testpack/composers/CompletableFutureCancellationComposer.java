@@ -7,6 +7,7 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosCompletableFutureCancellation;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
@@ -15,7 +16,6 @@ import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
 import com.macstab.chaos.jvm.api.OperationType;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -41,8 +41,11 @@ public final class CompletableFutureCancellationComposer
         JvmSelectorKind.ASYNC.build(EnumSet.of(OperationType.ASYNC_CANCEL));
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: CompletableFuture cancellation — ASYNC_CANCEL delayed by "
-                + CANCELLATION_DELAY.toMillis() + " ms at probability " + annotation.probability())
+            .description(
+                "L2: CompletableFuture cancellation — ASYNC_CANCEL delayed by "
+                    + CANCELLATION_DELAY.toMillis()
+                    + " ms at probability "
+                    + annotation.probability())
             .selector(selector)
             .effect(ChaosEffect.delay(CANCELLATION_DELAY, CANCELLATION_DELAY))
             .activationPolicy(ActivationPolicy.always())
@@ -58,7 +61,10 @@ public final class CompletableFutureCancellationComposer
         try {
           JvmPlanAccumulator.instance().removeScenario(container, scenarioId);
         } catch (final Exception e) {
-          log.warn("CompletableFutureCancellationComposer.removeAll: failed to remove {}", scenarioId, e);
+          log.warn(
+              "CompletableFutureCancellationComposer.removeAll: failed to remove {}",
+              scenarioId,
+              e);
         }
       }
     }
@@ -68,7 +74,9 @@ public final class CompletableFutureCancellationComposer
   public List<String> describe(final CompositeChaosCompletableFutureCancellation annotation) {
     return List.of(
         "CompletableFuture cancellation — CompletableFuture.cancel() delayed by "
-            + CANCELLATION_DELAY.toMillis() + " ms at probability " + annotation.probability(),
+            + CANCELLATION_DELAY.toMillis()
+            + " ms at probability "
+            + annotation.probability(),
         "severity=MODERATE — phantom work continues after cancellation; resource exhaustion in high-throughput systems");
   }
 }

@@ -31,9 +31,7 @@ public final class AcceptStormComposer implements L2Composer<CompositeChaosAccep
             .advanced()
             .apply(
                 container,
-                NetRule.errno(
-                    endpoint, NetOperation.ACCEPT, Errno.EMFILE,
-                    annotation.toxicity()));
+                NetRule.errno(endpoint, NetOperation.ACCEPT, Errno.EMFILE, annotation.toxicity()));
     return List.of(handle);
   }
 

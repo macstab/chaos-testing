@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Floods the JVM {@code ReferenceHandler} thread's queue with {@link #objectCount()} weak
@@ -19,11 +21,11 @@ import com.macstab.chaos.core.extension.Severity;
  *
  * <h2>How it's created</h2>
  *
- * <p>Applies a {@code REFERENCE_QUEUE_FLOOD} stressor via the JVM chaos agent. The stressor
- * creates many {@code WeakReference} instances pointing to short-lived objects, triggering a large
+ * <p>Applies a {@code REFERENCE_QUEUE_FLOOD} stressor via the JVM chaos agent. The stressor creates
+ * many {@code WeakReference} instances pointing to short-lived objects, triggering a large
  * reference enqueue batch on the next GC cycle. In production, reference-queue flooding occurs in
- * applications that use weak or soft reference caches with very high entry turnover without bounding
- * the cache size.
+ * applications that use weak or soft reference caches with very high entry turnover without
+ * bounding the cache size.
  *
  * <h2>How bad it is</h2>
  *
@@ -35,9 +37,9 @@ import com.macstab.chaos.core.extension.Severity;
  * <h2>Industry references</h2>
  *
  * <p>The JVM reference processing architecture (ReferenceHandler thread, reference queues, and
- * their interaction with GC) is documented in the JDK source ({@code java.lang.ref.Reference}).
- * G1 GC concurrent reference processing (JEP 376) moved some of this work off-STW, but the
- * enqueue path remains single-threaded.
+ * their interaction with GC) is documented in the JDK source ({@code java.lang.ref.Reference}). G1
+ * GC concurrent reference processing (JEP 376) moved some of this work off-STW, but the enqueue
+ * path remains single-threaded.
  *
  * <h2>Example</h2>
  *

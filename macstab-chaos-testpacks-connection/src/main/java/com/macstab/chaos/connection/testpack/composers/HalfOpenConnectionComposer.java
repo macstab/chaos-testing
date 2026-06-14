@@ -17,7 +17,8 @@ import com.macstab.chaos.core.syscall.LibchaosLib;
 import com.macstab.chaos.core.syscall.LibchaosTransport;
 
 /** L2 composer for {@link CompositeChaosHalfOpenConnection}. */
-public final class HalfOpenConnectionComposer implements L2Composer<CompositeChaosHalfOpenConnection> {
+public final class HalfOpenConnectionComposer
+    implements L2Composer<CompositeChaosHalfOpenConnection> {
 
   /** Public no-arg constructor required by the L2 composer contract. */
   public HalfOpenConnectionComposer() {}
@@ -32,8 +33,7 @@ public final class HalfOpenConnectionComposer implements L2Composer<CompositeCha
             .apply(
                 container,
                 NetRule.errno(
-                    endpoint, NetOperation.RECV, Errno.ECONNRESET,
-                    annotation.toxicity()));
+                    endpoint, NetOperation.RECV, Errno.ECONNRESET, annotation.toxicity()));
     return List.of(handle);
   }
 

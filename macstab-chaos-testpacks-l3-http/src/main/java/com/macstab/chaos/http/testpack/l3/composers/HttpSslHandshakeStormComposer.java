@@ -4,14 +4,16 @@ package com.macstab.chaos.http.testpack.l3.composers;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
+
 import org.testcontainers.containers.GenericContainer;
-import com.macstab.chaos.core.extension.L3Composer;
-import com.macstab.chaos.http.testpack.l3.IncidentChaosHttpSslHandshakeStorm;
+
 import com.macstab.chaos.connection.CompositeConnectionChaos;
 import com.macstab.chaos.connection.model.Endpoint;
 import com.macstab.chaos.connection.model.Errno;
 import com.macstab.chaos.connection.model.NetOperation;
 import com.macstab.chaos.connection.model.NetRule;
+import com.macstab.chaos.core.extension.L3Composer;
+import com.macstab.chaos.http.testpack.l3.IncidentChaosHttpSslHandshakeStorm;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.api.ActivationPolicy;
 import com.macstab.chaos.jvm.api.ChaosEffect;
@@ -24,50 +26,61 @@ import com.macstab.chaos.jvm.api.OperationType;
  * Composer for {@link IncidentChaosHttpSslHandshakeStorm}.
  *
  * <p>Resets TCP connections during the handshake phase and injects SSLHandshakeException at the
- * JSSE layer to reproduce TLS negotiation failures under load from cipher mismatches,
- * cert expiry, or TLS terminator overload.
+ * JSSE layer to reproduce TLS negotiation failures under load from cipher mismatches, cert expiry,
+ * or TLS terminator overload.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
-public final class HttpSslHandshakeStormComposer implements L3Composer<IncidentChaosHttpSslHandshakeStorm> {
+public final class HttpSslHandshakeStormComposer
+    implements L3Composer<IncidentChaosHttpSslHandshakeStorm> {
 
-    public HttpSslHandshakeStormComposer() {}
+  public HttpSslHandshakeStormComposer() {}
 
-    @Override
-    public List<Object> apply(final GenericContainer<?> container, final IncidentChaosHttpSslHandshakeStorm ann) {
-        final List<Object> handles = new ArrayList<>();
+  @Override
+  public List<Object> apply(
+      final GenericContainer<?> container, final IncidentChaosHttpSslHandshakeStorm ann) {
+    final List<Object> handles = new ArrayList<>();
 
-        final var adv = CompositeConnectionChaos.standard().advanced();
-        handles.add(adv.apply(container,
-                NetRule.errno(Endpoint.wildcard(), NetOperation.CONNECT, Errno.ECONNRESET, ann.toxicity())));
+    final var adv = CompositeConnectionChaos.standard().advanced();
+    handles.add(
+        adv.apply(
+            container,
+            NetRule.errno(
+                Endpoint.wildcard(), NetOperation.CONNECT, Errno.ECONNRESET, ann.toxicity())));
 
-        final String scenarioId = JvmPlanAccumulator.instance().mintScenarioId("HttpSslHandshakeStorm");
-        final var selector = ChaosSelector.method(
-                EnumSet.of(OperationType.METHOD_ENTER),
-                NamePattern.prefix(ann.classPattern()),
-                NamePattern.any());
-        final var scenario = ChaosScenario.builder(scenarioId)
-                .description("HTTP SSL handshake storm — inject SSLHandshakeException on TLS methods")
-                .selector(selector)
-                .effect(ChaosEffect.injectException("javax.net.ssl.SSLHandshakeException", "SSL handshake failure under load"))
-                .activationPolicy(ActivationPolicy.always())
-                .build();
-        handles.add(JvmPlanAccumulator.instance().addScenario(container, scenario));
+    final String scenarioId = JvmPlanAccumulator.instance().mintScenarioId("HttpSslHandshakeStorm");
+    final var selector =
+        ChaosSelector.method(
+            EnumSet.of(OperationType.METHOD_ENTER),
+            NamePattern.prefix(ann.classPattern()),
+            NamePattern.any());
+    final var scenario =
+        ChaosScenario.builder(scenarioId)
+            .description("HTTP SSL handshake storm — inject SSLHandshakeException on TLS methods")
+            .selector(selector)
+            .effect(
+                ChaosEffect.injectException(
+                    "javax.net.ssl.SSLHandshakeException", "SSL handshake failure under load"))
+            .activationPolicy(ActivationPolicy.always())
+            .build();
+    handles.add(JvmPlanAccumulator.instance().addScenario(container, scenario));
 
-        return handles;
-    }
+    return handles;
+  }
 
-    @Override
-    public void removeAll(final GenericContainer<?> container, final List<Object> handles) {
-        RuleRemover.removeAll(container, handles);
-    }
+  @Override
+  public void removeAll(final GenericContainer<?> container, final List<Object> handles) {
+    RuleRemover.removeAll(container, handles);
+  }
 
-    @Override
-    public List<String> describe(final IncidentChaosHttpSslHandshakeStorm ann) {
-        return List.of(
-                "HTTP SSL Handshake Storm — TLS negotiation failures from resets under load",
-                "connection: CONNECT → ECONNRESET, toxicity=" + ann.toxicity(),
-                "jvm: SSLHandshakeException(\"SSL handshake failure under load\") on class prefix '" + ann.classPattern() + "' (METHOD_ENTER)",
-                "severity=SEVERE — connection-pool exhaustion from failed TLS negotiations");
-    }
+  @Override
+  public List<String> describe(final IncidentChaosHttpSslHandshakeStorm ann) {
+    return List.of(
+        "HTTP SSL Handshake Storm — TLS negotiation failures from resets under load",
+        "connection: CONNECT → ECONNRESET, toxicity=" + ann.toxicity(),
+        "jvm: SSLHandshakeException(\"SSL handshake failure under load\") on class prefix '"
+            + ann.classPattern()
+            + "' (METHOD_ENTER)",
+        "severity=SEVERE — connection-pool exhaustion from failed TLS negotiations");
+  }
 }

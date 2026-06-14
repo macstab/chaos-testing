@@ -24,8 +24,7 @@ public final class GracefulShutdownComposer implements L2Composer<CompositeChaos
   public List<Object> apply(
       final GenericContainer<?> container, final CompositeChaosGracefulShutdown annotation) {
     final AdvancedProcessChaos adv = CompositeProcessChaos.standard().advanced();
-    final RuleHandle handle =
-        adv.slowWait(container, Duration.ofMillis(annotation.drainMs()));
+    final RuleHandle handle = adv.slowWait(container, Duration.ofMillis(annotation.drainMs()));
     return List.of(handle);
   }
 
@@ -41,7 +40,9 @@ public final class GracefulShutdownComposer implements L2Composer<CompositeChaos
   @Override
   public List<String> describe(final CompositeChaosGracefulShutdown annotation) {
     return List.of(
-        "graceful shutdown latency: waitpid() delayed by " + annotation.drainMs() + "ms (slow drain)",
+        "graceful shutdown latency: waitpid() delayed by "
+            + annotation.drainMs()
+            + "ms (slow drain)",
         "drainMs=" + annotation.drainMs(),
         "severity=MODERATE — SIGKILL escalation if drain exceeds orchestrator terminationGracePeriodSeconds");
   }

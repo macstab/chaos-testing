@@ -39,9 +39,11 @@ public final class JvmHeapPressureComposer implements L2Composer<CompositeChaosJ
   @Override
   public List<String> describe(final CompositeChaosJvmHeapPressure annotation) {
     return List.of(
-        "JVM heap pressure — ENOMEM on anonymous mmap at rate " + annotation.toxicity()
+        "JVM heap pressure — ENOMEM on anonymous mmap at rate "
+            + annotation.toxicity()
             + " (JVM heap expansion call fails)",
-        "toxicity=" + annotation.toxicity()
+        "toxicity="
+            + annotation.toxicity()
             + " — simulates cgroup memory.max limit or -Xmx exhaustion; triggers GC pressure and OutOfMemoryError",
         "severity=MODERATE — JVM remains functional under load; individual large allocations may throw OutOfMemoryError");
   }

@@ -40,9 +40,12 @@ public final class ThreadStackExhaustionComposer
   @Override
   public List<String> describe(final CompositeChaosThreadStackExhaustion annotation) {
     return List.of(
-        "Thread stack exhaustion — ENOMEM on anonymous mmap at rate " + annotation.toxicity()
+        "Thread stack exhaustion — ENOMEM on anonymous mmap at rate "
+            + annotation.toxicity()
             + " (pthread_create stack allocation fails)",
-        "toxicity=" + annotation.toxicity() + " — simulates process thread-limit or address-space fragmentation",
+        "toxicity="
+            + annotation.toxicity()
+            + " — simulates process thread-limit or address-space fragmentation",
         "severity=SEVERE — thread pool degrades silently; service stops accepting work if workers are not replaced");
   }
 }

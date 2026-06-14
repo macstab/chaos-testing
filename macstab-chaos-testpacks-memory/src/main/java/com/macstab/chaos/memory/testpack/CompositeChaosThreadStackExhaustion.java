@@ -11,11 +11,13 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
- * <p>Simulates thread-stack allocation failure by injecting {@code ENOMEM} on anonymous {@code mmap}
- * calls at 50% probability. Since {@code pthread_create()} allocates each new thread's stack via
- * {@code mmap(MAP_ANONYMOUS)}, this makes roughly one in two thread-creation attempts fail with
+ * <p>Simulates thread-stack allocation failure by injecting {@code ENOMEM} on anonymous {@code
+ * mmap} calls at 50% probability. Since {@code pthread_create()} allocates each new thread's stack
+ * via {@code mmap(MAP_ANONYMOUS)}, this makes roughly one in two thread-creation attempts fail with
  * {@code ENOMEM} — the same outcome a process hits when it reaches the system's per-process thread
  * limit or when the address space is too fragmented to accommodate a new stack.
  *
@@ -33,8 +35,8 @@ import com.macstab.chaos.core.extension.Severity;
  * At 50% toxicity approximately half of all thread-creation attempts fail. Thread pools that do not
  * handle {@code pthread_create()} failure degrade silently — request queues fill up, worker threads
  * are never replaced after crash, and the service eventually stops accepting new work. Managed
- * runtimes (JVM, .NET CLR) surface this as {@code OutOfMemoryError: unable to create native thread}.
- * Recovery typically requires a restart.
+ * runtimes (JVM, .NET CLR) surface this as {@code OutOfMemoryError: unable to create native
+ * thread}. Recovery typically requires a restart.
  *
  * <h2>Industry references</h2>
  *
@@ -42,8 +44,8 @@ import com.macstab.chaos.core.extension.Severity;
  * ({@code java.lang.OutOfMemoryError}) and in glibc {@code pthread_create(3)}: the call returns
  * {@code EAGAIN} (thread limit) or {@code ENOMEM} (address space / stack allocation). The scenario
  * is a specific sub-case of the "thread pool exhaustion" incident class described in the Google SRE
- * book, chapter 19. Linux stack allocation behaviour is in {@code mmap(2)} and
- * {@code pthread_create(3)}.
+ * book, chapter 19. Linux stack allocation behaviour is in {@code mmap(2)} and {@code
+ * pthread_create(3)}.
  *
  * <h2>Example</h2>
  *

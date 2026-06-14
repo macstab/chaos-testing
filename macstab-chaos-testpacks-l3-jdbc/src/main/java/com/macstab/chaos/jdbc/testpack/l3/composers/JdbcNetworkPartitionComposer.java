@@ -30,74 +30,93 @@ import lombok.extern.slf4j.Slf4j;
 
 /** L3 composer for {@link IncidentChaosJdbcNetworkPartition}. */
 @Slf4j
-public final class JdbcNetworkPartitionComposer implements L3Composer<IncidentChaosJdbcNetworkPartition> {
+public final class JdbcNetworkPartitionComposer
+    implements L3Composer<IncidentChaosJdbcNetworkPartition> {
 
-    /** Public no-arg constructor required by the L3 composer contract. */
-    public JdbcNetworkPartitionComposer() {}
+  /** Public no-arg constructor required by the L3 composer contract. */
+  public JdbcNetworkPartitionComposer() {}
 
-    @Override
-    public List<Object> apply(
-            final GenericContainer<?> container, final IncidentChaosJdbcNetworkPartition annotation) {
-        final List<Object> handles = new ArrayList<>();
+  @Override
+  public List<Object> apply(
+      final GenericContainer<?> container, final IncidentChaosJdbcNetworkPartition annotation) {
+    final List<Object> handles = new ArrayList<>();
 
-        final RuleHandle timeoutHandle = CompositeConnectionChaos.standard().advanced()
-                .apply(container, NetRule.timeout(
-                        Endpoint.wildcard(),
-                        Duration.ofMillis(annotation.timeoutMs()),
-                        annotation.toxicity()));
-        handles.add(timeoutHandle);
+    final RuleHandle timeoutHandle =
+        CompositeConnectionChaos.standard()
+            .advanced()
+            .apply(
+                container,
+                NetRule.timeout(
+                    Endpoint.wildcard(),
+                    Duration.ofMillis(annotation.timeoutMs()),
+                    annotation.toxicity()));
+    handles.add(timeoutHandle);
 
-        final RuleHandle epipeHandle = CompositeConnectionChaos.standard().advanced()
-                .apply(container, NetRule.errno(
-                        Endpoint.wildcard(),
-                        NetOperation.SEND,
-                        Errno.EPIPE,
-                        annotation.toxicity()));
-        handles.add(epipeHandle);
+    final RuleHandle epipeHandle =
+        CompositeConnectionChaos.standard()
+            .advanced()
+            .apply(
+                container,
+                NetRule.errno(
+                    Endpoint.wildcard(), NetOperation.SEND, Errno.EPIPE, annotation.toxicity()));
+    handles.add(epipeHandle);
 
-        final String scenarioId = JvmPlanAccumulator.instance()
-                .mintScenarioId(IncidentChaosJdbcNetworkPartition.class.getSimpleName());
-        final NamePattern cls = annotation.classPattern().isBlank()
-                ? NamePattern.any()
-                : NamePattern.prefix(annotation.classPattern());
-        final ChaosScenario scenario = ChaosScenario.builder(scenarioId)
-                .description("L3 JDBC network partition — POLL timeout + EPIPE + partition exception")
-                .selector(ChaosSelector.method(EnumSet.of(OperationType.METHOD_ENTER), cls, NamePattern.any()))
-                .effect(ChaosEffect.injectException(
-                        "java.sql.SQLException", "transaction aborted — network partition"))
-                .activationPolicy(ActivationPolicy.always())
-                .build();
-        handles.add(JvmPlanAccumulator.instance().addScenario(container, scenario));
+    final String scenarioId =
+        JvmPlanAccumulator.instance()
+            .mintScenarioId(IncidentChaosJdbcNetworkPartition.class.getSimpleName());
+    final NamePattern cls =
+        annotation.classPattern().isBlank()
+            ? NamePattern.any()
+            : NamePattern.prefix(annotation.classPattern());
+    final ChaosScenario scenario =
+        ChaosScenario.builder(scenarioId)
+            .description("L3 JDBC network partition — POLL timeout + EPIPE + partition exception")
+            .selector(
+                ChaosSelector.method(
+                    EnumSet.of(OperationType.METHOD_ENTER), cls, NamePattern.any()))
+            .effect(
+                ChaosEffect.injectException(
+                    "java.sql.SQLException", "transaction aborted — network partition"))
+            .activationPolicy(ActivationPolicy.always())
+            .build();
+    handles.add(JvmPlanAccumulator.instance().addScenario(container, scenario));
 
-        return handles;
-    }
+    return handles;
+  }
 
-    @Override
-    public void removeAll(final GenericContainer<?> container, final List<Object> handles) {
-        for (final Object h : handles) {
-            if (h instanceof RuleHandle rh) {
-                try {
-                    new LibchaosTransport(LibchaosLib.NET).removeRules(container, rh.owner());
-                } catch (final Exception e) {
-                    log.warn("JdbcNetworkPartitionComposer.removeAll: failed to remove connection rule", e);
-                }
-            } else if (h instanceof String scenarioId) {
-                try {
-                    JvmPlanAccumulator.instance().removeScenario(container, scenarioId);
-                } catch (final Exception e) {
-                    log.warn("JdbcNetworkPartitionComposer.removeAll: failed to remove JVM scenario {}", scenarioId, e);
-                }
-            }
+  @Override
+  public void removeAll(final GenericContainer<?> container, final List<Object> handles) {
+    for (final Object h : handles) {
+      if (h instanceof RuleHandle rh) {
+        try {
+          new LibchaosTransport(LibchaosLib.NET).removeRules(container, rh.owner());
+        } catch (final Exception e) {
+          log.warn("JdbcNetworkPartitionComposer.removeAll: failed to remove connection rule", e);
         }
+      } else if (h instanceof String scenarioId) {
+        try {
+          JvmPlanAccumulator.instance().removeScenario(container, scenarioId);
+        } catch (final Exception e) {
+          log.warn(
+              "JdbcNetworkPartitionComposer.removeAll: failed to remove JVM scenario {}",
+              scenarioId,
+              e);
+        }
+      }
     }
+  }
 
-    @Override
-    public List<String> describe(final IncidentChaosJdbcNetworkPartition annotation) {
-        return List.of(
-                "L3 incident: JDBC network partition — 2PC in-doubt transactions under partition",
-                "connection: timeout=" + annotation.timeoutMs() + "ms toxicity=" + annotation.toxicity() + " (POLL partition)",
-                "connection: SEND EPIPE toxicity=" + annotation.toxicity() + " (severed connections)",
-                "jvm: injectException(java.sql.SQLException) on class='" + annotation.classPattern() + "'",
-                "severity=CRITICAL — in-doubt transactions block row locks; manual DBA intervention may be required");
-    }
+  @Override
+  public List<String> describe(final IncidentChaosJdbcNetworkPartition annotation) {
+    return List.of(
+        "L3 incident: JDBC network partition — 2PC in-doubt transactions under partition",
+        "connection: timeout="
+            + annotation.timeoutMs()
+            + "ms toxicity="
+            + annotation.toxicity()
+            + " (POLL partition)",
+        "connection: SEND EPIPE toxicity=" + annotation.toxicity() + " (severed connections)",
+        "jvm: injectException(java.sql.SQLException) on class='" + annotation.classPattern() + "'",
+        "severity=CRITICAL — in-doubt transactions block row locks; manual DBA intervention may be required");
+  }
 }

@@ -4,19 +4,20 @@ package com.macstab.chaos.connection.testpack.composers;
 import com.macstab.chaos.connection.model.Endpoint;
 
 /**
- * Resolves the {@code endpoint} attribute of connection L2 annotations to a libchaos-net
- * {@link Endpoint}.
+ * Resolves the {@code endpoint} attribute of connection L2 annotations to a libchaos-net {@link
+ * Endpoint}.
  *
  * <p>Accepted forms:
+ *
  * <ul>
- *   <li>{@code "*"} — wildcard; matches every socket (default for all scenarios)</li>
- *   <li>{@code "tcp4://host:port"} — TCP/IPv4 to a specific host and port</li>
- *   <li>{@code "tcp6://[host]:port"} — TCP/IPv6; host unbracketed, brackets added on render</li>
- *   <li>{@code "udp4://host:port"} — UDP/IPv4</li>
- *   <li>{@code "udp6://[host]:port"} — UDP/IPv6</li>
- *   <li>{@code "unix:///path"} — Unix-domain socket (absolute path)</li>
- *   <li>{@code "dns://hostname"} — DNS interception at {@code getaddrinfo} resolution time</li>
- *   <li>{@code "hostname"} — bare hostname; shorthand for {@code dns://hostname}</li>
+ *   <li>{@code "*"} — wildcard; matches every socket (default for all scenarios)
+ *   <li>{@code "tcp4://host:port"} — TCP/IPv4 to a specific host and port
+ *   <li>{@code "tcp6://[host]:port"} — TCP/IPv6; host unbracketed, brackets added on render
+ *   <li>{@code "udp4://host:port"} — UDP/IPv4
+ *   <li>{@code "udp6://[host]:port"} — UDP/IPv6
+ *   <li>{@code "unix:///path"} — Unix-domain socket (absolute path)
+ *   <li>{@code "dns://hostname"} — DNS interception at {@code getaddrinfo} resolution time
+ *   <li>{@code "hostname"} — bare hostname; shorthand for {@code dns://hostname}
  * </ul>
  */
 final class EndpointHelper {

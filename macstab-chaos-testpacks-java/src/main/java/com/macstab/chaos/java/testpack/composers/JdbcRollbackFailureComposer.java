@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosJdbcRollbackFailure;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
@@ -14,7 +15,6 @@ import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
 import com.macstab.chaos.jvm.api.OperationType;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -36,11 +36,13 @@ public final class JdbcRollbackFailureComposer
         JvmSelectorKind.JDBC.build(EnumSet.of(OperationType.JDBC_TRANSACTION_ROLLBACK));
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: JDBC rollback failure — SQLException injected at probability "
-                + annotation.probability())
+            .description(
+                "L2: JDBC rollback failure — SQLException injected at probability "
+                    + annotation.probability())
             .selector(selector)
-            .effect(ChaosEffect.injectException("java.sql.SQLException",
-                "injected rollback failure by chaos L2"))
+            .effect(
+                ChaosEffect.injectException(
+                    "java.sql.SQLException", "injected rollback failure by chaos L2"))
             .activationPolicy(ActivationPolicy.always())
             .build();
     final String scenarioId = JvmPlanAccumulator.instance().addScenario(container, scenario);

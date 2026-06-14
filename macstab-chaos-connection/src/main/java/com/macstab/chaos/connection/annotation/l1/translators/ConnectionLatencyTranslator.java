@@ -9,13 +9,13 @@ import org.testcontainers.containers.GenericContainer;
 
 import com.macstab.chaos.connection.CompositeConnectionChaos;
 import com.macstab.chaos.connection.annotation.l1.ConnectionLatencyBinding;
-import com.macstab.chaos.core.syscall.LibchaosLib;
-import com.macstab.chaos.core.syscall.LibchaosTransport;
 import com.macstab.chaos.connection.api.AdvancedConnectionChaos;
 import com.macstab.chaos.connection.api.RuleHandle;
 import com.macstab.chaos.connection.model.Endpoint;
 import com.macstab.chaos.connection.model.NetRule;
 import com.macstab.chaos.core.extension.L1Translator;
+import com.macstab.chaos.core.syscall.LibchaosLib;
+import com.macstab.chaos.core.syscall.LibchaosTransport;
 
 /**
  * Parameterised L1 translator for every connection-latency L1 annotation. Endpoint is always {@link

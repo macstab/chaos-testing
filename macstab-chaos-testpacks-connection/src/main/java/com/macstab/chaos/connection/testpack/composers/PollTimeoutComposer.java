@@ -31,9 +31,7 @@ public final class PollTimeoutComposer implements L2Composer<CompositeChaosPollT
             .apply(
                 container,
                 NetRule.timeout(
-                    endpoint,
-                    Duration.ofMillis(annotation.timeoutMs()),
-                    annotation.toxicity()));
+                    endpoint, Duration.ofMillis(annotation.timeoutMs()), annotation.toxicity()));
     return List.of(handle);
   }
 
@@ -49,7 +47,9 @@ public final class PollTimeoutComposer implements L2Composer<CompositeChaosPollT
   @Override
   public List<String> describe(final CompositeChaosPollTimeout annotation) {
     return List.of(
-        "Poll timeout injection: poll()/epoll_wait() forces timeout after " + annotation.timeoutMs() + "ms",
+        "Poll timeout injection: poll()/epoll_wait() forces timeout after "
+            + annotation.timeoutMs()
+            + "ms",
         "toxicity=" + annotation.toxicity(),
         "severity=MODERATE — tests event-loop spurious timeout handling");
   }

@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosMethodExceptionInjection;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.api.ActivationPolicy;
@@ -14,7 +15,6 @@ import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
 import com.macstab.chaos.jvm.api.NamePattern;
 import com.macstab.chaos.jvm.api.OperationType;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -45,12 +45,18 @@ public final class MethodExceptionInjectionComposer
         ChaosSelector.method(EnumSet.of(OperationType.METHOD_ENTER), cls, mth);
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: method exception injection — "
-                + annotation.exceptionClass() + " at METHOD_ENTER for class='"
-                + annotation.classPattern() + "' method='" + annotation.methodNamePattern() + "'")
+            .description(
+                "L2: method exception injection — "
+                    + annotation.exceptionClass()
+                    + " at METHOD_ENTER for class='"
+                    + annotation.classPattern()
+                    + "' method='"
+                    + annotation.methodNamePattern()
+                    + "'")
             .selector(selector)
-            .effect(ChaosEffect.injectException(annotation.exceptionClass(),
-                "injected by chaos L2 MethodExceptionInjection"))
+            .effect(
+                ChaosEffect.injectException(
+                    annotation.exceptionClass(), "injected by chaos L2 MethodExceptionInjection"))
             .activationPolicy(ActivationPolicy.always())
             .build();
     final String scenarioId = JvmPlanAccumulator.instance().addScenario(container, scenario);
@@ -64,7 +70,8 @@ public final class MethodExceptionInjectionComposer
         try {
           JvmPlanAccumulator.instance().removeScenario(container, scenarioId);
         } catch (final Exception e) {
-          log.warn("MethodExceptionInjectionComposer.removeAll: failed to remove {}", scenarioId, e);
+          log.warn(
+              "MethodExceptionInjectionComposer.removeAll: failed to remove {}", scenarioId, e);
         }
       }
     }
@@ -73,9 +80,13 @@ public final class MethodExceptionInjectionComposer
   @Override
   public List<String> describe(final CompositeChaosMethodExceptionInjection annotation) {
     return List.of(
-        "method exception injection — " + annotation.exceptionClass()
-            + " thrown at METHOD_ENTER for class='" + annotation.classPattern()
-            + "' method='" + annotation.methodNamePattern() + "'",
+        "method exception injection — "
+            + annotation.exceptionClass()
+            + " thrown at METHOD_ENTER for class='"
+            + annotation.classPattern()
+            + "' method='"
+            + annotation.methodNamePattern()
+            + "'",
         "severity=MODERATE — scope determined by pattern breadth; narrow patterns for targeted faults");
   }
 }

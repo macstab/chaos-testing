@@ -11,19 +11,21 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Allocates and retains direct (off-heap) NIO byte buffers totalling {@link #targetMb()} MB,
- * exhausting the JVM's direct-buffer memory limit and causing subsequent
- * {@code ByteBuffer.allocateDirect()} calls to throw {@code OutOfMemoryError: Direct buffer memory}.
+ * exhausting the JVM's direct-buffer memory limit and causing subsequent {@code
+ * ByteBuffer.allocateDirect()} calls to throw {@code OutOfMemoryError: Direct buffer memory}.
  *
  * <h2>How it's created</h2>
  *
  * <p>Applies a {@code DIRECT_BUFFER} stressor via the JVM chaos agent. The stressor allocates
  * direct buffers in fixed-size chunks and retains strong references, preventing GC-driven
  * reclamation via {@code Cleaner}. In production, direct-buffer leaks occur when NIO channels,
- * Netty ByteBuf instances, or mapped files are not explicitly released and the GC does not run
- * fast enough to trigger their finalisers.
+ * Netty ByteBuf instances, or mapped files are not explicitly released and the GC does not run fast
+ * enough to trigger their finalisers.
  *
  * <h2>How bad it is</h2>
  *

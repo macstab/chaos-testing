@@ -24,8 +24,7 @@ public final class SpawnFailureComposer implements L2Composer<CompositeChaosSpaw
   public List<Object> apply(
       final GenericContainer<?> container, final CompositeChaosSpawnFailure annotation) {
     final AdvancedProcessChaos adv = CompositeProcessChaos.standard().advanced();
-    final RuleHandle handle =
-        adv.failSpawn(container, ProcessErrno.ENOMEM, annotation.toxicity());
+    final RuleHandle handle = adv.failSpawn(container, ProcessErrno.ENOMEM, annotation.toxicity());
     return List.of(handle);
   }
 

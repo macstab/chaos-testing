@@ -11,10 +11,12 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
- * <p>Injects a delay into {@code CompletableFuture.cancel()} calls with probability
- * {@link #probability()}, simulating a hung async pipeline where cancellation requests are slow to
+ * <p>Injects a delay into {@code CompletableFuture.cancel()} calls with probability {@link
+ * #probability()}, simulating a hung async pipeline where cancellation requests are slow to
  * propagate and pending stages continue executing after the caller has given up waiting.
  *
  * <h2>How it's created</h2>
@@ -33,9 +35,9 @@ import com.macstab.chaos.core.extension.Severity;
  *
  * <h2>Industry references</h2>
  *
- * <p>Java Concurrency in Practice §7.1.2 discusses cancellation and interruption. The
- * {@code CompletableFuture.cancel()} Javadoc notes that it may not stop computation already in
- * progress in the common-pool.
+ * <p>Java Concurrency in Practice §7.1.2 discusses cancellation and interruption. The {@code
+ * CompletableFuture.cancel()} Javadoc notes that it may not stop computation already in progress in
+ * the common-pool.
  *
  * <h2>Example</h2>
  *

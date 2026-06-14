@@ -2,7 +2,6 @@
 package com.macstab.chaos.memory.testpack;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
@@ -84,7 +83,9 @@ class MemoryComposersTest {
       final CompositeChaosOomKill ann = fixture(OomKillFixture.class, CompositeChaosOomKill.class);
       final List<String> lines = new OomKillComposer().describe(ann);
       assertThat(lines).isNotEmpty();
-      assertThat(String.join(" ", lines)).containsIgnoringCase("ENOMEM").containsIgnoringCase("OOM");
+      assertThat(String.join(" ", lines))
+          .containsIgnoringCase("ENOMEM")
+          .containsIgnoringCase("OOM");
     }
 
     @Test
@@ -98,7 +99,8 @@ class MemoryComposersTest {
       when(composite.advanced()).thenReturn(adv);
       when(adv.simulateOomKiller(eq(c), eq(1.0))).thenReturn(h);
 
-      try (final MockedStatic<CompositeMemoryChaos> mocked = mockStatic(CompositeMemoryChaos.class)) {
+      try (final MockedStatic<CompositeMemoryChaos> mocked =
+          mockStatic(CompositeMemoryChaos.class)) {
         mocked.when(CompositeMemoryChaos::standard).thenReturn(composite);
         final List<Object> handles = new OomKillComposer().apply(c, ann);
         assertThat(handles).containsExactly(h);
@@ -142,9 +144,7 @@ class MemoryComposersTest {
           fixture(MemoryPressureFixture.class, CompositeChaosMemoryPressure.class);
       final List<String> lines = new MemoryPressureComposer().describe(ann);
       assertThat(lines).isNotEmpty();
-      assertThat(String.join(" ", lines))
-          .containsIgnoringCase("ENOMEM")
-          .contains("0.05");
+      assertThat(String.join(" ", lines)).containsIgnoringCase("ENOMEM").contains("0.05");
     }
 
     @Test
@@ -159,7 +159,8 @@ class MemoryComposersTest {
       when(composite.advanced()).thenReturn(adv);
       when(adv.simulateMemoryPressure(eq(c), eq(0.05))).thenReturn(h);
 
-      try (final MockedStatic<CompositeMemoryChaos> mocked = mockStatic(CompositeMemoryChaos.class)) {
+      try (final MockedStatic<CompositeMemoryChaos> mocked =
+          mockStatic(CompositeMemoryChaos.class)) {
         mocked.when(CompositeMemoryChaos::standard).thenReturn(composite);
         final List<Object> handles = new MemoryPressureComposer().apply(c, ann);
         assertThat(handles).containsExactly(h);
@@ -197,9 +198,7 @@ class MemoryComposersTest {
           fixture(MemoryLeakFixture.class, CompositeChaosMemoryLeak.class);
       final List<String> lines = new MemoryLeakComposer().describe(ann);
       assertThat(lines).isNotEmpty();
-      assertThat(String.join(" ", lines))
-          .containsIgnoringCase("ENOMEM")
-          .contains("0.001");
+      assertThat(String.join(" ", lines)).containsIgnoringCase("ENOMEM").contains("0.001");
     }
 
     @Test
@@ -214,7 +213,8 @@ class MemoryComposersTest {
       when(composite.advanced()).thenReturn(adv);
       when(adv.failLargeAllocation(eq(c), eq(0.001))).thenReturn(h);
 
-      try (final MockedStatic<CompositeMemoryChaos> mocked = mockStatic(CompositeMemoryChaos.class)) {
+      try (final MockedStatic<CompositeMemoryChaos> mocked =
+          mockStatic(CompositeMemoryChaos.class)) {
         mocked.when(CompositeMemoryChaos::standard).thenReturn(composite);
         final List<Object> handles = new MemoryLeakComposer().apply(c, ann);
         assertThat(handles).containsExactly(h);
@@ -269,7 +269,8 @@ class MemoryComposersTest {
       when(composite.advanced()).thenReturn(adv);
       when(adv.failThreadCreation(eq(c), eq(0.5))).thenReturn(h);
 
-      try (final MockedStatic<CompositeMemoryChaos> mocked = mockStatic(CompositeMemoryChaos.class)) {
+      try (final MockedStatic<CompositeMemoryChaos> mocked =
+          mockStatic(CompositeMemoryChaos.class)) {
         mocked.when(CompositeMemoryChaos::standard).thenReturn(composite);
         final List<Object> handles = new ThreadStackExhaustionComposer().apply(c, ann);
         assertThat(handles).containsExactly(h);
@@ -324,7 +325,8 @@ class MemoryComposersTest {
       when(composite.advanced()).thenReturn(adv);
       when(adv.failJitCompilation(eq(c), eq(0.8))).thenReturn(h);
 
-      try (final MockedStatic<CompositeMemoryChaos> mocked = mockStatic(CompositeMemoryChaos.class)) {
+      try (final MockedStatic<CompositeMemoryChaos> mocked =
+          mockStatic(CompositeMemoryChaos.class)) {
         mocked.when(CompositeMemoryChaos::standard).thenReturn(composite);
         final List<Object> handles = new JitCompilationFailureComposer().apply(c, ann);
         assertThat(handles).containsExactly(h);
@@ -376,7 +378,8 @@ class MemoryComposersTest {
       when(composite.advanced()).thenReturn(adv);
       when(adv.failLibraryLoad(eq(c), eq(1.0))).thenReturn(h);
 
-      try (final MockedStatic<CompositeMemoryChaos> mocked = mockStatic(CompositeMemoryChaos.class)) {
+      try (final MockedStatic<CompositeMemoryChaos> mocked =
+          mockStatic(CompositeMemoryChaos.class)) {
         mocked.when(CompositeMemoryChaos::standard).thenReturn(composite);
         final List<Object> handles = new LibraryLoadFailureComposer().apply(c, ann);
         assertThat(handles).containsExactly(h);
@@ -431,7 +434,8 @@ class MemoryComposersTest {
       when(composite.advanced()).thenReturn(adv);
       when(adv.failPagePurge(eq(c), eq(0.3))).thenReturn(h);
 
-      try (final MockedStatic<CompositeMemoryChaos> mocked = mockStatic(CompositeMemoryChaos.class)) {
+      try (final MockedStatic<CompositeMemoryChaos> mocked =
+          mockStatic(CompositeMemoryChaos.class)) {
         mocked.when(CompositeMemoryChaos::standard).thenReturn(composite);
         final List<Object> handles = new HugepageFailureComposer().apply(c, ann);
         assertThat(handles).containsExactly(h);
@@ -486,7 +490,8 @@ class MemoryComposersTest {
       when(composite.advanced()).thenReturn(adv);
       when(adv.failHeapAllocation(eq(c), eq(0.1))).thenReturn(h);
 
-      try (final MockedStatic<CompositeMemoryChaos> mocked = mockStatic(CompositeMemoryChaos.class)) {
+      try (final MockedStatic<CompositeMemoryChaos> mocked =
+          mockStatic(CompositeMemoryChaos.class)) {
         mocked.when(CompositeMemoryChaos::standard).thenReturn(composite);
         final List<Object> handles = new JvmHeapPressureComposer().apply(c, ann);
         assertThat(handles).containsExactly(h);
@@ -520,19 +525,30 @@ class MemoryComposersTest {
   void allAnnotationsRepeatable() {
     assertThat(CompositeChaosOomKill.class.getAnnotation(java.lang.annotation.Repeatable.class))
         .isNotNull();
-    assertThat(CompositeChaosMemoryPressure.class.getAnnotation(java.lang.annotation.Repeatable.class))
+    assertThat(
+            CompositeChaosMemoryPressure.class.getAnnotation(java.lang.annotation.Repeatable.class))
         .isNotNull();
     assertThat(CompositeChaosMemoryLeak.class.getAnnotation(java.lang.annotation.Repeatable.class))
         .isNotNull();
-    assertThat(CompositeChaosThreadStackExhaustion.class.getAnnotation(java.lang.annotation.Repeatable.class))
+    assertThat(
+            CompositeChaosThreadStackExhaustion.class.getAnnotation(
+                java.lang.annotation.Repeatable.class))
         .isNotNull();
-    assertThat(CompositeChaosJitCompilationFailure.class.getAnnotation(java.lang.annotation.Repeatable.class))
+    assertThat(
+            CompositeChaosJitCompilationFailure.class.getAnnotation(
+                java.lang.annotation.Repeatable.class))
         .isNotNull();
-    assertThat(CompositeChaosLibraryLoadFailure.class.getAnnotation(java.lang.annotation.Repeatable.class))
+    assertThat(
+            CompositeChaosLibraryLoadFailure.class.getAnnotation(
+                java.lang.annotation.Repeatable.class))
         .isNotNull();
-    assertThat(CompositeChaosHugepageFailure.class.getAnnotation(java.lang.annotation.Repeatable.class))
+    assertThat(
+            CompositeChaosHugepageFailure.class.getAnnotation(
+                java.lang.annotation.Repeatable.class))
         .isNotNull();
-    assertThat(CompositeChaosJvmHeapPressure.class.getAnnotation(java.lang.annotation.Repeatable.class))
+    assertThat(
+            CompositeChaosJvmHeapPressure.class.getAnnotation(
+                java.lang.annotation.Repeatable.class))
         .isNotNull();
   }
 }

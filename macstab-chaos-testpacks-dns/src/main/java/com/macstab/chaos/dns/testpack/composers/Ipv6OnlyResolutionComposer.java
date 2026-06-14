@@ -16,7 +16,8 @@ import com.macstab.chaos.dns.model.DnsSelector;
 import com.macstab.chaos.dns.testpack.CompositeChaosIpv6OnlyResolution;
 
 /** L2 composer for {@link CompositeChaosIpv6OnlyResolution}. */
-public final class Ipv6OnlyResolutionComposer implements L2Composer<CompositeChaosIpv6OnlyResolution> {
+public final class Ipv6OnlyResolutionComposer
+    implements L2Composer<CompositeChaosIpv6OnlyResolution> {
 
   /** Public no-arg constructor required by the L2 composer contract. */
   public Ipv6OnlyResolutionComposer() {}

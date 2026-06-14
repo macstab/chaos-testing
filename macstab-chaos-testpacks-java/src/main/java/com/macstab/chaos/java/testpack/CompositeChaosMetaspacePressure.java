@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Fills JVM Metaspace by generating and loading synthetic classes with many fields, simulating
@@ -27,14 +29,14 @@ import com.macstab.chaos.core.extension.Severity;
  * <h2>How bad it is</h2>
  *
  * <p>Severity: <strong>Moderate</strong><br>
- * When Metaspace is exhausted, the JVM throws {@code OutOfMemoryError: Metaspace}. Without
- * {@code -XX:MaxMetaspaceSize}, metaspace grows until the OS refuses the allocation; with a
- * configured limit, exhaustion is predictable and reproducible.
+ * When Metaspace is exhausted, the JVM throws {@code OutOfMemoryError: Metaspace}. Without {@code
+ * -XX:MaxMetaspaceSize}, metaspace grows until the OS refuses the allocation; with a configured
+ * limit, exhaustion is predictable and reproducible.
  *
  * <h2>Industry references</h2>
  *
- * <p>JEP 122 (Remove the Permanent Generation) replaced PermGen with Metaspace in Java 8.
- * Metaspace OOM scenarios are documented in the Oracle JVM Troubleshooting Guide §3.3.
+ * <p>JEP 122 (Remove the Permanent Generation) replaced PermGen with Metaspace in Java 8. Metaspace
+ * OOM scenarios are documented in the Oracle JVM Troubleshooting Guide §3.3.
  *
  * <h2>Example</h2>
  *

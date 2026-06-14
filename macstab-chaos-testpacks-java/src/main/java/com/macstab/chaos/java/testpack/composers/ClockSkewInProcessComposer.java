@@ -2,10 +2,12 @@
 package com.macstab.chaos.java.testpack.composers;
 
 import java.time.Duration;
+import java.util.EnumSet;
 import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosClockSkewInProcess;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
@@ -15,14 +17,13 @@ import com.macstab.chaos.jvm.api.ChaosEffect.ClockSkewMode;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
 import com.macstab.chaos.jvm.api.OperationType;
-import com.macstab.chaos.core.extension.L2Composer;
 
-import java.util.EnumSet;
 import lombok.extern.slf4j.Slf4j;
 
 /** L2 composer for {@link CompositeChaosClockSkewInProcess}. */
 @Slf4j
-public final class ClockSkewInProcessComposer implements L2Composer<CompositeChaosClockSkewInProcess> {
+public final class ClockSkewInProcessComposer
+    implements L2Composer<CompositeChaosClockSkewInProcess> {
 
   /** Public no-arg constructor required by the L2 composer contract. */
   public ClockSkewInProcessComposer() {}
@@ -37,9 +38,11 @@ public final class ClockSkewInProcessComposer implements L2Composer<CompositeCha
         JvmSelectorKind.JVM_RUNTIME.build(EnumSet.of(OperationType.SYSTEM_CLOCK_MILLIS));
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: clock skew in-process — JVM clock offset by " + annotation.skewMs() + " ms")
+            .description(
+                "L2: clock skew in-process — JVM clock offset by " + annotation.skewMs() + " ms")
             .selector(selector)
-            .effect(ChaosEffect.skewClock(Duration.ofMillis(annotation.skewMs()), ClockSkewMode.FIXED))
+            .effect(
+                ChaosEffect.skewClock(Duration.ofMillis(annotation.skewMs()), ClockSkewMode.FIXED))
             .activationPolicy(ActivationPolicy.always())
             .build();
     final String scenarioId = JvmPlanAccumulator.instance().addScenario(container, scenario);
@@ -63,7 +66,8 @@ public final class ClockSkewInProcessComposer implements L2Composer<CompositeCha
   public List<String> describe(final CompositeChaosClockSkewInProcess annotation) {
     return List.of(
         "clock skew in-process — JVM Instant.now()/currentTimeMillis() skewed by "
-            + annotation.skewMs() + " ms (FIXED mode)",
+            + annotation.skewMs()
+            + " ms (FIXED mode)",
         "severity=MODERATE — JWT/OAuth token validation failures; distributed-lock TTL miscalculation");
   }
 }

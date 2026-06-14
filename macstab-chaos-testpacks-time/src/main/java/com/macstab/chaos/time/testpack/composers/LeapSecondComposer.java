@@ -19,8 +19,8 @@ import com.macstab.chaos.time.testpack.CompositeChaosLeapSecond;
 /**
  * L2 composer for {@link CompositeChaosLeapSecond}.
  *
- * <p>Applies {@code clock_gettime/realtime:OFFSET:+1000} — a canonical +1 second offset on
- * {@code CLOCK_REALTIME} simulating IERS leap-second insertion.
+ * <p>Applies {@code clock_gettime/realtime:OFFSET:+1000} — a canonical +1 second offset on {@code
+ * CLOCK_REALTIME} simulating IERS leap-second insertion.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -34,7 +34,8 @@ public final class LeapSecondComposer implements L2Composer<CompositeChaosLeapSe
   @Override
   public List<Object> apply(
       final GenericContainer<?> container, final CompositeChaosLeapSecond annotation) {
-    final TimeRule rule = TimeRule.offset(TimeClock.REALTIME, LEAP_SECOND, annotation.probability());
+    final TimeRule rule =
+        TimeRule.offset(TimeClock.REALTIME, LEAP_SECOND, annotation.probability());
     final AdvancedTimeChaos adv = CompositeTimeChaos.standard().advanced();
     final RuleHandle handle = adv.apply(container, rule);
     return List.of(handle);
@@ -52,7 +53,8 @@ public final class LeapSecondComposer implements L2Composer<CompositeChaosLeapSe
   @Override
   public List<String> describe(final CompositeChaosLeapSecond annotation) {
     return List.of(
-        "CLOCK_REALTIME +1000 ms leap-second simulation (IERS insertion) probability=" + annotation.probability(),
+        "CLOCK_REALTIME +1000 ms leap-second simulation (IERS insertion) probability="
+            + annotation.probability(),
         "severity=MODERATE — JVM hrtimer and NTP-slew assumption failures");
   }
 }

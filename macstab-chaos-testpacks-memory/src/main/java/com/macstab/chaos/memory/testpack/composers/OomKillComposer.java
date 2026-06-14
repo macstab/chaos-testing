@@ -40,7 +40,9 @@ public final class OomKillComposer implements L2Composer<CompositeChaosOomKill> 
   public List<String> describe(final CompositeChaosOomKill annotation) {
     return List.of(
         "OOM-kill simulator — ENOMEM at 100% on every interposed VM syscall (mmap/mprotect/madvise)",
-        "toxicity=" + annotation.toxicity() + " — ENOMEM on every interposed VM syscall at this rate",
+        "toxicity="
+            + annotation.toxicity()
+            + " — ENOMEM on every interposed VM syscall at this rate",
         "severity=CRITICAL — service cannot allocate memory, create threads, or JIT-compile; restart required");
   }
 }

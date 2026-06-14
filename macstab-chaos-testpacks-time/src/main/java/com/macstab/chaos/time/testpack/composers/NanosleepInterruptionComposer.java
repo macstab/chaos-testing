@@ -19,8 +19,8 @@ import com.macstab.chaos.time.testpack.CompositeChaosNanosleepInterruption;
 /**
  * L2 composer for {@link CompositeChaosNanosleepInterruption}.
  *
- * <p>Applies {@code nanosleep:ERRNO:EINTR@<toxicity>} — probabilistic signal-interruption
- * injection on {@code nanosleep()}.
+ * <p>Applies {@code nanosleep:ERRNO:EINTR@<toxicity>} — probabilistic signal-interruption injection
+ * on {@code nanosleep()}.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -33,7 +33,8 @@ public final class NanosleepInterruptionComposer
   @Override
   public List<Object> apply(
       final GenericContainer<?> container, final CompositeChaosNanosleepInterruption annotation) {
-    final TimeRule rule = TimeRule.errno(TimeSelector.NANOSLEEP, TimeErrno.EINTR, annotation.toxicity());
+    final TimeRule rule =
+        TimeRule.errno(TimeSelector.NANOSLEEP, TimeErrno.EINTR, annotation.toxicity());
     final AdvancedTimeChaos adv = CompositeTimeChaos.standard().advanced();
     final RuleHandle handle = adv.apply(container, rule);
     return List.of(handle);

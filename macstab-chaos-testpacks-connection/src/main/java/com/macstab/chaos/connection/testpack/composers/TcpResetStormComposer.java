@@ -27,9 +27,7 @@ public final class TcpResetStormComposer implements L2Composer<CompositeChaosTcp
     final RuleHandle handle =
         CompositeConnectionChaos.standard()
             .advanced()
-            .apply(
-                container,
-                NetRule.corrupt(endpoint, annotation.rate(), 1.0));
+            .apply(container, NetRule.corrupt(endpoint, annotation.rate(), 1.0));
     return List.of(handle);
   }
 
@@ -45,7 +43,9 @@ public final class TcpResetStormComposer implements L2Composer<CompositeChaosTcp
   @Override
   public List<String> describe(final CompositeChaosTcpResetStorm annotation) {
     return List.of(
-        "TCP reset storm (CORRUPT on RECV) — inbound data corrupted at rate=" + annotation.rate() + ", causing connection resets",
+        "TCP reset storm (CORRUPT on RECV) — inbound data corrupted at rate="
+            + annotation.rate()
+            + ", causing connection resets",
         "rate=" + annotation.rate(),
         "severity=SEVERE — connection-reuse pools are disproportionately affected; RST storm follows corrupted frame detection");
   }

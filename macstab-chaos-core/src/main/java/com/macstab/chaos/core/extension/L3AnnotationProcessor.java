@@ -24,6 +24,7 @@ import lombok.extern.slf4j.Slf4j;
  * replicating the compound failure modes seen in real Redis Sentinel failover events.
  *
  * <p>Processing rules mirror {@link L2AnnotationProcessor} exactly:
+ *
  * <ul>
  *   <li>Repeatable L3 annotations are unwrapped and each applied independently.
  *   <li>The {@code id()} attribute filters containers before passing to the composer.
@@ -46,8 +47,8 @@ public final class L3AnnotationProcessor {
   // ==================== Public entry points ====================
 
   /**
-   * Apply every L3 annotation declared on {@code testClass} to its matching containers.
-   * Called from {@code ChaosTestingExtension.beforeAll} after L2 annotations have been applied.
+   * Apply every L3 annotation declared on {@code testClass} to its matching containers. Called from
+   * {@code ChaosTestingExtension.beforeAll} after L2 annotations have been applied.
    *
    * @param testClass test class to scan
    * @param containers all containers started for this test class
@@ -64,12 +65,16 @@ public final class L3AnnotationProcessor {
     Objects.requireNonNull(report, "report must not be null");
 
     return applyAnnotations(
-        testClass.getAnnotations(), testClass, containers, report, ChaosApplicationReport.Scope.CLASS);
+        testClass.getAnnotations(),
+        testClass,
+        containers,
+        report,
+        ChaosApplicationReport.Scope.CLASS);
   }
 
   /**
-   * Apply every L3 annotation declared on {@code testMethod} to its matching containers.
-   * Called from {@code ChaosTestingExtension.beforeEach}.
+   * Apply every L3 annotation declared on {@code testMethod} to its matching containers. Called
+   * from {@code ChaosTestingExtension.beforeEach}.
    *
    * @param testMethod the {@code @Test}-annotated method
    * @param containers all containers started for the enclosing test class
@@ -94,9 +99,9 @@ public final class L3AnnotationProcessor {
   }
 
   /**
-   * Best-effort cleanup of previously-applied L3 incident scenarios.
-   * Each {@link L3Composer#removeAll} call is wrapped in try/catch so a single failure
-   * does not block cleanup of the remaining handles.
+   * Best-effort cleanup of previously-applied L3 incident scenarios. Each {@link
+   * L3Composer#removeAll} call is wrapped in try/catch so a single failure does not block cleanup
+   * of the remaining handles.
    *
    * @param applied handles to remove
    * @return {@code true} if every removal succeeded; {@code false} if any threw
@@ -110,8 +115,7 @@ public final class L3AnnotationProcessor {
         a.composer().removeAll(a.container(), a.handles());
       } catch (final Exception e) {
         allOk = false;
-        log.warn(
-            "L3 cleanup failed for @{}", a.annotation().annotationType().getSimpleName(), e);
+        log.warn("L3 cleanup failed for @{}", a.annotation().annotationType().getSimpleName(), e);
       }
     }
     return allOk;
@@ -239,9 +243,7 @@ public final class L3AnnotationProcessor {
                     "L3 composer class '%s' not found for @%s on %s. "
                         + "The required chaos L3 testpack module is missing from the classpath. "
                         + "Add the corresponding testImplementation dependency.",
-                    fqn,
-                    annotation.annotationType().getSimpleName(),
-                    testClass.getSimpleName()),
+                    fqn, annotation.annotationType().getSimpleName(), testClass.getSimpleName()),
                 e);
 
           } catch (final ReflectiveOperationException e) {
@@ -249,9 +251,7 @@ public final class L3AnnotationProcessor {
                 String.format(
                     "Failed to instantiate L3 composer '%s' for @%s on %s. "
                         + "Composer must have a public no-arg constructor.",
-                    fqn,
-                    annotation.annotationType().getSimpleName(),
-                    testClass.getSimpleName()),
+                    fqn, annotation.annotationType().getSimpleName(), testClass.getSimpleName()),
                 e);
           }
         });
@@ -289,8 +289,7 @@ public final class L3AnnotationProcessor {
     return matching;
   }
 
-  private static String availableIds(
-      final List<L1AnnotationProcessor.ContainerHandle> containers) {
+  private static String availableIds(final List<L1AnnotationProcessor.ContainerHandle> containers) {
     if (containers.isEmpty()) {
       return "(none — no containers started)";
     }

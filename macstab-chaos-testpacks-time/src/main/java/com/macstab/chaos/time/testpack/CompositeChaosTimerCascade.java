@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Simulates a CPU-starved or scheduler-overloaded system where every {@code nanosleep()} call
@@ -20,12 +22,11 @@ import com.macstab.chaos.core.extension.Severity;
  *
  * <h2>How it is created</h2>
  *
- * <p>Applies one libchaos-time rule: {@code nanosleep:LATENCY:<latencyMs>}. The latency is
- * added on top of the requested sleep duration: if the application calls
- * {@code nanosleep({tv_sec=0, tv_nsec=10_000_000})} (10 ms) it will actually sleep for
- * {@code 10 + latencyMs} ms before the call returns. This simulates a scheduler that is behind
- * on timer delivery — the application's timing budget is exceeded without the application
- * receiving an error.
+ * <p>Applies one libchaos-time rule: {@code nanosleep:LATENCY:<latencyMs>}. The latency is added on
+ * top of the requested sleep duration: if the application calls {@code nanosleep({tv_sec=0,
+ * tv_nsec=10_000_000})} (10 ms) it will actually sleep for {@code 10 + latencyMs} ms before the
+ * call returns. This simulates a scheduler that is behind on timer delivery — the application's
+ * timing budget is exceeded without the application receiving an error.
  *
  * <h2>How bad it is</h2>
  *
@@ -33,18 +34,18 @@ import com.macstab.chaos.core.extension.Severity;
  * Late timer firings cause cascading deadline misses in systems with chained timeouts. A retry
  * scheduler that sleeps between attempts fires its next retry late; if its outer timeout also uses
  * wall time, the outer timeout may expire before the retry fires, causing the entire operation to
- * fail even though the retry would have succeeded. Heartbeat-based failure detectors using
- * {@code nanosleep} for their send interval declare peers as dead prematurely. Circuit breakers
- * that use sleep-based half-open timers open permanently under this scenario.
+ * fail even though the retry would have succeeded. Heartbeat-based failure detectors using {@code
+ * nanosleep} for their send interval declare peers as dead prematurely. Circuit breakers that use
+ * sleep-based half-open timers open permanently under this scenario.
  *
  * <h2>Industry references</h2>
  *
  * <p>Timer cascades are documented in the Linux kernel mailing list archives (LKML, hrtimer
  * thundering herd, 2007) and in the "Prometheus: Monitoring at Scale" chapter on "thundering herd
- * scrape storms" where simultaneous timer expirations cause CPU spikes. The AWS EC2 bare-metal
- * SRE team has published guidance on timer slack ({@code TIMER_SLACK_NS}) as a mitigation for
- * exactly this failure mode. Java's {@code ScheduledExecutorService} is susceptible when its
- * underlying {@code Thread.sleep} is backed by {@code nanosleep} and the system is overloaded.
+ * scrape storms" where simultaneous timer expirations cause CPU spikes. The AWS EC2 bare-metal SRE
+ * team has published guidance on timer slack ({@code TIMER_SLACK_NS}) as a mitigation for exactly
+ * this failure mode. Java's {@code ScheduledExecutorService} is susceptible when its underlying
+ * {@code Thread.sleep} is backed by {@code nanosleep} and the system is overloaded.
  *
  * <h2>Example</h2>
  *

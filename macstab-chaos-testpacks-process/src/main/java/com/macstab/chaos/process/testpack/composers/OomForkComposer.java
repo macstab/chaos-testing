@@ -24,8 +24,7 @@ public final class OomForkComposer implements L2Composer<CompositeChaosOomFork> 
   public List<Object> apply(
       final GenericContainer<?> container, final CompositeChaosOomFork annotation) {
     final AdvancedProcessChaos adv = CompositeProcessChaos.standard().advanced();
-    final RuleHandle handle =
-        adv.failFork(container, ProcessErrno.ENOMEM, annotation.toxicity());
+    final RuleHandle handle = adv.failFork(container, ProcessErrno.ENOMEM, annotation.toxicity());
     return List.of(handle);
   }
 

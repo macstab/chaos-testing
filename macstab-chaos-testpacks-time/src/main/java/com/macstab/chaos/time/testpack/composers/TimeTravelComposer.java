@@ -19,8 +19,8 @@ import com.macstab.chaos.time.testpack.CompositeChaosTimeTravel;
 /**
  * L2 composer for {@link CompositeChaosTimeTravel}.
  *
- * <p>Applies {@code clock_gettime/realtime:OFFSET:-<skewMs>} — a large negative offset on
- * {@code CLOCK_REALTIME} simulating an NTP backward step correction or VM snapshot restore.
+ * <p>Applies {@code clock_gettime/realtime:OFFSET:-<skewMs>} — a large negative offset on {@code
+ * CLOCK_REALTIME} simulating an NTP backward step correction or VM snapshot restore.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -33,7 +33,9 @@ public final class TimeTravelComposer implements L2Composer<CompositeChaosTimeTr
   public List<Object> apply(
       final GenericContainer<?> container, final CompositeChaosTimeTravel annotation) {
     // Negate skewMs — realtime clock must appear in the past.
-    final TimeRule rule = TimeRule.offset(TimeClock.REALTIME, Duration.ofMillis(-annotation.skewMs()), annotation.probability());
+    final TimeRule rule =
+        TimeRule.offset(
+            TimeClock.REALTIME, Duration.ofMillis(-annotation.skewMs()), annotation.probability());
     final AdvancedTimeChaos adv = CompositeTimeChaos.standard().advanced();
     final RuleHandle handle = adv.apply(container, rule);
     return List.of(handle);

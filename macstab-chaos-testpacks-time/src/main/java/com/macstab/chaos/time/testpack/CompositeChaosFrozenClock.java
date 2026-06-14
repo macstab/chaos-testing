@@ -11,32 +11,34 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
- * <p>Simulates a completely frozen system clock by injecting a very large negative offset on
- * every {@code clock_gettime} call across all clocks — effectively pinning the apparent time to
- * a fixed point far in the past. From the application's perspective, time has stopped: every
- * successive call to {@code clock_gettime} returns the same epoch-relative value because the
- * injected delta always cancels out the real time advancement.
+ * <p>Simulates a completely frozen system clock by injecting a very large negative offset on every
+ * {@code clock_gettime} call across all clocks — effectively pinning the apparent time to a fixed
+ * point far in the past. From the application's perspective, time has stopped: every successive
+ * call to {@code clock_gettime} returns the same epoch-relative value because the injected delta
+ * always cancels out the real time advancement.
  *
  * <h2>How it is created</h2>
  *
  * <p>Applies one libchaos-time rule: {@code clock_gettime:OFFSET:-<epoch_ms>} using the current
- * epoch in milliseconds as the negative delta. Since the epoch advances in real time and the
- * offset is fixed at rule-application time, successive reads show only tiny advances (the amount
- * of real time elapsed since rule application) rather than absolute wall time — modelling the
- * behaviour of a clock that stopped.
+ * epoch in milliseconds as the negative delta. Since the epoch advances in real time and the offset
+ * is fixed at rule-application time, successive reads show only tiny advances (the amount of real
+ * time elapsed since rule application) rather than absolute wall time — modelling the behaviour of
+ * a clock that stopped.
  *
  * <h2>How bad it is</h2>
  *
  * <p>Severity: <strong>Severe</strong><br>
  * A frozen clock is one of the most dangerous time anomalies for distributed systems. Every
- * deadline, TTL, heartbeat interval, and lease-renewal timer is computed relative to a clock
- * that never advances. Consequences include: distributed locks that never expire, causing
- * deadlocks when the lock holder crashes; Raft elections that never fire because follower
- * election-timeout timers use a frozen baseline; JVM thread-pool keep-alive threads that treat
- * idle connections as brand-new. Recovery requires manual detection because the system appears
- * healthy from the outside (it accepts connections) while its internal timing model is broken.
+ * deadline, TTL, heartbeat interval, and lease-renewal timer is computed relative to a clock that
+ * never advances. Consequences include: distributed locks that never expire, causing deadlocks when
+ * the lock holder crashes; Raft elections that never fire because follower election-timeout timers
+ * use a frozen baseline; JVM thread-pool keep-alive threads that treat idle connections as
+ * brand-new. Recovery requires manual detection because the system appears healthy from the outside
+ * (it accepts connections) while its internal timing model is broken.
  *
  * <h2>Industry references</h2>
  *

@@ -7,6 +7,7 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosHttpClientCascade;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
@@ -15,13 +16,13 @@ import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
 import com.macstab.chaos.jvm.api.OperationType;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
 
 /** L2 composer for {@link CompositeChaosHttpClientCascade}. */
 @Slf4j
-public final class HttpClientCascadeComposer implements L2Composer<CompositeChaosHttpClientCascade> {
+public final class HttpClientCascadeComposer
+    implements L2Composer<CompositeChaosHttpClientCascade> {
 
   /** Public no-arg constructor required by the L2 composer contract. */
   public HttpClientCascadeComposer() {}
@@ -37,8 +38,10 @@ public final class HttpClientCascadeComposer implements L2Composer<CompositeChao
     final Duration delay = Duration.ofMillis(annotation.delayMs());
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: HTTP client cascade — HttpClient.send() delayed by "
-                + annotation.delayMs() + " ms")
+            .description(
+                "L2: HTTP client cascade — HttpClient.send() delayed by "
+                    + annotation.delayMs()
+                    + " ms")
             .selector(selector)
             .effect(ChaosEffect.delay(delay, delay))
             .activationPolicy(ActivationPolicy.always())

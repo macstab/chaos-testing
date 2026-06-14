@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Causes {@code BlockingQueue.offer()} calls to return {@code false} (queue full) at probability
@@ -33,9 +35,9 @@ import com.macstab.chaos.core.extension.Severity;
  *
  * <h2>Industry references</h2>
  *
- * <p>Reactive Streams specification §1.9 mandates that publishers respect subscriber demand
- * signals (back-pressure). LMAX Disruptor documentation §"Blocking Wait Strategy" discusses
- * the trade-offs between blocking and spinning on a full ring buffer.
+ * <p>Reactive Streams specification §1.9 mandates that publishers respect subscriber demand signals
+ * (back-pressure). LMAX Disruptor documentation §"Blocking Wait Strategy" discusses the trade-offs
+ * between blocking and spinning on a full ring buffer.
  *
  * <h2>Example</h2>
  *

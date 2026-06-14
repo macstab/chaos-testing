@@ -11,12 +11,14 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Replaces the return value of every matched method with {@code null} (or numeric zero for
  * primitives) at the method exit point, simulating a misbehaving downstream that returns a legal
- * but semantically wrong result — for example, a cache that returns {@code null} on a miss but
- * the caller expects a non-null object.
+ * but semantically wrong result — for example, a cache that returns {@code null} on a miss but the
+ * caller expects a non-null object.
  *
  * <h2>How it's created</h2>
  *
@@ -28,9 +30,9 @@ import com.macstab.chaos.core.extension.Severity;
  *
  * <p>Severity: <strong>Severe</strong><br>
  * Silent data corruption: the method ran and committed state, but the caller received a corrupt
- * result. The caller may retry the write (duplicate), skip processing (silent data loss), or
- * throw a {@code NullPointerException}. Unlike exception injection, the application has no
- * signal that anything went wrong at the call site.
+ * result. The caller may retry the write (duplicate), skip processing (silent data loss), or throw
+ * a {@code NullPointerException}. Unlike exception injection, the application has no signal that
+ * anything went wrong at the call site.
  *
  * <h2>Industry references</h2>
  *

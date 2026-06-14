@@ -11,12 +11,14 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Simulates gradual resource degradation by injecting {@code ENOMEM} at a very low rate (default
- * 0.1%) on every {@code mmap} call. This models the slow-burn memory exhaustion that accumulates over
- * hours or days in production: individual allocations almost always succeed, but occasional failures
- * over a long run reveal whether the service properly handles and propagates sporadic
+ * 0.1%) on every {@code mmap} call. This models the slow-burn memory exhaustion that accumulates
+ * over hours or days in production: individual allocations almost always succeed, but occasional
+ * failures over a long run reveal whether the service properly handles and propagates sporadic
  * {@code ENOMEM} — the class of bug that is invisible in unit tests and only surfaces in multi-day
  * soak runs.
  *
@@ -24,9 +26,9 @@ import com.macstab.chaos.core.extension.Severity;
  *
  * <p>Applies {@code AdvancedMemoryChaos#failLargeAllocation(container, 0.001)} via libchaos-memory.
  * This injects a {@code mmap:ERRNO:ENOMEM@0.001} rule — one in a thousand mmap calls fails. At this
- * rate the service remains fully functional for short tests, but memory-leak code paths are exercised
- * over extended runs. In production slow-leak conditions arise from gradual RSS growth, fragmentation
- * of the kernel slab allocator, or uncollected weak references in managed runtimes.
+ * rate the service remains fully functional for short tests, but memory-leak code paths are
+ * exercised over extended runs. In production slow-leak conditions arise from gradual RSS growth,
+ * fragmentation of the kernel slab allocator, or uncollected weak references in managed runtimes.
  *
  * <h2>How bad it is</h2>
  *
@@ -69,8 +71,8 @@ import com.macstab.chaos.core.extension.Severity;
 public @interface CompositeChaosMemoryLeak {
 
   /**
-   * Probability that any intercepted {@code mmap} call returns {@code ENOMEM}. Must be in
-   * {@code (0.0, 1.0]}. Default {@code 0.001} (0.1%) — designed for long-running soak tests.
+   * Probability that any intercepted {@code mmap} call returns {@code ENOMEM}. Must be in {@code
+   * (0.0, 1.0]}. Default {@code 0.001} (0.1%) — designed for long-running soak tests.
    */
   double toxicity() default 0.001;
 

@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Causes {@code MBeanServer.invoke()} calls to throw a {@code ReflectionException} at
@@ -20,17 +22,17 @@ import com.macstab.chaos.core.extension.Severity;
  *
  * <h2>How it's created</h2>
  *
- * <p>Intercepts {@code JMX_INVOKE} operations via the JVM chaos agent and injects a
- * {@code ReflectionException}. In production, JMX invocation storms arise when management tools
- * (Jolokia, JConsole, APM agents) poll or invoke JMX operations at high frequency and the
- * MBean implementation is slow or throws.
+ * <p>Intercepts {@code JMX_INVOKE} operations via the JVM chaos agent and injects a {@code
+ * ReflectionException}. In production, JMX invocation storms arise when management tools (Jolokia,
+ * JConsole, APM agents) poll or invoke JMX operations at high frequency and the MBean
+ * implementation is slow or throws.
  *
  * <h2>How bad it is</h2>
  *
  * <p>Severity: <strong>Mild</strong><br>
- * JMX is a management plane, not a data plane. Failing JMX invocations typically cause
- * monitoring gaps rather than application errors. However, some applications use JMX to read
- * configuration or trigger operations; those code paths will fail and must be handled gracefully.
+ * JMX is a management plane, not a data plane. Failing JMX invocations typically cause monitoring
+ * gaps rather than application errors. However, some applications use JMX to read configuration or
+ * trigger operations; those code paths will fail and must be handled gracefully.
  *
  * <h2>Industry references</h2>
  *

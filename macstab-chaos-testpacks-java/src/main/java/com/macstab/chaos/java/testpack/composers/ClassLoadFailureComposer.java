@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosClassLoadFailure;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
@@ -14,7 +15,6 @@ import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
 import com.macstab.chaos.jvm.api.OperationType;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -35,11 +35,16 @@ public final class ClassLoadFailureComposer implements L2Composer<CompositeChaos
         JvmSelectorKind.CLASS_LOADING.build(EnumSet.of(OperationType.CLASS_LOAD));
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: class load failure — ClassNotFoundException injected for pattern '"
-                + annotation.classPattern() + "'")
+            .description(
+                "L2: class load failure — ClassNotFoundException injected for pattern '"
+                    + annotation.classPattern()
+                    + "'")
             .selector(selector)
-            .effect(ChaosEffect.injectException("java.lang.ClassNotFoundException",
-                "injected class load failure by chaos L2 for pattern: " + annotation.classPattern()))
+            .effect(
+                ChaosEffect.injectException(
+                    "java.lang.ClassNotFoundException",
+                    "injected class load failure by chaos L2 for pattern: "
+                        + annotation.classPattern()))
             .activationPolicy(ActivationPolicy.always())
             .build();
     final String scenarioId = JvmPlanAccumulator.instance().addScenario(container, scenario);
@@ -63,7 +68,8 @@ public final class ClassLoadFailureComposer implements L2Composer<CompositeChaos
   public List<String> describe(final CompositeChaosClassLoadFailure annotation) {
     return List.of(
         "class load failure — ClassNotFoundException injected for class pattern '"
-            + annotation.classPattern() + "'",
+            + annotation.classPattern()
+            + "'",
         "severity=SEVERE — core class load failure prevents context startup; optional class load must be handled gracefully");
   }
 }

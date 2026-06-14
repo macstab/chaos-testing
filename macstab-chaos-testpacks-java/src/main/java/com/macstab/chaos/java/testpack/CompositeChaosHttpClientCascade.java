@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Delays every {@code HttpClient.send()} call by {@link #delayMs()} milliseconds, simulating a
@@ -21,15 +23,15 @@ import com.macstab.chaos.core.extension.Severity;
  *
  * <p>Intercepts {@code java.net.http.HttpClient#send()} via the JVM chaos agent and injects a
  * deterministic delay. In production, slow downstreams arise from overloaded microservices,
- * saturated load balancers, or network congestion — the classic cascading-failure trigger where
- * a slow call backs up the calling service's thread pool until it exhausts.
+ * saturated load balancers, or network congestion — the classic cascading-failure trigger where a
+ * slow call backs up the calling service's thread pool until it exhausts.
  *
  * <h2>How bad it is</h2>
  *
  * <p>Severity: <strong>Severe</strong><br>
  * Without a timeout shorter than {@code delayMs}, calling threads will block for the full delay.
- * Thread pools fill, incoming requests queue, and the service eventually becomes unresponsive.
- * This is the textbook cascading-failure pattern described by Nygard in "Release It!".
+ * Thread pools fill, incoming requests queue, and the service eventually becomes unresponsive. This
+ * is the textbook cascading-failure pattern described by Nygard in "Release It!".
  *
  * <h2>Industry references</h2>
  *

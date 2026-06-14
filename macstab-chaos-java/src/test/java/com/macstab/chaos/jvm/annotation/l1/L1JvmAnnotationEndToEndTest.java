@@ -54,8 +54,7 @@ class L1JvmAnnotationEndToEndTest {
   // ==================== Tests ====================
 
   @Test
-  @DisplayName(
-      "@ChaosAsyncCancelDelay writes scenario to plan.json and removeAll clears it")
+  @DisplayName("@ChaosAsyncCancelDelay writes scenario to plan.json and removeAll clears it")
   void asyncCancelDelayWrittenAndRemoved() throws Exception {
     try (final GenericContainer<?> container = prepared()) {
       final List<AppliedL1> applied =
@@ -75,8 +74,7 @@ class L1JvmAnnotationEndToEndTest {
   }
 
   @Test
-  @DisplayName(
-      "@ChaosAsyncCompleteSuppress writes scenario to plan.json and removeAll clears it")
+  @DisplayName("@ChaosAsyncCompleteSuppress writes scenario to plan.json and removeAll clears it")
   void asyncCompleteSuppressWrittenAndRemoved() throws Exception {
     try (final GenericContainer<?> container = prepared()) {
       final List<AppliedL1> applied =

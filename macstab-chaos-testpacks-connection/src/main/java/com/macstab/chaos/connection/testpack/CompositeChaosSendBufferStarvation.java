@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Send calls fail with {@code ENOBUFS} — no kernel buffer space is available for outbound
@@ -23,8 +25,8 @@ import com.macstab.chaos.core.extension.Severity;
  * <p>Applies {@code NetRule.errno(wildcard, SEND, ENOBUFS, toxicity)} via libchaos-net. In
  * production this happens when a high-speed NIC's transmit ring is full (common during burst
  * traffic on AWS Nitro instances with large MTU), when a container's network namespace is under
- * backpressure from a congested upstream, or when the system is under heavy memory pressure and
- * the kernel cannot allocate socket buffers.
+ * backpressure from a congested upstream, or when the system is under heavy memory pressure and the
+ * kernel cannot allocate socket buffers.
  *
  * <h2>How bad it is</h2>
  *
@@ -38,8 +40,8 @@ import com.macstab.chaos.core.extension.Severity;
  *
  * <p>ENOBUFS on send is documented in the Linux kernel networking FAQ and in AWS EC2 instance
  * networking performance documentation. The DPDK and netmap high-performance networking frameworks
- * include specific ENOBUFS handling paths. FreeBSD's setsockopt(SO_SNDBUF) documentation covers
- * the buffer exhaustion model.
+ * include specific ENOBUFS handling paths. FreeBSD's setsockopt(SO_SNDBUF) documentation covers the
+ * buffer exhaustion model.
  *
  * <h2>Example</h2>
  *
@@ -72,15 +74,16 @@ public @interface CompositeChaosSendBufferStarvation {
 
   /**
    * libchaos-net endpoint selector. Accepted forms:
+   *
    * <ul>
-   *   <li>{@code "*"} — wildcard; matches every socket (default)</li>
-   *   <li>{@code "tcp4://host:port"} — TCP/IPv4 to a specific host and port</li>
-   *   <li>{@code "tcp6://[host]:port"} — TCP/IPv6</li>
-   *   <li>{@code "udp4://host:port"} — UDP/IPv4</li>
-   *   <li>{@code "udp6://[host]:port"} — UDP/IPv6</li>
-   *   <li>{@code "unix:///path"} — Unix-domain socket</li>
-   *   <li>{@code "dns://hostname"} — DNS interception at {@code getaddrinfo} time</li>
-   *   <li>{@code "hostname"} — shorthand for {@code dns://hostname}</li>
+   *   <li>{@code "*"} — wildcard; matches every socket (default)
+   *   <li>{@code "tcp4://host:port"} — TCP/IPv4 to a specific host and port
+   *   <li>{@code "tcp6://[host]:port"} — TCP/IPv6
+   *   <li>{@code "udp4://host:port"} — UDP/IPv4
+   *   <li>{@code "udp6://[host]:port"} — UDP/IPv6
+   *   <li>{@code "unix:///path"} — Unix-domain socket
+   *   <li>{@code "dns://hostname"} — DNS interception at {@code getaddrinfo} time
+   *   <li>{@code "hostname"} — shorthand for {@code dns://hostname}
    * </ul>
    */
   String endpoint() default "*";

@@ -34,8 +34,7 @@ public final class SocketEphemeralExhaustionComposer
             .apply(
                 container,
                 NetRule.errno(
-                    endpoint, NetOperation.BIND, Errno.EADDRNOTAVAIL,
-                    annotation.toxicity()));
+                    endpoint, NetOperation.BIND, Errno.EADDRNOTAVAIL, annotation.toxicity()));
     return List.of(handle);
   }
 

@@ -1,10 +1,12 @@
 /* (C)2026 Christian Schnapka / Macstab GmbH */
 package com.macstab.chaos.java.testpack.composers;
 
+import java.util.EnumSet;
 import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosSpuriousWakeup;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
@@ -13,11 +15,8 @@ import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
 import com.macstab.chaos.jvm.api.OperationType;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
-
-import java.util.EnumSet;
 
 /** L2 composer for {@link CompositeChaosSpuriousWakeup}. */
 @Slf4j
@@ -37,8 +36,9 @@ public final class SpuriousWakeupComposer implements L2Composer<CompositeChaosSp
         JvmSelectorKind.NIO.build(EnumSet.of(OperationType.NIO_SELECTOR_SELECT));
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: spurious wakeup — park/select returns spuriously with probability "
-                + annotation.probability())
+            .description(
+                "L2: spurious wakeup — park/select returns spuriously with probability "
+                    + annotation.probability())
             .selector(selector)
             .effect(ChaosEffect.spuriousWakeup())
             .activationPolicy(ActivationPolicy.always())

@@ -11,19 +11,20 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
- * <p>Causes every {@code System.loadLibrary()} and {@code System.load()} call to throw an
- * {@code UnsatisfiedLinkError}, simulating a missing or incompatible native library (.so/.dll)
- * at the deployment target.
+ * <p>Causes every {@code System.loadLibrary()} and {@code System.load()} call to throw an {@code
+ * UnsatisfiedLinkError}, simulating a missing or incompatible native library (.so/.dll) at the
+ * deployment target.
  *
  * <h2>How it's created</h2>
  *
  * <p>Intercepts {@code NATIVE_LIBRARY_LOAD} operations via the JVM chaos agent and injects an
- * {@code UnsatisfiedLinkError} at probability {@link #probability()}. In production, native
- * library load failures occur after cross-platform deployment (e.g. x86 jar on ARM), after an
- * OS upgrade changes shared library paths, or when a JNI library was not included in the
- * deployment artifact.
+ * {@code UnsatisfiedLinkError} at probability {@link #probability()}. In production, native library
+ * load failures occur after cross-platform deployment (e.g. x86 jar on ARM), after an OS upgrade
+ * changes shared library paths, or when a JNI library was not included in the deployment artifact.
  *
  * <h2>How bad it is</h2>
  *

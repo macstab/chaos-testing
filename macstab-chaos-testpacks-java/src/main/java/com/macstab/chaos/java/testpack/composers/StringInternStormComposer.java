@@ -5,19 +5,20 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosStringInternStorm;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.api.ActivationPolicy;
 import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
 
 /** L2 composer for {@link CompositeChaosStringInternStorm}. */
 @Slf4j
-public final class StringInternStormComposer implements L2Composer<CompositeChaosStringInternStorm> {
+public final class StringInternStormComposer
+    implements L2Composer<CompositeChaosStringInternStorm> {
 
   /** Public no-arg constructor required by the L2 composer contract. */
   public StringInternStormComposer() {}
@@ -32,7 +33,10 @@ public final class StringInternStormComposer implements L2Composer<CompositeChao
             .mintScenarioId(CompositeChaosStringInternStorm.class.getSimpleName());
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: string intern storm — " + annotation.stringCount() + " unique strings interned")
+            .description(
+                "L2: string intern storm — "
+                    + annotation.stringCount()
+                    + " unique strings interned")
             .selector(ChaosSelector.stress(ChaosSelector.StressTarget.STRING_INTERN_PRESSURE))
             .effect(ChaosEffect.stringInternPressure(annotation.stringCount(), STRING_LENGTH_BYTES))
             .activationPolicy(ActivationPolicy.always())
@@ -57,7 +61,8 @@ public final class StringInternStormComposer implements L2Composer<CompositeChao
   @Override
   public List<String> describe(final CompositeChaosStringInternStorm annotation) {
     return List.of(
-        "string intern storm — " + annotation.stringCount()
+        "string intern storm — "
+            + annotation.stringCount()
             + " unique strings permanently pinned in JVM string pool",
         "severity=MODERATE — O(n) GC weak-reference scanning cost; extends every GC pause");
   }

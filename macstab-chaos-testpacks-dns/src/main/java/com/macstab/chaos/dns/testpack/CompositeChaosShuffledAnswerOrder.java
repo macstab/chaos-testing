@@ -11,11 +11,13 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
- * <p>The address list returned by every forward DNS lookup is re-linked in random order before being
- * returned to the caller. Applications that assume the first answer is always the canonical or
- * lowest-latency address — or that assume answer ordering is stable across lookups — receive a
+ * <p>The address list returned by every forward DNS lookup is re-linked in random order before
+ * being returned to the caller. Applications that assume the first answer is always the canonical
+ * or lowest-latency address — or that assume answer ordering is stable across lookups — receive a
  * different first address on each query. Tests DNS-aware load-balancing strategies, connection-pool
  * stickiness, and address-ordering assumptions baked into application configuration.
  *
@@ -24,8 +26,8 @@ import com.macstab.chaos.core.extension.Severity;
  * <p>Applies {@code DnsRule.shuffle(anyForward())} via libchaos-dns. Each {@code getaddrinfo()}
  * call has its result list re-ordered in random order by the interposer before the list pointer is
  * returned to the caller. In production this is the normal behaviour of most authoritative DNS
- * servers (round-robin DNS), AWS Route 53 weighted routing, and any resolver that implements
- * RFC 1794 address record shuffling.
+ * servers (round-robin DNS), AWS Route 53 weighted routing, and any resolver that implements RFC
+ * 1794 address record shuffling.
  *
  * <h2>How bad it is</h2>
  *
@@ -66,8 +68,8 @@ import com.macstab.chaos.core.extension.Severity;
 public @interface CompositeChaosShuffledAnswerOrder {
 
   /**
-   * Hostname to target. {@code "*"} (the default) shuffles answers for all forward lookups.
-   * Provide a specific hostname to limit the chaos to one dependency.
+   * Hostname to target. {@code "*"} (the default) shuffles answers for all forward lookups. Provide
+   * a specific hostname to limit the chaos to one dependency.
    */
   String host() default "*";
 

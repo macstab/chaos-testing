@@ -11,25 +11,27 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Simulates transparent hugepage allocation advisory failure by injecting {@code ENOMEM} on
- * {@code madvise} calls at 30% probability. Applications and runtimes that call
- * {@code madvise(MADV_HUGEPAGE)} or {@code madvise(MADV_COLLAPSE)} to request 2 MiB transparent
- * hugepages (THP) will see the advisory fail when the kernel cannot find a contiguous 2 MiB physical
- * region. A correct application treats {@code madvise} failures as non-fatal hints and continues
- * with 4 KiB base pages; an incorrect one aborts, retries indefinitely, or silently skips the
- * fallback and operates without the performance benefit.
+ * {@code madvise} calls at 30% probability. Applications and runtimes that call {@code
+ * madvise(MADV_HUGEPAGE)} or {@code madvise(MADV_COLLAPSE)} to request 2 MiB transparent hugepages
+ * (THP) will see the advisory fail when the kernel cannot find a contiguous 2 MiB physical region.
+ * A correct application treats {@code madvise} failures as non-fatal hints and continues with 4 KiB
+ * base pages; an incorrect one aborts, retries indefinitely, or silently skips the fallback and
+ * operates without the performance benefit.
  *
  * <h2>How it's created</h2>
  *
  * <p>Applies {@code AdvancedMemoryChaos#failPagePurge(container, 0.3)} via libchaos-memory, which
  * installs a {@code madvise:ERRNO:ENOMEM@0.3} rule. ({@code ENOMEM} is the errno returned by the
- * kernel when the hugepage advisory cannot be satisfied — the same errno used for
- * {@code MADV_DONTNEED} / {@code MADV_FREE} failures.) In production hugepage failures arise from
- * memory fragmentation (common on long-running hosts), from kernel NUMA topology constraints, or
- * from {@code /sys/kernel/mm/transparent_hugepage/enabled} being set to {@code never} by a
- * platform policy.
+ * kernel when the hugepage advisory cannot be satisfied — the same errno used for {@code
+ * MADV_DONTNEED} / {@code MADV_FREE} failures.) In production hugepage failures arise from memory
+ * fragmentation (common on long-running hosts), from kernel NUMA topology constraints, or from
+ * {@code /sys/kernel/mm/transparent_hugepage/enabled} being set to {@code never} by a platform
+ * policy.
  *
  * <h2>How bad it is</h2>
  *
@@ -76,8 +78,8 @@ import com.macstab.chaos.core.extension.Severity;
 public @interface CompositeChaosHugepageFailure {
 
   /**
-   * Probability that any intercepted {@code madvise} call returns {@code ENOMEM}. Must be in
-   * {@code (0.0, 1.0]}. Default {@code 0.3} (30%).
+   * Probability that any intercepted {@code madvise} call returns {@code ENOMEM}. Must be in {@code
+   * (0.0, 1.0]}. Default {@code 0.3} (30%).
    */
   double toxicity() default 0.3;
 

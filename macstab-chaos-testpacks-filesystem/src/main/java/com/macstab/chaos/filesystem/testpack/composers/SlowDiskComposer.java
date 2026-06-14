@@ -48,7 +48,9 @@ public final class SlowDiskComposer implements L2Composer<CompositeChaosSlowDisk
   @Override
   public List<String> describe(final CompositeChaosSlowDisk annotation) {
     return List.of(
-        "slow disk (" + annotation.latencyMs() + "ms on read + write) — EBS gp2 burst-credit exhaustion or HDD seek contention",
+        "slow disk ("
+            + annotation.latencyMs()
+            + "ms on read + write) — EBS gp2 burst-credit exhaustion or HDD seek contention",
         "path=" + annotation.path(),
         "severity=MODERATE — high I/O latency; service recovers spontaneously when disk pressure lifts");
   }

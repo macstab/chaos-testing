@@ -39,9 +39,11 @@ public final class HugepageFailureComposer implements L2Composer<CompositeChaosH
   @Override
   public List<String> describe(final CompositeChaosHugepageFailure annotation) {
     return List.of(
-        "Hugepage failure — ENOMEM on madvise at rate " + annotation.toxicity()
+        "Hugepage failure — ENOMEM on madvise at rate "
+            + annotation.toxicity()
             + " (MADV_HUGEPAGE / MADV_DONTNEED advisory cannot be satisfied)",
-        "toxicity=" + annotation.toxicity()
+        "toxicity="
+            + annotation.toxicity()
             + " — simulates memory fragmentation or kernel THP policy; allocator must fall back to base pages",
         "severity=MILD — madvise is always a hint; well-written allocators silently continue with 4 KiB pages");
   }

@@ -2,11 +2,11 @@
 /**
  * L2 chaos scenario annotations for the filesystem module.
  *
- * <p>This package contains ten named, pre-tuned {@code @CompositeChaos<X>} annotations covering
- * the canonical filesystem failure modes encountered in cloud-native production systems. Each
- * annotation composes one or more libchaos-io rules via a
- * {@link com.macstab.chaos.core.extension.L2Composer} implementation and ships with
- * industry-canonical documentation, severity classification, and sane defaults.
+ * <p>This package contains ten named, pre-tuned {@code @CompositeChaos<X>} annotations covering the
+ * canonical filesystem failure modes encountered in cloud-native production systems. Each
+ * annotation composes one or more libchaos-io rules via a {@link
+ * com.macstab.chaos.core.extension.L2Composer} implementation and ships with industry-canonical
+ * documentation, severity classification, and sane defaults.
  *
  * <h2>Scenario catalogue</h2>
  *
@@ -67,10 +67,9 @@
  *
  * <h2>Prerequisites</h2>
  *
- * <p>All scenarios in this package require a container prepared with libchaos-io before
- * {@code container.start()}. Annotate the test class with
- * {@code @SyscallLevelChaos(LibchaosLib.IO)}; {@code ChaosTestingExtension} drives preparation
- * automatically.
+ * <p>All scenarios in this package require a container prepared with libchaos-io before {@code
+ * container.start()}. Annotate the test class with {@code @SyscallLevelChaos(LibchaosLib.IO)};
+ * {@code ChaosTestingExtension} drives preparation automatically.
  *
  * @author Christian Schnapka - Macstab GmbH
  */

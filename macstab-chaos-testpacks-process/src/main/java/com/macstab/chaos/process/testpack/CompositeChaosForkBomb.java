@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Simulates the resource-starvation outcome of an uncontrolled process-creation burst by
@@ -39,11 +41,11 @@ import com.macstab.chaos.core.extension.Severity;
  *
  * <h2>Industry references</h2>
  *
- * <p>Fork-bomb mitigation and process-limit enforcement are documented in the {@code
- * RLIMIT_NPROC} section of the Linux {@code setrlimit(2)} man-page and in the cgroups v2
- * {@code pids.max} controller documentation. Container runtimes enforce a per-pod process limit
- * via {@code pids.max} to prevent exactly this failure mode; this scenario tests the application's
- * tolerance to the post-saturation steady state without triggering cgroups OOM.
+ * <p>Fork-bomb mitigation and process-limit enforcement are documented in the {@code RLIMIT_NPROC}
+ * section of the Linux {@code setrlimit(2)} man-page and in the cgroups v2 {@code pids.max}
+ * controller documentation. Container runtimes enforce a per-pod process limit via {@code pids.max}
+ * to prevent exactly this failure mode; this scenario tests the application's tolerance to the
+ * post-saturation steady state without triggering cgroups OOM.
  *
  * <h2>Example</h2>
  *

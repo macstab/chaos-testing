@@ -7,6 +7,7 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosFailingShutdownHook;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
@@ -15,13 +16,13 @@ import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
 import com.macstab.chaos.jvm.api.OperationType;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
 
 /** L2 composer for {@link CompositeChaosFailingShutdownHook}. */
 @Slf4j
-public final class FailingShutdownHookComposer implements L2Composer<CompositeChaosFailingShutdownHook> {
+public final class FailingShutdownHookComposer
+    implements L2Composer<CompositeChaosFailingShutdownHook> {
 
   /** Public no-arg constructor required by the L2 composer contract. */
   public FailingShutdownHookComposer() {}
@@ -37,8 +38,10 @@ public final class FailingShutdownHookComposer implements L2Composer<CompositeCh
     final Duration delay = Duration.ofMillis(annotation.hangMs());
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: failing shutdown hook — shutdown-hook registration delayed by "
-                + annotation.hangMs() + " ms, preventing clean JVM exit")
+            .description(
+                "L2: failing shutdown hook — shutdown-hook registration delayed by "
+                    + annotation.hangMs()
+                    + " ms, preventing clean JVM exit")
             .selector(selector)
             .effect(ChaosEffect.delay(delay, delay))
             .activationPolicy(ActivationPolicy.always())
@@ -64,7 +67,8 @@ public final class FailingShutdownHookComposer implements L2Composer<CompositeCh
   public List<String> describe(final CompositeChaosFailingShutdownHook annotation) {
     return List.of(
         "failing shutdown hook — Runtime.addShutdownHook() blocked for "
-            + annotation.hangMs() + " ms, JVM shutdown subsystem seized",
+            + annotation.hangMs()
+            + " ms, JVM shutdown subsystem seized",
         "severity=CRITICAL — exceeds Kubernetes SIGKILL grace period; connection pools, WAL, and locks not released");
   }
 }

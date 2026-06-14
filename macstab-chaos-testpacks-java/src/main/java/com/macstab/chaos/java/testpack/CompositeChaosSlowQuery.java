@@ -11,11 +11,13 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Delays every {@code Connection.commit()} call by {@link #commitDelayMs()} milliseconds,
- * simulating a database that takes a long time to flush dirty pages and confirm a transaction —
- * the Java-layer equivalent of slow WAL sync on a loaded PostgreSQL or MySQL server.
+ * simulating a database that takes a long time to flush dirty pages and confirm a transaction — the
+ * Java-layer equivalent of slow WAL sync on a loaded PostgreSQL or MySQL server.
  *
  * <h2>How it's created</h2>
  *
@@ -32,9 +34,9 @@ import com.macstab.chaos.core.extension.Severity;
  *
  * <h2>Industry references</h2>
  *
- * <p>PostgreSQL documentation §"Write-Ahead Logging" explains the fsync-on-commit path that
- * makes commit latency disk-bound. pg_stat_activity's {@code wait_event = 'WALWriteLock'}
- * identifies sessions blocked in commit.
+ * <p>PostgreSQL documentation §"Write-Ahead Logging" explains the fsync-on-commit path that makes
+ * commit latency disk-bound. pg_stat_activity's {@code wait_event = 'WALWriteLock'} identifies
+ * sessions blocked in commit.
  *
  * <h2>Example</h2>
  *

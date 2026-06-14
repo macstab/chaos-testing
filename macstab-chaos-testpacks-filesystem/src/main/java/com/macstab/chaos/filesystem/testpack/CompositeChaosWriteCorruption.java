@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>A tiny fraction of {@code write()} calls on the target path prefix succeed but silently write
@@ -21,20 +23,20 @@ import com.macstab.chaos.core.extension.Severity;
  * <h2>How it's created</h2>
  *
  * <p>Injects {@code IoRule.torn(path, WRITE, 0.001)} via libchaos-io. The {@code TORN} effect
- * truncates the byte count returned to userspace: libc is called, succeeds, but the application
- * is told fewer bytes were written than actually were. In production, torn writes occur when: a
- * power failure interrupts a write mid-sector (especially on HDDs without capacitor-backed write
- * caches), an NVMe controller resets mid-command, or a virtualised storage backend flushes only
- * part of a large I/O before a live migration snapshot.
+ * truncates the byte count returned to userspace: libc is called, succeeds, but the application is
+ * told fewer bytes were written than actually were. In production, torn writes occur when: a power
+ * failure interrupts a write mid-sector (especially on HDDs without capacitor-backed write caches),
+ * an NVMe controller resets mid-command, or a virtualised storage backend flushes only part of a
+ * large I/O before a live migration snapshot.
  *
  * <h2>How bad it is</h2>
  *
  * <p>Severity: <strong>Critical</strong><br>
- * The application believes fewer bytes were persisted than it intended. If it does not re-issue
- * the remainder of the write (partial-write loop) the file is silently truncated mid-record.
- * WAL corruption, SSTable header truncation, and index file corruption are common consequences.
- * Without page-level checksums, the corruption is invisible until read-back; with checksums it
- * surfaces as a checksum mismatch long after the write epoch has closed.
+ * The application believes fewer bytes were persisted than it intended. If it does not re-issue the
+ * remainder of the write (partial-write loop) the file is silently truncated mid-record. WAL
+ * corruption, SSTable header truncation, and index file corruption are common consequences. Without
+ * page-level checksums, the corruption is invisible until read-back; with checksums it surfaces as
+ * a checksum mismatch long after the write epoch has closed.
  *
  * <h2>Industry references</h2>
  *
@@ -71,14 +73,14 @@ import com.macstab.chaos.core.extension.Severity;
 public @interface CompositeChaosWriteCorruption {
 
   /**
-   * Path prefix on which {@code write()} torn-write corruption is applied. Must be an absolute
-   * path (start with {@code /}). Defaults to {@code "*"} — wildcard matching every path.
+   * Path prefix on which {@code write()} torn-write corruption is applied. Must be an absolute path
+   * (start with {@code /}). Defaults to {@code "*"} — wildcard matching every path.
    */
   String path() default "*";
 
   /**
-   * Probability that a matched write is torn (returns a short byte count). Very low values
-   * (default {@code 0.001} = 0.1%) match real-world hardware torn-write rates.
+   * Probability that a matched write is torn (returns a short byte count). Very low values (default
+   * {@code 0.001} = 0.1%) match real-world hardware torn-write rates.
    */
   double toxicity() default 0.001;
 

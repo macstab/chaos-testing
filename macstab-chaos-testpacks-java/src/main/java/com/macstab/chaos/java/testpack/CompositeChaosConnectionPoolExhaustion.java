@@ -11,16 +11,18 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
- * <p>Delays every {@code DataSource.getConnection()} call by {@link #acquireDelayMs()} milliseconds,
- * simulating an exhausted or very slow JDBC connection pool where every connection-acquire waits
- * at the pool's maximum timeout before succeeding or failing.
+ * <p>Delays every {@code DataSource.getConnection()} call by {@link #acquireDelayMs()}
+ * milliseconds, simulating an exhausted or very slow JDBC connection pool where every
+ * connection-acquire waits at the pool's maximum timeout before succeeding or failing.
  *
  * <h2>How it's created</h2>
  *
- * <p>Intercepts {@code javax.sql.DataSource#getConnection()} via the JVM chaos agent and injects
- * a deterministic delay before control returns to the caller. In production, connection-pool
+ * <p>Intercepts {@code javax.sql.DataSource#getConnection()} via the JVM chaos agent and injects a
+ * deterministic delay before control returns to the caller. In production, connection-pool
  * exhaustion occurs when application threads hold connections for too long (open transactions,
  * long-running queries), leaving none available for incoming requests.
  *
@@ -33,9 +35,9 @@ import com.macstab.chaos.core.extension.Severity;
  *
  * <h2>Industry references</h2>
  *
- * <p>HikariCP documentation §"Pool sizing" describes why pool exhaustion causes cascading
- * failures. The "connection timeout" anti-pattern (too-long pool wait disguised as latency) is
- * described in the Percona blog "Diagnosing Connection Pool Exhaustion in MySQL".
+ * <p>HikariCP documentation §"Pool sizing" describes why pool exhaustion causes cascading failures.
+ * The "connection timeout" anti-pattern (too-long pool wait disguised as latency) is described in
+ * the Percona blog "Diagnosing Connection Pool Exhaustion in MySQL".
  *
  * <h2>Example</h2>
  *

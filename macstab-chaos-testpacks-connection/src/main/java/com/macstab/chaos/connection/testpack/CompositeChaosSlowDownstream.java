@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Downstream services respond slowly — every connect call is delayed by {@code latencyMs}
@@ -22,10 +24,12 @@ import com.macstab.chaos.core.extension.Severity;
  * <h2>How it's created</h2>
  *
  * <p>Applies two rules via libchaos-net:
+ *
  * <ol>
  *   <li>{@code NetRule.latency(wildcard, CONNECT, latencyMs, 1.0)} — delays every connect
  *   <li>{@code NetRule.errno(wildcard, SEND, EPIPE, sendFailToxicity)} — random broken-pipe on send
  * </ol>
+ *
  * In production this pattern occurs when a downstream service is overloaded: the TCP handshake
  * completes slowly because the server accept queue is full, and already-accepted connections are
  * closed mid-response when the server GC pauses or runs out of heap.
@@ -41,9 +45,9 @@ import com.macstab.chaos.core.extension.Severity;
  * <h2>Industry references</h2>
  *
  * <p>Slow downstream is the canonical chaos scenario for testing connection-pool timeout
- * configuration, described in Netflix's "Principles of Chaos Engineering" paper (2016). EPIPE
- * on send is covered in Stevens "Unix Network Programming" §5.12 and is the primary error surfaced
- * by Tomcat/Undertow when a client disconnects mid-request.
+ * configuration, described in Netflix's "Principles of Chaos Engineering" paper (2016). EPIPE on
+ * send is covered in Stevens "Unix Network Programming" §5.12 and is the primary error surfaced by
+ * Tomcat/Undertow when a client disconnects mid-request.
  *
  * <h2>Example</h2>
  *
@@ -79,15 +83,16 @@ public @interface CompositeChaosSlowDownstream {
 
   /**
    * libchaos-net endpoint selector. Accepted forms:
+   *
    * <ul>
-   *   <li>{@code "*"} — wildcard; matches every socket (default)</li>
-   *   <li>{@code "tcp4://host:port"} — TCP/IPv4 to a specific host and port</li>
-   *   <li>{@code "tcp6://[host]:port"} — TCP/IPv6</li>
-   *   <li>{@code "udp4://host:port"} — UDP/IPv4</li>
-   *   <li>{@code "udp6://[host]:port"} — UDP/IPv6</li>
-   *   <li>{@code "unix:///path"} — Unix-domain socket</li>
-   *   <li>{@code "dns://hostname"} — DNS interception at {@code getaddrinfo} time</li>
-   *   <li>{@code "hostname"} — shorthand for {@code dns://hostname}</li>
+   *   <li>{@code "*"} — wildcard; matches every socket (default)
+   *   <li>{@code "tcp4://host:port"} — TCP/IPv4 to a specific host and port
+   *   <li>{@code "tcp6://[host]:port"} — TCP/IPv6
+   *   <li>{@code "udp4://host:port"} — UDP/IPv4
+   *   <li>{@code "udp6://[host]:port"} — UDP/IPv6
+   *   <li>{@code "unix:///path"} — Unix-domain socket
+   *   <li>{@code "dns://hostname"} — DNS interception at {@code getaddrinfo} time
+   *   <li>{@code "hostname"} — shorthand for {@code dns://hostname}
    * </ul>
    */
   String endpoint() default "*";

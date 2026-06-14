@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>The DNS resolver returns {@code EAI_FAIL} (hard non-retryable failure) for all forward
@@ -60,9 +62,7 @@ import com.macstab.chaos.core.extension.Severity;
     severity = Severity.SEVERE)
 public @interface CompositeChaosDnsBlackhole {
 
-  /**
-   * Hostname to target. {@code "*"} (the default) matches all forward lookups.
-   */
+  /** Hostname to target. {@code "*"} (the default) matches all forward lookups. */
   String host() default "*";
 
   /**

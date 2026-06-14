@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Suppresses {@code ScheduledExecutorService} task execution at the tick point so that tasks are
@@ -27,9 +29,9 @@ import com.macstab.chaos.core.extension.Severity;
  * <h2>How bad it is</h2>
  *
  * <p>Severity: <strong>Moderate</strong><br>
- * Critical scheduled tasks (lease renewal, cache eviction, metric flush) fail silently when
- * their tick is suppressed. The application may not detect the miss until a downstream system
- * observes the missing action (expired lease, full cache, stale metrics).
+ * Critical scheduled tasks (lease renewal, cache eviction, metric flush) fail silently when their
+ * tick is suppressed. The application may not detect the miss until a downstream system observes
+ * the missing action (expired lease, full cache, stale metrics).
  *
  * <h2>Industry references</h2>
  *

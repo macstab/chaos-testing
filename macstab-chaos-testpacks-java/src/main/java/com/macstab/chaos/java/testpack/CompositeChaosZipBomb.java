@@ -11,11 +11,13 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Intercepts {@code java.util.zip.Inflater} operations and injects extreme expansion ratios,
- * simulating the effect of decompressing a zip-bomb payload — a tiny compressed input that
- * explodes to gigabytes of output, exhausting heap and CPU.
+ * simulating the effect of decompressing a zip-bomb payload — a tiny compressed input that explodes
+ * to gigabytes of output, exhausting heap and CPU.
  *
  * <h2>How it's created</h2>
  *
@@ -28,8 +30,8 @@ import com.macstab.chaos.core.extension.Severity;
  *
  * <p>Severity: <strong>Severe</strong><br>
  * An unbounded decompression of a zip-bomb rapidly exhausts heap, triggering continuous full GCs
- * and eventually an OOM. Services that do not limit decompressed content size are
- * trivially vulnerable. This is classified as a resource-exhaustion attack vector in OWASP.
+ * and eventually an OOM. Services that do not limit decompressed content size are trivially
+ * vulnerable. This is classified as a resource-exhaustion attack vector in OWASP.
  *
  * <h2>Industry references</h2>
  *

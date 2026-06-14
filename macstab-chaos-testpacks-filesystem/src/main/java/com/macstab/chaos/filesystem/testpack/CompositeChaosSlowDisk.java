@@ -11,19 +11,21 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
- * <p>Both {@code read()} and {@code write()} on paths under the target prefix are delayed by
- * {@link #latencyMs()} milliseconds (default 200 ms) before libc is invoked. This models a
- * slow or saturated block device where every I/O operation incurs elevated service time.
+ * <p>Both {@code read()} and {@code write()} on paths under the target prefix are delayed by {@link
+ * #latencyMs()} milliseconds (default 200 ms) before libc is invoked. This models a slow or
+ * saturated block device where every I/O operation incurs elevated service time.
  *
  * <h2>How it's created</h2>
  *
- * <p>Applies two libchaos-io rules: {@code IoRule.latency(path, READ, delay)} and
- * {@code IoRule.latency(path, WRITE, delay)}. In production, slow-disk symptoms appear during
- * NVMe queue depth saturation, HDD head-seek contention, EBS throughput throttling (when the
- * volume's IOPS/MBps burst budget is exhausted), or when a RAID array is degraded and is
- * rebuilding in the background.
+ * <p>Applies two libchaos-io rules: {@code IoRule.latency(path, READ, delay)} and {@code
+ * IoRule.latency(path, WRITE, delay)}. In production, slow-disk symptoms appear during NVMe queue
+ * depth saturation, HDD head-seek contention, EBS throughput throttling (when the volume's
+ * IOPS/MBps burst budget is exhausted), or when a RAID array is degraded and is rebuilding in the
+ * background.
  *
  * <h2>How bad it is</h2>
  *
@@ -71,8 +73,8 @@ public @interface CompositeChaosSlowDisk {
   String path() default "*";
 
   /**
-   * Delay in milliseconds injected before each matched {@code read()} or {@code write()}.
-   * Default {@code 200} ms models an EBS gp2 volume with burst credit exhaustion.
+   * Delay in milliseconds injected before each matched {@code read()} or {@code write()}. Default
+   * {@code 200} ms models an EBS gp2 volume with burst credit exhaustion.
    */
   long latencyMs() default 200L;
 

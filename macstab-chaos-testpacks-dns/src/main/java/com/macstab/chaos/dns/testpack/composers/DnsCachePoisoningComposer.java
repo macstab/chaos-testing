@@ -15,7 +15,8 @@ import com.macstab.chaos.dns.model.DnsSelector;
 import com.macstab.chaos.dns.testpack.CompositeChaosDnsCachePoisoning;
 
 /** L2 composer for {@link CompositeChaosDnsCachePoisoning}. */
-public final class DnsCachePoisoningComposer implements L2Composer<CompositeChaosDnsCachePoisoning> {
+public final class DnsCachePoisoningComposer
+    implements L2Composer<CompositeChaosDnsCachePoisoning> {
 
   /** Public no-arg constructor required by the L2 composer contract. */
   public DnsCachePoisoningComposer() {}

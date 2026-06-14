@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Leaks large values into per-thread {@code ThreadLocal} slots across a pool of threads,
@@ -29,15 +31,15 @@ import com.macstab.chaos.core.extension.Severity;
  * <h2>How bad it is</h2>
  *
  * <p>Severity: <strong>Moderate</strong><br>
- * Heap fills gradually rather than suddenly. The application may run normally for hours before
- * the leak accumulates enough to trigger GC pressure, making it hard to diagnose without a heap
- * dump. Eventually, GC overhead rises and OOM occurs.
+ * Heap fills gradually rather than suddenly. The application may run normally for hours before the
+ * leak accumulates enough to trigger GC pressure, making it hard to diagnose without a heap dump.
+ * Eventually, GC overhead rises and OOM occurs.
  *
  * <h2>Industry references</h2>
  *
  * <p>ThreadLocal leak via thread pools is documented in Kohsuke Kawaguchi's blog "The hidden
- * dangers of ThreadLocal" and the SLF4J MDC documentation. Both recommend explicit
- * {@code remove()} calls at request boundaries.
+ * dangers of ThreadLocal" and the SLF4J MDC documentation. Both recommend explicit {@code remove()}
+ * calls at request boundaries.
  *
  * <h2>Example</h2>
  *

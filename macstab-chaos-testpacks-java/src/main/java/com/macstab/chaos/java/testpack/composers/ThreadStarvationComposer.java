@@ -5,13 +5,13 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosThreadStarvation;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.api.ActivationPolicy;
 import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -30,8 +30,10 @@ public final class ThreadStarvationComposer implements L2Composer<CompositeChaos
             .mintScenarioId(CompositeChaosThreadStarvation.class.getSimpleName());
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: thread-leak stressor — " + annotation.exhaustAfter()
-                + " never-terminating daemon threads")
+            .description(
+                "L2: thread-leak stressor — "
+                    + annotation.exhaustAfter()
+                    + " never-terminating daemon threads")
             .selector(ChaosSelector.stress(ChaosSelector.StressTarget.THREAD_LEAK))
             .effect(ChaosEffect.threadLeak(annotation.exhaustAfter(), "chaos-l2-leaked-", true))
             .activationPolicy(ActivationPolicy.always())
@@ -47,7 +49,8 @@ public final class ThreadStarvationComposer implements L2Composer<CompositeChaos
         try {
           JvmPlanAccumulator.instance().removeScenario(container, scenarioId);
         } catch (final Exception e) {
-          log.warn("ThreadStarvationComposer.removeAll: failed to remove scenario {}", scenarioId, e);
+          log.warn(
+              "ThreadStarvationComposer.removeAll: failed to remove scenario {}", scenarioId, e);
         }
       }
     }
@@ -56,7 +59,8 @@ public final class ThreadStarvationComposer implements L2Composer<CompositeChaos
   @Override
   public List<String> describe(final CompositeChaosThreadStarvation annotation) {
     return List.of(
-        "thread-leak stressor — " + annotation.exhaustAfter()
+        "thread-leak stressor — "
+            + annotation.exhaustAfter()
             + " never-terminating daemon threads consuming OS thread slots",
         "severity=SEVERE — thread-pool exhaustion leads to OutOfMemoryError: unable to create native thread");
   }

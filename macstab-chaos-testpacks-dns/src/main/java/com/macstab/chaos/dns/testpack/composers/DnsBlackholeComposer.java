@@ -26,7 +26,9 @@ public final class DnsBlackholeComposer implements L2Composer<CompositeChaosDnsB
       final GenericContainer<?> container, final CompositeChaosDnsBlackhole annotation) {
     final DnsSelector selector = resolveSelector(annotation.host());
     final RuleHandle handle =
-        CompositeDnsChaos.standard().advanced().apply(container, DnsRule.eai(selector, EaiErrno.EAI_FAIL));
+        CompositeDnsChaos.standard()
+            .advanced()
+            .apply(container, DnsRule.eai(selector, EaiErrno.EAI_FAIL));
     return List.of(handle);
   }
 

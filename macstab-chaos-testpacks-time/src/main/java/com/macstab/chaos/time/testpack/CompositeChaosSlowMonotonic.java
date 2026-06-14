@@ -11,21 +11,23 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Makes {@code CLOCK_MONOTONIC} appear to run slower than wall time by applying a negative
- * offset of {@link #skewMs} milliseconds to every {@code clock_gettime(CLOCK_MONOTONIC)} call.
- * The monotonic clock still advances (it is not frozen), but it consistently reads lower than
- * the real elapsed time — as if the application's CPU-time accounting were running slow relative
- * to wall time.
+ * offset of {@link #skewMs} milliseconds to every {@code clock_gettime(CLOCK_MONOTONIC)} call. The
+ * monotonic clock still advances (it is not frozen), but it consistently reads lower than the real
+ * elapsed time — as if the application's CPU-time accounting were running slow relative to wall
+ * time.
  *
  * <h2>How it is created</h2>
  *
- * <p>Applies one libchaos-time rule: {@code clock_gettime/monotonic:OFFSET:-<skewMs>}. Only
- * {@code CLOCK_MONOTONIC} is affected; {@code CLOCK_REALTIME} and all other clocks are untouched.
- * This creates a measurable divergence between {@code System.nanoTime()} (which reads monotonic)
- * and {@code System.currentTimeMillis()} (which reads realtime) — exactly the condition that
- * exercises wall-vs-monotonic assumption bugs.
+ * <p>Applies one libchaos-time rule: {@code clock_gettime/monotonic:OFFSET:-<skewMs>}. Only {@code
+ * CLOCK_MONOTONIC} is affected; {@code CLOCK_REALTIME} and all other clocks are untouched. This
+ * creates a measurable divergence between {@code System.nanoTime()} (which reads monotonic) and
+ * {@code System.currentTimeMillis()} (which reads realtime) — exactly the condition that exercises
+ * wall-vs-monotonic assumption bugs.
  *
  * <h2>How bad it is</h2>
  *
@@ -33,8 +35,8 @@ import com.macstab.chaos.core.extension.Severity;
  * A slow monotonic clock causes heartbeat-based failure detectors to believe less time has elapsed
  * than actually has. Raft implementations that use {@code CLOCK_MONOTONIC} for election timeouts
  * (e.g. etcd, CockroachDB) may delay triggering an election past the expected window, making the
- * cluster appear healthier than it is under partition. Timeout-budget calculations that use
- * {@code System.nanoTime()} will under-report elapsed time, causing request timeouts to fire late.
+ * cluster appear healthier than it is under partition. Timeout-budget calculations that use {@code
+ * System.nanoTime()} will under-report elapsed time, causing request timeouts to fire late.
  * Services with retry backoff based on monotonic readings will back off less aggressively than
  * intended.
  *
@@ -72,10 +74,9 @@ import com.macstab.chaos.core.extension.Severity;
 public @interface CompositeChaosSlowMonotonic {
 
   /**
-   * How many milliseconds the monotonic clock appears to lag behind actual elapsed time.
-   * A value of {@code 250} means every {@code clock_gettime(CLOCK_MONOTONIC)} call returns a
-   * timestamp that is 250 ms less than reality — the clock runs slow. Must be positive.
-   * Defaults to 250 ms.
+   * How many milliseconds the monotonic clock appears to lag behind actual elapsed time. A value of
+   * {@code 250} means every {@code clock_gettime(CLOCK_MONOTONIC)} call returns a timestamp that is
+   * 250 ms less than reality — the clock runs slow. Must be positive. Defaults to 250 ms.
    */
   long skewMs() default 250L;
 

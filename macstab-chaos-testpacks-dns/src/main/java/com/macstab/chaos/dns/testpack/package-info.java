@@ -5,8 +5,8 @@
  * <p>This package contains nine named, pre-tuned {@code @CompositeChaos<X>} annotations covering
  * the canonical DNS failure modes encountered in cloud-native production systems. Each annotation
  * composes one or more libchaos-dns rules via a {@link com.macstab.chaos.core.extension.L2Composer}
- * implementation and ships with industry-canonical documentation, severity classification, and
- * sane defaults.
+ * implementation and ships with industry-canonical documentation, severity classification, and sane
+ * defaults.
  *
  * <h2>Scenario catalogue</h2>
  *

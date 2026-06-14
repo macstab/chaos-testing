@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Every {@code write()} call on paths under the target prefix fails with {@code ENOSPC} — no
@@ -33,8 +35,8 @@ import com.macstab.chaos.core.extension.Severity;
  * <h2>Industry references</h2>
  *
  * <p>Disk-full is one of the top five causes of database downtime in on-call post-mortems (Google
- * SRE Book, chapter 11). PostgreSQL emits a PANIC log and stops accepting connections; MySQL
- * MyISAM tables can corrupt when half-written. ENOSPC is described in {@code write(2)} POSIX.
+ * SRE Book, chapter 11). PostgreSQL emits a PANIC log and stops accepting connections; MySQL MyISAM
+ * tables can corrupt when half-written. ENOSPC is described in {@code write(2)} POSIX.
  *
  * <h2>Example</h2>
  *

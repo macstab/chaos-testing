@@ -26,7 +26,6 @@ import com.macstab.chaos.process.api.AdvancedProcessChaos;
 import com.macstab.chaos.process.api.RuleHandle;
 import com.macstab.chaos.process.model.ProcessErrno;
 import com.macstab.chaos.process.model.ProcessRule;
-import com.macstab.chaos.process.model.ProcessSelector;
 import com.macstab.chaos.process.testpack.composers.ExecveMemoryDeniedComposer;
 import com.macstab.chaos.process.testpack.composers.ExecvePermissionDeniedComposer;
 import com.macstab.chaos.process.testpack.composers.ForkBombComposer;
@@ -120,7 +119,9 @@ class ProcessComposersTest {
           fixture(ProcessLimitHitFixture.class, CompositeChaosProcessLimitHit.class);
       final List<String> lines = new ProcessLimitHitComposer().describe(ann);
       assertThat(lines).isNotEmpty();
-      assertThat(String.join(" ", lines)).containsIgnoringCase("EAGAIN").containsIgnoringCase("fork");
+      assertThat(String.join(" ", lines))
+          .containsIgnoringCase("EAGAIN")
+          .containsIgnoringCase("fork");
     }
 
     @Test
@@ -289,16 +290,14 @@ class ProcessComposersTest {
       final ChaosL2 meta = chaosL2(CompositeChaosOomFork.class);
       assertThat(meta.severity()).isEqualTo(Severity.SEVERE);
       assertThat(meta.composer()).endsWith("OomForkComposer");
-      final CompositeChaosOomFork ann =
-          fixture(OomForkFixture.class, CompositeChaosOomFork.class);
+      final CompositeChaosOomFork ann = fixture(OomForkFixture.class, CompositeChaosOomFork.class);
       assertThat(ann.toxicity()).isEqualTo(0.5);
     }
 
     @Test
     @DisplayName("describe() mentions ENOMEM and fork")
     void describe() {
-      final CompositeChaosOomFork ann =
-          fixture(OomForkFixture.class, CompositeChaosOomFork.class);
+      final CompositeChaosOomFork ann = fixture(OomForkFixture.class, CompositeChaosOomFork.class);
       final List<String> lines = new OomForkComposer().describe(ann);
       assertThat(String.join(" ", lines))
           .containsIgnoringCase("ENOMEM")
@@ -308,8 +307,7 @@ class ProcessComposersTest {
     @Test
     @DisplayName("apply() calls failFork with ENOMEM and configured toxicity")
     void apply() {
-      final CompositeChaosOomFork ann =
-          fixture(OomForkFixture.class, CompositeChaosOomFork.class);
+      final CompositeChaosOomFork ann = fixture(OomForkFixture.class, CompositeChaosOomFork.class);
       final GenericContainer<?> c = container();
       final RuleHandle h = handle();
       final CompositeProcessChaos composite = mock(CompositeProcessChaos.class);
@@ -834,14 +832,11 @@ class ProcessComposersTest {
             CompositeChaosThreadPoolExhaustion.class.getAnnotation(
                 java.lang.annotation.Repeatable.class))
         .isNotNull();
-    assertThat(
-            CompositeChaosForkBomb.class.getAnnotation(java.lang.annotation.Repeatable.class))
+    assertThat(CompositeChaosForkBomb.class.getAnnotation(java.lang.annotation.Repeatable.class))
         .isNotNull();
-    assertThat(
-            CompositeChaosOomFork.class.getAnnotation(java.lang.annotation.Repeatable.class))
+    assertThat(CompositeChaosOomFork.class.getAnnotation(java.lang.annotation.Repeatable.class))
         .isNotNull();
-    assertThat(
-            CompositeChaosHardKill.class.getAnnotation(java.lang.annotation.Repeatable.class))
+    assertThat(CompositeChaosHardKill.class.getAnnotation(java.lang.annotation.Repeatable.class))
         .isNotNull();
     assertThat(
             CompositeChaosGracefulShutdown.class.getAnnotation(

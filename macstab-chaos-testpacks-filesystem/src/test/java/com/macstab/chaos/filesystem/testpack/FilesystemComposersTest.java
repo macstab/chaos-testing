@@ -29,7 +29,6 @@ import com.macstab.chaos.filesystem.model.Effect;
 import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 import com.macstab.chaos.filesystem.model.IoRule;
-import com.macstab.chaos.filesystem.model.PathPrefix;
 import com.macstab.chaos.filesystem.testpack.composers.DiskFullComposer;
 import com.macstab.chaos.filesystem.testpack.composers.EioOnReadComposer;
 import com.macstab.chaos.filesystem.testpack.composers.FdExhaustionComposer;
@@ -66,27 +65,29 @@ class FilesystemComposersTest {
   // ── IoRule argument matchers ──────────────────────────────────────────────
 
   private static IoRule argErrnoRule(final IoOperation op, final Errno errno) {
-    return org.mockito.ArgumentMatchers.argThat(rule ->
-        rule.operation() == op
-            && rule.effect() instanceof Effect.ErrnoFault ef
-            && ef.errno() == errno);
+    return org.mockito.ArgumentMatchers.argThat(
+        rule ->
+            rule.operation() == op
+                && rule.effect() instanceof Effect.ErrnoFault ef
+                && ef.errno() == errno);
   }
 
   private static IoRule argLatencyRule(final IoOperation op, final Duration delay) {
-    return org.mockito.ArgumentMatchers.argThat(rule ->
-        rule.operation() == op
-            && rule.effect() instanceof Effect.Latency lat
-            && lat.delay().equals(delay));
+    return org.mockito.ArgumentMatchers.argThat(
+        rule ->
+            rule.operation() == op
+                && rule.effect() instanceof Effect.Latency lat
+                && lat.delay().equals(delay));
   }
 
   private static IoRule argCorruptRule(final IoOperation op) {
-    return org.mockito.ArgumentMatchers.argThat(rule ->
-        rule.operation() == op && rule.effect() instanceof Effect.Corrupt);
+    return org.mockito.ArgumentMatchers.argThat(
+        rule -> rule.operation() == op && rule.effect() instanceof Effect.Corrupt);
   }
 
   private static IoRule argTornRule(final IoOperation op) {
-    return org.mockito.ArgumentMatchers.argThat(rule ->
-        rule.operation() == op && rule.effect() instanceof Effect.Torn);
+    return org.mockito.ArgumentMatchers.argThat(
+        rule -> rule.operation() == op && rule.effect() instanceof Effect.Torn);
   }
 
   @SuppressWarnings("unchecked")
@@ -116,7 +117,8 @@ class FilesystemComposersTest {
     @Test
     @DisplayName("default path is wildcard, default toxicity is 1.0")
     void defaults() {
-      final CompositeChaosDiskFull ann = fixture(DiskFullFixture.class, CompositeChaosDiskFull.class);
+      final CompositeChaosDiskFull ann =
+          fixture(DiskFullFixture.class, CompositeChaosDiskFull.class);
       assertThat(ann.path()).isEqualTo("*");
       assertThat(ann.toxicity()).isEqualTo(1.0);
     }
@@ -124,7 +126,8 @@ class FilesystemComposersTest {
     @Test
     @DisplayName("describe() mentions ENOSPC")
     void describe() {
-      final CompositeChaosDiskFull ann = fixture(DiskFullFixture.class, CompositeChaosDiskFull.class);
+      final CompositeChaosDiskFull ann =
+          fixture(DiskFullFixture.class, CompositeChaosDiskFull.class);
       final List<String> lines = new DiskFullComposer().describe(ann);
       assertThat(lines).isNotEmpty();
       assertThat(String.join(" ", lines)).containsIgnoringCase("ENOSPC");
@@ -133,7 +136,8 @@ class FilesystemComposersTest {
     @Test
     @DisplayName("apply() builds WRITE ENOSPC rule on wildcard path")
     void apply() {
-      final CompositeChaosDiskFull ann = fixture(DiskFullFixture.class, CompositeChaosDiskFull.class);
+      final CompositeChaosDiskFull ann =
+          fixture(DiskFullFixture.class, CompositeChaosDiskFull.class);
       final GenericContainer<?> c = container();
       final RuleHandle h = handle();
       final AdvancedFilesystemChaos adv = mock(AdvancedFilesystemChaos.class);
@@ -141,7 +145,8 @@ class FilesystemComposersTest {
       when(composite.advanced()).thenReturn(adv);
       when(adv.apply(eq(c), any(IoRule.class))).thenReturn(h);
 
-      try (final MockedStatic<CompositeFilesystemChaos> mocked = mockStatic(CompositeFilesystemChaos.class)) {
+      try (final MockedStatic<CompositeFilesystemChaos> mocked =
+          mockStatic(CompositeFilesystemChaos.class)) {
         mocked.when(CompositeFilesystemChaos::standard).thenReturn(composite);
         final List<Object> handles = new DiskFullComposer().apply(c, ann);
         assertThat(handles).containsExactly(h);
@@ -200,7 +205,8 @@ class FilesystemComposersTest {
       when(composite.advanced()).thenReturn(adv);
       when(adv.apply(eq(c), any(IoRule.class))).thenReturn(h);
 
-      try (final MockedStatic<CompositeFilesystemChaos> mocked = mockStatic(CompositeFilesystemChaos.class)) {
+      try (final MockedStatic<CompositeFilesystemChaos> mocked =
+          mockStatic(CompositeFilesystemChaos.class)) {
         mocked.when(CompositeFilesystemChaos::standard).thenReturn(composite);
         final List<Object> handles = new ReadCorruptionComposer().apply(c, ann);
         assertThat(handles).containsExactly(h);
@@ -252,7 +258,8 @@ class FilesystemComposersTest {
       when(composite.advanced()).thenReturn(adv);
       when(adv.apply(eq(c), any(IoRule.class))).thenReturn(h);
 
-      try (final MockedStatic<CompositeFilesystemChaos> mocked = mockStatic(CompositeFilesystemChaos.class)) {
+      try (final MockedStatic<CompositeFilesystemChaos> mocked =
+          mockStatic(CompositeFilesystemChaos.class)) {
         mocked.when(CompositeFilesystemChaos::standard).thenReturn(composite);
         final List<Object> handles = new WalFsyncDelayComposer().apply(c, ann);
         assertThat(handles).hasSize(2);
@@ -304,7 +311,8 @@ class FilesystemComposersTest {
       when(composite.advanced()).thenReturn(adv);
       when(adv.apply(eq(c), any(IoRule.class))).thenReturn(h);
 
-      try (final MockedStatic<CompositeFilesystemChaos> mocked = mockStatic(CompositeFilesystemChaos.class)) {
+      try (final MockedStatic<CompositeFilesystemChaos> mocked =
+          mockStatic(CompositeFilesystemChaos.class)) {
         mocked.when(CompositeFilesystemChaos::standard).thenReturn(composite);
         final List<Object> handles = new ReadOnlyFilesystemComposer().apply(c, ann);
         assertThat(handles).hasSize(3);
@@ -332,14 +340,16 @@ class FilesystemComposersTest {
       final ChaosL2 meta = chaosL2(CompositeChaosSlowDisk.class);
       assertThat(meta.severity()).isEqualTo(Severity.MODERATE);
       assertThat(meta.composer()).endsWith("SlowDiskComposer");
-      final CompositeChaosSlowDisk ann = fixture(SlowDiskFixture.class, CompositeChaosSlowDisk.class);
+      final CompositeChaosSlowDisk ann =
+          fixture(SlowDiskFixture.class, CompositeChaosSlowDisk.class);
       assertThat(ann.latencyMs()).isEqualTo(200L);
     }
 
     @Test
     @DisplayName("describe() mentions latency value")
     void describe() {
-      final CompositeChaosSlowDisk ann = fixture(SlowDiskFixture.class, CompositeChaosSlowDisk.class);
+      final CompositeChaosSlowDisk ann =
+          fixture(SlowDiskFixture.class, CompositeChaosSlowDisk.class);
       final List<String> lines = new SlowDiskComposer().describe(ann);
       assertThat(String.join(" ", lines)).contains("200");
     }
@@ -347,7 +357,8 @@ class FilesystemComposersTest {
     @Test
     @DisplayName("apply() builds READ and WRITE LATENCY rules (2 handles)")
     void apply() {
-      final CompositeChaosSlowDisk ann = fixture(SlowDiskFixture.class, CompositeChaosSlowDisk.class);
+      final CompositeChaosSlowDisk ann =
+          fixture(SlowDiskFixture.class, CompositeChaosSlowDisk.class);
       final GenericContainer<?> c = container();
       final RuleHandle h = handle();
       final AdvancedFilesystemChaos adv = mock(AdvancedFilesystemChaos.class);
@@ -355,7 +366,8 @@ class FilesystemComposersTest {
       when(composite.advanced()).thenReturn(adv);
       when(adv.apply(eq(c), any(IoRule.class))).thenReturn(h);
 
-      try (final MockedStatic<CompositeFilesystemChaos> mocked = mockStatic(CompositeFilesystemChaos.class)) {
+      try (final MockedStatic<CompositeFilesystemChaos> mocked =
+          mockStatic(CompositeFilesystemChaos.class)) {
         mocked.when(CompositeFilesystemChaos::standard).thenReturn(composite);
         final List<Object> handles = new SlowDiskComposer().apply(c, ann);
         assertThat(handles).hasSize(2);
@@ -408,7 +420,8 @@ class FilesystemComposersTest {
       when(composite.advanced()).thenReturn(adv);
       when(adv.apply(eq(c), any(IoRule.class))).thenReturn(h);
 
-      try (final MockedStatic<CompositeFilesystemChaos> mocked = mockStatic(CompositeFilesystemChaos.class)) {
+      try (final MockedStatic<CompositeFilesystemChaos> mocked =
+          mockStatic(CompositeFilesystemChaos.class)) {
         mocked.when(CompositeFilesystemChaos::standard).thenReturn(composite);
         final List<Object> handles = new EioOnReadComposer().apply(c, ann);
         assertThat(handles).containsExactly(h);
@@ -462,7 +475,8 @@ class FilesystemComposersTest {
       when(composite.advanced()).thenReturn(adv);
       when(adv.apply(eq(c), any(IoRule.class))).thenReturn(h);
 
-      try (final MockedStatic<CompositeFilesystemChaos> mocked = mockStatic(CompositeFilesystemChaos.class)) {
+      try (final MockedStatic<CompositeFilesystemChaos> mocked =
+          mockStatic(CompositeFilesystemChaos.class)) {
         mocked.when(CompositeFilesystemChaos::standard).thenReturn(composite);
         final List<Object> handles = new RenameRaceComposer().apply(c, ann);
         assertThat(handles).containsExactly(h);
@@ -514,7 +528,8 @@ class FilesystemComposersTest {
       when(composite.advanced()).thenReturn(adv);
       when(adv.apply(eq(c), any(IoRule.class))).thenReturn(h);
 
-      try (final MockedStatic<CompositeFilesystemChaos> mocked = mockStatic(CompositeFilesystemChaos.class)) {
+      try (final MockedStatic<CompositeFilesystemChaos> mocked =
+          mockStatic(CompositeFilesystemChaos.class)) {
         mocked.when(CompositeFilesystemChaos::standard).thenReturn(composite);
         final List<Object> handles = new FdExhaustionComposer().apply(c, ann);
         assertThat(handles).containsExactly(h);
@@ -566,7 +581,8 @@ class FilesystemComposersTest {
       when(composite.advanced()).thenReturn(adv);
       when(adv.apply(eq(c), any(IoRule.class))).thenReturn(h);
 
-      try (final MockedStatic<CompositeFilesystemChaos> mocked = mockStatic(CompositeFilesystemChaos.class)) {
+      try (final MockedStatic<CompositeFilesystemChaos> mocked =
+          mockStatic(CompositeFilesystemChaos.class)) {
         mocked.when(CompositeFilesystemChaos::standard).thenReturn(composite);
         final List<Object> handles = new WriteCorruptionComposer().apply(c, ann);
         assertThat(handles).containsExactly(h);
@@ -620,7 +636,8 @@ class FilesystemComposersTest {
       when(composite.advanced()).thenReturn(adv);
       when(adv.apply(eq(c), any(IoRule.class))).thenReturn(h);
 
-      try (final MockedStatic<CompositeFilesystemChaos> mocked = mockStatic(CompositeFilesystemChaos.class)) {
+      try (final MockedStatic<CompositeFilesystemChaos> mocked =
+          mockStatic(CompositeFilesystemChaos.class)) {
         mocked.when(CompositeFilesystemChaos::standard).thenReturn(composite);
         final List<Object> handles = new MetadataFailureComposer().apply(c, ann);
         assertThat(handles).containsExactly(h);
@@ -654,15 +671,34 @@ class FilesystemComposersTest {
   @Test
   @DisplayName("all annotations are repeatable (carry @List container)")
   void allAnnotationsRepeatable() {
-    assertThat(CompositeChaosDiskFull.class.getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosReadCorruption.class.getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosWalFsyncDelay.class.getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosReadOnlyFilesystem.class.getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosSlowDisk.class.getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosEioOnRead.class.getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosRenameRace.class.getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosFdExhaustion.class.getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosWriteCorruption.class.getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosMetadataFailure.class.getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
+    assertThat(CompositeChaosDiskFull.class.getAnnotation(java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(
+            CompositeChaosReadCorruption.class.getAnnotation(java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(
+            CompositeChaosWalFsyncDelay.class.getAnnotation(java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(
+            CompositeChaosReadOnlyFilesystem.class.getAnnotation(
+                java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(CompositeChaosSlowDisk.class.getAnnotation(java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(CompositeChaosEioOnRead.class.getAnnotation(java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(CompositeChaosRenameRace.class.getAnnotation(java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(
+            CompositeChaosFdExhaustion.class.getAnnotation(java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(
+            CompositeChaosWriteCorruption.class.getAnnotation(
+                java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(
+            CompositeChaosMetadataFailure.class.getAnnotation(
+                java.lang.annotation.Repeatable.class))
+        .isNotNull();
   }
 }

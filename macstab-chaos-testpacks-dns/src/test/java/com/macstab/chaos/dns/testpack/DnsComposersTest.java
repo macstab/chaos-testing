@@ -80,23 +80,28 @@ class DnsComposersTest {
     @Test
     @DisplayName("default host is wildcard")
     void defaultHost() throws Exception {
-      final CompositeChaosNxDomain ann = fixture(NxDomainFixture.class, CompositeChaosNxDomain.class);
+      final CompositeChaosNxDomain ann =
+          fixture(NxDomainFixture.class, CompositeChaosNxDomain.class);
       assertThat(ann.host()).isEqualTo("*");
     }
 
     @Test
     @DisplayName("describe() returns non-empty list mentioning EAI_NONAME")
     void describe() {
-      final CompositeChaosNxDomain ann = fixture(NxDomainFixture.class, CompositeChaosNxDomain.class);
+      final CompositeChaosNxDomain ann =
+          fixture(NxDomainFixture.class, CompositeChaosNxDomain.class);
       final List<String> lines = new NxDomainComposer().describe(ann);
       assertThat(lines).isNotEmpty();
-      assertThat(String.join(" ", lines)).containsIgnoringCase("NXDOMAIN").containsIgnoringCase("EAI_NONAME");
+      assertThat(String.join(" ", lines))
+          .containsIgnoringCase("NXDOMAIN")
+          .containsIgnoringCase("EAI_NONAME");
     }
 
     @Test
     @DisplayName("apply() builds EAI_NONAME rule on forward wildcard selector")
     void apply() {
-      final CompositeChaosNxDomain ann = fixture(NxDomainFixture.class, CompositeChaosNxDomain.class);
+      final CompositeChaosNxDomain ann =
+          fixture(NxDomainFixture.class, CompositeChaosNxDomain.class);
       final GenericContainer<?> c = container();
       final RuleHandle h = handle();
       final AdvancedDnsChaos adv = mock(AdvancedDnsChaos.class);
@@ -136,14 +141,16 @@ class DnsComposersTest {
       final ChaosL2 meta = chaosL2(CompositeChaosDnsTimeout.class);
       assertThat(meta.severity()).isEqualTo(Severity.MODERATE);
       assertThat(meta.composer()).endsWith("DnsTimeoutComposer");
-      final CompositeChaosDnsTimeout ann = fixture(TimeoutFixture.class, CompositeChaosDnsTimeout.class);
+      final CompositeChaosDnsTimeout ann =
+          fixture(TimeoutFixture.class, CompositeChaosDnsTimeout.class);
       assertThat(ann.latencyMs()).isEqualTo(8_000L);
     }
 
     @Test
     @DisplayName("describe() mentions latency value")
     void describe() {
-      final CompositeChaosDnsTimeout ann = fixture(TimeoutFixture.class, CompositeChaosDnsTimeout.class);
+      final CompositeChaosDnsTimeout ann =
+          fixture(TimeoutFixture.class, CompositeChaosDnsTimeout.class);
       final List<String> lines = new DnsTimeoutComposer().describe(ann);
       assertThat(String.join(" ", lines)).contains("8000");
     }
@@ -151,7 +158,8 @@ class DnsComposersTest {
     @Test
     @DisplayName("apply() builds LATENCY rule with correct duration")
     void apply() {
-      final CompositeChaosDnsTimeout ann = fixture(TimeoutFixture.class, CompositeChaosDnsTimeout.class);
+      final CompositeChaosDnsTimeout ann =
+          fixture(TimeoutFixture.class, CompositeChaosDnsTimeout.class);
       final GenericContainer<?> c = container();
       final RuleHandle h = handle();
       final AdvancedDnsChaos adv = mock(AdvancedDnsChaos.class);
@@ -523,15 +531,37 @@ class DnsComposersTest {
   @Test
   @DisplayName("all annotations are repeatable (carry @List container)")
   void allAnnotationsRepeatable() {
-    assertThat(CompositeChaosNxDomain.class.getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosDnsTimeout.class.getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosDnsTemporaryFailure.class.getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosDnsBlackhole.class.getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosDnsCachePoisoning.class.getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosDnsServiceRedirection.class.getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosIpv6OnlyResolution.class.getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosShuffledAnswerOrder.class.getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosReverseDnsFailure.class.getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
+    assertThat(CompositeChaosNxDomain.class.getAnnotation(java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(CompositeChaosDnsTimeout.class.getAnnotation(java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(
+            CompositeChaosDnsTemporaryFailure.class.getAnnotation(
+                java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(
+            CompositeChaosDnsBlackhole.class.getAnnotation(java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(
+            CompositeChaosDnsCachePoisoning.class.getAnnotation(
+                java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(
+            CompositeChaosDnsServiceRedirection.class.getAnnotation(
+                java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(
+            CompositeChaosIpv6OnlyResolution.class.getAnnotation(
+                java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(
+            CompositeChaosShuffledAnswerOrder.class.getAnnotation(
+                java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(
+            CompositeChaosReverseDnsFailure.class.getAnnotation(
+                java.lang.annotation.Repeatable.class))
+        .isNotNull();
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -546,33 +576,38 @@ class DnsComposersTest {
     return ann;
   }
 
-  private static DnsRule argDnsRule(final DnsSelector expectedSelector, final EaiErrno expectedErrno) {
-    return org.mockito.ArgumentMatchers.argThat(rule -> {
-      if (!(rule.effect() instanceof Effect.EaiFault ef)) return false;
-      return rule.selector().toSelector().equals(expectedSelector.toSelector())
-          && ef.errno() == expectedErrno;
-    });
+  private static DnsRule argDnsRule(
+      final DnsSelector expectedSelector, final EaiErrno expectedErrno) {
+    return org.mockito.ArgumentMatchers.argThat(
+        rule -> {
+          if (!(rule.effect() instanceof Effect.EaiFault ef)) return false;
+          return rule.selector().toSelector().equals(expectedSelector.toSelector())
+              && ef.errno() == expectedErrno;
+        });
   }
 
   private static DnsRule argLatencyRule(final Duration expectedDelay) {
-    return org.mockito.ArgumentMatchers.argThat(rule -> {
-      if (!(rule.effect() instanceof Effect.Latency lat)) return false;
-      return lat.delay().equals(expectedDelay);
-    });
+    return org.mockito.ArgumentMatchers.argThat(
+        rule -> {
+          if (!(rule.effect() instanceof Effect.Latency lat)) return false;
+          return lat.delay().equals(expectedDelay);
+        });
   }
 
   private static DnsRule argRewriteRule(final String expectedTarget) {
-    return org.mockito.ArgumentMatchers.argThat(rule -> {
-      if (!(rule.effect() instanceof Effect.Rewrite rw)) return false;
-      return rw.to().equals(expectedTarget);
-    });
+    return org.mockito.ArgumentMatchers.argThat(
+        rule -> {
+          if (!(rule.effect() instanceof Effect.Rewrite rw)) return false;
+          return rw.to().equals(expectedTarget);
+        });
   }
 
   private static DnsRule argFilterFamilyRule(final AddressFamily expectedFamily) {
-    return org.mockito.ArgumentMatchers.argThat(rule -> {
-      if (!(rule.effect() instanceof Effect.FilterFamily ff)) return false;
-      return ff.family() == expectedFamily;
-    });
+    return org.mockito.ArgumentMatchers.argThat(
+        rule -> {
+          if (!(rule.effect() instanceof Effect.FilterFamily ff)) return false;
+          return ff.family() == expectedFamily;
+        });
   }
 
   private static DnsRule argShuffleRule() {

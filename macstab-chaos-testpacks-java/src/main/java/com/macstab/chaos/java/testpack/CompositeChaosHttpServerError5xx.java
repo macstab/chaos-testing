@@ -11,11 +11,13 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
- * <p>Injects an {@code IOException} into {@code HttpClient.send()} with probability
- * {@link #probability()}, simulating a downstream service that responds with a 5xx error or
- * closes the connection before sending a response.
+ * <p>Injects an {@code IOException} into {@code HttpClient.send()} with probability {@link
+ * #probability()}, simulating a downstream service that responds with a 5xx error or closes the
+ * connection before sending a response.
  *
  * <h2>How it's created</h2>
  *

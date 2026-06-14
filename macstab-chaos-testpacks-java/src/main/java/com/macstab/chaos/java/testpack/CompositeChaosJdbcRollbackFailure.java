@@ -11,17 +11,19 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
- * <p>Injects a {@code SQLException} into {@code Connection.rollback()} with probability
- * {@link #probability()}, simulating a database that has lost the connection or encountered an
- * internal error precisely when the application attempts to undo a failed transaction.
+ * <p>Injects a {@code SQLException} into {@code Connection.rollback()} with probability {@link
+ * #probability()}, simulating a database that has lost the connection or encountered an internal
+ * error precisely when the application attempts to undo a failed transaction.
  *
  * <h2>How it's created</h2>
  *
- * <p>Intercepts {@code java.sql.Connection#rollback()} via the JVM chaos agent and injects a
- * {@code java.sql.SQLException} at the configured probability. In production, rollback failures
- * occur on connection reset, network partition, or database crash during an in-flight transaction.
+ * <p>Intercepts {@code java.sql.Connection#rollback()} via the JVM chaos agent and injects a {@code
+ * java.sql.SQLException} at the configured probability. In production, rollback failures occur on
+ * connection reset, network partition, or database crash during an in-flight transaction.
  *
  * <h2>How bad it is</h2>
  *
@@ -33,9 +35,9 @@ import com.macstab.chaos.core.extension.Severity;
  *
  * <h2>Industry references</h2>
  *
- * <p>The JDBC specification (JSR-221) §11.4 states that {@code rollback()} may throw
- * {@code SQLException}. Spring's {@code DataSourceTransactionManager} swallows it with a warning
- * log — see {@code DataSourceTransactionManager#doRollback}.
+ * <p>The JDBC specification (JSR-221) §11.4 states that {@code rollback()} may throw {@code
+ * SQLException}. Spring's {@code DataSourceTransactionManager} swallows it with a warning log — see
+ * {@code DataSourceTransactionManager#doRollback}.
  *
  * <h2>Example</h2>
  *

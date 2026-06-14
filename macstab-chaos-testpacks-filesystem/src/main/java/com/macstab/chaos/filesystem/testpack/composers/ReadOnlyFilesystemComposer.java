@@ -19,7 +19,8 @@ import com.macstab.chaos.filesystem.model.PathPrefix;
 import com.macstab.chaos.filesystem.testpack.CompositeChaosReadOnlyFilesystem;
 
 /** L2 composer for {@link CompositeChaosReadOnlyFilesystem}. */
-public final class ReadOnlyFilesystemComposer implements L2Composer<CompositeChaosReadOnlyFilesystem> {
+public final class ReadOnlyFilesystemComposer
+    implements L2Composer<CompositeChaosReadOnlyFilesystem> {
 
   /** Public no-arg constructor required by the L2 composer contract. */
   public ReadOnlyFilesystemComposer() {}
@@ -31,9 +32,12 @@ public final class ReadOnlyFilesystemComposer implements L2Composer<CompositeCha
     final double toxicity = annotation.toxicity();
     final AdvancedFilesystemChaos adv = CompositeFilesystemChaos.standard().advanced();
     final List<Object> handles = new ArrayList<>();
-    handles.add(adv.apply(container, IoRule.errno(path, IoOperation.WRITE, Errno.EACCES, toxicity)));
-    handles.add(adv.apply(container, IoRule.errno(path, IoOperation.RENAME_FROM, Errno.EACCES, toxicity)));
-    handles.add(adv.apply(container, IoRule.errno(path, IoOperation.UNLINK, Errno.EACCES, toxicity)));
+    handles.add(
+        adv.apply(container, IoRule.errno(path, IoOperation.WRITE, Errno.EACCES, toxicity)));
+    handles.add(
+        adv.apply(container, IoRule.errno(path, IoOperation.RENAME_FROM, Errno.EACCES, toxicity)));
+    handles.add(
+        adv.apply(container, IoRule.errno(path, IoOperation.UNLINK, Errno.EACCES, toxicity)));
     return handles;
   }
 

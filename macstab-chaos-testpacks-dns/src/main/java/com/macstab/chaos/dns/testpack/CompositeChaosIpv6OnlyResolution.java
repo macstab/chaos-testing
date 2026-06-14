@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>DNS resolution returns only IPv6 ({@code AAAA}) answers; all IPv4 ({@code A}) entries are
@@ -32,15 +34,16 @@ import com.macstab.chaos.core.extension.Severity;
  * <p>Severity: <strong>Moderate</strong><br>
  * Applications with correct Happy Eyeballs (RFC 8305) or dual-stack logic survive transparently.
  * Applications that bind {@code AF_INET} sockets explicitly, parse IPv4 strings from configuration,
- * or use legacy JDBC URL forms without IPv6 bracket notation will fail immediately. The failure mode
- * is a connect timeout or {@code java.net.ConnectException}, not an obviously DNS-related error.
+ * or use legacy JDBC URL forms without IPv6 bracket notation will fail immediately. The failure
+ * mode is a connect timeout or {@code java.net.ConnectException}, not an obviously DNS-related
+ * error.
  *
  * <h2>Industry references</h2>
  *
  * <p>IPv6-only operation is a documented AWS transition milestone (AWS IPv6 migration guide, 2023)
- * and an Apple App Store requirement for iOS apps (WWDC 2015 session 719). Happy Eyeballs
- * algorithm is defined in RFC 8305. The dual-stack failure mode is a known source of latency spikes
- * in Google's internal infrastructure as documented in the SRE book's reliability chapters.
+ * and an Apple App Store requirement for iOS apps (WWDC 2015 session 719). Happy Eyeballs algorithm
+ * is defined in RFC 8305. The dual-stack failure mode is a known source of latency spikes in
+ * Google's internal infrastructure as documented in the SRE book's reliability chapters.
  *
  * <h2>Example</h2>
  *

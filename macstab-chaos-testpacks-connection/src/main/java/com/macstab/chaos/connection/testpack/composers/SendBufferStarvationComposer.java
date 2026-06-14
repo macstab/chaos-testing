@@ -32,9 +32,7 @@ public final class SendBufferStarvationComposer
             .advanced()
             .apply(
                 container,
-                NetRule.errno(
-                    endpoint, NetOperation.SEND, Errno.ENOBUFS,
-                    annotation.toxicity()));
+                NetRule.errno(endpoint, NetOperation.SEND, Errno.ENOBUFS, annotation.toxicity()));
     return List.of(handle);
   }
 

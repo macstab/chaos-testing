@@ -5,24 +5,26 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosMetaspacePressure;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.api.ActivationPolicy;
 import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
 
 /** L2 composer for {@link CompositeChaosMetaspacePressure}. */
 @Slf4j
-public final class MetaspacePressureComposer implements L2Composer<CompositeChaosMetaspacePressure> {
+public final class MetaspacePressureComposer
+    implements L2Composer<CompositeChaosMetaspacePressure> {
 
   /** Public no-arg constructor required by the L2 composer contract. */
   public MetaspacePressureComposer() {}
 
-  // Approximate: each class with 10 fields is ~2 KB of metaspace; use 200 fields per class for MB resolution.
+  // Approximate: each class with 10 fields is ~2 KB of metaspace; use 200 fields per class for MB
+  // resolution.
   private static final int CLASSES_PER_MB = 10;
   private static final int FIELDS_PER_CLASS = 100;
 
@@ -35,8 +37,13 @@ public final class MetaspacePressureComposer implements L2Composer<CompositeChao
             .mintScenarioId(CompositeChaosMetaspacePressure.class.getSimpleName());
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: metaspace pressure — ~" + annotation.targetMb()
-                + " MB, classCount=" + classCount + ", fieldsPerClass=" + FIELDS_PER_CLASS)
+            .description(
+                "L2: metaspace pressure — ~"
+                    + annotation.targetMb()
+                    + " MB, classCount="
+                    + classCount
+                    + ", fieldsPerClass="
+                    + FIELDS_PER_CLASS)
             .selector(ChaosSelector.stress(ChaosSelector.StressTarget.METASPACE))
             .effect(ChaosEffect.metaspacePressure(classCount, FIELDS_PER_CLASS))
             .activationPolicy(ActivationPolicy.always())
@@ -61,7 +68,9 @@ public final class MetaspacePressureComposer implements L2Composer<CompositeChao
   @Override
   public List<String> describe(final CompositeChaosMetaspacePressure annotation) {
     return List.of(
-        "metaspace pressure — generating and loading synthetic classes to fill ~" + annotation.targetMb() + " MB of Metaspace",
+        "metaspace pressure — generating and loading synthetic classes to fill ~"
+            + annotation.targetMb()
+            + " MB of Metaspace",
         "severity=MODERATE — at exhaustion throws OutOfMemoryError: Metaspace");
   }
 }

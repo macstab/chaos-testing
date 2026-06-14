@@ -19,8 +19,8 @@ import com.macstab.chaos.time.testpack.CompositeChaosSlowMonotonic;
 /**
  * L2 composer for {@link CompositeChaosSlowMonotonic}.
  *
- * <p>Applies {@code clock_gettime/monotonic:OFFSET:-<skewMs>} — a negative offset on
- * {@code CLOCK_MONOTONIC} to make the monotonic clock appear slower than wall time.
+ * <p>Applies {@code clock_gettime/monotonic:OFFSET:-<skewMs>} — a negative offset on {@code
+ * CLOCK_MONOTONIC} to make the monotonic clock appear slower than wall time.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -33,7 +33,9 @@ public final class SlowMonotonicComposer implements L2Composer<CompositeChaosSlo
   public List<Object> apply(
       final GenericContainer<?> container, final CompositeChaosSlowMonotonic annotation) {
     // Negate skewMs — monotonic clock must appear behind (slower than) real elapsed time.
-    final TimeRule rule = TimeRule.offset(TimeClock.MONOTONIC, Duration.ofMillis(-annotation.skewMs()), annotation.probability());
+    final TimeRule rule =
+        TimeRule.offset(
+            TimeClock.MONOTONIC, Duration.ofMillis(-annotation.skewMs()), annotation.probability());
     final AdvancedTimeChaos adv = CompositeTimeChaos.standard().advanced();
     final RuleHandle handle = adv.apply(container, rule);
     return List.of(handle);

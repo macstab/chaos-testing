@@ -5,13 +5,13 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosReferenceQueueFlood;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.api.ActivationPolicy;
 import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -33,11 +33,16 @@ public final class ReferenceQueueFloodComposer
             .mintScenarioId(CompositeChaosReferenceQueueFlood.class.getSimpleName());
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: reference queue flood — " + annotation.objectCount()
-                + " WeakReferences enqueued per " + FLOOD_INTERVAL_MS + " ms")
+            .description(
+                "L2: reference queue flood — "
+                    + annotation.objectCount()
+                    + " WeakReferences enqueued per "
+                    + FLOOD_INTERVAL_MS
+                    + " ms")
             .selector(ChaosSelector.stress(ChaosSelector.StressTarget.REFERENCE_QUEUE_FLOOD))
-            .effect(ChaosEffect.referenceQueueFlood(
-                annotation.objectCount(), java.time.Duration.ofMillis(FLOOD_INTERVAL_MS)))
+            .effect(
+                ChaosEffect.referenceQueueFlood(
+                    annotation.objectCount(), java.time.Duration.ofMillis(FLOOD_INTERVAL_MS)))
             .activationPolicy(ActivationPolicy.always())
             .build();
     final String scenarioId = JvmPlanAccumulator.instance().addScenario(container, scenario);
@@ -60,7 +65,8 @@ public final class ReferenceQueueFloodComposer
   @Override
   public List<String> describe(final CompositeChaosReferenceQueueFlood annotation) {
     return List.of(
-        "reference queue flood — " + annotation.objectCount()
+        "reference queue flood — "
+            + annotation.objectCount()
             + " WeakReference instances saturating the ReferenceHandler thread queue",
         "severity=MILD — delayed soft-reference clearing; transient memory pressure");
   }

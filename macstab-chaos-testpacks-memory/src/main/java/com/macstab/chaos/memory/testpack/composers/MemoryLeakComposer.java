@@ -39,8 +39,12 @@ public final class MemoryLeakComposer implements L2Composer<CompositeChaosMemory
   @Override
   public List<String> describe(final CompositeChaosMemoryLeak annotation) {
     return List.of(
-        "Memory leak simulator — very low rate ENOMEM on mmap calls (" + annotation.toxicity() + ")",
-        "toxicity=" + annotation.toxicity() + " — designed for long-running soak tests; individual allocations almost always succeed",
+        "Memory leak simulator — very low rate ENOMEM on mmap calls ("
+            + annotation.toxicity()
+            + ")",
+        "toxicity="
+            + annotation.toxicity()
+            + " — designed for long-running soak tests; individual allocations almost always succeed",
         "severity=MODERATE — gradual resource degradation; reveals unchecked ENOMEM in low-frequency code paths");
   }
 }

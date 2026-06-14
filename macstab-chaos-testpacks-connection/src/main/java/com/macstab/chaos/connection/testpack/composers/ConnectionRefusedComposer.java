@@ -17,7 +17,8 @@ import com.macstab.chaos.core.syscall.LibchaosLib;
 import com.macstab.chaos.core.syscall.LibchaosTransport;
 
 /** L2 composer for {@link CompositeChaosConnectionRefused}. */
-public final class ConnectionRefusedComposer implements L2Composer<CompositeChaosConnectionRefused> {
+public final class ConnectionRefusedComposer
+    implements L2Composer<CompositeChaosConnectionRefused> {
 
   /** Public no-arg constructor required by the L2 composer contract. */
   public ConnectionRefusedComposer() {}
@@ -32,10 +33,7 @@ public final class ConnectionRefusedComposer implements L2Composer<CompositeChao
             .apply(
                 container,
                 NetRule.errno(
-                    endpoint,
-                    NetOperation.CONNECT,
-                    Errno.ECONNREFUSED,
-                    annotation.toxicity()));
+                    endpoint, NetOperation.CONNECT, Errno.ECONNREFUSED, annotation.toxicity()));
     return List.of(handle);
   }
 

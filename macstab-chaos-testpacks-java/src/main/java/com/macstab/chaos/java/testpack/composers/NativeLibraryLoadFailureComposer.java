@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosNativeLibraryLoadFailure;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
@@ -14,7 +15,6 @@ import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
 import com.macstab.chaos.jvm.api.OperationType;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -37,11 +37,14 @@ public final class NativeLibraryLoadFailureComposer
         JvmSelectorKind.JVM_RUNTIME.build(EnumSet.of(OperationType.NATIVE_LIBRARY_LOAD));
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: native library load failure — UnsatisfiedLinkError injected at probability "
-                + annotation.probability())
+            .description(
+                "L2: native library load failure — UnsatisfiedLinkError injected at probability "
+                    + annotation.probability())
             .selector(selector)
-            .effect(ChaosEffect.injectException("java.lang.UnsatisfiedLinkError",
-                "injected native library load failure by chaos L2"))
+            .effect(
+                ChaosEffect.injectException(
+                    "java.lang.UnsatisfiedLinkError",
+                    "injected native library load failure by chaos L2"))
             .activationPolicy(ActivationPolicy.always())
             .build();
     final String scenarioId = JvmPlanAccumulator.instance().addScenario(container, scenario);
@@ -55,7 +58,8 @@ public final class NativeLibraryLoadFailureComposer
         try {
           JvmPlanAccumulator.instance().removeScenario(container, scenarioId);
         } catch (final Exception e) {
-          log.warn("NativeLibraryLoadFailureComposer.removeAll: failed to remove {}", scenarioId, e);
+          log.warn(
+              "NativeLibraryLoadFailureComposer.removeAll: failed to remove {}", scenarioId, e);
         }
       }
     }

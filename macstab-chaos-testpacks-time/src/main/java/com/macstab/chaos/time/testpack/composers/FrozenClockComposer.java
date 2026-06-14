@@ -18,9 +18,9 @@ import com.macstab.chaos.time.testpack.CompositeChaosFrozenClock;
 /**
  * L2 composer for {@link CompositeChaosFrozenClock}.
  *
- * <p>Applies {@code clock_gettime:OFFSET:-<epochMs>} across all clocks using the current epoch
- * in milliseconds as the negative delta. This pins the observed time to approximately the Unix
- * epoch (year 1970), effectively freezing the clock from the application's perspective.
+ * <p>Applies {@code clock_gettime:OFFSET:-<epochMs>} across all clocks using the current epoch in
+ * milliseconds as the negative delta. This pins the observed time to approximately the Unix epoch
+ * (year 1970), effectively freezing the clock from the application's perspective.
  *
  * @author Christian Schnapka - Macstab GmbH
  */

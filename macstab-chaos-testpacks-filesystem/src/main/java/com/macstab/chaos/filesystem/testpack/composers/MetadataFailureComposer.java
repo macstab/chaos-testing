@@ -30,7 +30,8 @@ public final class MetadataFailureComposer implements L2Composer<CompositeChaosM
     final RuleHandle handle =
         CompositeFilesystemChaos.standard()
             .advanced()
-            .apply(container, IoRule.errno(path, IoOperation.OPEN, Errno.EIO, annotation.toxicity()));
+            .apply(
+                container, IoRule.errno(path, IoOperation.OPEN, Errno.EIO, annotation.toxicity()));
     final List<Object> handles = new ArrayList<>();
     handles.add(handle);
     return handles;

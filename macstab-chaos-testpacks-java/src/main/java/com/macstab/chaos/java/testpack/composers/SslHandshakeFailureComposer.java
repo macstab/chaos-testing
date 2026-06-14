@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosSslHandshakeFailure;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
@@ -14,13 +15,13 @@ import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
 import com.macstab.chaos.jvm.api.OperationType;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
 
 /** L2 composer for {@link CompositeChaosSslHandshakeFailure}. */
 @Slf4j
-public final class SslHandshakeFailureComposer implements L2Composer<CompositeChaosSslHandshakeFailure> {
+public final class SslHandshakeFailureComposer
+    implements L2Composer<CompositeChaosSslHandshakeFailure> {
 
   /** Public no-arg constructor required by the L2 composer contract. */
   public SslHandshakeFailureComposer() {}
@@ -35,11 +36,14 @@ public final class SslHandshakeFailureComposer implements L2Composer<CompositeCh
         JvmSelectorKind.SSL.build(EnumSet.of(OperationType.SSL_HANDSHAKE));
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: SSL handshake failure — SSLHandshakeException injected at probability "
-                + annotation.probability())
+            .description(
+                "L2: SSL handshake failure — SSLHandshakeException injected at probability "
+                    + annotation.probability())
             .selector(selector)
-            .effect(ChaosEffect.injectException("javax.net.ssl.SSLHandshakeException",
-                "injected TLS handshake failure by chaos L2"))
+            .effect(
+                ChaosEffect.injectException(
+                    "javax.net.ssl.SSLHandshakeException",
+                    "injected TLS handshake failure by chaos L2"))
             .activationPolicy(ActivationPolicy.always())
             .build();
     final String scenarioId = JvmPlanAccumulator.instance().addScenario(container, scenario);

@@ -30,7 +30,9 @@ public final class RenameRaceComposer implements L2Composer<CompositeChaosRename
     final RuleHandle handle =
         CompositeFilesystemChaos.standard()
             .advanced()
-            .apply(container, IoRule.errno(path, IoOperation.RENAME_FROM, Errno.ENOENT, annotation.toxicity()));
+            .apply(
+                container,
+                IoRule.errno(path, IoOperation.RENAME_FROM, Errno.ENOENT, annotation.toxicity()));
     final List<Object> handles = new ArrayList<>();
     handles.add(handle);
     return handles;

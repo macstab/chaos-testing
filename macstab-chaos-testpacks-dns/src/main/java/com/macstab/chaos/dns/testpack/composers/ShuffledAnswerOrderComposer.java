@@ -15,7 +15,8 @@ import com.macstab.chaos.dns.model.DnsSelector;
 import com.macstab.chaos.dns.testpack.CompositeChaosShuffledAnswerOrder;
 
 /** L2 composer for {@link CompositeChaosShuffledAnswerOrder}. */
-public final class ShuffledAnswerOrderComposer implements L2Composer<CompositeChaosShuffledAnswerOrder> {
+public final class ShuffledAnswerOrderComposer
+    implements L2Composer<CompositeChaosShuffledAnswerOrder> {
 
   /** Public no-arg constructor required by the L2 composer contract. */
   public ShuffledAnswerOrderComposer() {}
@@ -25,9 +26,7 @@ public final class ShuffledAnswerOrderComposer implements L2Composer<CompositeCh
       final GenericContainer<?> container, final CompositeChaosShuffledAnswerOrder annotation) {
     final DnsSelector selector = resolveForwardSelector(annotation.host());
     final RuleHandle handle =
-        CompositeDnsChaos.standard()
-            .advanced()
-            .apply(container, DnsRule.shuffle(selector));
+        CompositeDnsChaos.standard().advanced().apply(container, DnsRule.shuffle(selector));
     return List.of(handle);
   }
 

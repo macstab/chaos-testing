@@ -7,6 +7,7 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosShutdownHookHang;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
@@ -15,7 +16,6 @@ import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
 import com.macstab.chaos.jvm.api.OperationType;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -37,8 +37,8 @@ public final class ShutdownHookHangComposer implements L2Composer<CompositeChaos
     final Duration delay = Duration.ofMillis(annotation.hangMs());
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: shutdown-hook hang — registration delayed by "
-                + annotation.hangMs() + " ms")
+            .description(
+                "L2: shutdown-hook hang — registration delayed by " + annotation.hangMs() + " ms")
             .selector(selector)
             .effect(ChaosEffect.delay(delay, delay))
             .activationPolicy(ActivationPolicy.always())

@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Every {@code pthread_create()} call fails with {@code EAGAIN}, simulating a thread-pool or
@@ -24,24 +26,24 @@ import com.macstab.chaos.core.extension.Severity;
  *
  * <p>Applies {@code ProcessRule.errno(ProcessSelector.PTHREAD_CREATE, ProcessErrno.EAGAIN,
  * toxicity)} via libchaos-process. In production this happens when a JVM or native thread pool is
- * not bounded: a traffic spike causes the runtime to spawn more threads than the kernel allows,
- * and subsequent {@code pthread_create()} calls return {@code EAGAIN}. Most JVM runtimes translate
+ * not bounded: a traffic spike causes the runtime to spawn more threads than the kernel allows, and
+ * subsequent {@code pthread_create()} calls return {@code EAGAIN}. Most JVM runtimes translate
  * {@code EAGAIN} into an {@code OutOfMemoryError: unable to create new native thread}.
  *
  * <h2>How bad it is</h2>
  *
  * <p>Severity: <strong>Severe</strong><br>
- * At {@code toxicity = 0.9} nearly every thread-creation attempt fails. Executor services
- * reject new tasks with {@code RejectedExecutionException}; reactive event loops lose worker
- * threads; connection pools cannot expand. Without circuit-breaking or bounded-pool enforcement,
- * the service enters a cascading failure. Operator intervention is required.
+ * At {@code toxicity = 0.9} nearly every thread-creation attempt fails. Executor services reject
+ * new tasks with {@code RejectedExecutionException}; reactive event loops lose worker threads;
+ * connection pools cannot expand. Without circuit-breaking or bounded-pool enforcement, the service
+ * enters a cascading failure. Operator intervention is required.
  *
  * <h2>Industry references</h2>
  *
- * <p>Thread-pool exhaustion as a root cause of {@code OutOfMemoryError: unable to create new
- * native thread} is documented in the OpenJDK bug tracker and in the Oracle Java SE
- * troubleshooting guide. The pattern of misconfigured Netty or Tomcat thread pools hitting the OS
- * limit appears frequently in production post-mortems from large-scale Java deployments.
+ * <p>Thread-pool exhaustion as a root cause of {@code OutOfMemoryError: unable to create new native
+ * thread} is documented in the OpenJDK bug tracker and in the Oracle Java SE troubleshooting guide.
+ * The pattern of misconfigured Netty or Tomcat thread pools hitting the OS limit appears frequently
+ * in production post-mortems from large-scale Java deployments.
  *
  * <h2>Example</h2>
  *

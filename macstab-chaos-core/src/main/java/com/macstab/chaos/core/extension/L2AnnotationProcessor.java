@@ -15,22 +15,22 @@ import org.testcontainers.containers.GenericContainer;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Walks an annotated element (test class or test method) for L2 chaos scenario annotations —
- * those carrying the {@link ChaosL2} meta-annotation — resolves each annotation's composer via the
- * FQN encoded in the meta-annotation, and applies the composer to every matching container.
+ * Walks an annotated element (test class or test method) for L2 chaos scenario annotations — those
+ * carrying the {@link ChaosL2} meta-annotation — resolves each annotation's composer via the FQN
+ * encoded in the meta-annotation, and applies the composer to every matching container.
  *
- * <p>L2 scenario annotations are the industry-vocabulary tier: a single {@code
- * @CompositeChaosNxDomain} is equivalent to building and applying a hand-crafted {@code DnsRule}
- * via {@code AdvancedDnsChaos}, but with documented defaults, structured Javadoc, and automatic
- * lifecycle management.
+ * <p>L2 scenario annotations are the industry-vocabulary tier: a single
+ * {@code @CompositeChaosNxDomain} is equivalent to building and applying a hand-crafted {@code
+ * DnsRule} via {@code AdvancedDnsChaos}, but with documented defaults, structured Javadoc, and
+ * automatic lifecycle management.
  *
  * <p><strong>Error policy.</strong> L2 annotations always hard-fail ({@code
  * ExtensionConfigurationException}) when the environment cannot honour the scenario — there is no
  * {@code OnMissingEnv} opt-out at the L2 tier. A test class that declares a scenario is asserting
  * that the scenario is runnable; if it cannot be, the test configuration is wrong.
  *
- * <p><strong>Repeatable annotations.</strong> L2 scenario annotations may be marked {@code
- * @Repeatable}. Both single and repeated uses are unwrapped and each applied independently.
+ * <p><strong>Repeatable annotations.</strong> L2 scenario annotations may be marked
+ * {@code @Repeatable}. Both single and repeated uses are unwrapped and each applied independently.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -66,7 +66,11 @@ public final class L2AnnotationProcessor {
     Objects.requireNonNull(report, "report must not be null");
 
     return applyAnnotations(
-        testClass.getAnnotations(), testClass, containers, report, ChaosApplicationReport.Scope.CLASS);
+        testClass.getAnnotations(),
+        testClass,
+        containers,
+        report,
+        ChaosApplicationReport.Scope.CLASS);
   }
 
   /**
@@ -111,8 +115,7 @@ public final class L2AnnotationProcessor {
         a.composer().removeAll(a.container(), a.handles());
       } catch (final Exception e) {
         allOk = false;
-        log.warn(
-            "L2 cleanup failed for @{}", a.annotation().annotationType().getSimpleName(), e);
+        log.warn("L2 cleanup failed for @{}", a.annotation().annotationType().getSimpleName(), e);
       }
     }
     return allOk;
@@ -245,9 +248,7 @@ public final class L2AnnotationProcessor {
                     "L2 composer class '%s' not found for @%s on %s. "
                         + "The required chaos testpack module is missing from the classpath. "
                         + "Add the corresponding testImplementation dependency.",
-                    fqn,
-                    annotation.annotationType().getSimpleName(),
-                    testClass.getSimpleName()),
+                    fqn, annotation.annotationType().getSimpleName(), testClass.getSimpleName()),
                 e);
 
           } catch (final ReflectiveOperationException e) {
@@ -255,9 +256,7 @@ public final class L2AnnotationProcessor {
                 String.format(
                     "Failed to instantiate L2 composer '%s' for @%s on %s. "
                         + "Composer must have a public no-arg constructor.",
-                    fqn,
-                    annotation.annotationType().getSimpleName(),
-                    testClass.getSimpleName()),
+                    fqn, annotation.annotationType().getSimpleName(), testClass.getSimpleName()),
                 e);
           }
         });
@@ -295,8 +294,7 @@ public final class L2AnnotationProcessor {
     return matching;
   }
 
-  private static String availableIds(
-      final List<L1AnnotationProcessor.ContainerHandle> containers) {
+  private static String availableIds(final List<L1AnnotationProcessor.ContainerHandle> containers) {
     if (containers.isEmpty()) {
       return "(none — no containers started)";
     }

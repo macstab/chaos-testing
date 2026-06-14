@@ -10,28 +10,30 @@ import org.testcontainers.containers.GenericContainer;
  * Translates an L3 incident scenario annotation into concrete multi-domain chaos rules, applies
  * them to a target container, and knows how to remove them.
  *
- * <p>Identical contract to {@link L2Composer} but used by L3 annotations (those meta-annotated
- * with {@link ChaosL3}). L3 composers compose rules from multiple domain APIs simultaneously —
- * e.g. {@code NetRule} + {@code DnsRule} + {@code TimeRule} — to produce a realistic, compound
+ * <p>Identical contract to {@link L2Composer} but used by L3 annotations (those meta-annotated with
+ * {@link ChaosL3}). L3 composers compose rules from multiple domain APIs simultaneously — e.g.
+ * {@code NetRule} + {@code DnsRule} + {@code TimeRule} — to produce a realistic, compound
  * production-incident simulation.
  *
  * <p><strong>Lifecycle contract:</strong>
+ *
  * <ol>
- *   <li>{@link #apply} is called once per container match at {@code beforeAll} or
- *       {@code beforeEach}. It must apply all rules and return opaque handles for later removal.
+ *   <li>{@link #apply} is called once per container match at {@code beforeAll} or {@code
+ *       beforeEach}. It must apply all rules and return opaque handles for later removal.
  *   <li>{@link #removeAll} is called at {@code afterAll} or {@code afterEach} with the same
- *       handles. It must remove every rule that {@code apply} installed, even if some removals
- *       fail (best-effort, log and continue).
+ *       handles. It must remove every rule that {@code apply} installed, even if some removals fail
+ *       (best-effort, log and continue).
  *   <li>{@link #describe} may be called at any time for logging; it must be side-effect-free.
  * </ol>
  *
  * <p><strong>Implementation requirements:</strong>
+ *
  * <ul>
  *   <li>Must be stateless — one instance may be reused across multiple containers and test classes.
- *   <li>Must have a public no-arg constructor (reflectively instantiated by
- *       {@link L3AnnotationProcessor}).
- *   <li>The {@code handles} list returned by {@code apply} is stored opaquely; use
- *       {@code instanceof} dispatch in {@code removeAll} to recover typed handles.
+ *   <li>Must have a public no-arg constructor (reflectively instantiated by {@link
+ *       L3AnnotationProcessor}).
+ *   <li>The {@code handles} list returned by {@code apply} is stored opaquely; use {@code
+ *       instanceof} dispatch in {@code removeAll} to recover typed handles.
  * </ul>
  *
  * @param <A> the L3 incident scenario annotation type this composer handles
@@ -44,11 +46,11 @@ public interface L3Composer<A extends Annotation> {
    *
    * @param container the running target container (guaranteed non-null and started)
    * @param annotation the L3 annotation instance carrying scenario parameters
-   * @return opaque handles representing every rule installed; passed back verbatim to
-   *         {@link #removeAll} — must not be {@code null}, may be empty
+   * @return opaque handles representing every rule installed; passed back verbatim to {@link
+   *     #removeAll} — must not be {@code null}, may be empty
    * @throws IllegalArgumentException if annotation attribute values are invalid
-   * @throws Exception if rule installation fails (wrapped in
-   *         {@code ExtensionConfigurationException} by the processor)
+   * @throws Exception if rule installation fails (wrapped in {@code
+   *     ExtensionConfigurationException} by the processor)
    */
   List<Object> apply(GenericContainer<?> container, A annotation);
 
@@ -64,8 +66,8 @@ public interface L3Composer<A extends Annotation> {
   void removeAll(GenericContainer<?> container, List<Object> handles);
 
   /**
-   * Returns human-readable lines describing what this incident scenario applies and why.
-   * Used for logging ({@code INFO}/{@code DEBUG}) and the {@link ChaosApplicationReport}.
+   * Returns human-readable lines describing what this incident scenario applies and why. Used for
+   * logging ({@code INFO}/{@code DEBUG}) and the {@link ChaosApplicationReport}.
    *
    * <p>Typical structure: first line names the incident; subsequent lines name each domain
    * component and its tunable parameters; last line states the severity and impact class.

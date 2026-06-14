@@ -11,19 +11,21 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Every {@code fsync()} and {@code fdatasync()} call on the target path prefix is delayed by
- * {@link #latencyMs()} milliseconds (default 500 ms). The delay is applied before libc is
- * invoked, so the durability barrier is still honoured — just very slowly.
+ * {@link #latencyMs()} milliseconds (default 500 ms). The delay is applied before libc is invoked,
+ * so the durability barrier is still honoured — just very slowly.
  *
  * <h2>How it's created</h2>
  *
- * <p>Injects an {@code IoRule.latency(path, FSYNC, Duration.ofMillis(latencyMs))} via
- * libchaos-io. In production, WAL fsync latency spikes during NVMe I/O saturation, when EBS
- * volume burst credits are exhausted (AWS), or when a storage controller queue is overwhelmed.
- * PostgreSQL and MySQL both measure commit latency via fsync round-trip time; a 500 ms delay
- * directly translates into transaction throughput collapse.
+ * <p>Injects an {@code IoRule.latency(path, FSYNC, Duration.ofMillis(latencyMs))} via libchaos-io.
+ * In production, WAL fsync latency spikes during NVMe I/O saturation, when EBS volume burst credits
+ * are exhausted (AWS), or when a storage controller queue is overwhelmed. PostgreSQL and MySQL both
+ * measure commit latency via fsync round-trip time; a 500 ms delay directly translates into
+ * transaction throughput collapse.
  *
  * <h2>How bad it is</h2>
  *

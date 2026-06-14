@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Every {@code poll()}/{@code epoll_wait()} call on any socket artificially times out after the
@@ -21,12 +23,11 @@ import com.macstab.chaos.core.extension.Severity;
  *
  * <h2>How it's created</h2>
  *
- * <p>Applies {@code NetRule.timeout(wildcard, duration, toxicity)} via libchaos-net. Every
- * {@code poll()} / {@code epoll_wait()} call on the container returns timeout (zero ready fds)
- * before the real kernel timeout fires. In production this happens when a hypervisor stall or
- * kernel scheduling hiccup delays the return from {@code epoll_wait()}, or when an Istio sidecar
- * under heavy load holds the connection-ready event longer than the application's configured I/O
- * timeout.
+ * <p>Applies {@code NetRule.timeout(wildcard, duration, toxicity)} via libchaos-net. Every {@code
+ * poll()} / {@code epoll_wait()} call on the container returns timeout (zero ready fds) before the
+ * real kernel timeout fires. In production this happens when a hypervisor stall or kernel
+ * scheduling hiccup delays the return from {@code epoll_wait()}, or when an Istio sidecar under
+ * heavy load holds the connection-ready event longer than the application's configured I/O timeout.
  *
  * <h2>How bad it is</h2>
  *
@@ -76,15 +77,16 @@ public @interface CompositeChaosPollTimeout {
 
   /**
    * libchaos-net endpoint selector. Accepted forms:
+   *
    * <ul>
-   *   <li>{@code "*"} — wildcard; matches every socket (default)</li>
-   *   <li>{@code "tcp4://host:port"} — TCP/IPv4 to a specific host and port</li>
-   *   <li>{@code "tcp6://[host]:port"} — TCP/IPv6</li>
-   *   <li>{@code "udp4://host:port"} — UDP/IPv4</li>
-   *   <li>{@code "udp6://[host]:port"} — UDP/IPv6</li>
-   *   <li>{@code "unix:///path"} — Unix-domain socket</li>
-   *   <li>{@code "dns://hostname"} — DNS interception at {@code getaddrinfo} time</li>
-   *   <li>{@code "hostname"} — shorthand for {@code dns://hostname}</li>
+   *   <li>{@code "*"} — wildcard; matches every socket (default)
+   *   <li>{@code "tcp4://host:port"} — TCP/IPv4 to a specific host and port
+   *   <li>{@code "tcp6://[host]:port"} — TCP/IPv6
+   *   <li>{@code "udp4://host:port"} — UDP/IPv4
+   *   <li>{@code "udp6://[host]:port"} — UDP/IPv6
+   *   <li>{@code "unix:///path"} — Unix-domain socket
+   *   <li>{@code "dns://hostname"} — DNS interception at {@code getaddrinfo} time
+   *   <li>{@code "hostname"} — shorthand for {@code dns://hostname}
    * </ul>
    */
   String endpoint() default "*";

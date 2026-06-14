@@ -5,13 +5,13 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosZipBomb;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.api.ActivationPolicy;
 import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -19,8 +19,8 @@ import lombok.extern.slf4j.Slf4j;
  * L2 composer for {@link CompositeChaosZipBomb}.
  *
  * <p>Simulates zip-bomb decompression pressure using GC heap pressure at an extreme allocation
- * rate, since the JVM chaos agent does not expose a dedicated Inflater interception point.
- * The effect mirrors the heap exhaustion pattern that a real zip bomb produces.
+ * rate, since the JVM chaos agent does not expose a dedicated Inflater interception point. The
+ * effect mirrors the heap exhaustion pattern that a real zip bomb produces.
  */
 @Slf4j
 public final class ZipBombComposer implements L2Composer<CompositeChaosZipBomb> {
@@ -36,14 +36,15 @@ public final class ZipBombComposer implements L2Composer<CompositeChaosZipBomb> 
   public List<Object> apply(
       final GenericContainer<?> container, final CompositeChaosZipBomb annotation) {
     final String id =
-        JvmPlanAccumulator.instance()
-            .mintScenarioId(CompositeChaosZipBomb.class.getSimpleName());
+        JvmPlanAccumulator.instance().mintScenarioId(CompositeChaosZipBomb.class.getSimpleName());
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: zip-bomb pressure — extreme GC allocation rate simulating decompression explosion, probability="
-                + annotation.probability())
+            .description(
+                "L2: zip-bomb pressure — extreme GC allocation rate simulating decompression explosion, probability="
+                    + annotation.probability())
             .selector(ChaosSelector.stress(ChaosSelector.StressTarget.GC_PRESSURE))
-            .effect(ChaosEffect.gcPressure(ALLOCATION_RATE, java.time.Duration.ofMillis(DURATION_MS)))
+            .effect(
+                ChaosEffect.gcPressure(ALLOCATION_RATE, java.time.Duration.ofMillis(DURATION_MS)))
             .activationPolicy(ActivationPolicy.always())
             .build();
     final String scenarioId = JvmPlanAccumulator.instance().addScenario(container, scenario);
@@ -66,7 +67,9 @@ public final class ZipBombComposer implements L2Composer<CompositeChaosZipBomb> 
   @Override
   public List<String> describe(final CompositeChaosZipBomb annotation) {
     return List.of(
-        "zip-bomb pressure — extreme allocation rate (" + ALLOCATION_RATE / (1024 * 1024) + " MB/s) simulating decompression explosion",
+        "zip-bomb pressure — extreme allocation rate ("
+            + ALLOCATION_RATE / (1024 * 1024)
+            + " MB/s) simulating decompression explosion",
         "probability=" + annotation.probability(),
         "severity=SEVERE — heap exhaustion and OOM if decompression is not bounded");
   }

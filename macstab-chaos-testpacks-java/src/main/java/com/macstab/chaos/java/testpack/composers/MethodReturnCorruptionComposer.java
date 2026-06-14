@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosMethodReturnCorruption;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.api.ActivationPolicy;
@@ -15,7 +16,6 @@ import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
 import com.macstab.chaos.jvm.api.NamePattern;
 import com.macstab.chaos.jvm.api.OperationType;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -45,8 +45,12 @@ public final class MethodReturnCorruptionComposer
         ChaosSelector.method(EnumSet.of(OperationType.METHOD_EXIT), cls, mth);
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: method return corruption — null/zero substituted at METHOD_EXIT for class='"
-                + annotation.classPattern() + "' method='" + annotation.methodNamePattern() + "'")
+            .description(
+                "L2: method return corruption — null/zero substituted at METHOD_EXIT for class='"
+                    + annotation.classPattern()
+                    + "' method='"
+                    + annotation.methodNamePattern()
+                    + "'")
             .selector(selector)
             .effect(ChaosEffect.corruptReturnValue(ReturnValueStrategy.NULL))
             .activationPolicy(ActivationPolicy.always())
@@ -72,7 +76,10 @@ public final class MethodReturnCorruptionComposer
   public List<String> describe(final CompositeChaosMethodReturnCorruption annotation) {
     return List.of(
         "method return corruption — return value replaced with null/zero at METHOD_EXIT for class='"
-            + annotation.classPattern() + "' method='" + annotation.methodNamePattern() + "'",
+            + annotation.classPattern()
+            + "' method='"
+            + annotation.methodNamePattern()
+            + "'",
         "severity=SEVERE — silent data corruption; method body executes but caller receives wrong result");
   }
 }

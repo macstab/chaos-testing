@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Causes {@code LockSupport.park()} and NIO {@code Selector.select()} calls to return spuriously
@@ -23,8 +25,8 @@ import com.macstab.chaos.core.extension.Severity;
  * The JVM specification permits spurious wakeups from {@code Object.wait()}, {@code
  * LockSupport.park()}, and blocking I/O selectors; this scenario makes them happen at the
  * configured {@link #probability()} to surface code that relies on a single notification being
- * genuine. In production, spurious wakeups are rare OS events (Linux futex, macOS pthread) but
- * they are documented in the POSIX specification and must be handled.
+ * genuine. In production, spurious wakeups are rare OS events (Linux futex, macOS pthread) but they
+ * are documented in the POSIX specification and must be handled.
  *
  * <h2>How bad it is</h2>
  *

@@ -7,6 +7,7 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosConnectionPoolExhaustion;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
@@ -15,7 +16,6 @@ import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
 import com.macstab.chaos.jvm.api.OperationType;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -39,8 +39,10 @@ public final class ConnectionPoolExhaustionComposer
     final Duration delay = Duration.ofMillis(annotation.acquireDelayMs());
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: connection-pool exhaustion — JDBC acquire delay "
-                + annotation.acquireDelayMs() + " ms")
+            .description(
+                "L2: connection-pool exhaustion — JDBC acquire delay "
+                    + annotation.acquireDelayMs()
+                    + " ms")
             .selector(selector)
             .effect(ChaosEffect.delay(delay, delay))
             .activationPolicy(ActivationPolicy.always())
@@ -56,7 +58,8 @@ public final class ConnectionPoolExhaustionComposer
         try {
           JvmPlanAccumulator.instance().removeScenario(container, scenarioId);
         } catch (final Exception e) {
-          log.warn("ConnectionPoolExhaustionComposer.removeAll: failed to remove {}", scenarioId, e);
+          log.warn(
+              "ConnectionPoolExhaustionComposer.removeAll: failed to remove {}", scenarioId, e);
         }
       }
     }
@@ -66,7 +69,8 @@ public final class ConnectionPoolExhaustionComposer
   public List<String> describe(final CompositeChaosConnectionPoolExhaustion annotation) {
     return List.of(
         "connection-pool exhaustion — every JDBC getConnection() delayed by "
-            + annotation.acquireDelayMs() + " ms",
+            + annotation.acquireDelayMs()
+            + " ms",
         "severity=SEVERE — pool timeouts will fire on every request; health checks fail");
   }
 }

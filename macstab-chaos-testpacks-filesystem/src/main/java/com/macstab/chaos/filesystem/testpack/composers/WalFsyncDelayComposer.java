@@ -48,7 +48,9 @@ public final class WalFsyncDelayComposer implements L2Composer<CompositeChaosWal
   @Override
   public List<String> describe(final CompositeChaosWalFsyncDelay annotation) {
     return List.of(
-        "WAL fsync delay (" + annotation.latencyMs() + "ms on fsync/fdatasync) — EBS burst-credit exhaustion",
+        "WAL fsync delay ("
+            + annotation.latencyMs()
+            + "ms on fsync/fdatasync) — EBS burst-credit exhaustion",
         "path=" + annotation.path(),
         "severity=MODERATE — transaction throughput collapses; service recovers when disk pressure lifts");
   }

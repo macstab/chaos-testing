@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosHttpServerError5xx;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
@@ -14,13 +15,13 @@ import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
 import com.macstab.chaos.jvm.api.OperationType;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
 
 /** L2 composer for {@link CompositeChaosHttpServerError5xx}. */
 @Slf4j
-public final class HttpServerError5xxComposer implements L2Composer<CompositeChaosHttpServerError5xx> {
+public final class HttpServerError5xxComposer
+    implements L2Composer<CompositeChaosHttpServerError5xx> {
 
   /** Public no-arg constructor required by the L2 composer contract. */
   public HttpServerError5xxComposer() {}
@@ -35,11 +36,13 @@ public final class HttpServerError5xxComposer implements L2Composer<CompositeCha
         JvmSelectorKind.HTTP_CLIENT.build(EnumSet.of(OperationType.HTTP_CLIENT_SEND));
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: HTTP 5xx error — IOException injected at probability "
-                + annotation.probability())
+            .description(
+                "L2: HTTP 5xx error — IOException injected at probability "
+                    + annotation.probability())
             .selector(selector)
-            .effect(ChaosEffect.injectException("java.io.IOException",
-                "injected HTTP 5xx error by chaos L2"))
+            .effect(
+                ChaosEffect.injectException(
+                    "java.io.IOException", "injected HTTP 5xx error by chaos L2"))
             .activationPolicy(ActivationPolicy.always())
             .build();
     final String scenarioId = JvmPlanAccumulator.instance().addScenario(container, scenario);

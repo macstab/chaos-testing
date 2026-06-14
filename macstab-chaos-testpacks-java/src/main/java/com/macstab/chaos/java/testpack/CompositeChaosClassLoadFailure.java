@@ -11,11 +11,13 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Injects a {@code ClassNotFoundException} or {@code NoClassDefFoundError} into class-loading
- * operations matching {@link #classPattern()}, simulating a corrupted class path, a missing JAR,
- * or a class that was removed between build and deploy.
+ * operations matching {@link #classPattern()}, simulating a corrupted class path, a missing JAR, or
+ * a class that was removed between build and deploy.
  *
  * <h2>How it's created</h2>
  *
@@ -35,8 +37,8 @@ import com.macstab.chaos.core.extension.Severity;
  * <h2>Industry references</h2>
  *
  * <p>The Java class-loading mechanism and its failure modes are documented in JVM spec §5.3
- * "Creation and Loading". OSGi classloader isolation problems are a well-known source of
- * {@code NoClassDefFoundError} in enterprise Java deployments.
+ * "Creation and Loading". OSGi classloader isolation problems are a well-known source of {@code
+ * NoClassDefFoundError} in enterprise Java deployments.
  *
  * <h2>Example</h2>
  *

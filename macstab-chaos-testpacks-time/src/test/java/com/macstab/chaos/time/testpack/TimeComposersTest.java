@@ -70,64 +70,70 @@ class TimeComposersTest {
   // ── TimeRule argument matchers ────────────────────────────────────────────
 
   private static TimeRule argOffsetRule(final TimeClock clock, final long expectedMs) {
-    return org.mockito.ArgumentMatchers.argThat(rule -> {
-      if (rule.clock().isEmpty() || rule.clock().get() != clock) {
-        return false;
-      }
-      if (!(rule.effect() instanceof TimeEffect.Offset off)) {
-        return false;
-      }
-      return off.delta().toMillis() == expectedMs;
-    });
+    return org.mockito.ArgumentMatchers.argThat(
+        rule -> {
+          if (rule.clock().isEmpty() || rule.clock().get() != clock) {
+            return false;
+          }
+          if (!(rule.effect() instanceof TimeEffect.Offset off)) {
+            return false;
+          }
+          return off.delta().toMillis() == expectedMs;
+        });
   }
 
   private static TimeRule argOffsetRuleNoClock(final long expectedMs) {
-    return org.mockito.ArgumentMatchers.argThat(rule -> {
-      if (rule.clock().isPresent()) {
-        return false;
-      }
-      if (!(rule.effect() instanceof TimeEffect.Offset off)) {
-        return false;
-      }
-      return off.delta().toMillis() == expectedMs;
-    });
+    return org.mockito.ArgumentMatchers.argThat(
+        rule -> {
+          if (rule.clock().isPresent()) {
+            return false;
+          }
+          if (!(rule.effect() instanceof TimeEffect.Offset off)) {
+            return false;
+          }
+          return off.delta().toMillis() == expectedMs;
+        });
   }
 
-  private static TimeRule argErrnoRule(final TimeSelector selector, final TimeErrno errno,
-      final double probability) {
-    return org.mockito.ArgumentMatchers.argThat(rule -> {
-      if (rule.selector() != selector) {
-        return false;
-      }
-      if (!(rule.effect() instanceof TimeEffect.ErrnoFault ef)) {
-        return false;
-      }
-      return ef.errno() == errno && Double.compare(ef.probability(), probability) == 0;
-    });
+  private static TimeRule argErrnoRule(
+      final TimeSelector selector, final TimeErrno errno, final double probability) {
+    return org.mockito.ArgumentMatchers.argThat(
+        rule -> {
+          if (rule.selector() != selector) {
+            return false;
+          }
+          if (!(rule.effect() instanceof TimeEffect.ErrnoFault ef)) {
+            return false;
+          }
+          return ef.errno() == errno && Double.compare(ef.probability(), probability) == 0;
+        });
   }
 
-  private static TimeRule argLatencyRule(final TimeSelector selector, final Duration expectedDelay) {
-    return org.mockito.ArgumentMatchers.argThat(rule -> {
-      if (rule.selector() != selector) {
-        return false;
-      }
-      if (!(rule.effect() instanceof TimeEffect.Latency lat)) {
-        return false;
-      }
-      return lat.delay().equals(expectedDelay);
-    });
+  private static TimeRule argLatencyRule(
+      final TimeSelector selector, final Duration expectedDelay) {
+    return org.mockito.ArgumentMatchers.argThat(
+        rule -> {
+          if (rule.selector() != selector) {
+            return false;
+          }
+          if (!(rule.effect() instanceof TimeEffect.Latency lat)) {
+            return false;
+          }
+          return lat.delay().equals(expectedDelay);
+        });
   }
 
   private static TimeRule argNegativeOffsetRuleNoClock() {
-    return org.mockito.ArgumentMatchers.argThat(rule -> {
-      if (rule.clock().isPresent()) {
-        return false;
-      }
-      if (!(rule.effect() instanceof TimeEffect.Offset off)) {
-        return false;
-      }
-      return off.delta().isNegative();
-    });
+    return org.mockito.ArgumentMatchers.argThat(
+        rule -> {
+          if (rule.clock().isPresent()) {
+            return false;
+          }
+          if (!(rule.effect() instanceof TimeEffect.Offset off)) {
+            return false;
+          }
+          return off.delta().isNegative();
+        });
   }
 
   @SuppressWarnings("unchecked")
@@ -157,14 +163,16 @@ class TimeComposersTest {
     @Test
     @DisplayName("default skewMs is 500")
     void defaultSkewMs() {
-      final CompositeChaosClockSkew ann = fixture(ClockSkewFixture.class, CompositeChaosClockSkew.class);
+      final CompositeChaosClockSkew ann =
+          fixture(ClockSkewFixture.class, CompositeChaosClockSkew.class);
       assertThat(ann.skewMs()).isEqualTo(500L);
     }
 
     @Test
     @DisplayName("describe() mentions REALTIME and skewMs")
     void describe() {
-      final CompositeChaosClockSkew ann = fixture(ClockSkewFixture.class, CompositeChaosClockSkew.class);
+      final CompositeChaosClockSkew ann =
+          fixture(ClockSkewFixture.class, CompositeChaosClockSkew.class);
       final List<String> lines = new ClockSkewComposer().describe(ann);
       assertThat(lines).isNotEmpty();
       assertThat(String.join(" ", lines)).containsIgnoringCase("REALTIME");
@@ -174,7 +182,8 @@ class TimeComposersTest {
     @Test
     @DisplayName("apply() builds OFFSET +500 ms rule on CLOCK_REALTIME")
     void apply() {
-      final CompositeChaosClockSkew ann = fixture(ClockSkewFixture.class, CompositeChaosClockSkew.class);
+      final CompositeChaosClockSkew ann =
+          fixture(ClockSkewFixture.class, CompositeChaosClockSkew.class);
       final GenericContainer<?> c = container();
       final RuleHandle h = handle();
       final AdvancedTimeChaos adv = mock(AdvancedTimeChaos.class);
@@ -217,7 +226,8 @@ class TimeComposersTest {
     @Test
     @DisplayName("describe() mentions leap-second and REALTIME")
     void describe() {
-      final CompositeChaosLeapSecond ann = fixture(LeapSecondFixture.class, CompositeChaosLeapSecond.class);
+      final CompositeChaosLeapSecond ann =
+          fixture(LeapSecondFixture.class, CompositeChaosLeapSecond.class);
       final List<String> lines = new LeapSecondComposer().describe(ann);
       assertThat(lines).isNotEmpty();
       assertThat(String.join(" ", lines)).containsIgnoringCase("leap");
@@ -227,7 +237,8 @@ class TimeComposersTest {
     @Test
     @DisplayName("apply() builds OFFSET +1000 ms rule on CLOCK_REALTIME")
     void apply() {
-      final CompositeChaosLeapSecond ann = fixture(LeapSecondFixture.class, CompositeChaosLeapSecond.class);
+      final CompositeChaosLeapSecond ann =
+          fixture(LeapSecondFixture.class, CompositeChaosLeapSecond.class);
       final GenericContainer<?> c = container();
       final RuleHandle h = handle();
       final AdvancedTimeChaos adv = mock(AdvancedTimeChaos.class);
@@ -333,7 +344,8 @@ class TimeComposersTest {
     @Test
     @DisplayName("describe() mentions frozen and epoch")
     void describe() {
-      final CompositeChaosFrozenClock ann = fixture(FrozenClockFixture.class, CompositeChaosFrozenClock.class);
+      final CompositeChaosFrozenClock ann =
+          fixture(FrozenClockFixture.class, CompositeChaosFrozenClock.class);
       final List<String> lines = new FrozenClockComposer().describe(ann);
       assertThat(lines).isNotEmpty();
       assertThat(String.join(" ", lines)).containsIgnoringCase("frozen");
@@ -342,7 +354,8 @@ class TimeComposersTest {
     @Test
     @DisplayName("apply() builds negative all-clocks OFFSET rule (no clock qualifier)")
     void apply() {
-      final CompositeChaosFrozenClock ann = fixture(FrozenClockFixture.class, CompositeChaosFrozenClock.class);
+      final CompositeChaosFrozenClock ann =
+          fixture(FrozenClockFixture.class, CompositeChaosFrozenClock.class);
       final GenericContainer<?> c = container();
       final RuleHandle h = handle();
       final AdvancedTimeChaos adv = mock(AdvancedTimeChaos.class);
@@ -386,14 +399,16 @@ class TimeComposersTest {
     @Test
     @DisplayName("default skewMs is 3_600_000")
     void defaultSkewMs() {
-      final CompositeChaosTimeTravel ann = fixture(TimeTravelFixture.class, CompositeChaosTimeTravel.class);
+      final CompositeChaosTimeTravel ann =
+          fixture(TimeTravelFixture.class, CompositeChaosTimeTravel.class);
       assertThat(ann.skewMs()).isEqualTo(3_600_000L);
     }
 
     @Test
     @DisplayName("describe() mentions backward jump and REALTIME")
     void describe() {
-      final CompositeChaosTimeTravel ann = fixture(TimeTravelFixture.class, CompositeChaosTimeTravel.class);
+      final CompositeChaosTimeTravel ann =
+          fixture(TimeTravelFixture.class, CompositeChaosTimeTravel.class);
       final List<String> lines = new TimeTravelComposer().describe(ann);
       assertThat(lines).isNotEmpty();
       assertThat(String.join(" ", lines)).containsIgnoringCase("backward");
@@ -403,7 +418,8 @@ class TimeComposersTest {
     @Test
     @DisplayName("apply() builds OFFSET -3_600_000 ms rule on CLOCK_REALTIME")
     void apply() {
-      final CompositeChaosTimeTravel ann = fixture(TimeTravelFixture.class, CompositeChaosTimeTravel.class);
+      final CompositeChaosTimeTravel ann =
+          fixture(TimeTravelFixture.class, CompositeChaosTimeTravel.class);
       final GenericContainer<?> c = container();
       final RuleHandle h = handle();
       final AdvancedTimeChaos adv = mock(AdvancedTimeChaos.class);
@@ -576,7 +592,8 @@ class TimeComposersTest {
         .isNotNull();
     assertThat(CompositeChaosLeapSecond.class.getAnnotation(java.lang.annotation.Repeatable.class))
         .isNotNull();
-    assertThat(CompositeChaosSlowMonotonic.class.getAnnotation(java.lang.annotation.Repeatable.class))
+    assertThat(
+            CompositeChaosSlowMonotonic.class.getAnnotation(java.lang.annotation.Repeatable.class))
         .isNotNull();
     assertThat(CompositeChaosFrozenClock.class.getAnnotation(java.lang.annotation.Repeatable.class))
         .isNotNull();
@@ -586,7 +603,8 @@ class TimeComposersTest {
             CompositeChaosNanosleepInterruption.class.getAnnotation(
                 java.lang.annotation.Repeatable.class))
         .isNotNull();
-    assertThat(CompositeChaosTimerCascade.class.getAnnotation(java.lang.annotation.Repeatable.class))
+    assertThat(
+            CompositeChaosTimerCascade.class.getAnnotation(java.lang.annotation.Repeatable.class))
         .isNotNull();
   }
 

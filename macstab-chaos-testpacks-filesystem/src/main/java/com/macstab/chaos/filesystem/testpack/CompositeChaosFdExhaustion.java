@@ -11,35 +11,38 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Every {@code open()} call returns {@code EMFILE} — the per-process file descriptor limit has
- * been reached. The fault fires on every matched call ({@code toxicity=1.0}), making file descriptor
- * exhaustion immediate and total: no new files, sockets, pipes, or epoll instances can be opened.
+ * been reached. The fault fires on every matched call ({@code toxicity=1.0}), making file
+ * descriptor exhaustion immediate and total: no new files, sockets, pipes, or epoll instances can
+ * be opened.
  *
  * <h2>How it's created</h2>
  *
  * <p>Injects {@code IoRule.errno(wildcard, OPEN, EMFILE, 1.0)} via libchaos-io using a wildcard
- * path selector. In production, EMFILE occurs when a service leaks file descriptors (missing
- * {@code close()} on error paths), when a JVM with many threads each holding a connection pool
- * approaches the process {@code RLIMIT_NOFILE}, or when Kubernetes cgroups enforce a container-
- * level fd limit via {@code prlimit}.
+ * path selector. In production, EMFILE occurs when a service leaks file descriptors (missing {@code
+ * close()} on error paths), when a JVM with many threads each holding a connection pool approaches
+ * the process {@code RLIMIT_NOFILE}, or when Kubernetes cgroups enforce a container- level fd limit
+ * via {@code prlimit}.
  *
  * <h2>How bad it is</h2>
  *
  * <p>Severity: <strong>Severe</strong><br>
- * The process can no longer open any resource. Network connections fail (no sockets), file
- * writes fail (no file descriptors), even logging may fail. Without explicit EMFILE handling the
- * application typically crashes or hangs. Operator intervention — restarting the process or
- * raising the {@code ulimit -n} — is required to restore service.
+ * The process can no longer open any resource. Network connections fail (no sockets), file writes
+ * fail (no file descriptors), even logging may fail. Without explicit EMFILE handling the
+ * application typically crashes or hangs. Operator intervention — restarting the process or raising
+ * the {@code ulimit -n} — is required to restore service.
  *
  * <h2>Industry references</h2>
  *
- * <p>EMFILE is specified in POSIX.1-2017 {@code open(2)}. The Linux kernel default
- * {@code RLIMIT_NOFILE} for containers is 1 048 576 (since kernel 5.15), but many distributions
- * and container runtimes apply a much lower effective limit. Netflix documented EMFILE-induced
- * Eureka client failures in a 2019 engineering blog post on fd leak detection. The JDK NIO
- * {@code SocketChannel.open()} propagates EMFILE as {@code java.io.IOException: Too many open files}.
+ * <p>EMFILE is specified in POSIX.1-2017 {@code open(2)}. The Linux kernel default {@code
+ * RLIMIT_NOFILE} for containers is 1 048 576 (since kernel 5.15), but many distributions and
+ * container runtimes apply a much lower effective limit. Netflix documented EMFILE-induced Eureka
+ * client failures in a 2019 engineering blog post on fd leak detection. The JDK NIO {@code
+ * SocketChannel.open()} propagates EMFILE as {@code java.io.IOException: Too many open files}.
  *
  * <h2>Example</h2>
  *
@@ -67,8 +70,8 @@ import com.macstab.chaos.core.extension.Severity;
 public @interface CompositeChaosFdExhaustion {
 
   /**
-   * Probability that each {@code open()} returns {@code EMFILE}. {@code 1.0} (the default) makes
-   * fd exhaustion total — no new descriptors can be opened.
+   * Probability that each {@code open()} returns {@code EMFILE}. {@code 1.0} (the default) makes fd
+   * exhaustion total — no new descriptors can be opened.
    */
   double toxicity() default 1.0;
 

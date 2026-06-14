@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Floods the JVM {@code Finalizer} thread queue by creating and abandoning objects with slow
@@ -20,10 +22,10 @@ import com.macstab.chaos.core.extension.Severity;
  * <h2>How it's created</h2>
  *
  * <p>Applies a {@code FINALIZER_BACKLOG} stressor via the JVM chaos agent. The stressor creates
- * {@link #objectCount()} objects whose {@code finalize()} methods sleep briefly, producing a
- * queue longer than the single Finalizer thread can drain. In production, finaliser backlogs
- * accumulate when object creation rates exceed the Finalizer thread's throughput — common in
- * applications that use streams opened with {@code FileInputStream} or legacy SSL implementations.
+ * {@link #objectCount()} objects whose {@code finalize()} methods sleep briefly, producing a queue
+ * longer than the single Finalizer thread can drain. In production, finaliser backlogs accumulate
+ * when object creation rates exceed the Finalizer thread's throughput — common in applications that
+ * use streams opened with {@code FileInputStream} or legacy SSL implementations.
  *
  * <h2>How bad it is</h2>
  *
@@ -34,9 +36,9 @@ import com.macstab.chaos.core.extension.Severity;
  *
  * <h2>Industry references</h2>
  *
- * <p>Joshua Bloch, "Effective Java" (3rd ed.), Item 8: "Avoid finalizers and cleaners" details
- * the risks of finaliser queues. The single-threaded {@code FinalizerThread} design is documented
- * in the JDK source ({@code java.lang.ref.Finalizer}).
+ * <p>Joshua Bloch, "Effective Java" (3rd ed.), Item 8: "Avoid finalizers and cleaners" details the
+ * risks of finaliser queues. The single-threaded {@code FinalizerThread} design is documented in
+ * the JDK source ({@code java.lang.ref.Finalizer}).
  *
  * <h2>Example</h2>
  *

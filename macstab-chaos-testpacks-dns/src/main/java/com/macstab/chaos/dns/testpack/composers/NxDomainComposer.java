@@ -26,7 +26,9 @@ public final class NxDomainComposer implements L2Composer<CompositeChaosNxDomain
       final GenericContainer<?> container, final CompositeChaosNxDomain annotation) {
     final DnsSelector selector = resolveSelector(annotation.host());
     final RuleHandle handle =
-        CompositeDnsChaos.standard().advanced().apply(container, DnsRule.eai(selector, EaiErrno.EAI_NONAME));
+        CompositeDnsChaos.standard()
+            .advanced()
+            .apply(container, DnsRule.eai(selector, EaiErrno.EAI_NONAME));
     return List.of(handle);
   }
 

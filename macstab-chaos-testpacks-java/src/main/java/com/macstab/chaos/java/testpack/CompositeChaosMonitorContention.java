@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Sustains high monitor contention by spawning {@link #threadCount()} threads that continuously
@@ -22,15 +24,15 @@ import com.macstab.chaos.core.extension.Severity;
  * <p>Applies a {@code MONITOR_CONTENTION} stressor via the JVM chaos agent. The stressor threads
  * enter and exit the shared {@code synchronized} block in a tight loop, forcing the lock to inflate
  * to a heavyweight OS mutex immediately. In production, this pattern occurs when a singleton
- * resource (connection pool, rate limiter, cache) protected by a {@code synchronized} method is
- * hit by more concurrency than it was designed for.
+ * resource (connection pool, rate limiter, cache) protected by a {@code synchronized} method is hit
+ * by more concurrency than it was designed for.
  *
  * <h2>How bad it is</h2>
  *
  * <p>Severity: <strong>Moderate</strong><br>
- * Application threads waiting for unrelated monitors experience increased scheduling latency due
- * to the elevated futex/context-switch rate. The application remains functional but latency
- * P99/P999 widens. Biased-lock revocation safepoints add additional stop-the-world micro-pauses.
+ * Application threads waiting for unrelated monitors experience increased scheduling latency due to
+ * the elevated futex/context-switch rate. The application remains functional but latency P99/P999
+ * widens. Biased-lock revocation safepoints add additional stop-the-world micro-pauses.
  *
  * <h2>Industry references</h2>
  *

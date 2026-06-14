@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Sustains a high allocation rate inside the target container's JVM to trigger frequent
@@ -77,8 +79,8 @@ public @interface CompositeChaosGcPause {
   long allocationRateBytesPerSecond() default 104_857_600L;
 
   /**
-   * Container id to target. Empty string (the default) applies the scenario to every container
-   * that has the JVM agent attached.
+   * Container id to target. Empty string (the default) applies the scenario to every container that
+   * has the JVM agent attached.
    *
    * @return container id; default ""
    */

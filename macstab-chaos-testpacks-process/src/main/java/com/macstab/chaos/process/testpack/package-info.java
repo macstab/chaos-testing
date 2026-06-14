@@ -3,10 +3,10 @@
  * L2 chaos scenario annotations for the process module.
  *
  * <p>This package contains twelve named, pre-tuned {@code @CompositeChaos<X>} annotations covering
- * the canonical process-lifecycle failure modes encountered in cloud-native production systems. Each
- * annotation composes one or more libchaos-process rules via a
- * {@link com.macstab.chaos.core.extension.L2Composer} implementation and ships with
- * industry-canonical documentation, severity classification, and sane defaults.
+ * the canonical process-lifecycle failure modes encountered in cloud-native production systems.
+ * Each annotation composes one or more libchaos-process rules via a {@link
+ * com.macstab.chaos.core.extension.L2Composer} implementation and ships with industry-canonical
+ * documentation, severity classification, and sane defaults.
  *
  * <h2>Scenario catalogue</h2>
  *
@@ -77,10 +77,9 @@
  *
  * <h2>Prerequisites</h2>
  *
- * <p>All scenarios in this package require a container prepared with libchaos-process before
- * {@code container.start()}. Annotate the test class with
- * {@code @SyscallLevelChaos(LibchaosLib.PROCESS)}; {@code ChaosTestingExtension} drives
- * preparation automatically.
+ * <p>All scenarios in this package require a container prepared with libchaos-process before {@code
+ * container.start()}. Annotate the test class with {@code @SyscallLevelChaos(LibchaosLib.PROCESS)};
+ * {@code ChaosTestingExtension} drives preparation automatically.
  *
  * @author Christian Schnapka - Macstab GmbH
  */

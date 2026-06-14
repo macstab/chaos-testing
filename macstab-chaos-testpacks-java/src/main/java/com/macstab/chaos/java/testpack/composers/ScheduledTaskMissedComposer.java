@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosScheduledTaskMissed;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
@@ -14,7 +15,6 @@ import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
 import com.macstab.chaos.jvm.api.OperationType;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -36,8 +36,9 @@ public final class ScheduledTaskMissedComposer
         JvmSelectorKind.SCHEDULING.build(EnumSet.of(OperationType.SCHEDULE_TICK));
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: scheduled task missed — SCHEDULE_TICK suppressed at probability "
-                + annotation.probability())
+            .description(
+                "L2: scheduled task missed — SCHEDULE_TICK suppressed at probability "
+                    + annotation.probability())
             .selector(selector)
             .effect(ChaosEffect.suppress())
             .activationPolicy(ActivationPolicy.always())

@@ -11,20 +11,22 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>The service token in every forward DNS lookup is silently rewritten to an invalid service name
- * before the resolver is consulted. Applications that pass a service name (port alias) alongside the
- * hostname to {@code getaddrinfo()} receive a different service binding — or an {@code EAI_SERVICE}
- * error if the replacement name is unknown. Tests whether the application correctly handles service
- * name mismatches and unexpected port assignments.
+ * before the resolver is consulted. Applications that pass a service name (port alias) alongside
+ * the hostname to {@code getaddrinfo()} receive a different service binding — or an {@code
+ * EAI_SERVICE} error if the replacement name is unknown. Tests whether the application correctly
+ * handles service name mismatches and unexpected port assignments.
  *
  * <h2>How it's created</h2>
  *
  * <p>Applies {@code DnsRule.service(anyForward(), serviceName)} via libchaos-dns. In production
- * this happens when a service registry entry is corrupted, when a port alias in {@code /etc/services}
- * diverges between container images, or when a sidecar proxy remaps the service port during a
- * blue/green switchover.
+ * this happens when a service registry entry is corrupted, when a port alias in {@code
+ * /etc/services} diverges between container images, or when a sidecar proxy remaps the service port
+ * during a blue/green switchover.
  *
  * <h2>How bad it is</h2>
  *

@@ -54,12 +54,13 @@ import com.macstab.chaos.java.testpack.composers.ZipBombComposer;
  * Contract tests for all 34 Java L2 composer and annotation pairs.
  *
  * <p>Each nested class covers:
+ *
  * <ol>
- *   <li>Annotation carries the correct {@code @ChaosL2} severity and composer FQN suffix.</li>
- *   <li>{@code describe()} returns a non-empty list.</li>
- *   <li>{@code removeAll()} with an empty list does nothing (no exception).</li>
- *   <li>The annotation type is {@code @Repeatable}.</li>
- *   <li>The composer class implements {@link L2Composer}.</li>
+ *   <li>Annotation carries the correct {@code @ChaosL2} severity and composer FQN suffix.
+ *   <li>{@code describe()} returns a non-empty list.
+ *   <li>{@code removeAll()} with an empty list does nothing (no exception).
+ *   <li>The annotation type is {@code @Repeatable}.
+ *   <li>The composer class implements {@link L2Composer}.
  * </ol>
  *
  * <p>{@code apply()} is not tested here because it requires a running container with a live JVM
@@ -266,7 +267,8 @@ class JavaComposersTest {
     @Test
     @DisplayName("describe() returns non-empty list")
     void describe() {
-      final CompositeChaosDeadlock ann = fixture(DeadlockFixture.class, CompositeChaosDeadlock.class);
+      final CompositeChaosDeadlock ann =
+          fixture(DeadlockFixture.class, CompositeChaosDeadlock.class);
       assertThat(new DeadlockComposer().describe(ann)).isNotEmpty();
     }
 
@@ -296,7 +298,8 @@ class JavaComposersTest {
     @Test
     @DisplayName("annotation is @Repeatable")
     void isRepeatable() {
-      assertThat(CompositeChaosThreadStarvation.class.isAnnotationPresent(Repeatable.class)).isTrue();
+      assertThat(CompositeChaosThreadStarvation.class.isAnnotationPresent(Repeatable.class))
+          .isTrue();
     }
 
     @Test
@@ -339,7 +342,8 @@ class JavaComposersTest {
     @Test
     @DisplayName("annotation is @Repeatable")
     void isRepeatable() {
-      assertThat(CompositeChaosVirtualThreadPinning.class.isAnnotationPresent(Repeatable.class)).isTrue();
+      assertThat(CompositeChaosVirtualThreadPinning.class.isAnnotationPresent(Repeatable.class))
+          .isTrue();
     }
 
     @Test
@@ -425,7 +429,8 @@ class JavaComposersTest {
     @Test
     @DisplayName("annotation is @Repeatable")
     void isRepeatable() {
-      assertThat(CompositeChaosMonitorContention.class.isAnnotationPresent(Repeatable.class)).isTrue();
+      assertThat(CompositeChaosMonitorContention.class.isAnnotationPresent(Repeatable.class))
+          .isTrue();
     }
 
     @Test
@@ -468,7 +473,8 @@ class JavaComposersTest {
     @Test
     @DisplayName("annotation is @Repeatable")
     void isRepeatable() {
-      assertThat(CompositeChaosMetaspacePressure.class.isAnnotationPresent(Repeatable.class)).isTrue();
+      assertThat(CompositeChaosMetaspacePressure.class.isAnnotationPresent(Repeatable.class))
+          .isTrue();
     }
 
     @Test
@@ -511,7 +517,8 @@ class JavaComposersTest {
     @Test
     @DisplayName("annotation is @Repeatable")
     void isRepeatable() {
-      assertThat(CompositeChaosDirectBufferLeak.class.isAnnotationPresent(Repeatable.class)).isTrue();
+      assertThat(CompositeChaosDirectBufferLeak.class.isAnnotationPresent(Repeatable.class))
+          .isTrue();
     }
 
     @Test
@@ -554,7 +561,8 @@ class JavaComposersTest {
     @Test
     @DisplayName("annotation is @Repeatable")
     void isRepeatable() {
-      assertThat(CompositeChaosCodeCachePressure.class.isAnnotationPresent(Repeatable.class)).isTrue();
+      assertThat(CompositeChaosCodeCachePressure.class.isAnnotationPresent(Repeatable.class))
+          .isTrue();
     }
 
     @Test
@@ -597,7 +605,8 @@ class JavaComposersTest {
     @Test
     @DisplayName("annotation is @Repeatable")
     void isRepeatable() {
-      assertThat(CompositeChaosFinalizerBacklog.class.isAnnotationPresent(Repeatable.class)).isTrue();
+      assertThat(CompositeChaosFinalizerBacklog.class.isAnnotationPresent(Repeatable.class))
+          .isTrue();
     }
 
     @Test
@@ -640,7 +649,8 @@ class JavaComposersTest {
     @Test
     @DisplayName("annotation is @Repeatable")
     void isRepeatable() {
-      assertThat(CompositeChaosStringInternStorm.class.isAnnotationPresent(Repeatable.class)).isTrue();
+      assertThat(CompositeChaosStringInternStorm.class.isAnnotationPresent(Repeatable.class))
+          .isTrue();
     }
 
     @Test
@@ -683,7 +693,8 @@ class JavaComposersTest {
     @Test
     @DisplayName("annotation is @Repeatable")
     void isRepeatable() {
-      assertThat(CompositeChaosThreadLocalLeak.class.isAnnotationPresent(Repeatable.class)).isTrue();
+      assertThat(CompositeChaosThreadLocalLeak.class.isAnnotationPresent(Repeatable.class))
+          .isTrue();
     }
 
     @Test
@@ -726,7 +737,8 @@ class JavaComposersTest {
     @Test
     @DisplayName("annotation is @Repeatable")
     void isRepeatable() {
-      assertThat(CompositeChaosReferenceQueueFlood.class.isAnnotationPresent(Repeatable.class)).isTrue();
+      assertThat(CompositeChaosReferenceQueueFlood.class.isAnnotationPresent(Repeatable.class))
+          .isTrue();
     }
 
     @Test
@@ -854,7 +866,8 @@ class JavaComposersTest {
     @Test
     @DisplayName("annotation is @Repeatable")
     void isRepeatable() {
-      assertThat(CompositeChaosConnectionPoolExhaustion.class.isAnnotationPresent(Repeatable.class)).isTrue();
+      assertThat(CompositeChaosConnectionPoolExhaustion.class.isAnnotationPresent(Repeatable.class))
+          .isTrue();
     }
 
     @Test
@@ -867,7 +880,8 @@ class JavaComposersTest {
     @DisplayName("describe() returns non-empty list")
     void describe() {
       final CompositeChaosConnectionPoolExhaustion ann =
-          fixture(ConnectionPoolExhaustionFixture.class, CompositeChaosConnectionPoolExhaustion.class);
+          fixture(
+              ConnectionPoolExhaustionFixture.class, CompositeChaosConnectionPoolExhaustion.class);
       assertThat(new ConnectionPoolExhaustionComposer().describe(ann)).isNotEmpty();
     }
 
@@ -940,7 +954,8 @@ class JavaComposersTest {
     @Test
     @DisplayName("annotation is @Repeatable")
     void isRepeatable() {
-      assertThat(CompositeChaosJdbcRollbackFailure.class.isAnnotationPresent(Repeatable.class)).isTrue();
+      assertThat(CompositeChaosJdbcRollbackFailure.class.isAnnotationPresent(Repeatable.class))
+          .isTrue();
     }
 
     @Test
@@ -983,7 +998,8 @@ class JavaComposersTest {
     @Test
     @DisplayName("annotation is @Repeatable")
     void isRepeatable() {
-      assertThat(CompositeChaosHttpClientCascade.class.isAnnotationPresent(Repeatable.class)).isTrue();
+      assertThat(CompositeChaosHttpClientCascade.class.isAnnotationPresent(Repeatable.class))
+          .isTrue();
     }
 
     @Test
@@ -1026,7 +1042,8 @@ class JavaComposersTest {
     @Test
     @DisplayName("annotation is @Repeatable")
     void isRepeatable() {
-      assertThat(CompositeChaosHttpServerError5xx.class.isAnnotationPresent(Repeatable.class)).isTrue();
+      assertThat(CompositeChaosHttpServerError5xx.class.isAnnotationPresent(Repeatable.class))
+          .isTrue();
     }
 
     @Test
@@ -1069,7 +1086,8 @@ class JavaComposersTest {
     @Test
     @DisplayName("annotation is @Repeatable")
     void isRepeatable() {
-      assertThat(CompositeChaosShutdownHookHang.class.isAnnotationPresent(Repeatable.class)).isTrue();
+      assertThat(CompositeChaosShutdownHookHang.class.isAnnotationPresent(Repeatable.class))
+          .isTrue();
     }
 
     @Test
@@ -1112,7 +1130,8 @@ class JavaComposersTest {
     @Test
     @DisplayName("annotation is @Repeatable")
     void isRepeatable() {
-      assertThat(CompositeChaosScheduledTaskMissed.class.isAnnotationPresent(Repeatable.class)).isTrue();
+      assertThat(CompositeChaosScheduledTaskMissed.class.isAnnotationPresent(Repeatable.class))
+          .isTrue();
     }
 
     @Test
@@ -1155,7 +1174,8 @@ class JavaComposersTest {
     @Test
     @DisplayName("annotation is @Repeatable")
     void isRepeatable() {
-      assertThat(CompositeChaosBlockingQueueOverflow.class.isAnnotationPresent(Repeatable.class)).isTrue();
+      assertThat(CompositeChaosBlockingQueueOverflow.class.isAnnotationPresent(Repeatable.class))
+          .isTrue();
     }
 
     @Test
@@ -1198,7 +1218,10 @@ class JavaComposersTest {
     @Test
     @DisplayName("annotation is @Repeatable")
     void isRepeatable() {
-      assertThat(CompositeChaosCompletableFutureCancellation.class.isAnnotationPresent(Repeatable.class)).isTrue();
+      assertThat(
+              CompositeChaosCompletableFutureCancellation.class.isAnnotationPresent(
+                  Repeatable.class))
+          .isTrue();
     }
 
     @Test
@@ -1211,7 +1234,9 @@ class JavaComposersTest {
     @DisplayName("describe() returns non-empty list")
     void describe() {
       final CompositeChaosCompletableFutureCancellation ann =
-          fixture(CompletableFutureCancellationFixture.class, CompositeChaosCompletableFutureCancellation.class);
+          fixture(
+              CompletableFutureCancellationFixture.class,
+              CompositeChaosCompletableFutureCancellation.class);
       assertThat(new CompletableFutureCancellationComposer().describe(ann)).isNotEmpty();
     }
 
@@ -1241,7 +1266,8 @@ class JavaComposersTest {
     @Test
     @DisplayName("annotation is @Repeatable")
     void isRepeatable() {
-      assertThat(CompositeChaosClassLoadFailure.class.isAnnotationPresent(Repeatable.class)).isTrue();
+      assertThat(CompositeChaosClassLoadFailure.class.isAnnotationPresent(Repeatable.class))
+          .isTrue();
     }
 
     @Test
@@ -1327,7 +1353,8 @@ class JavaComposersTest {
     @Test
     @DisplayName("annotation is @Repeatable")
     void isRepeatable() {
-      assertThat(CompositeChaosUnsafeDeserialization.class.isAnnotationPresent(Repeatable.class)).isTrue();
+      assertThat(CompositeChaosUnsafeDeserialization.class.isAnnotationPresent(Repeatable.class))
+          .isTrue();
     }
 
     @Test
@@ -1370,7 +1397,8 @@ class JavaComposersTest {
     @Test
     @DisplayName("annotation is @Repeatable")
     void isRepeatable() {
-      assertThat(CompositeChaosNativeLibraryLoadFailure.class.isAnnotationPresent(Repeatable.class)).isTrue();
+      assertThat(CompositeChaosNativeLibraryLoadFailure.class.isAnnotationPresent(Repeatable.class))
+          .isTrue();
     }
 
     @Test
@@ -1383,7 +1411,8 @@ class JavaComposersTest {
     @DisplayName("describe() returns non-empty list")
     void describe() {
       final CompositeChaosNativeLibraryLoadFailure ann =
-          fixture(NativeLibraryLoadFailureFixture.class, CompositeChaosNativeLibraryLoadFailure.class);
+          fixture(
+              NativeLibraryLoadFailureFixture.class, CompositeChaosNativeLibraryLoadFailure.class);
       assertThat(new NativeLibraryLoadFailureComposer().describe(ann)).isNotEmpty();
     }
 
@@ -1413,7 +1442,8 @@ class JavaComposersTest {
     @Test
     @DisplayName("annotation is @Repeatable")
     void isRepeatable() {
-      assertThat(CompositeChaosJmxInvocationStorm.class.isAnnotationPresent(Repeatable.class)).isTrue();
+      assertThat(CompositeChaosJmxInvocationStorm.class.isAnnotationPresent(Repeatable.class))
+          .isTrue();
     }
 
     @Test
@@ -1456,7 +1486,8 @@ class JavaComposersTest {
     @Test
     @DisplayName("annotation is @Repeatable")
     void isRepeatable() {
-      assertThat(CompositeChaosSslHandshakeFailure.class.isAnnotationPresent(Repeatable.class)).isTrue();
+      assertThat(CompositeChaosSslHandshakeFailure.class.isAnnotationPresent(Repeatable.class))
+          .isTrue();
     }
 
     @Test
@@ -1499,7 +1530,8 @@ class JavaComposersTest {
     @Test
     @DisplayName("annotation is @Repeatable")
     void isRepeatable() {
-      assertThat(CompositeChaosMethodExceptionInjection.class.isAnnotationPresent(Repeatable.class)).isTrue();
+      assertThat(CompositeChaosMethodExceptionInjection.class.isAnnotationPresent(Repeatable.class))
+          .isTrue();
     }
 
     @Test
@@ -1512,7 +1544,8 @@ class JavaComposersTest {
     @DisplayName("describe() returns non-empty list")
     void describe() {
       final CompositeChaosMethodExceptionInjection ann =
-          fixture(MethodExceptionInjectionFixture.class, CompositeChaosMethodExceptionInjection.class);
+          fixture(
+              MethodExceptionInjectionFixture.class, CompositeChaosMethodExceptionInjection.class);
       assertThat(new MethodExceptionInjectionComposer().describe(ann)).isNotEmpty();
     }
 
@@ -1542,7 +1575,8 @@ class JavaComposersTest {
     @Test
     @DisplayName("annotation is @Repeatable")
     void isRepeatable() {
-      assertThat(CompositeChaosMethodReturnCorruption.class.isAnnotationPresent(Repeatable.class)).isTrue();
+      assertThat(CompositeChaosMethodReturnCorruption.class.isAnnotationPresent(Repeatable.class))
+          .isTrue();
     }
 
     @Test
@@ -1585,7 +1619,8 @@ class JavaComposersTest {
     @Test
     @DisplayName("annotation is @Repeatable")
     void isRepeatable() {
-      assertThat(CompositeChaosClockSkewInProcess.class.isAnnotationPresent(Repeatable.class)).isTrue();
+      assertThat(CompositeChaosClockSkewInProcess.class.isAnnotationPresent(Repeatable.class))
+          .isTrue();
     }
 
     @Test
@@ -1628,7 +1663,8 @@ class JavaComposersTest {
     @Test
     @DisplayName("annotation is @Repeatable")
     void isRepeatable() {
-      assertThat(CompositeChaosFailingShutdownHook.class.isAnnotationPresent(Repeatable.class)).isTrue();
+      assertThat(CompositeChaosFailingShutdownHook.class.isAnnotationPresent(Repeatable.class))
+          .isTrue();
     }
 
     @Test

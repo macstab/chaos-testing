@@ -5,19 +5,20 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosCodeCachePressure;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.api.ActivationPolicy;
 import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
 
 /** L2 composer for {@link CompositeChaosCodeCachePressure}. */
 @Slf4j
-public final class CodeCachePressureComposer implements L2Composer<CompositeChaosCodeCachePressure> {
+public final class CodeCachePressureComposer
+    implements L2Composer<CompositeChaosCodeCachePressure> {
 
   /** Public no-arg constructor required by the L2 composer contract. */
   public CodeCachePressureComposer() {}
@@ -35,8 +36,13 @@ public final class CodeCachePressureComposer implements L2Composer<CompositeChao
             .mintScenarioId(CompositeChaosCodeCachePressure.class.getSimpleName());
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: code-cache pressure — ~" + annotation.targetMb()
-                + " MB, classCount=" + classCount + ", methodsPerClass=" + METHODS_PER_CLASS)
+            .description(
+                "L2: code-cache pressure — ~"
+                    + annotation.targetMb()
+                    + " MB, classCount="
+                    + classCount
+                    + ", methodsPerClass="
+                    + METHODS_PER_CLASS)
             .selector(ChaosSelector.stress(ChaosSelector.StressTarget.CODE_CACHE_PRESSURE))
             .effect(ChaosEffect.codeCachePressure(classCount, METHODS_PER_CLASS))
             .activationPolicy(ActivationPolicy.always())
@@ -61,7 +67,9 @@ public final class CodeCachePressureComposer implements L2Composer<CompositeChao
   @Override
   public List<String> describe(final CompositeChaosCodeCachePressure annotation) {
     return List.of(
-        "code-cache pressure — filling JIT code cache with ~" + annotation.targetMb() + " MB of synthetic compiled methods",
+        "code-cache pressure — filling JIT code cache with ~"
+            + annotation.targetMb()
+            + " MB of synthetic compiled methods",
         "severity=MODERATE — JIT disabled when cache is full; interpreted-mode performance degradation");
   }
 }

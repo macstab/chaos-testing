@@ -5,19 +5,20 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosMonitorContention;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.api.ActivationPolicy;
 import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
 
 /** L2 composer for {@link CompositeChaosMonitorContention}. */
 @Slf4j
-public final class MonitorContentionComposer implements L2Composer<CompositeChaosMonitorContention> {
+public final class MonitorContentionComposer
+    implements L2Composer<CompositeChaosMonitorContention> {
 
   /** Public no-arg constructor required by the L2 composer contract. */
   public MonitorContentionComposer() {}
@@ -30,12 +31,15 @@ public final class MonitorContentionComposer implements L2Composer<CompositeChao
             .mintScenarioId(CompositeChaosMonitorContention.class.getSimpleName());
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: monitor contention — " + annotation.threadCount()
-                + " threads competing for synthetic lock, holdMs=" + annotation.lockHoldMs())
+            .description(
+                "L2: monitor contention — "
+                    + annotation.threadCount()
+                    + " threads competing for synthetic lock, holdMs="
+                    + annotation.lockHoldMs())
             .selector(ChaosSelector.stress(ChaosSelector.StressTarget.MONITOR_CONTENTION))
-            .effect(ChaosEffect.monitorContention(
-                java.time.Duration.ofMillis(annotation.lockHoldMs()),
-                annotation.threadCount()))
+            .effect(
+                ChaosEffect.monitorContention(
+                    java.time.Duration.ofMillis(annotation.lockHoldMs()), annotation.threadCount()))
             .activationPolicy(ActivationPolicy.always())
             .build();
     final String scenarioId = JvmPlanAccumulator.instance().addScenario(container, scenario);
@@ -58,8 +62,10 @@ public final class MonitorContentionComposer implements L2Composer<CompositeChao
   @Override
   public List<String> describe(final CompositeChaosMonitorContention annotation) {
     return List.of(
-        "monitor contention — " + annotation.threadCount()
-            + " threads competing for single synthetic lock, lockHoldMs=" + annotation.lockHoldMs(),
+        "monitor contention — "
+            + annotation.threadCount()
+            + " threads competing for single synthetic lock, lockHoldMs="
+            + annotation.lockHoldMs(),
         "severity=MODERATE — elevated futex/context-switch rate; biased-lock revocation safepoints");
   }
 }

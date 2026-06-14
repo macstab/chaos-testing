@@ -17,7 +17,8 @@ import com.macstab.chaos.core.syscall.LibchaosLib;
 import com.macstab.chaos.core.syscall.LibchaosTransport;
 
 /** L2 composer for {@link CompositeChaosUnreachableNetwork}. */
-public final class UnreachableNetworkComposer implements L2Composer<CompositeChaosUnreachableNetwork> {
+public final class UnreachableNetworkComposer
+    implements L2Composer<CompositeChaosUnreachableNetwork> {
 
   /** Public no-arg constructor required by the L2 composer contract. */
   public UnreachableNetworkComposer() {}
@@ -32,10 +33,7 @@ public final class UnreachableNetworkComposer implements L2Composer<CompositeCha
             .apply(
                 container,
                 NetRule.errno(
-                    endpoint,
-                    NetOperation.CONNECT,
-                    Errno.ENETUNREACH,
-                    annotation.toxicity()));
+                    endpoint, NetOperation.CONNECT, Errno.ENETUNREACH, annotation.toxicity()));
     return List.of(handle);
   }
 

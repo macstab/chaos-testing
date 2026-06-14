@@ -11,13 +11,15 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
- * <p>The DNS resolver returns {@code EAI_AGAIN} (SERVFAIL — "try again later") for forward
- * lookups. Unlike NXDOMAIN ({@link CompositeChaosNxDomain}), {@code EAI_AGAIN} is the retryable
- * variant: well-written clients retry on SERVFAIL, so this scenario tests whether the retry logic
- * is correctly implemented and whether the application handles DNS flap without cascading. Simulates
- * a temporarily overloaded or flapping DNS resolver.
+ * <p>The DNS resolver returns {@code EAI_AGAIN} (SERVFAIL — "try again later") for forward lookups.
+ * Unlike NXDOMAIN ({@link CompositeChaosNxDomain}), {@code EAI_AGAIN} is the retryable variant:
+ * well-written clients retry on SERVFAIL, so this scenario tests whether the retry logic is
+ * correctly implemented and whether the application handles DNS flap without cascading. Simulates a
+ * temporarily overloaded or flapping DNS resolver.
  *
  * <h2>How it's created</h2>
  *
@@ -62,9 +64,7 @@ import com.macstab.chaos.core.extension.Severity;
     severity = Severity.MODERATE)
 public @interface CompositeChaosDnsTemporaryFailure {
 
-  /**
-   * Hostname to target. {@code "*"} (the default) matches all forward lookups.
-   */
+  /** Hostname to target. {@code "*"} (the default) matches all forward lookups. */
   String host() default "*";
 
   /**

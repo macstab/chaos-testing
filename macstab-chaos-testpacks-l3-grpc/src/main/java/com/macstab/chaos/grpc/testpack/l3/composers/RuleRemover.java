@@ -15,23 +15,23 @@ import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
  */
 final class RuleRemover {
 
-    private RuleRemover() {}
+  private RuleRemover() {}
 
-    /**
-     * Removes a single handle, dispatching by type.
-     *
-     * @param container the container the rule was applied to
-     * @param handle    opaque handle returned by a composer's {@code apply()}
-     */
-    static void remove(final GenericContainer<?> container, final Object handle) {
-        if (handle instanceof com.macstab.chaos.connection.api.RuleHandle netRh) {
-            new LibchaosTransport(LibchaosLib.NET).removeRules(container, netRh.owner());
-        } else if (handle instanceof com.macstab.chaos.dns.api.RuleHandle dnsRh) {
-            new LibchaosTransport(LibchaosLib.DNS).removeRules(container, dnsRh.owner());
-        } else if (handle instanceof com.macstab.chaos.time.api.RuleHandle timeRh) {
-            new LibchaosTransport(LibchaosLib.TIME).removeRules(container, timeRh.owner());
-        } else if (handle instanceof String scenarioId) {
-            JvmPlanAccumulator.instance().removeScenario(container, scenarioId);
-        }
+  /**
+   * Removes a single handle, dispatching by type.
+   *
+   * @param container the container the rule was applied to
+   * @param handle opaque handle returned by a composer's {@code apply()}
+   */
+  static void remove(final GenericContainer<?> container, final Object handle) {
+    if (handle instanceof com.macstab.chaos.connection.api.RuleHandle netRh) {
+      new LibchaosTransport(LibchaosLib.NET).removeRules(container, netRh.owner());
+    } else if (handle instanceof com.macstab.chaos.dns.api.RuleHandle dnsRh) {
+      new LibchaosTransport(LibchaosLib.DNS).removeRules(container, dnsRh.owner());
+    } else if (handle instanceof com.macstab.chaos.time.api.RuleHandle timeRh) {
+      new LibchaosTransport(LibchaosLib.TIME).removeRules(container, timeRh.owner());
+    } else if (handle instanceof String scenarioId) {
+      JvmPlanAccumulator.instance().removeScenario(container, scenarioId);
     }
+  }
 }

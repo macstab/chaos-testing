@@ -7,6 +7,7 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosSlowQuery;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.annotation.l1.JvmSelectorKind;
@@ -15,7 +16,6 @@ import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
 import com.macstab.chaos.jvm.api.OperationType;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -30,14 +30,14 @@ public final class SlowQueryComposer implements L2Composer<CompositeChaosSlowQue
   public List<Object> apply(
       final GenericContainer<?> container, final CompositeChaosSlowQuery annotation) {
     final String id =
-        JvmPlanAccumulator.instance()
-            .mintScenarioId(CompositeChaosSlowQuery.class.getSimpleName());
+        JvmPlanAccumulator.instance().mintScenarioId(CompositeChaosSlowQuery.class.getSimpleName());
     final ChaosSelector selector =
         JvmSelectorKind.JDBC.build(EnumSet.of(OperationType.JDBC_TRANSACTION_COMMIT));
     final Duration delay = Duration.ofMillis(annotation.commitDelayMs());
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: slow query — JDBC commit delayed by " + annotation.commitDelayMs() + " ms")
+            .description(
+                "L2: slow query — JDBC commit delayed by " + annotation.commitDelayMs() + " ms")
             .selector(selector)
             .effect(ChaosEffect.delay(delay, delay))
             .activationPolicy(ActivationPolicy.always())

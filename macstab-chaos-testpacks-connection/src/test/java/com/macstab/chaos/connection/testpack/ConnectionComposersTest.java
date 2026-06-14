@@ -64,7 +64,8 @@ class ConnectionComposersTest {
   }
 
   private static AdvancedConnectionChaos advMock(
-      final CompositeConnectionChaos composite, final GenericContainer<?> container,
+      final CompositeConnectionChaos composite,
+      final GenericContainer<?> container,
       final RuleHandle handle) {
     final AdvancedConnectionChaos adv = mock(AdvancedConnectionChaos.class);
     when(composite.advanced()).thenReturn(adv);
@@ -75,39 +76,44 @@ class ConnectionComposersTest {
   // ── NetRule argThat matchers ──────────────────────────────────────────────
 
   private static NetRule argErrnoRule(final NetOperation expectedOp, final Errno expectedErrno) {
-    return org.mockito.ArgumentMatchers.argThat(rule -> {
-      if (!(rule.effect() instanceof Effect.ErrnoFault ef)) return false;
-      return rule.operation() == expectedOp
-          && ef.errno() == expectedErrno
-          && rule.endpoint() instanceof Endpoint.Wildcard;
-    });
+    return org.mockito.ArgumentMatchers.argThat(
+        rule -> {
+          if (!(rule.effect() instanceof Effect.ErrnoFault ef)) return false;
+          return rule.operation() == expectedOp
+              && ef.errno() == expectedErrno
+              && rule.endpoint() instanceof Endpoint.Wildcard;
+        });
   }
 
-  private static NetRule argLatencyRule(final NetOperation expectedOp, final Duration expectedDelay) {
-    return org.mockito.ArgumentMatchers.argThat(rule -> {
-      if (!(rule.effect() instanceof Effect.Latency lat)) return false;
-      return rule.operation() == expectedOp
-          && lat.delay().equals(expectedDelay)
-          && rule.endpoint() instanceof Endpoint.Wildcard;
-    });
+  private static NetRule argLatencyRule(
+      final NetOperation expectedOp, final Duration expectedDelay) {
+    return org.mockito.ArgumentMatchers.argThat(
+        rule -> {
+          if (!(rule.effect() instanceof Effect.Latency lat)) return false;
+          return rule.operation() == expectedOp
+              && lat.delay().equals(expectedDelay)
+              && rule.endpoint() instanceof Endpoint.Wildcard;
+        });
   }
 
   private static NetRule argCorruptRule(final double expectedRate) {
-    return org.mockito.ArgumentMatchers.argThat(rule -> {
-      if (!(rule.effect() instanceof Effect.Corrupt c)) return false;
-      return rule.operation() == NetOperation.RECV
-          && Double.compare(c.rate(), expectedRate) == 0
-          && rule.endpoint() instanceof Endpoint.Wildcard;
-    });
+    return org.mockito.ArgumentMatchers.argThat(
+        rule -> {
+          if (!(rule.effect() instanceof Effect.Corrupt c)) return false;
+          return rule.operation() == NetOperation.RECV
+              && Double.compare(c.rate(), expectedRate) == 0
+              && rule.endpoint() instanceof Endpoint.Wildcard;
+        });
   }
 
   private static NetRule argTimeoutRule(final Duration expectedDuration) {
-    return org.mockito.ArgumentMatchers.argThat(rule -> {
-      if (!(rule.effect() instanceof Effect.Timeout t)) return false;
-      return rule.operation() == NetOperation.POLL
-          && t.duration().equals(expectedDuration)
-          && rule.endpoint() instanceof Endpoint.Wildcard;
-    });
+    return org.mockito.ArgumentMatchers.argThat(
+        rule -> {
+          if (!(rule.effect() instanceof Effect.Timeout t)) return false;
+          return rule.operation() == NetOperation.POLL
+              && t.duration().equals(expectedDuration)
+              && rule.endpoint() instanceof Endpoint.Wildcard;
+        });
   }
 
   // ── Annotation fixture helper ─────────────────────────────────────────────
@@ -328,7 +334,8 @@ class ConnectionComposersTest {
     @Test
     @DisplayName("endpoint() defaults to \"*\"")
     void annotation_has_wildcard_endpoint_by_default() throws Exception {
-      var ann = UnreachableNetworkFixture.class.getAnnotation(CompositeChaosUnreachableNetwork.class);
+      var ann =
+          UnreachableNetworkFixture.class.getAnnotation(CompositeChaosUnreachableNetwork.class);
       assertThat(ann.endpoint()).isEqualTo("*");
     }
 
@@ -423,8 +430,7 @@ class ConnectionComposersTest {
         mocked.when(CompositeConnectionChaos::standard).thenReturn(composite);
         final List<Object> handles = new TcpResetStormComposer().apply(c, ann);
         assertThat(handles).containsExactly(h);
-        org.mockito.Mockito.verify(composite.advanced())
-            .apply(eq(c), argCorruptRule(0.3));
+        org.mockito.Mockito.verify(composite.advanced()).apply(eq(c), argCorruptRule(0.3));
       }
     }
 
@@ -520,7 +526,9 @@ class ConnectionComposersTest {
     @Test
     @DisplayName("endpoint() defaults to \"*\"")
     void annotation_has_wildcard_endpoint_by_default() throws Exception {
-      var ann = SocketEphemeralExhaustionFixture.class.getAnnotation(CompositeChaosSocketEphemeralExhaustion.class);
+      var ann =
+          SocketEphemeralExhaustionFixture.class.getAnnotation(
+              CompositeChaosSocketEphemeralExhaustion.class);
       assertThat(ann.endpoint()).isEqualTo("*");
     }
 
@@ -528,7 +536,9 @@ class ConnectionComposersTest {
     @DisplayName("describe() returns non-empty list mentioning EADDRNOTAVAIL")
     void describe() {
       final CompositeChaosSocketEphemeralExhaustion ann =
-          fixture(SocketEphemeralExhaustionFixture.class, CompositeChaosSocketEphemeralExhaustion.class);
+          fixture(
+              SocketEphemeralExhaustionFixture.class,
+              CompositeChaosSocketEphemeralExhaustion.class);
       final List<String> lines = new SocketEphemeralExhaustionComposer().describe(ann);
       assertThat(lines).isNotEmpty();
       assertThat(String.join(" ", lines)).containsIgnoringCase("EADDRNOTAVAIL");
@@ -538,7 +548,9 @@ class ConnectionComposersTest {
     @DisplayName("apply() builds EADDRNOTAVAIL errno rule on BIND with wildcard endpoint")
     void apply() {
       final CompositeChaosSocketEphemeralExhaustion ann =
-          fixture(SocketEphemeralExhaustionFixture.class, CompositeChaosSocketEphemeralExhaustion.class);
+          fixture(
+              SocketEphemeralExhaustionFixture.class,
+              CompositeChaosSocketEphemeralExhaustion.class);
       final GenericContainer<?> c = container();
       final RuleHandle h = handle();
       final CompositeConnectionChaos composite = mock(CompositeConnectionChaos.class);
@@ -652,7 +664,8 @@ class ConnectionComposersTest {
     @Test
     @DisplayName("endpoint() defaults to \"*\"")
     void annotation_has_wildcard_endpoint_by_default() throws Exception {
-      var ann = SendBufferStarvationFixture.class.getAnnotation(CompositeChaosSendBufferStarvation.class);
+      var ann =
+          SendBufferStarvationFixture.class.getAnnotation(CompositeChaosSendBufferStarvation.class);
       assertThat(ann.endpoint()).isEqualTo("*");
     }
 
@@ -784,7 +797,8 @@ class ConnectionComposersTest {
     @Test
     @DisplayName("endpoint() defaults to \"*\"")
     void annotation_has_wildcard_endpoint_by_default() throws Exception {
-      var ann = HalfOpenConnectionFixture.class.getAnnotation(CompositeChaosHalfOpenConnection.class);
+      var ann =
+          HalfOpenConnectionFixture.class.getAnnotation(CompositeChaosHalfOpenConnection.class);
       assertThat(ann.endpoint()).isEqualTo("*");
     }
 
@@ -837,7 +851,8 @@ class ConnectionComposersTest {
   class SlowDownstreamTests {
 
     @Test
-    @DisplayName("annotation carries MODERATE + correct composer FQN + defaults latencyMs=500, sendFailToxicity=0.05")
+    @DisplayName(
+        "annotation carries MODERATE + correct composer FQN + defaults latencyMs=500, sendFailToxicity=0.05")
     void annotationContract() {
       final ChaosL2 meta = chaosL2(CompositeChaosSlowDownstream.class);
       assertThat(meta.severity()).isEqualTo(Severity.MODERATE);
@@ -866,7 +881,8 @@ class ConnectionComposersTest {
     }
 
     @Test
-    @DisplayName("apply() builds LATENCY rule on CONNECT and EPIPE errno rule on SEND — two handles")
+    @DisplayName(
+        "apply() builds LATENCY rule on CONNECT and EPIPE errno rule on SEND — two handles")
     void apply() {
       final CompositeChaosSlowDownstream ann =
           fixture(SlowDownstreamFixture.class, CompositeChaosSlowDownstream.class);
@@ -876,7 +892,8 @@ class ConnectionComposersTest {
       final AdvancedConnectionChaos adv = mock(AdvancedConnectionChaos.class);
       final CompositeConnectionChaos composite = mock(CompositeConnectionChaos.class);
       when(composite.advanced()).thenReturn(adv);
-      when(adv.apply(eq(c), argLatencyRule(NetOperation.CONNECT, Duration.ofMillis(500)))).thenReturn(h1);
+      when(adv.apply(eq(c), argLatencyRule(NetOperation.CONNECT, Duration.ofMillis(500))))
+          .thenReturn(h1);
       when(adv.apply(eq(c), argErrnoRule(NetOperation.SEND, Errno.EPIPE))).thenReturn(h2);
 
       try (final MockedStatic<CompositeConnectionChaos> mocked =
@@ -886,8 +903,7 @@ class ConnectionComposersTest {
         assertThat(handles).containsExactly(h1, h2);
         org.mockito.Mockito.verify(adv)
             .apply(eq(c), argLatencyRule(NetOperation.CONNECT, Duration.ofMillis(500)));
-        org.mockito.Mockito.verify(adv)
-            .apply(eq(c), argErrnoRule(NetOperation.SEND, Errno.EPIPE));
+        org.mockito.Mockito.verify(adv).apply(eq(c), argErrnoRule(NetOperation.SEND, Errno.EPIPE));
       }
     }
 
@@ -925,29 +941,46 @@ class ConnectionComposersTest {
   @Test
   @DisplayName("all 12 annotations are repeatable (carry @Repeatable)")
   void allAnnotationsRepeatable() {
-    assertThat(CompositeChaosConnectionRefused.class
-        .getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosThunderingHerd.class
-        .getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosUnreachableHost.class
-        .getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosUnreachableNetwork.class
-        .getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosSlowDownstream.class
-        .getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosTcpResetStorm.class
-        .getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosPortAlreadyInUse.class
-        .getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosSocketEphemeralExhaustion.class
-        .getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosAcceptStorm.class
-        .getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosSendBufferStarvation.class
-        .getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosPollTimeout.class
-        .getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
-    assertThat(CompositeChaosHalfOpenConnection.class
-        .getAnnotation(java.lang.annotation.Repeatable.class)).isNotNull();
+    assertThat(
+            CompositeChaosConnectionRefused.class.getAnnotation(
+                java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(
+            CompositeChaosThunderingHerd.class.getAnnotation(java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(
+            CompositeChaosUnreachableHost.class.getAnnotation(
+                java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(
+            CompositeChaosUnreachableNetwork.class.getAnnotation(
+                java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(
+            CompositeChaosSlowDownstream.class.getAnnotation(java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(
+            CompositeChaosTcpResetStorm.class.getAnnotation(java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(
+            CompositeChaosPortAlreadyInUse.class.getAnnotation(
+                java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(
+            CompositeChaosSocketEphemeralExhaustion.class.getAnnotation(
+                java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(CompositeChaosAcceptStorm.class.getAnnotation(java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(
+            CompositeChaosSendBufferStarvation.class.getAnnotation(
+                java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(CompositeChaosPollTimeout.class.getAnnotation(java.lang.annotation.Repeatable.class))
+        .isNotNull();
+    assertThat(
+            CompositeChaosHalfOpenConnection.class.getAnnotation(
+                java.lang.annotation.Repeatable.class))
+        .isNotNull();
   }
 }

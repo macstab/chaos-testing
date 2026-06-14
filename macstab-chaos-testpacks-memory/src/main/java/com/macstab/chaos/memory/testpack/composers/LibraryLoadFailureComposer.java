@@ -41,7 +41,9 @@ public final class LibraryLoadFailureComposer
   public List<String> describe(final CompositeChaosLibraryLoadFailure annotation) {
     return List.of(
         "Library load failure — EBADF at 100% on file-backed mmap calls (dlopen / ELF segment mapping fails)",
-        "toxicity=" + annotation.toxicity() + " — file-backed mmap returns EBADF at this rate; dlopen() affected proportionally",
+        "toxicity="
+            + annotation.toxicity()
+            + " — file-backed mmap returns EBADF at this rate; dlopen() affected proportionally",
         "severity=SEVERE — plugin loaders, JNI libraries, and lazy-loaded shared objects will fail to load");
   }
 }

@@ -5,13 +5,13 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosThreadLocalLeak;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.api.ActivationPolicy;
 import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -33,8 +33,14 @@ public final class ThreadLocalLeakComposer implements L2Composer<CompositeChaosT
             .mintScenarioId(CompositeChaosThreadLocalLeak.class.getSimpleName());
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: thread-local leak — " + annotation.threadCount()
-                + " threads with " + ENTRIES_PER_THREAD + " × " + VALUE_SIZE_BYTES + " B entries each")
+            .description(
+                "L2: thread-local leak — "
+                    + annotation.threadCount()
+                    + " threads with "
+                    + ENTRIES_PER_THREAD
+                    + " × "
+                    + VALUE_SIZE_BYTES
+                    + " B entries each")
             .selector(ChaosSelector.stress(ChaosSelector.StressTarget.THREAD_LOCAL_LEAK))
             .effect(ChaosEffect.threadLocalLeak(ENTRIES_PER_THREAD, VALUE_SIZE_BYTES))
             .activationPolicy(ActivationPolicy.always())
@@ -59,7 +65,9 @@ public final class ThreadLocalLeakComposer implements L2Composer<CompositeChaosT
   @Override
   public List<String> describe(final CompositeChaosThreadLocalLeak annotation) {
     return List.of(
-        "thread-local leak — large byte arrays stored in ThreadLocal maps across " + annotation.threadCount() + " threads",
+        "thread-local leak — large byte arrays stored in ThreadLocal maps across "
+            + annotation.threadCount()
+            + " threads",
         "severity=MODERATE — gradual heap accumulation; OOM after extended run without GC pressure");
   }
 }

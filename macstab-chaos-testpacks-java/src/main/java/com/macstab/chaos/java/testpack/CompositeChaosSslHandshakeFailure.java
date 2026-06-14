@@ -11,26 +11,28 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
- * <p>Causes TLS/SSL handshakes to fail with an {@code SSLHandshakeException} at probability
- * {@link #probability()}, simulating expired certificates, cipher-suite mismatches, or a TLS
- * termination proxy that is temporarily unavailable.
+ * <p>Causes TLS/SSL handshakes to fail with an {@code SSLHandshakeException} at probability {@link
+ * #probability()}, simulating expired certificates, cipher-suite mismatches, or a TLS termination
+ * proxy that is temporarily unavailable.
  *
  * <h2>How it's created</h2>
  *
- * <p>Intercepts {@code SSL_HANDSHAKE} operations via the JVM chaos agent and injects an
- * {@code SSLHandshakeException}. In production, TLS handshake failures occur after certificate
- * rotation, after a cipher-suite policy change, or when an intermediate CA is revoked without
- * updating the trust store.
+ * <p>Intercepts {@code SSL_HANDSHAKE} operations via the JVM chaos agent and injects an {@code
+ * SSLHandshakeException}. In production, TLS handshake failures occur after certificate rotation,
+ * after a cipher-suite policy change, or when an intermediate CA is revoked without updating the
+ * trust store.
  *
  * <h2>How bad it is</h2>
  *
  * <p>Severity: <strong>Severe</strong><br>
- * Every outbound HTTPS or mutual-TLS connection fails without a valid handshake. Applications
- * that do not implement retry with exponential backoff will propagate the error immediately.
- * Internal services that rely on mTLS for authentication will become unreachable simultaneously
- * if the certificate issue is cluster-wide.
+ * Every outbound HTTPS or mutual-TLS connection fails without a valid handshake. Applications that
+ * do not implement retry with exponential backoff will propagate the error immediately. Internal
+ * services that rely on mTLS for authentication will become unreachable simultaneously if the
+ * certificate issue is cluster-wide.
  *
  * <h2>Industry references</h2>
  *

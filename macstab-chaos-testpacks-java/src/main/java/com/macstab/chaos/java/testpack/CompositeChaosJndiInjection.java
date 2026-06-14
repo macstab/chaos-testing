@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Causes every {@code InitialContext.lookup()} call to throw a {@code NamingException},
@@ -19,10 +21,10 @@ import com.macstab.chaos.core.extension.Severity;
  *
  * <h2>How it's created</h2>
  *
- * <p>Intercepts {@code JNDI_LOOKUP} operations via the JVM chaos agent and injects a
- * {@code NamingException} at the configured probability. In production, JNDI lookup failures
- * occur when the application server's naming service is unavailable, when a JMS broker is down,
- * or when a DataSource JNDI name is mis-configured after a deployment.
+ * <p>Intercepts {@code JNDI_LOOKUP} operations via the JVM chaos agent and injects a {@code
+ * NamingException} at the configured probability. In production, JNDI lookup failures occur when
+ * the application server's naming service is unavailable, when a JMS broker is down, or when a
+ * DataSource JNDI name is mis-configured after a deployment.
  *
  * <h2>How bad it is</h2>
  *

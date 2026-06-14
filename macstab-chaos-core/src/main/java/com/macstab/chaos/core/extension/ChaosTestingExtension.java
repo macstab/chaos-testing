@@ -324,8 +324,8 @@ public final class ChaosTestingExtension
 
   /**
    * Walks the test class for L3 incident scenario annotations (those carrying {@link ChaosL3}) and
-   * applies each via its declared {@link L3Composer}. Called once per test class at {@code beforeAll}
-   * after L2 annotations have been applied.
+   * applies each via its declared {@link L3Composer}. Called once per test class at {@code
+   * beforeAll} after L2 annotations have been applied.
    */
   private void applyClassLevelL3Annotations(
       final ExtensionContext context, final List<ContainerInstance> containers) {
@@ -403,8 +403,7 @@ public final class ChaosTestingExtension
 
     // Method-scope L2 scenarios
     final List<L2AnnotationProcessor.AppliedL2> l2MethodHandles =
-        L2AnnotationProcessor.applyMethodLevel(
-            context.getRequiredTestMethod(), handles, report);
+        L2AnnotationProcessor.applyMethodLevel(context.getRequiredTestMethod(), handles, report);
     context.getStore(NAMESPACE).put(L2_METHOD_HANDLES_KEY, l2MethodHandles);
 
     if (!l2MethodHandles.isEmpty()) {
@@ -417,8 +416,7 @@ public final class ChaosTestingExtension
 
     // Method-scope L3 incident scenarios
     final List<L3AnnotationProcessor.AppliedL3> l3MethodHandles =
-        L3AnnotationProcessor.applyMethodLevel(
-            context.getRequiredTestMethod(), handles, report);
+        L3AnnotationProcessor.applyMethodLevel(context.getRequiredTestMethod(), handles, report);
     context.getStore(NAMESPACE).put(L3_METHOD_HANDLES_KEY, l3MethodHandles);
 
     if (!l3MethodHandles.isEmpty()) {

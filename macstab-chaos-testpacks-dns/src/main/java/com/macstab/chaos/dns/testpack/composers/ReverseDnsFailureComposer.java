@@ -16,7 +16,8 @@ import com.macstab.chaos.dns.model.EaiErrno;
 import com.macstab.chaos.dns.testpack.CompositeChaosReverseDnsFailure;
 
 /** L2 composer for {@link CompositeChaosReverseDnsFailure}. */
-public final class ReverseDnsFailureComposer implements L2Composer<CompositeChaosReverseDnsFailure> {
+public final class ReverseDnsFailureComposer
+    implements L2Composer<CompositeChaosReverseDnsFailure> {
 
   /** Public no-arg constructor required by the L2 composer contract. */
   public ReverseDnsFailureComposer() {}

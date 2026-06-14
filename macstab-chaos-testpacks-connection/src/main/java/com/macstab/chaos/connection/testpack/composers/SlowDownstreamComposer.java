@@ -35,18 +35,12 @@ public final class SlowDownstreamComposer implements L2Composer<CompositeChaosSl
         adv.apply(
             container,
             NetRule.latency(
-                endpoint,
-                NetOperation.CONNECT,
-                Duration.ofMillis(annotation.latencyMs()),
-                1.0)));
+                endpoint, NetOperation.CONNECT, Duration.ofMillis(annotation.latencyMs()), 1.0)));
     handles.add(
         adv.apply(
             container,
             NetRule.errno(
-                endpoint,
-                NetOperation.SEND,
-                Errno.EPIPE,
-                annotation.sendFailToxicity())));
+                endpoint, NetOperation.SEND, Errno.EPIPE, annotation.sendFailToxicity())));
     return handles;
   }
 
@@ -62,7 +56,10 @@ public final class SlowDownstreamComposer implements L2Composer<CompositeChaosSl
   @Override
   public List<String> describe(final CompositeChaosSlowDownstream annotation) {
     return List.of(
-        "Slow downstream: connect() +latency " + annotation.latencyMs() + "ms + send() → EPIPE at " + annotation.sendFailToxicity(),
+        "Slow downstream: connect() +latency "
+            + annotation.latencyMs()
+            + "ms + send() → EPIPE at "
+            + annotation.sendFailToxicity(),
         "severity=MODERATE — tests connection-timeout config and write-error resilience");
   }
 }

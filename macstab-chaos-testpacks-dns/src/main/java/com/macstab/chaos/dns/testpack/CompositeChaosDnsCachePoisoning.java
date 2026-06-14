@@ -11,11 +11,13 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Every forward DNS lookup is silently rewritten to resolve {@code redirectTo} instead of the
- * real target. Applications follow the rewritten answer and connect to the wrong host — simulating a
- * poisoned DNS cache, a BGP hijack affecting the authoritative name server, or a compromised
+ * real target. Applications follow the rewritten answer and connect to the wrong host — simulating
+ * a poisoned DNS cache, a BGP hijack affecting the authoritative name server, or a compromised
  * split-horizon resolver in a multi-cloud VPC. Traffic intended for a trusted dependency arrives at
  * an uncontrolled endpoint.
  *
@@ -66,8 +68,8 @@ import com.macstab.chaos.core.extension.Severity;
 public @interface CompositeChaosDnsCachePoisoning {
 
   /**
-   * Hostname to target. {@code "*"} (the default) rewrites all forward lookups.
-   * Provide a specific hostname to target only one dependency.
+   * Hostname to target. {@code "*"} (the default) rewrites all forward lookups. Provide a specific
+   * hostname to target only one dependency.
    */
   String host() default "*";
 

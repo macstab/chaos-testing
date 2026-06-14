@@ -22,8 +22,7 @@ public final class ExecvePermissionDeniedComposer
 
   @Override
   public List<Object> apply(
-      final GenericContainer<?> container,
-      final CompositeChaosExecvePermissionDenied annotation) {
+      final GenericContainer<?> container, final CompositeChaosExecvePermissionDenied annotation) {
     final AdvancedProcessChaos adv = CompositeProcessChaos.standard().advanced();
     final RuleHandle handle = adv.failExecPermission(container, annotation.toxicity());
     return List.of(handle);

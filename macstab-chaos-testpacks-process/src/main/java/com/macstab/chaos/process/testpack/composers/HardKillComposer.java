@@ -24,8 +24,7 @@ public final class HardKillComposer implements L2Composer<CompositeChaosHardKill
   public List<Object> apply(
       final GenericContainer<?> container, final CompositeChaosHardKill annotation) {
     final AdvancedProcessChaos adv = CompositeProcessChaos.standard().advanced();
-    final RuleHandle handle =
-        adv.failWait(container, ProcessErrno.ESRCH, annotation.toxicity());
+    final RuleHandle handle = adv.failWait(container, ProcessErrno.ESRCH, annotation.toxicity());
     return List.of(handle);
   }
 

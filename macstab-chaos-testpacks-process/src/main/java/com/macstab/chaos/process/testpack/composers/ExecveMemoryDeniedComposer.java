@@ -25,8 +25,7 @@ public final class ExecveMemoryDeniedComposer
   public List<Object> apply(
       final GenericContainer<?> container, final CompositeChaosExecveMemoryDenied annotation) {
     final AdvancedProcessChaos adv = CompositeProcessChaos.standard().advanced();
-    final RuleHandle handle =
-        adv.failExec(container, ProcessErrno.ENOMEM, annotation.toxicity());
+    final RuleHandle handle = adv.failExec(container, ProcessErrno.ENOMEM, annotation.toxicity());
     return List.of(handle);
   }
 

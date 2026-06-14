@@ -5,13 +5,13 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosFinalizerBacklog;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.api.ActivationPolicy;
 import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -32,11 +32,14 @@ public final class FinalizerBacklogComposer implements L2Composer<CompositeChaos
             .mintScenarioId(CompositeChaosFinalizerBacklog.class.getSimpleName());
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: finalizer backlog — " + annotation.objectCount()
-                + " objects with slow finalisers enqueued")
+            .description(
+                "L2: finalizer backlog — "
+                    + annotation.objectCount()
+                    + " objects with slow finalisers enqueued")
             .selector(ChaosSelector.stress(ChaosSelector.StressTarget.FINALIZER_BACKLOG))
-            .effect(ChaosEffect.finalizerBacklog(
-                annotation.objectCount(), java.time.Duration.ofMillis(FINALIZER_DELAY_MS)))
+            .effect(
+                ChaosEffect.finalizerBacklog(
+                    annotation.objectCount(), java.time.Duration.ofMillis(FINALIZER_DELAY_MS)))
             .activationPolicy(ActivationPolicy.always())
             .build();
     final String scenarioId = JvmPlanAccumulator.instance().addScenario(container, scenario);
@@ -59,7 +62,8 @@ public final class FinalizerBacklogComposer implements L2Composer<CompositeChaos
   @Override
   public List<String> describe(final CompositeChaosFinalizerBacklog annotation) {
     return List.of(
-        "finalizer backlog — " + annotation.objectCount()
+        "finalizer backlog — "
+            + annotation.objectCount()
             + " finalizable objects with slow finalize() methods backing up the Finalizer thread queue",
         "severity=MODERATE — delayed resource reclamation; FD/native-memory leaks until queue drains");
   }

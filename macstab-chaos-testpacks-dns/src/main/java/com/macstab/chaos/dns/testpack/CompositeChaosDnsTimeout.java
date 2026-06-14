@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>DNS resolution takes 8 seconds (configurable) longer than normal. Applications with short HTTP
@@ -34,8 +36,8 @@ import com.macstab.chaos.core.extension.Severity;
  *
  * <h2>Industry references</h2>
  *
- * <p>DNS latency as a contributing factor to application timeouts is documented in Netflix's
- * "Chaos Engineering" practitioner guide and in the Cloudflare 2023 incident post-mortems covering
+ * <p>DNS latency as a contributing factor to application timeouts is documented in Netflix's "Chaos
+ * Engineering" practitioner guide and in the Cloudflare 2023 incident post-mortems covering
  * resolver overload during DDoS events.
  *
  * <h2>Example</h2>

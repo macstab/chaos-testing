@@ -3,8 +3,8 @@
  * L2 chaos scenario annotations for the memory module.
  *
  * <p>This package contains eight named, pre-tuned {@code @CompositeChaos<X>} annotations covering
- * the canonical VM-syscall memory failure modes encountered in cloud-native production systems. Each
- * annotation composes one or more libchaos-memory rules via a {@link
+ * the canonical VM-syscall memory failure modes encountered in cloud-native production systems.
+ * Each annotation composes one or more libchaos-memory rules via a {@link
  * com.macstab.chaos.core.extension.L2Composer} implementation and ships with industry-canonical
  * documentation, severity classification, and sane probability defaults.
  *

@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>All write-path syscalls ({@code write()}, {@code rename()}, {@code unlink()}) on paths under
@@ -20,18 +22,18 @@ import com.macstab.chaos.core.extension.Severity;
  *
  * <h2>How it's created</h2>
  *
- * <p>Applies three libchaos-io rules: {@code errno(path, WRITE, EACCES, 1.0)},
- * {@code errno(path, RENAME_FROM, EACCES, 1.0)}, and {@code errno(path, UNLINK, EACCES, 1.0)}.
- * In production, the Linux kernel remounts a filesystem read-only upon detecting an unrecoverable
- * I/O error (e.g. an NVMe controller reset or a dm-multipath path-loss with no remaining paths),
- * or when the block device is forcibly write-protected by a hypervisor during live migration.
+ * <p>Applies three libchaos-io rules: {@code errno(path, WRITE, EACCES, 1.0)}, {@code errno(path,
+ * RENAME_FROM, EACCES, 1.0)}, and {@code errno(path, UNLINK, EACCES, 1.0)}. In production, the
+ * Linux kernel remounts a filesystem read-only upon detecting an unrecoverable I/O error (e.g. an
+ * NVMe controller reset or a dm-multipath path-loss with no remaining paths), or when the block
+ * device is forcibly write-protected by a hypervisor during live migration.
  *
  * <h2>How bad it is</h2>
  *
  * <p>Severity: <strong>Severe</strong><br>
- * Applications that cannot write to their data directory are effectively dead. Databases refuse
- * all transactions; log pipelines drop records; WAL rotation fails. Operator intervention is
- * required to remount the filesystem read-write after the underlying block device is healthy.
+ * Applications that cannot write to their data directory are effectively dead. Databases refuse all
+ * transactions; log pipelines drop records; WAL rotation fails. Operator intervention is required
+ * to remount the filesystem read-write after the underlying block device is healthy.
  *
  * <h2>Industry references</h2>
  *
@@ -74,8 +76,8 @@ public @interface CompositeChaosReadOnlyFilesystem {
   String path() default "*";
 
   /**
-   * Probability that each matched write/rename/unlink call returns {@code EACCES}. {@code 1.0}
-   * (the default) makes the read-only condition deterministic.
+   * Probability that each matched write/rename/unlink call returns {@code EACCES}. {@code 1.0} (the
+   * default) makes the read-only condition deterministic.
    */
   double toxicity() default 1.0;
 

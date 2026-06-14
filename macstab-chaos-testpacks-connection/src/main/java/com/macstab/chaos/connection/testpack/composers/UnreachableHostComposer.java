@@ -32,10 +32,7 @@ public final class UnreachableHostComposer implements L2Composer<CompositeChaosU
             .apply(
                 container,
                 NetRule.errno(
-                    endpoint,
-                    NetOperation.CONNECT,
-                    Errno.EHOSTUNREACH,
-                    annotation.toxicity()));
+                    endpoint, NetOperation.CONNECT, Errno.EHOSTUNREACH, annotation.toxicity()));
     return List.of(handle);
   }
 

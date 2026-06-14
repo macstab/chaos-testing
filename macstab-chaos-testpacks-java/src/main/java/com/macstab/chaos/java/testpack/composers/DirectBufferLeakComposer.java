@@ -5,13 +5,13 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosDirectBufferLeak;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.api.ActivationPolicy;
 import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -33,7 +33,8 @@ public final class DirectBufferLeakComposer implements L2Composer<CompositeChaos
             .mintScenarioId(CompositeChaosDirectBufferLeak.class.getSimpleName());
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: direct-buffer leak — " + annotation.targetMb() + " MB off-heap retained")
+            .description(
+                "L2: direct-buffer leak — " + annotation.targetMb() + " MB off-heap retained")
             .selector(ChaosSelector.stress(ChaosSelector.StressTarget.DIRECT_BUFFER))
             .effect(ChaosEffect.directBufferPressure(totalBytes, BUFFER_SIZE_BYTES))
             .activationPolicy(ActivationPolicy.always())
@@ -58,7 +59,9 @@ public final class DirectBufferLeakComposer implements L2Composer<CompositeChaos
   @Override
   public List<String> describe(final CompositeChaosDirectBufferLeak annotation) {
     return List.of(
-        "direct-buffer leak — " + annotation.targetMb() + " MB of NIO ByteBuffer.allocateDirect() retained",
+        "direct-buffer leak — "
+            + annotation.targetMb()
+            + " MB of NIO ByteBuffer.allocateDirect() retained",
         "severity=SEVERE — subsequent allocateDirect() throws OutOfMemoryError: Direct buffer memory");
   }
 }

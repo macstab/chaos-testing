@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Interacts {@link #stringCount()} unique strings into the JVM string pool, gradually exhausting
@@ -28,9 +30,9 @@ import com.macstab.chaos.core.extension.Severity;
  * <h2>How bad it is</h2>
  *
  * <p>Severity: <strong>Moderate</strong><br>
- * The interned string table is a permanent GC root; large tables extend every GC pause. With
- * enough interned strings, the GC's weak-reference scanning phase dominates pause time. The table
- * cannot be shrunk without a JVM restart.
+ * The interned string table is a permanent GC root; large tables extend every GC pause. With enough
+ * interned strings, the GC's weak-reference scanning phase dominates pause time. The table cannot
+ * be shrunk without a JVM restart.
  *
  * <h2>Industry references</h2>
  *

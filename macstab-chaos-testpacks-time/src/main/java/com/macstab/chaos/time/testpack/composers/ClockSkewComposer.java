@@ -19,8 +19,8 @@ import com.macstab.chaos.time.testpack.CompositeChaosClockSkew;
 /**
  * L2 composer for {@link CompositeChaosClockSkew}.
  *
- * <p>Applies {@code clock_gettime/realtime:OFFSET:+<skewMs>} — a positive forward offset on
- * {@code CLOCK_REALTIME} only.
+ * <p>Applies {@code clock_gettime/realtime:OFFSET:+<skewMs>} — a positive forward offset on {@code
+ * CLOCK_REALTIME} only.
  *
  * @author Christian Schnapka - Macstab GmbH
  */
@@ -32,7 +32,9 @@ public final class ClockSkewComposer implements L2Composer<CompositeChaosClockSk
   @Override
   public List<Object> apply(
       final GenericContainer<?> container, final CompositeChaosClockSkew annotation) {
-    final TimeRule rule = TimeRule.offset(TimeClock.REALTIME, Duration.ofMillis(annotation.skewMs()), annotation.probability());
+    final TimeRule rule =
+        TimeRule.offset(
+            TimeClock.REALTIME, Duration.ofMillis(annotation.skewMs()), annotation.probability());
     final AdvancedTimeChaos adv = CompositeTimeChaos.standard().advanced();
     final RuleHandle handle = adv.apply(container, rule);
     return List.of(handle);

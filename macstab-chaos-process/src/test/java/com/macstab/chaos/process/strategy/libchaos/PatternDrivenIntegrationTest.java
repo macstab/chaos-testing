@@ -75,9 +75,10 @@ class PatternDrivenIntegrationTest {
     assertThat(config).contains("fork:ERRNO:EAGAIN");
     final String forkLine =
         config.lines().filter(l -> l.startsWith("fork:")).findFirst().orElseThrow();
-    assertThat(forkLine).satisfiesAnyOf(
-        l -> assertThat(l).matches(".*@(0\\.9[0-9]+|1\\.0).*"),
-        l -> assertThat(l).startsWith("fork:ERRNO:EAGAIN"));  // p=1.0 — no @suffix
+    assertThat(forkLine)
+        .satisfiesAnyOf(
+            l -> assertThat(l).matches(".*@(0\\.9[0-9]+|1\\.0).*"),
+            l -> assertThat(l).startsWith("fork:ERRNO:EAGAIN")); // p=1.0 — no @suffix
 
     // Cleanup verifies the registry tracked the final handle correctly.
     chaos.removeAll(container);

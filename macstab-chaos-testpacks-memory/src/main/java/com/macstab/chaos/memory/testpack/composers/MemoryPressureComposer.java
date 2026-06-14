@@ -40,7 +40,9 @@ public final class MemoryPressureComposer implements L2Composer<CompositeChaosMe
   public List<String> describe(final CompositeChaosMemoryPressure annotation) {
     return List.of(
         "Memory pressure — intermittent ENOMEM on mmap calls at rate " + annotation.toxicity(),
-        "toxicity=" + annotation.toxicity() + " — simulates noisy-neighbour cgroup pressure or memory fragmentation",
+        "toxicity="
+            + annotation.toxicity()
+            + " — simulates noisy-neighbour cgroup pressure or memory fragmentation",
         "severity=MODERATE — service drops some allocations but should recover if ENOMEM is handled");
   }
 }

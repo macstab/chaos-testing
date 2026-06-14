@@ -4,8 +4,6 @@ package com.macstab.chaos.process.strategy.libchaos;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.nio.charset.StandardCharsets;
-
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -169,9 +167,10 @@ class LibchaosProcessChaosIntegrationTest {
       chaos.failExecFdLimit(container, 0.5);
 
       // Use Docker API — execve:EMFILE rule would intercept any exec-based config read.
-      final String config = container.copyFileFromContainer(
-          CONFIG_PATH,
-          is -> new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+      final String config =
+          container.copyFileFromContainer(
+              CONFIG_PATH,
+              is -> new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
       assertThat(config).contains("execve:ERRNO:EMFILE@0.5");
     }
 

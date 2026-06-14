@@ -11,13 +11,15 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>{@code accept()} calls fail with {@code EMFILE} (per-process file descriptor limit reached) at
- * the configured rate. Listener threads that call {@code accept()} in a loop receive sporadic errors
- * and must decide whether to retry, backoff, or terminate. Tests the server-side loop's resilience
- * to accept failures — a code path that is almost never executed in unit tests because it requires
- * the OS fd limit to actually be hit.
+ * the configured rate. Listener threads that call {@code accept()} in a loop receive sporadic
+ * errors and must decide whether to retry, backoff, or terminate. Tests the server-side loop's
+ * resilience to accept failures — a code path that is almost never executed in unit tests because
+ * it requires the OS fd limit to actually be hit.
  *
  * <h2>How it's created</h2>
  *
@@ -64,22 +66,23 @@ import com.macstab.chaos.core.extension.Severity;
 public @interface CompositeChaosAcceptStorm {
 
   /**
-   * Probability that any given {@code accept()} call fails with {@code EMFILE}. Defaults to
-   * {@code 0.8} — high-rate failure to test accept-loop retry handling.
+   * Probability that any given {@code accept()} call fails with {@code EMFILE}. Defaults to {@code
+   * 0.8} — high-rate failure to test accept-loop retry handling.
    */
   double toxicity() default 0.8;
 
   /**
    * libchaos-net endpoint selector. Accepted forms:
+   *
    * <ul>
-   *   <li>{@code "*"} — wildcard; matches every socket (default)</li>
-   *   <li>{@code "tcp4://host:port"} — TCP/IPv4 to a specific host and port</li>
-   *   <li>{@code "tcp6://[host]:port"} — TCP/IPv6</li>
-   *   <li>{@code "udp4://host:port"} — UDP/IPv4</li>
-   *   <li>{@code "udp6://[host]:port"} — UDP/IPv6</li>
-   *   <li>{@code "unix:///path"} — Unix-domain socket</li>
-   *   <li>{@code "dns://hostname"} — DNS interception at {@code getaddrinfo} time</li>
-   *   <li>{@code "hostname"} — shorthand for {@code dns://hostname}</li>
+   *   <li>{@code "*"} — wildcard; matches every socket (default)
+   *   <li>{@code "tcp4://host:port"} — TCP/IPv4 to a specific host and port
+   *   <li>{@code "tcp6://[host]:port"} — TCP/IPv6
+   *   <li>{@code "udp4://host:port"} — UDP/IPv4
+   *   <li>{@code "udp6://[host]:port"} — UDP/IPv6
+   *   <li>{@code "unix:///path"} — Unix-domain socket
+   *   <li>{@code "dns://hostname"} — DNS interception at {@code getaddrinfo} time
+   *   <li>{@code "hostname"} — shorthand for {@code dns://hostname}
    * </ul>
    */
   String endpoint() default "*";

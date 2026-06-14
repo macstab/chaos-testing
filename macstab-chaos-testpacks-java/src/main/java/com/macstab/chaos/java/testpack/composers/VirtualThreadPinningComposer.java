@@ -5,13 +5,13 @@ import java.util.List;
 
 import org.testcontainers.containers.GenericContainer;
 
+import com.macstab.chaos.core.extension.L2Composer;
 import com.macstab.chaos.java.testpack.CompositeChaosVirtualThreadPinning;
 import com.macstab.chaos.jvm.annotation.l1.JvmPlanAccumulator;
 import com.macstab.chaos.jvm.api.ActivationPolicy;
 import com.macstab.chaos.jvm.api.ChaosEffect;
 import com.macstab.chaos.jvm.api.ChaosScenario;
 import com.macstab.chaos.jvm.api.ChaosSelector;
-import com.macstab.chaos.core.extension.L2Composer;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -31,12 +31,18 @@ public final class VirtualThreadPinningComposer
             .mintScenarioId(CompositeChaosVirtualThreadPinning.class.getSimpleName());
     final ChaosScenario scenario =
         ChaosScenario.builder(id)
-            .description("L2: virtual-thread carrier pinning — " + annotation.pinnedThreadCount()
-                + " carriers pinned for " + annotation.durationMs() + " ms each")
-            .selector(ChaosSelector.stress(ChaosSelector.StressTarget.VIRTUAL_THREAD_CARRIER_PINNING))
-            .effect(ChaosEffect.virtualThreadCarrierPinning(
-                annotation.pinnedThreadCount(),
-                java.time.Duration.ofMillis(annotation.durationMs())))
+            .description(
+                "L2: virtual-thread carrier pinning — "
+                    + annotation.pinnedThreadCount()
+                    + " carriers pinned for "
+                    + annotation.durationMs()
+                    + " ms each")
+            .selector(
+                ChaosSelector.stress(ChaosSelector.StressTarget.VIRTUAL_THREAD_CARRIER_PINNING))
+            .effect(
+                ChaosEffect.virtualThreadCarrierPinning(
+                    annotation.pinnedThreadCount(),
+                    java.time.Duration.ofMillis(annotation.durationMs())))
             .activationPolicy(ActivationPolicy.always())
             .build();
     final String scenarioId = JvmPlanAccumulator.instance().addScenario(container, scenario);
@@ -59,8 +65,11 @@ public final class VirtualThreadPinningComposer
   @Override
   public List<String> describe(final CompositeChaosVirtualThreadPinning annotation) {
     return List.of(
-        "virtual-thread carrier pinning — " + annotation.pinnedThreadCount()
-            + " carrier threads held in synchronized blocks for " + annotation.durationMs() + " ms",
+        "virtual-thread carrier pinning — "
+            + annotation.pinnedThreadCount()
+            + " carrier threads held in synchronized blocks for "
+            + annotation.durationMs()
+            + " ms",
         "severity=MODERATE — effective virtual-thread parallelism reduced; JFR VirtualThreadPinned events fire");
   }
 }

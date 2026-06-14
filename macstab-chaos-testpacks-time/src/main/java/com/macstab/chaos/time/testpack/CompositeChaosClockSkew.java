@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Simulates a sudden, sustained wall-clock jump forward by applying a positive {@code OFFSET} on
@@ -20,8 +22,8 @@ import com.macstab.chaos.core.extension.Severity;
  *
  * <h2>How it is created</h2>
  *
- * <p>Applies one libchaos-time rule: {@code clock_gettime/realtime:OFFSET:+<skewMs>}. The offset
- * is deterministic (probability 1.0) and applies to every {@code clock_gettime(CLOCK_REALTIME, …)}
+ * <p>Applies one libchaos-time rule: {@code clock_gettime/realtime:OFFSET:+<skewMs>}. The offset is
+ * deterministic (probability 1.0) and applies to every {@code clock_gettime(CLOCK_REALTIME, …)}
  * call inside the container without touching {@code CLOCK_MONOTONIC} — so the wall-vs-monotonic
  * delta becomes measurably wrong, which is the exact condition that exposes assumption bugs.
  *
@@ -29,11 +31,12 @@ import com.macstab.chaos.core.extension.Severity;
  *
  * <p>Severity: <strong>Moderate</strong><br>
  * A forward clock jump causes distributed locks with absolute-time TTLs (Redis SET EX, etcd leases)
- * to be extended or incorrectly considered fresh. JWT tokens and signed URLs whose {@code exp} claim
- * is compared to wall time may pass validation on the skewed node while they have already expired on
- * peers. Raft leaders may believe their lease is still valid and continue accepting writes after a
- * network partition ends. Services with well-designed clock-tolerance margins (NTP max-offset
- * checks, lease-renewal buffers) recover without operator intervention; those without do not.
+ * to be extended or incorrectly considered fresh. JWT tokens and signed URLs whose {@code exp}
+ * claim is compared to wall time may pass validation on the skewed node while they have already
+ * expired on peers. Raft leaders may believe their lease is still valid and continue accepting
+ * writes after a network partition ends. Services with well-designed clock-tolerance margins (NTP
+ * max-offset checks, lease-renewal buffers) recover without operator intervention; those without do
+ * not.
  *
  * <h2>Industry references</h2>
  *
@@ -69,9 +72,9 @@ import com.macstab.chaos.core.extension.Severity;
 public @interface CompositeChaosClockSkew {
 
   /**
-   * Forward offset applied to {@code CLOCK_REALTIME} on every {@code clock_gettime} call.
-   * Must be positive (a forward jump). Defaults to 500 ms — enough to break most distributed
-   * lock TTL assumptions while leaving the container otherwise operable.
+   * Forward offset applied to {@code CLOCK_REALTIME} on every {@code clock_gettime} call. Must be
+   * positive (a forward jump). Defaults to 500 ms — enough to break most distributed lock TTL
+   * assumptions while leaving the container otherwise operable.
    *
    * @return skew in milliseconds; positive = clock jumped forward
    */

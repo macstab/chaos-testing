@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Delays every {@code Runtime.addShutdownHook()} registration by {@link #hangMs()} milliseconds,
@@ -33,9 +35,9 @@ import com.macstab.chaos.core.extension.Severity;
  *
  * <h2>Industry references</h2>
  *
- * <p>Kubernetes graceful termination (§"Termination of Pods") gives each pod a configurable
- * {@code terminationGracePeriodSeconds}. A hanging shutdown hook that exceeds this window causes
- * SIGKILL. Spring Boot's graceful shutdown documentation warns about this exact scenario.
+ * <p>Kubernetes graceful termination (§"Termination of Pods") gives each pod a configurable {@code
+ * terminationGracePeriodSeconds}. A hanging shutdown hook that exceeds this window causes SIGKILL.
+ * Spring Boot's graceful shutdown documentation warns about this exact scenario.
  *
  * <h2>Example</h2>
  *

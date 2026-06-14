@@ -23,8 +23,7 @@ public final class DnsServiceRedirectionComposer
 
   @Override
   public List<Object> apply(
-      final GenericContainer<?> container,
-      final CompositeChaosDnsServiceRedirection annotation) {
+      final GenericContainer<?> container, final CompositeChaosDnsServiceRedirection annotation) {
     final DnsSelector selector = resolveSelector(annotation.host());
     final RuleHandle handle =
         CompositeDnsChaos.standard()

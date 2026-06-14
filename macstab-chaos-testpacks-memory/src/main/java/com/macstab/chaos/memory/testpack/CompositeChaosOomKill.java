@@ -11,13 +11,15 @@ import com.macstab.chaos.core.extension.ChaosL2;
 import com.macstab.chaos.core.extension.Severity;
 
 /**
+ *
+ *
  * <h2>What this is</h2>
  *
  * <p>Simulates an OOM-kill event by injecting {@code ENOMEM} at 100% probability on every
- * interposed VM syscall — {@code mmap}, {@code mprotect}, and {@code madvise} — that libchaos-memory
- * hooks. This approximates the regime a process enters immediately before the Linux OOM killer fires:
- * every memory-management call fails, making it impossible to allocate new heap, create threads, map
- * files, or adjust page permissions.
+ * interposed VM syscall — {@code mmap}, {@code mprotect}, and {@code madvise} — that
+ * libchaos-memory hooks. This approximates the regime a process enters immediately before the Linux
+ * OOM killer fires: every memory-management call fails, making it impossible to allocate new heap,
+ * create threads, map files, or adjust page permissions.
  *
  * <h2>How it's created</h2>
  *
@@ -29,18 +31,18 @@ import com.macstab.chaos.core.extension.Severity;
  * <h2>How bad it is</h2>
  *
  * <p>Severity: <strong>Critical</strong><br>
- * At 100% toxicity every allocation attempt fails instantly. Processes that survive OOM-kill only do
- * so by catching {@code std::bad_alloc}, returning {@code NULL}-check errors up the call stack, or
- * relying on a watchdog restart. Services with no {@code ENOMEM} handling will crash, corrupt shared
- * state, or deadlock. Immediate operator intervention required.
+ * At 100% toxicity every allocation attempt fails instantly. Processes that survive OOM-kill only
+ * do so by catching {@code std::bad_alloc}, returning {@code NULL}-check errors up the call stack,
+ * or relying on a watchdog restart. Services with no {@code ENOMEM} handling will crash, corrupt
+ * shared state, or deadlock. Immediate operator intervention required.
  *
  * <h2>Industry references</h2>
  *
  * <p>Linux OOM killer behaviour is described in {@code mm/oom_kill.c} and the Linux man-page for
  * {@code proc(5)}. The POSIX specification for {@code mmap(2)} mandates {@code ENOMEM} when the
- * virtual address space is exhausted. Best-practice OOM resilience patterns are covered in Netflix's
- * chaos engineering reports (2012–2016) and in the Kubernetes resource-management documentation for
- * {@code LimitRange} / QoS classes.
+ * virtual address space is exhausted. Best-practice OOM resilience patterns are covered in
+ * Netflix's chaos engineering reports (2012–2016) and in the Kubernetes resource-management
+ * documentation for {@code LimitRange} / QoS classes.
  *
  * <h2>Example</h2>
  *

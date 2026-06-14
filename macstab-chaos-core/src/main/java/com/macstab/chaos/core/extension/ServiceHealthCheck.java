@@ -25,12 +25,12 @@ import java.lang.annotation.Target;
  * }</pre>
  *
  * <p><strong>Fallback.</strong> When no {@code @ServiceHealthCheck} method is found and the test
- * runs within a Spring Boot context, the framework attempts to verify {@code
- * /actuator/health} automatically. If neither is available the framework raises {@code
+ * runs within a Spring Boot context, the framework attempts to verify {@code /actuator/health}
+ * automatically. If neither is available the framework raises {@code
  * ExtensionConfigurationException} at test startup.
  *
- * <p><strong>L1 exemption.</strong> L1 primitives placed directly on a test method do not require
- * a health check — the test body's own assertions serve that role.
+ * <p><strong>L1 exemption.</strong> L1 primitives placed directly on a test method do not require a
+ * health check — the test body's own assertions serve that role.
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ChaosL2
@@ -41,8 +41,8 @@ public @interface ServiceHealthCheck {
 
   /**
    * Optional URL to call as the health probe. When empty (the default), the annotated method is
-   * invoked directly. When non-empty the framework issues an HTTP GET to this URL and expects a
-   * 2xx response.
+   * invoked directly. When non-empty the framework issues an HTTP GET to this URL and expects a 2xx
+   * response.
    *
    * @return health endpoint URL, or empty string to use the annotated method
    */

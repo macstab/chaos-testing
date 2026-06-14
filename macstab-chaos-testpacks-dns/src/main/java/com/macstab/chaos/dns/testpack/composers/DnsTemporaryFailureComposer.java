@@ -16,7 +16,8 @@ import com.macstab.chaos.dns.model.EaiErrno;
 import com.macstab.chaos.dns.testpack.CompositeChaosDnsTemporaryFailure;
 
 /** L2 composer for {@link CompositeChaosDnsTemporaryFailure}. */
-public final class DnsTemporaryFailureComposer implements L2Composer<CompositeChaosDnsTemporaryFailure> {
+public final class DnsTemporaryFailureComposer
+    implements L2Composer<CompositeChaosDnsTemporaryFailure> {
 
   /** Public no-arg constructor required by the L2 composer contract. */
   public DnsTemporaryFailureComposer() {}
@@ -26,7 +27,9 @@ public final class DnsTemporaryFailureComposer implements L2Composer<CompositeCh
       final GenericContainer<?> container, final CompositeChaosDnsTemporaryFailure annotation) {
     final DnsSelector selector = resolveSelector(annotation.host());
     final RuleHandle handle =
-        CompositeDnsChaos.standard().advanced().apply(container, DnsRule.eai(selector, EaiErrno.EAI_AGAIN));
+        CompositeDnsChaos.standard()
+            .advanced()
+            .apply(container, DnsRule.eai(selector, EaiErrno.EAI_AGAIN));
     return List.of(handle);
   }
 
