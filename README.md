@@ -239,7 +239,7 @@ No YAML. No sidecar. No CI pipeline changes. The chaos is live on the next `./gr
 | Annotation | What it simulates | Why it's unique |
 |---|---|---|
 | `@IncidentChaosJvmCarrierPinning` | All ForkJoinPool carriers pinned by `synchronized` → virtual thread starvation | Only reproducible with JVM-internal access; zero exceptions in logs |
-| `@IncidentChaosJvmCodeCacheExhaustion` | JIT code cache fills → interpreter fallback → 10–50× throughput drop | Accumulates over days; no OOM, no error, just slowdown |
+| `@IncidentChaosJvmCodeCacheFull` | JIT code cache fills → interpreter fallback → 10–50× throughput drop | Accumulates over days; no OOM, no error, just slowdown |
 | `@IncidentChaosJvmG1ToSpaceExhausted` | G1 heap exceeds Xmx mid-GC → RSS hits cgroup limit → exit 137 | Heap metrics show 60 %; JVM never threw `OutOfMemoryError` |
 | `@IncidentChaosJvmSafepointCascade` | STW pause + connection ECONNRESET + DNS EAI_AGAIN simultaneously | HikariCP + ZK + Kafka all fire at once; looks like a traffic spike |
 | `@IncidentChaosJvmGcLockerFakeOom` | GC blocked by monitor contention → spurious OOM despite heap room | Restart "fixes" it; root cause is never found |
@@ -288,10 +288,10 @@ No YAML. No sidecar. No CI pipeline changes. The chaos is live on the next `./gr
 
 | Annotation | What it simulates |
 |---|---|
-| `@IncidentChaosKafkaLeaderElection` | Broker failover → producer blocks indefinitely; consumer group rebalance storm |
+| `@IncidentChaosKafkaBrokerFailure` | Broker failover → producer blocks indefinitely; consumer group rebalance storm |
 | `@IncidentChaosKafkaZookeeperLoss` | ZK metadata unavailable → producer blocks → topic creation fails silently |
 | `@IncidentChaosGrpcGoawayStorm` | `maxConnectionAge` GOAWAY + high concurrency → steady UNAVAILABLE errors |
-| `@IncidentChaosJdbcConnectionPoolExhaustion` | `@Transactional(REQUIRES_NEW)` deadlock: no DB deadlock visible, just hung threads |
+| `@IncidentChaosJdbcConnectionStorm` | `@Transactional(REQUIRES_NEW)` deadlock: no DB deadlock visible, just hung threads |
 | `@IncidentChaosJdbcSequenceIdJump` | Postgres sequence pre-allocates 32 WAL values; IDs jump after failover |
 | `@IncidentChaosRedisNetworkFlap` | Rapid ECONNRESET cycling → Sentinel election storm; clients see master change every 200 ms |
 
