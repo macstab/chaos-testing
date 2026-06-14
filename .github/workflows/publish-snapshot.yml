@@ -1,0 +1,160 @@
+name: Publish SNAPSHOT
+
+on:
+  workflow_run:
+    workflows: ["Build & Test"]
+    types:
+      - completed
+    branches:
+      - develop
+
+# CRITICAL: serialize snapshot publishes - parallel runs corrupt artifacts.
+concurrency:
+  group: publish-snapshot-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  packages: write
+  contents: read
+
+jobs:
+  publish-snapshot:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Debug workflow_run context
+        run: |
+          echo "=== Workflow Run Context ==="
+          echo "head_branch: ${{ github.event.workflow_run.head_branch }}"
+          echo "head_sha:    ${{ github.event.workflow_run.head_sha }}"
+          echo "github.ref:  ${{ github.ref }}"
+          echo "github.sha:  ${{ github.sha }}"
+          echo "event:       ${{ github.event.workflow_run.event }}"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Verify correct commit
+        run: |
+          EXPECTED="${{ github.event.workflow_run.head_sha }}"
+          ACTUAL=$(git rev-parse HEAD)
+          if [ "${ACTUAL}" != "${EXPECTED}" ]; then
+            echo "ERROR: wrong commit checked out (expected ${EXPECTED}, got ${ACTUAL})"
+            exit 1
+          fi
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '25'
+          cache: 'gradle'
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Extract version from gradle.properties
+        id: version
+        run: |
+          VERSION=$(grep -E '^\s*version\s*=' gradle.properties | sed -E 's/.*=\s*//' | tr -d ' \t\n\r')
+          echo "PROJECT_VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Extracted version: ${VERSION}"
+
+      - name: Delete existing snapshot if present
+        run: |
+          set -e
+          VERSION="${{ steps.version.outputs.PROJECT_VERSION }}"
+
+          echo "=== Checking for existing snapshot artifacts ==="
+          echo "Version to check: ${VERSION}"
+
+          # Published Maven artifact coordinates (groupId.artifactId).
+          # Benchmarks and examples are intentionally excluded.
+          ARTIFACTS=(
+            "com.macstab.chaos.jvm.chaos-agent-api"
+            "com.macstab.chaos.jvm.chaos-agent-bootstrap"
+            "com.macstab.chaos.jvm.chaos-agent-core"
+            "com.macstab.chaos.jvm.chaos-agent-instrumentation-jdk"
+            "com.macstab.chaos.jvm.chaos-agent-micronaut-integration"
+            "com.macstab.chaos.jvm.chaos-agent-quarkus-extension"
+            "com.macstab.chaos.jvm.chaos-agent-quarkus-extension-deployment"
+            "com.macstab.chaos.jvm.chaos-agent-spring-boot-common"
+            "com.macstab.chaos.jvm.chaos-agent-spring-boot3-starter"
+            "com.macstab.chaos.jvm.chaos-agent-spring-boot3-test-starter"
+            "com.macstab.chaos.jvm.chaos-agent-spring-boot4-starter"
+            "com.macstab.chaos.jvm.chaos-agent-spring-boot4-test-starter"
+            "com.macstab.chaos.jvm.chaos-agent-startup-config"
+            "com.macstab.chaos.jvm.chaos-agent-testkit"
+          )
+
+          DELETED_COUNT=0
+
+          for PACKAGE_NAME in "${ARTIFACTS[@]}"; do
+            echo ""
+            echo "--- Checking artifact: ${PACKAGE_NAME} ---"
+
+            PACKAGE_CHECK=$(curl -s -w "\n%{http_code}" \
+              -H "Authorization: Bearer ${{ secrets.BOT_GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/orgs/macstab/packages/maven/${PACKAGE_NAME}")
+
+            PACKAGE_HTTP_CODE=$(echo "$PACKAGE_CHECK" | tail -n1)
+
+            if [ "$PACKAGE_HTTP_CODE" = "404" ]; then
+              echo "  artifact does NOT exist yet (first publish)"
+              continue
+            elif [ "$PACKAGE_HTTP_CODE" != "200" ]; then
+              echo "  ERROR: failed to check artifact existence (HTTP ${PACKAGE_HTTP_CODE})"
+              exit 1
+            fi
+
+            VERSIONS=$(curl -s -f -H "Authorization: Bearer ${{ secrets.BOT_GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/orgs/macstab/packages/maven/${PACKAGE_NAME}/versions?per_page=100")
+
+            if [ $? -ne 0 ]; then
+              echo "  ERROR: failed to fetch versions"
+              exit 1
+            fi
+
+            VERSION_ID=$(echo "$VERSIONS" | jq -r ".[] | select(.name == \"${VERSION}\") | .id")
+
+            if [ -z "$VERSION_ID" ] || [ "$VERSION_ID" = "null" ]; then
+              echo "  version ${VERSION} does NOT exist (nothing to delete)"
+              continue
+            fi
+
+            echo "  version ${VERSION} exists (id=${VERSION_ID}) - deleting..."
+
+            DELETE_RESULT=$(curl -s -w "\n%{http_code}" -X DELETE \
+              -H "Authorization: Bearer ${{ secrets.BOT_GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/orgs/macstab/packages/maven/${PACKAGE_NAME}/versions/${VERSION_ID}")
+
+            HTTP_CODE=$(echo "$DELETE_RESULT" | tail -n1)
+
+            if [ "$HTTP_CODE" = "204" ]; then
+              echo "  deleted"
+              DELETED_COUNT=$((DELETED_COUNT + 1))
+            elif [ "$HTTP_CODE" = "404" ]; then
+              echo "  already deleted (race condition, safe)"
+            else
+              echo "  ERROR: deletion failed (HTTP ${HTTP_CODE})"
+              echo "$DELETE_RESULT"
+              exit 1
+            fi
+          done
+
+          echo ""
+          echo "=== Cleanup complete: deleted ${DELETED_COUNT} artifact version(s) ==="
+
+      - name: Publish SNAPSHOT to GitHub Packages (tests already ran in Build workflow)
+        run: ./gradlew publish -x test --no-daemon --stacktrace
+        env:
+          GITHUB_TOKEN: ${{ secrets.BOT_GITHUB_TOKEN }}

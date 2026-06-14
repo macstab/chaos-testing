@@ -1,0 +1,46 @@
+name: Publish Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# CRITICAL: serialize release publishes - parallel runs corrupt artifacts.
+concurrency:
+  group: publish-release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '25'
+          cache: 'gradle'
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Update version in gradle.properties
+        run: sed -i 's/^version=.*/version=${{ steps.version.outputs.VERSION }}/' gradle.properties
+
+      - name: Build and publish release to GitHub Packages (tests already ran pre-tag)
+        run: ./gradlew build publish -x test --no-daemon --stacktrace
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
