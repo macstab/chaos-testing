@@ -272,3 +272,31 @@ subprojects {
         onlyIf { !version.toString().endsWith("SNAPSHOT") }
     }
 }
+
+// Aggregate JaCoCo coverage across every subproject into one report.
+tasks.register<JacocoReport>("jacocoAggregatedReport") {
+    group = "verification"
+    description = "Aggregate Jacoco coverage from every subproject."
+
+    val jacocoExecFiles = subprojects.flatMap { sub ->
+        sub.tasks.withType<Test>().map { it.extensions.getByType<JacocoTaskExtension>().destinationFile!! }
+    }
+    executionData.setFrom(files(jacocoExecFiles).filter { it.exists() })
+
+    subprojects.forEach { sub ->
+        val javaExt = sub.extensions.findByType(JavaPluginExtension::class)
+        if (javaExt != null) {
+            sourceDirectories.from(javaExt.sourceSets["main"].allSource.srcDirs)
+            classDirectories.from(javaExt.sourceSets["main"].output)
+        }
+        dependsOn(sub.tasks.matching { it.name == "test" })
+    }
+
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+        csv.required.set(false)
+        html.outputLocation.set(layout.buildDirectory.dir("reports/jacoco/aggregated/html"))
+        xml.outputLocation.set(layout.buildDirectory.file("reports/jacoco/aggregated/jacoco.xml"))
+    }
+}
