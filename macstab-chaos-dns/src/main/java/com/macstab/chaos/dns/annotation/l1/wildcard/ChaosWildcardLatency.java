@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 import com.macstab.chaos.dns.annotation.l1.DnsLatencyBinding;
 import com.macstab.chaos.dns.annotation.l1.DnsSelectorKind;
+import com.macstab.chaos.dns.annotation.l1.forward.ChaosForwardLatency;
+import com.macstab.chaos.dns.annotation.l1.reverse.ChaosReverseLatency;
 
 /**
  * Delays both {@code getaddrinfo(3)} (forward lookup) and {@code getnameinfo(3)} (reverse lookup)

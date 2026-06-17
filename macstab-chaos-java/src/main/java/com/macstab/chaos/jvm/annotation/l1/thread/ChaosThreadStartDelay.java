@@ -119,8 +119,6 @@ import com.macstab.chaos.jvm.api.OperationType;
  * </ul>
  *
  * @author Christian Schnapka - Macstab GmbH
- * @see com.macstab.chaos.jvm.api.OperationType#THREAD_START
- * @see com.macstab.chaos.jvm.api.ChaosSelector#thread(java.util.Set)
  * @see ChaosThreadStartReject
  * @see ChaosVirtualThreadStartDelay
  */

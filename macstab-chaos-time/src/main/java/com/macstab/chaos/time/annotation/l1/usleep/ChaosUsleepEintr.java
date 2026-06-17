@@ -67,7 +67,7 @@ import com.macstab.chaos.time.model.TimeSelector;
  * However, numerous production C libraries (libcurl, OpenSSL, librdkafka) still use {@code usleep}
  * internally. {@code libchaos-time.so} covers both the modern and legacy interfaces.
  *
- * <p>Sibling annotation: {@link ChaosNanosleepEintr} applies the same injection to the modern
+ * <p>Sibling annotation: {@link com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEintr} applies the same injection to the modern
  * {@code nanosleep} interface; {@link ChaosUsleepLatency} extends the sleep duration without
  * cutting it short — the opposite failure mode.
  *
@@ -86,7 +86,7 @@ import com.macstab.chaos.time.model.TimeSelector;
  * }</pre>
  *
  * @author Christian Schnapka - Macstab GmbH
- * @see ChaosNanosleepEintr
+ * @see com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEintr
  * @see ChaosUsleepLatency
  * @see com.macstab.chaos.time.annotation.l1.TimeErrnoBinding
  */

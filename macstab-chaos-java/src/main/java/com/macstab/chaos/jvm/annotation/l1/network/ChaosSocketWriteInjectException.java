@@ -114,7 +114,7 @@ import com.macstab.chaos.jvm.api.OperationType;
  * @author Christian Schnapka - Macstab GmbH
  * @see ChaosSocketWriteDelay
  * @see ChaosSocketReadInjectException
- * @see ChaosNioChannelWriteInjectException
+ * @see com.macstab.chaos.jvm.annotation.l1.nio.ChaosNioChannelWriteInjectException
  */
 @Repeatable(ChaosSocketWriteInjectException.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

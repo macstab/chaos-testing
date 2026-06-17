@@ -11,6 +11,8 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 import com.macstab.chaos.dns.annotation.l1.DnsEaiBinding;
 import com.macstab.chaos.dns.annotation.l1.DnsSelectorKind;
+import com.macstab.chaos.dns.annotation.l1.forward.ChaosForwardEaifail;
+import com.macstab.chaos.dns.annotation.l1.reverse.ChaosReverseEaifail;
 import com.macstab.chaos.dns.model.EaiErrno;
 
 /**

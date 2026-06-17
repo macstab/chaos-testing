@@ -106,7 +106,7 @@ import com.macstab.chaos.filesystem.model.IoOperation;
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ChaosRenameToEacces
- * @see ChaosWriteEnospc
+ * @see com.macstab.chaos.filesystem.annotation.l1.write.ChaosWriteEnospc
  * @see com.macstab.chaos.filesystem.annotation.l1.IoErrnoBinding
  */
 @Repeatable(ChaosRenameToEnospc.Repeatable.class)

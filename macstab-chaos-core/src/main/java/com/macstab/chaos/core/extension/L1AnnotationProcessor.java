@@ -260,8 +260,8 @@ public final class L1AnnotationProcessor {
    * annotation type applied to the same container.
    *
    * <p>Conflicting rules are removed from {@code persistentHandles} (in-place mutation) and
-   * returned in {@link MethodLevelResult#suspended()} so that {@link #reapply(List,
-   * ChaosApplicationReport)} can restore them in {@code afterEach}.
+   * returned in {@link MethodLevelResult#suspended()} so that {@link #reapply} can restore them in
+   * {@code afterEach}.
    *
    * @param testMethod the {@code @Test}-annotated method
    * @param containers all containers started for the enclosing test class

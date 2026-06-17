@@ -30,7 +30,7 @@ import com.macstab.chaos.core.extension.Severity;
  * <h2>How bad it is</h2>
  *
  * <p>Severity: <strong>Moderate</strong><br>
- * Small skews (< 1 s) may cause intermittent token validation failures. Large skews (> 60 s) cause
+ * Small skews (&lt; 1 s) may cause intermittent token validation failures. Large skews (&gt; 60 s) cause
  * systematic JWT/OAuth failures, distributed-lock expiry, and Kerberos authentication breakage
  * (5-minute tolerance). The application usually recovers when the skew is removed.
  *

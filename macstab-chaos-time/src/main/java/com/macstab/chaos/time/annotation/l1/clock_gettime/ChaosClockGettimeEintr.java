@@ -71,7 +71,7 @@ import com.macstab.chaos.time.model.TimeSelector;
  * absent, providing coverage that is otherwise extremely difficult to trigger in integration tests.
  *
  * <p>Sibling annotations: {@link ChaosClockGettimeEagain} injects a similar transient failure;
- * {@link ChaosNanosleepEintr} and {@link ChaosUsleepEintr} apply the same injection to the sleep
+ * {@link com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEintr} and {@link com.macstab.chaos.time.annotation.l1.usleep.ChaosUsleepEintr} apply the same injection to the sleep
  * syscalls where {@code EINTR} is far more common and carries semantic meaning (partial sleep).
  *
  * <h2>Example</h2>
@@ -90,7 +90,7 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ChaosClockGettimeEagain
- * @see ChaosNanosleepEintr
+ * @see com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEintr
  * @see com.macstab.chaos.time.annotation.l1.TimeErrnoBinding
  */
 @Repeatable(ChaosClockGettimeEintr.Repeatable.class)

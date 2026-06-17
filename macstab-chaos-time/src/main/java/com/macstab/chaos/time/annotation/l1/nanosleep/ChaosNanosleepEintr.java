@@ -74,7 +74,7 @@ import com.macstab.chaos.time.model.TimeSelector;
  * struct is zeroed by the interposer (simulating a fully interrupted sleep) to trigger the worst
  * case for incorrectly written restart loops.
  *
- * <p>Sibling annotations: {@link ChaosUsleepEintr} applies the same injection to the obsolete
+ * <p>Sibling annotations: {@link com.macstab.chaos.time.annotation.l1.usleep.ChaosUsleepEintr} applies the same injection to the obsolete
  * {@code usleep(3)} wrapper; {@link ChaosNanosleepLatency} adds delay without cutting the sleep
  * short, useful for testing timeout over-runs.
  *
@@ -93,7 +93,7 @@ import com.macstab.chaos.time.model.TimeSelector;
  * }</pre>
  *
  * @author Christian Schnapka - Macstab GmbH
- * @see ChaosUsleepEintr
+ * @see com.macstab.chaos.time.annotation.l1.usleep.ChaosUsleepEintr
  * @see ChaosNanosleepLatency
  * @see com.macstab.chaos.time.annotation.l1.TimeErrnoBinding
  */

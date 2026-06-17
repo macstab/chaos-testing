@@ -22,8 +22,8 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code WILDCARD}, errno = {@code
  * ENOSYS}) tuple. The {@code WILDCARD} selector matches all three interposed time syscalls
- * simultaneously — equivalent to applying {@link ChaosClockGettimeEnosys}, {@link
- * ChaosNanosleepEnosys}, and {@link ChaosUsleepEnosys} in a single annotation. No runtime
+ * simultaneously — equivalent to applying {@link com.macstab.chaos.time.annotation.l1.clock_gettime.ChaosClockGettimeEnosys}, {@link
+ * com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEnosys}, and {@link com.macstab.chaos.time.annotation.l1.usleep.ChaosUsleepEnosys} in a single annotation. No runtime
  * selector-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
@@ -76,8 +76,8 @@ import com.macstab.chaos.time.model.TimeSelector;
  * verifies that the native library's fallback chain reaches a stable end state rather than looping
  * through alternatives indefinitely.
  *
- * <p>Sibling per-syscall annotations ({@link ChaosClockGettimeEnosys}, {@link
- * ChaosNanosleepEnosys}, {@link ChaosUsleepEnosys}) allow targeted injection to a single syscall
+ * <p>Sibling per-syscall annotations ({@link com.macstab.chaos.time.annotation.l1.clock_gettime.ChaosClockGettimeEnosys}, {@link
+ * com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEnosys}, {@link com.macstab.chaos.time.annotation.l1.usleep.ChaosUsleepEnosys}) allow targeted injection to a single syscall
  * when the fall-through chain of a specific library needs to be tested in isolation.
  *
  * <h2>Example</h2>
@@ -95,9 +95,9 @@ import com.macstab.chaos.time.model.TimeSelector;
  * }</pre>
  *
  * @author Christian Schnapka - Macstab GmbH
- * @see ChaosClockGettimeEnosys
- * @see ChaosNanosleepEnosys
- * @see ChaosUsleepEnosys
+ * @see com.macstab.chaos.time.annotation.l1.clock_gettime.ChaosClockGettimeEnosys
+ * @see com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEnosys
+ * @see com.macstab.chaos.time.annotation.l1.usleep.ChaosUsleepEnosys
  * @see com.macstab.chaos.time.annotation.l1.TimeErrnoBinding
  */
 @Repeatable(ChaosWildcardEnosys.Repeatable.class)

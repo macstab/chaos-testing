@@ -11,16 +11,15 @@ import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 
 /**
- * Load a hand-written jvm-agent plan json file (from the test classpath) and push it into the target container via {@code compositejavachaos.
+ * Load a hand-written jvm-agent plan json file (from the test classpath) and push it into the target container via {@code CompositeJavaChaos}.
  *
  * <p><strong>What this annotation is:</strong> a JVM agent L1 chaos primitive — one typed
  * annotation per (selector family, operation type, effect) tuple. It is declared on the test class
  * alongside a container annotation and activates for the lifetime of the test class (class-scope)
  * or a single {@code @Test} method (method-scope).
  *
- * <p><strong>What chaos this applies:</strong> load a hand-written JVM-agent plan JSON file (from the test classpath) and push it into the target container via {@code CompositeJavaChaos inside the JVM of the target container.
- * The effect fires on every matching call, subject to the probability configured via
- * {@link #probability()} if applicable. The rule is active from {@code beforeAll} until
+ * <p><strong>What chaos this applies:</strong> load a hand-written JVM-agent plan JSON file (from the test classpath) and push it into the target container via {@code CompositeJavaChaos} inside the JVM of the target container.
+ * The effect fires on every matching call. The rule is active from {@code beforeAll} until
  * {@code afterAll} (class-scope) or from {@code beforeEach} until {@code afterEach}
  * (method-scope).
  *
@@ -87,8 +86,8 @@ public @interface ChaosJvmPlan {
    * <p>Example:
    *
    * <pre>{@code
-   * @ChaosJvmPlan(id = "primary",  probability = 0.001)
-   * @ChaosJvmPlan(id = "replica",  probability = 0.01)
+   * @ChaosJvmPlan(id = "primary",  planJsonResource = "/chaos-plans/primary.json")
+   * @ChaosJvmPlan(id = "replica",  planJsonResource = "/chaos-plans/replica.json")
    * class MultiContainerTest { ... }
    * }</pre>
    */

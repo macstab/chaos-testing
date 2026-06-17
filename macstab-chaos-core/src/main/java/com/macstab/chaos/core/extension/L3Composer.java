@@ -47,10 +47,8 @@ public interface L3Composer<A extends Annotation> {
    * @param container the running target container (guaranteed non-null and started)
    * @param annotation the L3 annotation instance carrying scenario parameters
    * @return opaque handles representing every rule installed; passed back verbatim to {@link
-   *     #removeAll} — must not be {@code null}, may be empty
+   *     L3Composer#removeAll} — must not be {@code null}, may be empty
    * @throws IllegalArgumentException if annotation attribute values are invalid
-   * @throws Exception if rule installation fails (wrapped in {@code
-   *     ExtensionConfigurationException} by the processor)
    */
   List<Object> apply(GenericContainer<?> container, A annotation);
 

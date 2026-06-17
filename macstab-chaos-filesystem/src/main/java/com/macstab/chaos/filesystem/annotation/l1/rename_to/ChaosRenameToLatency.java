@@ -10,6 +10,8 @@ import java.lang.annotation.Target;
 import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 import com.macstab.chaos.filesystem.annotation.l1.IoLatencyBinding;
+import com.macstab.chaos.filesystem.annotation.l1.rename_from.ChaosRenameFromLatency;
+import com.macstab.chaos.filesystem.annotation.l1.unlink.ChaosUnlinkLatency;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**

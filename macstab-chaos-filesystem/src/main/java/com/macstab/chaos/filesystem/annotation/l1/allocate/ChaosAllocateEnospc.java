@@ -10,6 +10,8 @@ import java.lang.annotation.Target;
 import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 import com.macstab.chaos.filesystem.annotation.l1.IoErrnoBinding;
+import com.macstab.chaos.filesystem.annotation.l1.fsync.ChaosFsyncEnospc;
+import com.macstab.chaos.filesystem.annotation.l1.write.ChaosWriteEnospc;
 import com.macstab.chaos.filesystem.model.Errno;
 import com.macstab.chaos.filesystem.model.IoOperation;
 

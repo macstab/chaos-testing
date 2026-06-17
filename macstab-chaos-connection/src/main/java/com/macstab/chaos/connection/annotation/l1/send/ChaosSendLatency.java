@@ -8,6 +8,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 import com.macstab.chaos.connection.annotation.l1.ConnectionLatencyBinding;
+import com.macstab.chaos.connection.annotation.l1.recv.ChaosRecvLatency;
 import com.macstab.chaos.connection.model.NetOperation;
 import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;

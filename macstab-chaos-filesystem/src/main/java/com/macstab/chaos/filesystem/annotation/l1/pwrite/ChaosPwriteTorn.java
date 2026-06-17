@@ -10,6 +10,8 @@ import java.lang.annotation.Target;
 import com.macstab.chaos.core.extension.ChaosL1;
 import com.macstab.chaos.core.extension.OnMissingEnv;
 import com.macstab.chaos.filesystem.annotation.l1.IoTornBinding;
+import com.macstab.chaos.filesystem.annotation.l1.pread.ChaosPreadCorrupt;
+import com.macstab.chaos.filesystem.annotation.l1.write.ChaosWriteTorn;
 import com.macstab.chaos.filesystem.model.IoOperation;
 
 /**

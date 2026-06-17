@@ -74,7 +74,7 @@ import com.macstab.chaos.jvm.api.OperationType;
  * pattern seen during hypervisor memory balloon inflation where the host occasionally refuses to
  * map additional physical pages.
  *
- * <p>This annotation is distinct from the {@link ChaosDirectBufferPressure} stressor: the delay
+ * <p>This annotation is distinct from the {@link com.macstab.chaos.jvm.annotation.l1.stressors.ChaosDirectBufferPressure} stressor: the delay
  * annotation targets specific allocation call sites and is probabilistic / scoped, whereas the
  * stressor proactively exhausts the entire direct-memory pool via background allocations.
  *

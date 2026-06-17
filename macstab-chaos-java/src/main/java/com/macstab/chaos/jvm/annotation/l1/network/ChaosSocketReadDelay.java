@@ -82,7 +82,7 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <p>Kafka's Java consumer uses {@code kafka.network.Selector} which is NIO-based for the consumer
  * group protocol, but the older {@code SimpleConsumer} (Kafka 0.x/1.x) used blocking sockets; this
  * annotation applies to legacy Kafka integrations. Modern Kafka clients should use {@link
- * ChaosNioChannelReadDelay} instead.
+ * com.macstab.chaos.jvm.annotation.l1.nio.ChaosNioChannelReadDelay} instead.
  *
  * <h2>Example</h2>
  *
@@ -113,7 +113,7 @@ import com.macstab.chaos.jvm.api.OperationType;
  * @author Christian Schnapka - Macstab GmbH
  * @see ChaosSocketReadInjectException
  * @see ChaosSocketWriteDelay
- * @see ChaosNioChannelReadDelay
+ * @see com.macstab.chaos.jvm.annotation.l1.nio.ChaosNioChannelReadDelay
  */
 @Repeatable(ChaosSocketReadDelay.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

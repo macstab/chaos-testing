@@ -65,7 +65,7 @@ import com.macstab.chaos.time.model.TimeSelector;
  * libraries are used will cause their retry loops to fail silently, producing retry storms.
  *
  * <p>Sibling annotations: {@link ChaosUsleepEintr} targets signal interruption; {@link
- * ChaosNanosleepEperm} applies the equivalent injection to the modern interface.
+ * com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEperm} applies the equivalent injection to the modern interface.
  *
  * <h2>Example</h2>
  *
@@ -83,7 +83,7 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ChaosUsleepEintr
- * @see ChaosNanosleepEperm
+ * @see com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEperm
  * @see com.macstab.chaos.time.annotation.l1.TimeErrnoBinding
  */
 @Repeatable(ChaosUsleepEperm.Repeatable.class)

@@ -89,7 +89,7 @@ import com.macstab.chaos.core.extension.OnMissingEnv;
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ChaosClockGettimeLatency
- * @see ChaosWildcardLatency
+ * @see com.macstab.chaos.time.annotation.l1.wildcard.ChaosWildcardLatency
  */
 @Repeatable(ChaosClockGettimeOffset.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

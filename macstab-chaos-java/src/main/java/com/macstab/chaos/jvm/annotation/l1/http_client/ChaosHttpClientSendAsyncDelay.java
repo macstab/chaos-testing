@@ -63,8 +63,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p>Because the sleep occurs before the executor submission, the JDK's HTTP/2 multiplexer and
  * async read pipeline are unaffected during the sleep — only the moment of submission is delayed.
- * This is different from intercepting at the response-body level; use {@link ChaosSocketReadDelay}
- * or {@link ChaosNioChannelReadDelay} if you need to slow body consumption specifically.
+ * This is different from intercepting at the response-body level; use {@link com.macstab.chaos.jvm.annotation.l1.network.ChaosSocketReadDelay}
+ * or {@link com.macstab.chaos.jvm.annotation.l1.nio.ChaosNioChannelReadDelay} if you need to slow body consumption specifically.
  *
  * <p>The difference between {@link ChaosHttpClientSendDelay} and this annotation is the threading
  * model: {@code Send} blocks the caller synchronously, while {@code SendAsync} blocks only until

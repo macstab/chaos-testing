@@ -65,7 +65,7 @@ import com.macstab.chaos.time.model.TimeSelector;
  * potentially leading to a busy-loop if the injection rate is high enough.
  *
  * <p>Sibling annotations: {@link ChaosUsleepEintr} is the far more realistic signal-interruption
- * case; {@link ChaosNanosleepEagain} applies the equivalent injection to the modern interface.
+ * case; {@link com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEagain} applies the equivalent injection to the modern interface.
  *
  * <h2>Example</h2>
  *
@@ -83,7 +83,7 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ChaosUsleepEintr
- * @see ChaosNanosleepEagain
+ * @see com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEagain
  * @see com.macstab.chaos.time.annotation.l1.TimeErrnoBinding
  */
 @Repeatable(ChaosUsleepEagain.Repeatable.class)

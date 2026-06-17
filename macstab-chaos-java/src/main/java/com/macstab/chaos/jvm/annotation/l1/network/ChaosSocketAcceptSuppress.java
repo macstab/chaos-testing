@@ -107,7 +107,7 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ChaosSocketAcceptDelay
- * @see ChaosNioChannelAcceptSuppress
+ * @see com.macstab.chaos.jvm.annotation.l1.nio.ChaosNioChannelAcceptSuppress
  */
 @Repeatable(ChaosSocketAcceptSuppress.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

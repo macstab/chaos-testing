@@ -21,8 +21,8 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code WILDCARD}, effect = LATENCY)
  * tuple. The {@code WILDCARD} selector matches all three interposed time syscalls simultaneously —
- * equivalent to applying {@link ChaosClockGettimeLatency}, {@link ChaosNanosleepLatency}, and
- * {@link ChaosUsleepLatency} in a single annotation. Unlike errno variants, the latency primitive
+ * equivalent to applying {@link com.macstab.chaos.time.annotation.l1.clock_gettime.ChaosClockGettimeLatency}, {@link com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepLatency}, and
+ * {@link com.macstab.chaos.time.annotation.l1.usleep.ChaosUsleepLatency} in a single annotation. Unlike errno variants, the latency primitive
  * always delegates to the real kernel call after the configured extra delay — the return value is 0
  * (success). No runtime selector-effect validation is needed.
  *
@@ -80,8 +80,8 @@ import com.macstab.chaos.time.model.TimeSelector;
  * assumptions such as "if {@code nanosleep} is slow, the retry budget must already be consumed" —
  * assumptions that break when independent latency is applied to each.
  *
- * <p>Sibling per-syscall annotations ({@link ChaosClockGettimeLatency}, {@link
- * ChaosNanosleepLatency}, {@link ChaosUsleepLatency}) allow targeted latency injection to a single
+ * <p>Sibling per-syscall annotations ({@link com.macstab.chaos.time.annotation.l1.clock_gettime.ChaosClockGettimeLatency}, {@link
+ * com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepLatency}, {@link com.macstab.chaos.time.annotation.l1.usleep.ChaosUsleepLatency}) allow targeted latency injection to a single
  * time interface when a narrower test scope is needed. Use the wildcard form for full system-wide
  * time-overhead testing.
  *
@@ -100,9 +100,9 @@ import com.macstab.chaos.time.model.TimeSelector;
  * }</pre>
  *
  * @author Christian Schnapka - Macstab GmbH
- * @see ChaosClockGettimeLatency
- * @see ChaosNanosleepLatency
- * @see ChaosUsleepLatency
+ * @see com.macstab.chaos.time.annotation.l1.clock_gettime.ChaosClockGettimeLatency
+ * @see com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepLatency
+ * @see com.macstab.chaos.time.annotation.l1.usleep.ChaosUsleepLatency
  * @see com.macstab.chaos.time.annotation.l1.TimeLatencyBinding
  */
 @Repeatable(ChaosWildcardLatency.Repeatable.class)

@@ -65,7 +65,7 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <p>The interception targets {@code java.net.SocketOutputStream#write(byte[], int, int)}, the
  * internal output stream returned by {@code Socket.getOutputStream()}. This path is used
  * exclusively by blocking socket clients; NIO-based frameworks use {@code
- * SocketChannel.write(ByteBuffer)} (see {@link ChaosNioChannelWriteDelay}).
+ * SocketChannel.write(ByteBuffer)} (see {@link com.macstab.chaos.jvm.annotation.l1.nio.ChaosNioChannelWriteDelay}).
  *
  * <p>In blocking mode, {@code SocketOutputStream.write()} issues a {@code send(2)} syscall that
  * blocks until all bytes are copied to the kernel send buffer or an error occurs. The kernel send
@@ -81,8 +81,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  * longer than the configured statement timeout.
  *
  * <p>Combining this with {@link ChaosSocketReadDelay} creates a fully symmetric slow-link model for
- * blocking socket clients, equivalent to the NIO combination of {@link ChaosNioChannelWriteDelay}
- * and {@link ChaosNioChannelReadDelay}.
+ * blocking socket clients, equivalent to the NIO combination of {@link com.macstab.chaos.jvm.annotation.l1.nio.ChaosNioChannelWriteDelay}
+ * and {@link com.macstab.chaos.jvm.annotation.l1.nio.ChaosNioChannelReadDelay}.
  *
  * <h2>Example</h2>
  *
@@ -112,7 +112,7 @@ import com.macstab.chaos.jvm.api.OperationType;
  * @author Christian Schnapka - Macstab GmbH
  * @see ChaosSocketWriteInjectException
  * @see ChaosSocketReadDelay
- * @see ChaosNioChannelWriteDelay
+ * @see com.macstab.chaos.jvm.annotation.l1.nio.ChaosNioChannelWriteDelay
  */
 @Repeatable(ChaosSocketWriteDelay.Repeatable.class)
 @Retention(RetentionPolicy.RUNTIME)

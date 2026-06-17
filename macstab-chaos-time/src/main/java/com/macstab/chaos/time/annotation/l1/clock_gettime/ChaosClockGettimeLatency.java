@@ -91,7 +91,7 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ChaosClockGettimeOffset
- * @see ChaosNanosleepLatency
+ * @see com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepLatency
  * @see com.macstab.chaos.time.annotation.l1.TimeLatencyBinding
  */
 @Repeatable(ChaosClockGettimeLatency.Repeatable.class)

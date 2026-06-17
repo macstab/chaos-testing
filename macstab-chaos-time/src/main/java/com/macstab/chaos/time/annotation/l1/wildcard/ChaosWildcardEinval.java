@@ -22,8 +22,8 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code WILDCARD}, errno = {@code
  * EINVAL}) tuple. The {@code WILDCARD} selector matches all three interposed time syscalls
- * simultaneously — equivalent to applying {@link ChaosClockGettimeEinval}, {@link
- * ChaosNanosleepEinval}, and {@link ChaosUsleepEinval} in a single annotation. No runtime
+ * simultaneously — equivalent to applying {@link com.macstab.chaos.time.annotation.l1.clock_gettime.ChaosClockGettimeEinval}, {@link
+ * com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEinval}, and {@link com.macstab.chaos.time.annotation.l1.usleep.ChaosUsleepEinval} in a single annotation. No runtime
  * selector-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
@@ -68,8 +68,8 @@ import com.macstab.chaos.time.model.TimeSelector;
  * syscalls will mishandle the {@code EINVAL} returned by this injection. That is precisely the
  * latent bug being exercised.
  *
- * <p>Sibling per-syscall annotations ({@link ChaosClockGettimeEinval}, {@link
- * ChaosNanosleepEinval}, {@link ChaosUsleepEinval}) allow targeted injection to a single syscall.
+ * <p>Sibling per-syscall annotations ({@link com.macstab.chaos.time.annotation.l1.clock_gettime.ChaosClockGettimeEinval}, {@link
+ * com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEinval}, {@link com.macstab.chaos.time.annotation.l1.usleep.ChaosUsleepEinval}) allow targeted injection to a single syscall.
  * Use the wildcard form when testing system-wide argument-validation hardening.
  *
  * <h2>Example</h2>
@@ -87,9 +87,9 @@ import com.macstab.chaos.time.model.TimeSelector;
  * }</pre>
  *
  * @author Christian Schnapka - Macstab GmbH
- * @see ChaosClockGettimeEinval
- * @see ChaosNanosleepEinval
- * @see ChaosUsleepEinval
+ * @see com.macstab.chaos.time.annotation.l1.clock_gettime.ChaosClockGettimeEinval
+ * @see com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEinval
+ * @see com.macstab.chaos.time.annotation.l1.usleep.ChaosUsleepEinval
  * @see com.macstab.chaos.time.annotation.l1.TimeErrnoBinding
  */
 @Repeatable(ChaosWildcardEinval.Repeatable.class)

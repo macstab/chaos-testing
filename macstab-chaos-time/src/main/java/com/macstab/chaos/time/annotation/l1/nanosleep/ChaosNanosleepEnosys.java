@@ -65,7 +65,7 @@ import com.macstab.chaos.time.model.TimeSelector;
  * the syscall is absent, resulting in CPU-bound busy behavior.
  *
  * <p>Sibling annotations: {@link ChaosNanosleepEintr} targets the common signal-interruption case;
- * {@link ChaosUsleepEnosys} applies the same injection to the legacy {@code usleep(3)} wrapper.
+ * {@link com.macstab.chaos.time.annotation.l1.usleep.ChaosUsleepEnosys} applies the same injection to the legacy {@code usleep(3)} wrapper.
  *
  * <h2>Example</h2>
  *
@@ -83,7 +83,7 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * @author Christian Schnapka - Macstab GmbH
  * @see ChaosNanosleepEintr
- * @see ChaosUsleepEnosys
+ * @see com.macstab.chaos.time.annotation.l1.usleep.ChaosUsleepEnosys
  * @see com.macstab.chaos.time.annotation.l1.TimeErrnoBinding
  */
 @Repeatable(ChaosNanosleepEnosys.Repeatable.class)
