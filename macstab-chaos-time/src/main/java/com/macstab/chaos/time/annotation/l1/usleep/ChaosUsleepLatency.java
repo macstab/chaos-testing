@@ -66,9 +66,11 @@ import com.macstab.chaos.time.model.TimeSelector;
  * longer than the library's configured retry interval, which can cascade into connection pool
  * exhaustion or request timeout failures at the application layer.
  *
- * <p>Sibling annotation: {@link com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepLatency} applies the same delay to the modern {@code
- * nanosleep} interface; {@link com.macstab.chaos.time.annotation.l1.wildcard.ChaosWildcardLatency} applies it to all interposed time syscalls
- * simultaneously.
+ * <p>Sibling annotation: {@link
+ * com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepLatency} applies the same delay to
+ * the modern {@code nanosleep} interface; {@link
+ * com.macstab.chaos.time.annotation.l1.wildcard.ChaosWildcardLatency} applies it to all interposed
+ * time syscalls simultaneously.
  *
  * <h2>Example</h2>
  *

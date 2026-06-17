@@ -22,8 +22,10 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code WILDCARD}, errno = {@code
  * EPERM}) tuple. The {@code WILDCARD} selector matches all three interposed time syscalls
- * simultaneously — equivalent to applying {@link com.macstab.chaos.time.annotation.l1.clock_gettime.ChaosClockGettimeEperm}, {@link
- * com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEperm}, and {@link com.macstab.chaos.time.annotation.l1.usleep.ChaosUsleepEperm} in a single annotation. No runtime
+ * simultaneously — equivalent to applying {@link
+ * com.macstab.chaos.time.annotation.l1.clock_gettime.ChaosClockGettimeEperm}, {@link
+ * com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEperm}, and {@link
+ * com.macstab.chaos.time.annotation.l1.usleep.ChaosUsleepEperm} in a single annotation. No runtime
  * selector-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
@@ -69,9 +71,11 @@ import com.macstab.chaos.time.model.TimeSelector;
  * busy-poll. Testing this scenario prevents production regressions when the seccomp profile is
  * tightened.
  *
- * <p>Sibling per-syscall annotations ({@link com.macstab.chaos.time.annotation.l1.clock_gettime.ChaosClockGettimeEperm}, {@link com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEperm},
- * {@link com.macstab.chaos.time.annotation.l1.usleep.ChaosUsleepEperm}) allow targeted injection. Use the wildcard form for system-wide
- * capability-failure testing.
+ * <p>Sibling per-syscall annotations ({@link
+ * com.macstab.chaos.time.annotation.l1.clock_gettime.ChaosClockGettimeEperm}, {@link
+ * com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEperm}, {@link
+ * com.macstab.chaos.time.annotation.l1.usleep.ChaosUsleepEperm}) allow targeted injection. Use the
+ * wildcard form for system-wide capability-failure testing.
  *
  * <h2>Example</h2>
  *

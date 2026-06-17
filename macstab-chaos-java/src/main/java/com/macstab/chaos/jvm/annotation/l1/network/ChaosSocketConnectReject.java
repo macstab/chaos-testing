@@ -62,10 +62,11 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Deep technical dive</h2>
  *
  * <p>The interception targets {@code java.net.Socket#connect(SocketAddress, int)}. Unlike the NIO
- * variant ({@link com.macstab.chaos.jvm.annotation.l1.nio.ChaosNioChannelConnectReject}), which targets {@code SocketChannel.connect()},
- * this annotation targets the blocking {@code Socket} API used by traditional I/O frameworks. The
- * distinction matters: Kafka's Java producer, Zookeeper client, and most JDBC drivers use blocking
- * sockets; Netty and modern reactive clients use NIO channels.
+ * variant ({@link com.macstab.chaos.jvm.annotation.l1.nio.ChaosNioChannelConnectReject}), which
+ * targets {@code SocketChannel.connect()}, this annotation targets the blocking {@code Socket} API
+ * used by traditional I/O frameworks. The distinction matters: Kafka's Java producer, Zookeeper
+ * client, and most JDBC drivers use blocking sockets; Netty and modern reactive clients use NIO
+ * channels.
  *
  * <p>When {@code Socket.connect()} throws, the socket's state remains {@code Socket.isConnected()
  * == false}; the socket is not closed; callers may attempt to call {@code connect()} again on the

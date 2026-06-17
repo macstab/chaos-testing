@@ -62,9 +62,10 @@ import com.macstab.chaos.jvm.api.OperationType;
  * <h2>Deep technical dive</h2>
  *
  * <p>The interception targets {@code java.net.ServerSocket#accept()}, the blocking-socket server
- * API. Unlike {@link com.macstab.chaos.jvm.annotation.l1.nio.ChaosNioChannelAcceptDelay} which targets {@code ServerSocketChannel.accept()}
- * used by NIO-based frameworks (Netty, Undertow), this annotation targets the blocking API used by
- * Tomcat BIO (pre-NIO), embedded Zookeeper servers, and custom server socket implementations.
+ * API. Unlike {@link com.macstab.chaos.jvm.annotation.l1.nio.ChaosNioChannelAcceptDelay} which
+ * targets {@code ServerSocketChannel.accept()} used by NIO-based frameworks (Netty, Undertow), this
+ * annotation targets the blocking API used by Tomcat BIO (pre-NIO), embedded Zookeeper servers, and
+ * custom server socket implementations.
  *
  * <p>{@code ServerSocket.accept()} blocks in the OS {@code accept(2)} syscall until a connection is
  * available. The chaos delay fires before this syscall, blocking the calling thread in the JVM

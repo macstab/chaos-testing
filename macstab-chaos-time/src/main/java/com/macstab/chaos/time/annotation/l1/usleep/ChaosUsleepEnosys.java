@@ -64,9 +64,10 @@ import com.macstab.chaos.time.model.TimeSelector;
  * Most modern applications prefer {@code nanosleep} or {@code clock_nanosleep}; this annotation is
  * most useful for testing legacy code paths or embedded C libraries bundled in JNI shims.
  *
- * <p>Sibling annotations: {@link com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEnosys} applies the same injection to the modern
- * {@code nanosleep} interface; {@link ChaosUsleepEintr} targets the common signal-interruption
- * case.
+ * <p>Sibling annotations: {@link
+ * com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEnosys} applies the same injection
+ * to the modern {@code nanosleep} interface; {@link ChaosUsleepEintr} targets the common
+ * signal-interruption case.
  *
  * <h2>Example</h2>
  *

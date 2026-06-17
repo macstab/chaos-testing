@@ -84,7 +84,8 @@ import com.macstab.chaos.jvm.api.OperationType;
  *
  * <p>Apache HttpClient 4.x uses blocking sockets via its {@code PlainConnectionSocketFactory} and
  * {@code SSLConnectionSocketFactory}; both delegate to {@code Socket.connect()}. HttpClient 5 and
- * async clients use NIO channels; for those, use {@link com.macstab.chaos.jvm.annotation.l1.nio.ChaosNioChannelConnectDelay} instead.
+ * async clients use NIO channels; for those, use {@link
+ * com.macstab.chaos.jvm.annotation.l1.nio.ChaosNioChannelConnectDelay} instead.
  *
  * <h2>Example</h2>
  *

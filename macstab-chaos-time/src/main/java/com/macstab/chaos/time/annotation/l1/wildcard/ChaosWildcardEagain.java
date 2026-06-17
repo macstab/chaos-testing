@@ -22,8 +22,10 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code WILDCARD}, errno = {@code
  * EAGAIN}) tuple. The {@code WILDCARD} selector matches all three interposed time syscalls
- * simultaneously — equivalent to applying {@link com.macstab.chaos.time.annotation.l1.clock_gettime.ChaosClockGettimeEagain}, {@link
- * com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEagain}, and {@link com.macstab.chaos.time.annotation.l1.usleep.ChaosUsleepEagain} in a single annotation. No runtime
+ * simultaneously — equivalent to applying {@link
+ * com.macstab.chaos.time.annotation.l1.clock_gettime.ChaosClockGettimeEagain}, {@link
+ * com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEagain}, and {@link
+ * com.macstab.chaos.time.annotation.l1.usleep.ChaosUsleepEagain} in a single annotation. No runtime
  * selector-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
@@ -76,9 +78,11 @@ import com.macstab.chaos.time.model.TimeSelector;
  * that catches {@code EAGAIN} on {@code nanosleep} and retries via {@code usleep} will encounter
  * the same error, fully exercising the no-fallback-available code path.
  *
- * <p>Sibling per-syscall annotations ({@link com.macstab.chaos.time.annotation.l1.clock_gettime.ChaosClockGettimeEagain}, {@link
- * com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEagain}, {@link com.macstab.chaos.time.annotation.l1.usleep.ChaosUsleepEagain}) allow targeted injection to a single syscall
- * when a narrower test scope is needed.
+ * <p>Sibling per-syscall annotations ({@link
+ * com.macstab.chaos.time.annotation.l1.clock_gettime.ChaosClockGettimeEagain}, {@link
+ * com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEagain}, {@link
+ * com.macstab.chaos.time.annotation.l1.usleep.ChaosUsleepEagain}) allow targeted injection to a
+ * single syscall when a narrower test scope is needed.
  *
  * <h2>Example</h2>
  *

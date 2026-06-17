@@ -68,7 +68,8 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * <p>Sibling annotation: {@link ChaosNanosleepEintr} cuts the sleep short instead of extending it;
  * combining both annotations exercises both the under-sleep and over-sleep dimensions. {@link
- * com.macstab.chaos.time.annotation.l1.wildcard.ChaosWildcardLatency} applies the same delay to all interposed time syscalls simultaneously.
+ * com.macstab.chaos.time.annotation.l1.wildcard.ChaosWildcardLatency} applies the same delay to all
+ * interposed time syscalls simultaneously.
  *
  * <h2>Example</h2>
  *

@@ -81,10 +81,10 @@ import com.macstab.chaos.jvm.api.OperationType;
  * database as unreachable and stop creating new connections. This annotation lets you inject both
  * types to test both pool behaviours.
  *
- * <p>Unlike {@link com.macstab.chaos.jvm.annotation.l1.nio.ChaosNioChannelReadInjectException} which targets the NIO path used by Netty,
- * this annotation targets the blocking stream path. They are mutually exclusive per connection:
- * Netty connections use NIO channels, JDBC connections use blocking sockets. Applying both
- * annotations simultaneously will fault both families.
+ * <p>Unlike {@link com.macstab.chaos.jvm.annotation.l1.nio.ChaosNioChannelReadInjectException}
+ * which targets the NIO path used by Netty, this annotation targets the blocking stream path. They
+ * are mutually exclusive per connection: Netty connections use NIO channels, JDBC connections use
+ * blocking sockets. Applying both annotations simultaneously will fault both families.
  *
  * <h2>Example</h2>
  *

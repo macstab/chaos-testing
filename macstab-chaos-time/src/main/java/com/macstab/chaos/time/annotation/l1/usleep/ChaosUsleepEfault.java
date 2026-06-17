@@ -65,8 +65,8 @@ import com.macstab.chaos.time.model.TimeSelector;
  * layout (e.g. a thread with a very small stack size that has nearly exhausted its space).
  *
  * <p>Sibling annotations: {@link ChaosUsleepEintr} targets signal interruption — the far more
- * common case; {@link com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEfault} applies the equivalent injection to the modern {@code
- * nanosleep} interface.
+ * common case; {@link com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEfault} applies
+ * the equivalent injection to the modern {@code nanosleep} interface.
  *
  * <h2>Example</h2>
  *

@@ -22,8 +22,10 @@ import com.macstab.chaos.time.model.TimeSelector;
  *
  * <p>L1 libchaos primitive. Encodes exactly one (selector = {@code WILDCARD}, errno = {@code
  * EFAULT}) tuple. The {@code WILDCARD} selector matches all three interposed time syscalls
- * simultaneously — equivalent to applying {@link com.macstab.chaos.time.annotation.l1.clock_gettime.ChaosClockGettimeEfault}, {@link
- * com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEfault}, and {@link com.macstab.chaos.time.annotation.l1.usleep.ChaosUsleepEfault} in a single annotation. No runtime
+ * simultaneously — equivalent to applying {@link
+ * com.macstab.chaos.time.annotation.l1.clock_gettime.ChaosClockGettimeEfault}, {@link
+ * com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEfault}, and {@link
+ * com.macstab.chaos.time.annotation.l1.usleep.ChaosUsleepEfault} in a single annotation. No runtime
  * selector-errno validation is needed.
  *
  * <h2>What chaos this applies</h2>
@@ -69,9 +71,11 @@ import com.macstab.chaos.time.model.TimeSelector;
  * but may not check for {@code EFAULT} specifically; injecting it exercises any assumption in the
  * JVM's native code that the output buffer is always populated after a successful return.
  *
- * <p>Sibling per-syscall annotations ({@link com.macstab.chaos.time.annotation.l1.clock_gettime.ChaosClockGettimeEfault}, {@link
- * com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEfault}, {@link com.macstab.chaos.time.annotation.l1.usleep.ChaosUsleepEfault}) allow targeted injection to individual
- * syscalls.
+ * <p>Sibling per-syscall annotations ({@link
+ * com.macstab.chaos.time.annotation.l1.clock_gettime.ChaosClockGettimeEfault}, {@link
+ * com.macstab.chaos.time.annotation.l1.nanosleep.ChaosNanosleepEfault}, {@link
+ * com.macstab.chaos.time.annotation.l1.usleep.ChaosUsleepEfault}) allow targeted injection to
+ * individual syscalls.
  *
  * <h2>Example</h2>
  *
