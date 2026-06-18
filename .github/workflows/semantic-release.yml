@@ -1,0 +1,97 @@
+name: Semantic Release
+
+on:
+  workflow_run:
+    workflows: ["Build & Test"]
+    types:
+      - completed
+    branches:
+      - main
+
+# CRITICAL: serialize semantic-release runs - parallel runs produce duplicate tags.
+concurrency:
+  group: semantic-release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Debug workflow_run context
+        run: |
+          echo "=== Workflow Run Context ==="
+          echo "head_branch: ${{ github.event.workflow_run.head_branch }}"
+          echo "head_sha:    ${{ github.event.workflow_run.head_sha }}"
+          echo "github.ref:  ${{ github.ref }}"
+          echo "github.sha:  ${{ github.sha }}"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify correct commit
+        run: |
+          EXPECTED="${{ github.event.workflow_run.head_sha }}"
+          ACTUAL=$(git rev-parse HEAD)
+          if [ "${ACTUAL}" != "${EXPECTED}" ]; then
+            echo "ERROR: wrong commit checked out (expected ${EXPECTED}, got ${ACTUAL})"
+            exit 1
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install semantic-release
+        run: |
+          npm install -g \
+            semantic-release@23 \
+            @semantic-release/git@10 \
+            @semantic-release/changelog@6 \
+            @semantic-release/github@10 \
+            conventional-changelog-conventionalcommits@7
+
+      - name: Run semantic-release
+        uses: docker://macstab/semantic-release-maven-gradle-nodejs-python-git-jq:1.5.2-slim
+        if: github.ref == 'refs/heads/main'
+        with:
+          entrypoint: /bin/sh
+          workdir: /home/runner/work/${{ github.repository }}/${{ github.repository }}
+          branches: 'main'
+          args: -c "pwd && cp /configs/$CONFIG_FILE .releaserc && git config --global --add safe.directory $GITHUB_WORKSPACE && npx semantic-release --branches $RELEASE_BRANCH"
+        env:
+          GITHUB_TOKEN: ${{ secrets.BOT_GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_ENV: production
+          GH_URL: https://github.com/${{ github.repository }}.git
+          RELEASE_BRANCH: main
+          CONFIG_FILE: .releaserc-gradle.json
+          DEBUG: semantic-release:*
+
+      - name: Merge main -> develop
+        uses: docker://macstab/semantic-release-maven-gradle-nodejs-python-git-jq:1.5.2-slim
+        if: ${{!startsWith(github.ref, 'refs/tags/') && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+        with:
+          entrypoint: /bin/sh
+          workdir: /home/runner/work/${{ github.repository }}/${{ github.repository }}
+          args: "-c \"set -x && git config --global --add safe.directory $GITHUB_WORKSPACE && git config --global user.email '${{ secrets.BOT_USER_EMAIL }}' && git config --global user.name '${{ secrets.BOT_USER_NAME }}' && git remote set-url origin https://$GH_USERNAME:$GH_PASSWORD@github.com/${{ github.repository }}.git && git fetch --all --tags && git checkout ${INPUT_FROM_BRANCH} && git pull origin ${INPUT_FROM_BRANCH} && TAG_NAME=`git describe --tags --abbrev=0 2>/dev/null` && echo Release tag is $TAG_NAME && test -n \"$TAG_NAME\" || exit 0 && COMMIT_HASH=`git rev-parse HEAD` && echo Commit hash is $COMMIT_HASH && git checkout ${INPUT_TARGET_BRANCH} && git pull origin ${INPUT_TARGET_BRANCH} && (git cherry-pick -Xtheirs $COMMIT_HASH --allow-empty || git cherry-pick --skip) && git push https://$GH_USERNAME:$GH_PASSWORD@github.com/${{ github.repository }}.git ${INPUT_TARGET_BRANCH} \""
+        env:
+          INPUT_FROM_BRANCH: 'main'
+          INPUT_TARGET_BRANCH: 'develop'
+          GH_USERNAME: ${{ secrets.BOT_USER_NAME }}
+          GH_PASSWORD: ${{ secrets.BOT_GITHUB_TOKEN }}
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: github-actions[bot]@users.noreply.github.com

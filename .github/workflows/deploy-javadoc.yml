@@ -1,0 +1,63 @@
+name: Deploy Javadoc to GitHub Pages
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '25'
+          cache: 'gradle'
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build aggregated Javadoc
+        run: ./gradlew aggregatedJavadoc --no-daemon --stacktrace
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+            echo "IS_TAG=true" >> "$GITHUB_OUTPUT"
+          else
+            # Manual dispatch: no tag available, only refresh latest/ from current HEAD.
+            echo "IS_TAG=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy versioned Javadoc
+        if: steps.version.outputs.IS_TAG == 'true'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./build/docs/aggregated-javadoc
+          destination_dir: ${{ steps.version.outputs.VERSION }}
+          keep_files: true
+
+      - name: Deploy latest alias
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./build/docs/aggregated-javadoc
+          destination_dir: latest
+          keep_files: true

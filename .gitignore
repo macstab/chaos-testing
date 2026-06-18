@@ -1,0 +1,348 @@
+# Macstab Chaos Testing Framework — .gitignore
+# Enterprise-Grade Ignore Patterns for Java/Gradle/Docker/Dev Container Projects
+# Maintained by: Christian Schnapka, Principal+ Engineer
+# Last Updated: 2026-03-21
+
+# ============================================================================
+# BUILD ARTIFACTS
+# ============================================================================
+
+# Gradle build outputs
+build/
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+gradle-app.setting
+
+# Maven build outputs (if dual build support added)
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# Java compiled classes
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+
+# JVM crash dumps
+hs_err_pid*
+replay_pid*
+
+# ============================================================================
+# IDE & EDITOR FILES
+# ============================================================================
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+.idea_modules/
+atlassian-ide-plugin.xml
+
+# Eclipse
+.classpath
+.project
+.settings/
+.metadata/
+bin/
+tmp/
+*.tmp
+*.bak
+*.swp
+*~.nib
+local.properties
+.loadpath
+.recommenders
+.factorypath
+
+# VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+*.code-workspace
+
+# VSCode Remote Containers
+.vscode-server/
+.vscode-test/
+
+# NetBeans
+nbproject/private/
+nbbuild/
+dist/
+nbdist/
+.nb-gradle/
+
+# ============================================================================
+# OPERATING SYSTEM FILES
+# ============================================================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.directory
+.Trash-*
+.nfs*
+
+# ============================================================================
+# DOCKER & TESTCONTAINERS
+# ============================================================================
+
+# Testcontainers cache
+.testcontainers/
+
+# Docker Compose override files (local development)
+docker-compose.override.yml
+docker-compose.local.yml
+
+# Docker build cache
+.dockerignore.local
+
+# Testcontainers Ryuk (reaper container)
+**/testcontainers-ryuk.sock
+
+# ============================================================================
+# DEV CONTAINER ARTIFACTS
+# ============================================================================
+
+# Dev container build cache
+.devcontainer/.build/
+
+# Dev container user settings (personal overrides)
+.devcontainer/devcontainer.local.json
+
+# Dev container Docker Compose overrides
+.devcontainer/docker-compose.override.yml
+
+# VSCode Remote Containers workspace storage
+.vscode-remote/
+
+# Cached dev container images
+.devcontainer/.image-cache/
+
+# Dev container logs
+.devcontainer/logs/
+
+# ============================================================================
+# TESTING & COVERAGE
+# ============================================================================
+
+# JUnit test reports
+**/build/test-results/
+**/build/reports/tests/
+
+# JaCoCo coverage reports
+**/build/jacoco/
+**/build/reports/jacoco/
+jacoco.exec
+
+# Spotless formatting cache
+.spotless/
+
+# Test container logs (Docker)
+testcontainers-*.log
+
+# ============================================================================
+# SECURITY & SECRETS
+# ============================================================================
+
+# Credentials and secrets
+*.key
+*.pem
+*.p12
+*.keystore
+*.jks
+*.truststore
+secrets/
+.env.local
+.env.*.local
+
+# GPG keys (signing)
+secring.gpg
+pubring.gpg
+
+# Gradle signing properties
+gradle.properties.local
+signing.properties
+
+# ============================================================================
+# DOCUMENTATION BUILD ARTIFACTS
+# ============================================================================
+
+# Javadoc output
+**/build/docs/javadoc/
+
+# AsciiDoc generated files
+**/build/asciidoc/
+
+# Markdown preview cache
+.markdown-preview/
+
+# PlantUML generated images (if auto-generated)
+# Keep source .puml files, ignore generated .png
+**/*.puml.png
+**/*.puml.svg
+
+# ============================================================================
+# LOGS & TEMPORARY FILES
+# ============================================================================
+
+# Log files
+*.log
+logs/
+*.log.*
+*.log.gz
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+
+# PID files
+*.pid
+
+# Lock files
+*.lock
+!gradle-wrapper.jar.lock
+
+# ============================================================================
+# PERFORMANCE & PROFILING
+# ============================================================================
+
+# JMH benchmarks
+jmh-result.json
+**/build/reports/jmh/
+
+# JProfiler
+*.jpx
+
+# YourKit
+*.hprof
+*.snapshots
+
+# Java Flight Recorder
+*.jfr
+
+# VisualVM
+*.nps
+
+# ============================================================================
+# PACKAGE MANAGER CACHES
+# ============================================================================
+
+# Node.js (if frontend tooling added)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# ============================================================================
+# CI/CD ARTIFACTS
+# ============================================================================
+
+# GitHub Actions cache
+.github/.cache/
+
+# GitLab CI cache
+.gitlab-ci-cache/
+
+# Jenkins workspace
+.jenkins/
+
+# Circle CI cache
+.circleci/.cache/
+
+# ============================================================================
+# CUSTOM PROJECT ARTIFACTS
+# ============================================================================
+
+# Chaos testing output
+chaos-test-results/
+network-chaos-logs/
+
+# Container inspection dumps
+container-inspect-*.json
+
+# Performance test results
+performance-results/
+
+# Stress test outputs
+stress-test-*.log
+
+# ============================================================================
+# EXCEPTIONS (Files to KEEP in Git)
+# ============================================================================
+
+# Keep Gradle wrapper JAR (required for builds)
+!gradle/wrapper/gradle-wrapper.jar
+
+# Keep VSCode workspace settings (team-shared)
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# Keep dev container configuration (main file)
+!.devcontainer/devcontainer.json
+!.devcontainer/docker-compose.yml
+!.devcontainer/Dockerfile
+
+# Keep README files everywhere
+!**/README.md
+!**/README.adoc
+
+# Keep documentation images (manually created)
+!docs/**/*.png
+!docs/**/*.svg
+!docs/**/*.jpg
+
+# ============================================================================
+# END OF FILE
+# ============================================================================

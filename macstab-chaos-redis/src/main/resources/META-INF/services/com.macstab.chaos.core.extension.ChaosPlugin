@@ -1,0 +1,4 @@
+# RedisPlugin is intentionally NOT registered here.
+# RedisContainerExtension (via @ExtendWith on @RedisStandalone) owns the full
+# standalone Redis container lifecycle, parameter injection, and INSTANCE.get() access.
+# ChaosTestingExtension is not used for Redis standalone containers.

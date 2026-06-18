@@ -1,0 +1,1196 @@
+/* (C)2026 Christian Schnapka / Macstab GmbH */
+package com.macstab.chaos.core.extension;
+
+import java.lang.annotation.Annotation;
+import java.lang.reflect.Parameter;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.ServiceLoader;
+
+import org.junit.jupiter.api.extension.AfterAllCallback;
+import org.junit.jupiter.api.extension.AfterEachCallback;
+import org.junit.jupiter.api.extension.BeforeAllCallback;
+import org.junit.jupiter.api.extension.BeforeEachCallback;
+import org.junit.jupiter.api.extension.ExtensionConfigurationException;
+import org.junit.jupiter.api.extension.ExtensionContext;
+import org.junit.jupiter.api.extension.ParameterContext;
+import org.junit.jupiter.api.extension.ParameterResolutionException;
+import org.junit.jupiter.api.extension.ParameterResolver;
+import org.testcontainers.containers.GenericContainer;
+
+import com.macstab.chaos.core.annotation.ChaosTest;
+import com.macstab.chaos.core.annotation.Resources;
+import com.macstab.chaos.core.annotation.SyscallLevelChaos;
+import com.macstab.chaos.core.exception.PluginRegistrationException;
+import com.macstab.chaos.core.syscall.LibchaosLib;
+import com.macstab.chaos.core.syscall.LibchaosTransport;
+import com.macstab.chaos.core.util.ResourceParser;
+
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * Universal chaos testing extension with plugin-based container support.
+ *
+ * <p><strong>Purpose:</strong> Single extension that handles lifecycle (beforeAll/afterAll),
+ * resource constraints ({@code @Resources}), and plugin orchestration for ALL container types.
+ * Eliminates 10× extension duplication (Redis, Postgres, Mongo, etc.).
+ *
+ * <p><strong>Architecture:</strong>
+ *
+ * <pre>
+ * ChaosTestingExtension (1 extension, universal)
+ *     ↓ discovers
+ * ChaosPlugin (N plugins, container-specific)
+ *     ↓ creates
+ * GenericContainer (Docker containers)
+ * </pre>
+ *
+ * <p><strong>Auto-Enable via Meta-Annotation:</strong> This extension is enabled via {@link
+ * ChaosTest} meta-annotation. Container annotations ({@code @RedisStandalone}, etc.) extend
+ * {@code @ChaosTest}, which implicitly registers this extension. Users never write
+ * {@code @ExtendWith} manually.
+ *
+ * <p><strong>Plugin Discovery:</strong> Plugins are discovered via Java ServiceLoader at static
+ * initialization time. Register plugins in {@code
+ * META-INF/services/com.macstab.chaos.core.extension.ChaosPlugin}.
+ *
+ * <p><strong>Resource Constraints:</strong> Applies {@code @Resources} annotation (memory, CPU,
+ * disk) to all containers. Platform-aware: disk constraints Linux-only, warns on macOS/Windows.
+ *
+ * <p><strong>Known limitations:</strong>
+ *
+ * <ul>
+ *   <li><em>{@code @Nested} classes</em> — JUnit 5 fires a separate {@code beforeAll}/{@code
+ *       afterAll} for each {@code @Nested} class. The extension scans {@code
+ *       context.getRequiredTestClass()}, which for a nested class is the nested class itself, not
+ *       the enclosing class. Container annotations and L1 chaos annotations placed on the
+ *       <em>outer</em> class are therefore silently ignored when running inside a {@code @Nested}
+ *       class. Place container and chaos annotations directly on the nested class if it needs its
+ *       own containers.
+ *   <li><em>Superclass annotations</em> — annotations declared on superclasses are not scanned.
+ *       Annotate the concrete test class directly.
+ * </ul>
+ *
+ * <p><strong>Example Usage (User Never Sees This Extension):</strong>
+ *
+ * <pre>{@code
+ * @RedisStandalone              // Implicitly enables ChaosTestingExtension (via @ChaosTest)
+ * @Resources(memory="512M")      // Applied by this extension
+ * class RedisTest {
+ *
+ *   @Test
+ *   void test(RedisConnectionInfo info) {
+ *     // Container started by this extension
+ *     // Resources applied by this extension
+ *     // Connection info injected by this extension
+ *   }
+ * }
+ * }</pre>
+ *
+ * @author Christian Schnapka - Macstab GmbH
+ * @since 1.0
+ * @see ChaosTest
+ * @see ChaosPlugin
+ * @see Resources
+ */
+@Slf4j
+public final class ChaosTestingExtension
+    implements BeforeAllCallback,
+        AfterAllCallback,
+        BeforeEachCallback,
+        AfterEachCallback,
+        ParameterResolver {
+
+  /** Creates a chaos testing extension instance (used by JUnit 5 SPI). */
+  public ChaosTestingExtension() {}
+
+  private static final ExtensionContext.Namespace NAMESPACE =
+      ExtensionContext.Namespace.create(ChaosTestingExtension.class);
+
+  private static final String CONTAINERS_KEY = "chaos-containers";
+
+  /** Persistent L1 handles (class-scope + field-scope) — cleaned up in {@code afterAll}. */
+  private static final String L1_PERSISTENT_HANDLES_KEY = "chaos-l1-persistent-handles";
+
+  private static final String L1_METHOD_HANDLES_KEY = "chaos-l1-method-handles";
+
+  /** Persistent handles suspended by a method-override — re-applied in {@code afterEach}. */
+  private static final String L1_SUSPENDED_HANDLES_KEY = "chaos-l1-suspended-handles";
+
+  private static final String L1_REPORT_KEY = "chaos-l1-report";
+
+  /** Persistent L2 handles (class-scope) — cleaned up in {@code afterAll}. */
+  private static final String L2_PERSISTENT_HANDLES_KEY = "chaos-l2-persistent-handles";
+
+  private static final String L2_METHOD_HANDLES_KEY = "chaos-l2-method-handles";
+
+  /** Persistent L3 handles (class-scope) — cleaned up in {@code afterAll}. */
+  private static final String L3_PERSISTENT_HANDLES_KEY = "chaos-l3-persistent-handles";
+
+  private static final String L3_METHOD_HANDLES_KEY = "chaos-l3-method-handles";
+
+  private static final Map<Class<? extends Annotation>, ChaosPlugin<?>> PLUGINS = new HashMap<>();
+
+  // ThreadLocal storage for programmatic access (by annotation type)
+  private static final ThreadLocal<Map<Class<? extends Annotation>, Map<String, Object>>>
+      CONNECTION_INFO_BY_ANNOTATION = ThreadLocal.withInitial(HashMap::new);
+
+  // ThreadLocal storage for unified access (by base interface type)
+  private static final ThreadLocal<Map<Class<?>, Map<String, Object>>>
+      CONNECTION_INFO_BY_BASE_TYPE = ThreadLocal.withInitial(HashMap::new);
+
+  static {
+    discoverPlugins();
+  }
+
+  @SuppressWarnings("rawtypes")
+  private static void discoverPlugins() {
+    log.info("Discovering container plugins via ServiceLoader...");
+
+    final ServiceLoader<ChaosPlugin> loader = ServiceLoader.load(ChaosPlugin.class);
+
+    for (final ChaosPlugin plugin : loader) {
+      try {
+        final Class<? extends Annotation> annotationType = plugin.annotationType();
+
+        if (PLUGINS.containsKey(annotationType)) {
+          final ChaosPlugin<?> existing = PLUGINS.get(annotationType);
+          throw new PluginRegistrationException(
+              String.format(
+                  "Duplicate plugin registration for @%s: %s and %s",
+                  annotationType.getSimpleName(),
+                  existing.getClass().getName(),
+                  plugin.getClass().getName()));
+        }
+
+        PLUGINS.put(annotationType, plugin);
+        log.debug(
+            "Registered plugin: {} for @{}",
+            plugin.getClass().getSimpleName(),
+            annotationType.getSimpleName());
+
+      } catch (final Exception e) {
+        log.error("Failed to register plugin: {}", plugin.getClass().getName(), e);
+        throw new PluginRegistrationException(
+            "Plugin registration failed for " + plugin.getClass().getName(), e);
+      }
+    }
+
+    if (PLUGINS.isEmpty()) {
+      log.warn(
+          "No container plugins discovered. Did you add META-INF/services entry for ChaosPlugin?");
+    } else {
+      log.info(
+          "Discovered {} container plugin(s): {}",
+          PLUGINS.size(),
+          PLUGINS.values().stream().map(p -> p.getClass().getSimpleName()).toList());
+    }
+  }
+
+  @Override
+  public void beforeAll(final ExtensionContext context) throws Exception {
+    log.debug(
+        "ChaosTestingExtension.beforeAll() for test class: {}",
+        context.getRequiredTestClass().getSimpleName());
+
+    final List<ContainerInstance> containers = new ArrayList<>();
+
+    final Class<?> testClass = context.getRequiredTestClass();
+    final Resources resourcesAnnotation = testClass.getAnnotation(Resources.class);
+    final SyscallLevelChaos syscallChaosAnnotation =
+        testClass.getAnnotation(SyscallLevelChaos.class);
+    final LibchaosLib[] libsToPrepare =
+        syscallChaosAnnotation == null ? new LibchaosLib[0] : syscallChaosAnnotation.value();
+
+    // @JvmAgentChaos detection — reflective so chaos-core stays free of chaos-java compile dep.
+    final boolean prepareJvmAgent = hasJvmAgentChaosAnnotation(testClass);
+
+    // Extract all container annotations (including repeatable ones)
+    final List<Annotation> containerAnnotations = extractContainerAnnotations(testClass);
+
+    for (final Annotation annotation : containerAnnotations) {
+      final ChaosPlugin<?> plugin = PLUGINS.get(annotation.annotationType());
+
+      if (plugin != null) {
+        log.info(
+            "Creating container for @{} in test class {}",
+            annotation.annotationType().getSimpleName(),
+            testClass.getSimpleName());
+
+        final ContainerInstance instance =
+            createContainerInstance(
+                plugin, annotation, resourcesAnnotation, libsToPrepare, prepareJvmAgent);
+        containers.add(instance);
+      }
+    }
+
+    if (containers.isEmpty()) {
+      log.debug("No container annotations found on test class: {}", testClass.getSimpleName());
+    }
+
+    context.getStore(NAMESPACE).put(CONTAINERS_KEY, containers);
+    log.debug(
+        "beforeAll: stored {} containers in context {}", containers.size(), context.getUniqueId());
+
+    applyClassLevelL1Annotations(context, containers);
+    applyClassLevelL2Annotations(context, containers);
+    applyClassLevelL3Annotations(context, containers);
+  }
+
+  /**
+   * Walks the test class and its fields for L1 chaos annotations (those carrying {@link ChaosL1})
+   * and applies each via its declared {@link L1Translator}. Called once per test class after all
+   * containers have been started. Both class-scope and field-scope handles are stored together as
+   * "persistent" handles cleaned up in {@code afterAll}.
+   *
+   * <p>Priority: field > class. Class-level rules that conflict with a field-level rule (same
+   * annotation type, same container) are permanently displaced — field rules win for the entire
+   * test class lifetime. Within a test method, method-level rules take highest priority and
+   * temporarily suspend whichever persistent rule they conflict with (restored in {@code
+   * afterEach}).
+   *
+   * @param context class-scope extension context
+   * @param containers containers started for this test class
+   */
+  private void applyClassLevelL1Annotations(
+      final ExtensionContext context, final List<ContainerInstance> containers) {
+
+    final ChaosApplicationReport report = new ChaosApplicationReport();
+    context.getStore(NAMESPACE).put(L1_REPORT_KEY, report);
+
+    final Class<?> testClass = context.getRequiredTestClass();
+    final List<L1AnnotationProcessor.ContainerHandle> handles = toL1ContainerHandles(containers);
+
+    // 1. Lowest priority: class-level (mutable — field overrides may shrink it below)
+    final List<L1AnnotationProcessor.AppliedL1> classHandles =
+        new ArrayList<>(L1AnnotationProcessor.applyClassLevel(testClass, handles, report));
+
+    // 2. Higher priority: field-level — permanently displaces conflicting class rules in-place
+    final List<L1AnnotationProcessor.AppliedL1> fieldHandles =
+        L1AnnotationProcessor.applyFieldLevel(
+            testClass, handles, PLUGINS.keySet(), classHandles, report);
+
+    // Persistent = surviving class rules + field rules (both cleaned up in afterAll)
+    final List<L1AnnotationProcessor.AppliedL1> persistent = new ArrayList<>(classHandles);
+    persistent.addAll(fieldHandles);
+
+    context.getStore(NAMESPACE).put(L1_PERSISTENT_HANDLES_KEY, persistent);
+
+    if (!persistent.isEmpty()) {
+      log.info(
+          "Applied {} persistent L1 chaos rule(s) on test class {} ({} class-scope, {} field-scope)",
+          persistent.size(),
+          testClass.getSimpleName(),
+          classHandles.size(),
+          fieldHandles.size());
+    }
+  }
+
+  /**
+   * Walks the test class for L2 scenario annotations (those carrying {@link ChaosL2}) and applies
+   * each via its declared {@link L2Composer}. Called once per test class at {@code beforeAll} after
+   * all containers have been started and L1 annotations applied.
+   */
+  private void applyClassLevelL2Annotations(
+      final ExtensionContext context, final List<ContainerInstance> containers) {
+
+    ChaosApplicationReport report =
+        context.getStore(NAMESPACE).get(L1_REPORT_KEY, ChaosApplicationReport.class);
+    if (report == null) {
+      report = new ChaosApplicationReport();
+      context.getStore(NAMESPACE).put(L1_REPORT_KEY, report);
+    }
+    final Class<?> testClass = context.getRequiredTestClass();
+    final List<L1AnnotationProcessor.ContainerHandle> handles = toL1ContainerHandles(containers);
+
+    final List<L2AnnotationProcessor.AppliedL2> l2Handles =
+        L2AnnotationProcessor.applyClassLevel(testClass, handles, report);
+
+    context.getStore(NAMESPACE).put(L2_PERSISTENT_HANDLES_KEY, l2Handles);
+
+    if (!l2Handles.isEmpty()) {
+      log.info(
+          "Applied {} class-scope L2 chaos scenario(s) on test class {}",
+          l2Handles.size(),
+          testClass.getSimpleName());
+    }
+  }
+
+  /**
+   * Walks the test class for L3 incident scenario annotations (those carrying {@link ChaosL3}) and
+   * applies each via its declared {@link L3Composer}. Called once per test class at {@code
+   * beforeAll} after L2 annotations have been applied.
+   */
+  private void applyClassLevelL3Annotations(
+      final ExtensionContext context, final List<ContainerInstance> containers) {
+
+    ChaosApplicationReport report =
+        context.getStore(NAMESPACE).get(L1_REPORT_KEY, ChaosApplicationReport.class);
+    if (report == null) {
+      report = new ChaosApplicationReport();
+      context.getStore(NAMESPACE).put(L1_REPORT_KEY, report);
+    }
+    final Class<?> testClass = context.getRequiredTestClass();
+    final List<L1AnnotationProcessor.ContainerHandle> handles = toL1ContainerHandles(containers);
+
+    final List<L3AnnotationProcessor.AppliedL3> l3Handles =
+        L3AnnotationProcessor.applyClassLevel(testClass, handles, report);
+
+    context.getStore(NAMESPACE).put(L3_PERSISTENT_HANDLES_KEY, l3Handles);
+
+    if (!l3Handles.isEmpty()) {
+      log.info(
+          "Applied {} class-scope L3 incident scenario(s) on test class {}",
+          l3Handles.size(),
+          testClass.getSimpleName());
+    }
+  }
+
+  /**
+   * Walks the {@code @Test} method for L1 annotations and applies each via its declared translator.
+   * Method-scope rules that conflict with an active persistent (class/field-scope) rule suspend the
+   * persistent rule for the duration of this method; it is restored in {@code afterEach}.
+   */
+  @Override
+  public void beforeEach(final ExtensionContext context) {
+    @SuppressWarnings("unchecked")
+    final List<ContainerInstance> containers =
+        (List<ContainerInstance>) context.getStore(NAMESPACE).get(CONTAINERS_KEY);
+
+    if (containers == null || containers.isEmpty()) {
+      return;
+    }
+
+    ChaosApplicationReport report =
+        context.getStore(NAMESPACE).get(L1_REPORT_KEY, ChaosApplicationReport.class);
+    if (report == null) {
+      report = new ChaosApplicationReport();
+      context.getStore(NAMESPACE).put(L1_REPORT_KEY, report);
+    }
+
+    @SuppressWarnings("unchecked")
+    final List<L1AnnotationProcessor.AppliedL1> persistent =
+        (List<L1AnnotationProcessor.AppliedL1>)
+            context.getStore(NAMESPACE).get(L1_PERSISTENT_HANDLES_KEY);
+
+    final List<L1AnnotationProcessor.ContainerHandle> handles = toL1ContainerHandles(containers);
+
+    // persistentHandles may be null when no class/field L1s were declared
+    final List<L1AnnotationProcessor.AppliedL1> persistentForSuspension =
+        persistent != null ? persistent : new ArrayList<>();
+
+    final L1AnnotationProcessor.MethodLevelResult result =
+        L1AnnotationProcessor.applyMethodLevelWithSuspension(
+            context.getRequiredTestMethod(), handles, persistentForSuspension, report);
+
+    context.getStore(NAMESPACE).put(L1_METHOD_HANDLES_KEY, result.methodHandles());
+    context.getStore(NAMESPACE).put(L1_SUSPENDED_HANDLES_KEY, result.suspended());
+
+    if (!result.methodHandles().isEmpty()) {
+      log.debug(
+          "Applied {} method-scope L1 rule(s) on {}#{} ({} persistent rule(s) suspended)",
+          result.methodHandles().size(),
+          context.getRequiredTestClass().getSimpleName(),
+          context.getRequiredTestMethod().getName(),
+          result.suspended().size());
+    }
+
+    // Method-scope L2 scenarios
+    final List<L2AnnotationProcessor.AppliedL2> l2MethodHandles =
+        L2AnnotationProcessor.applyMethodLevel(context.getRequiredTestMethod(), handles, report);
+    context.getStore(NAMESPACE).put(L2_METHOD_HANDLES_KEY, l2MethodHandles);
+
+    if (!l2MethodHandles.isEmpty()) {
+      log.debug(
+          "Applied {} method-scope L2 scenario(s) on {}#{}",
+          l2MethodHandles.size(),
+          context.getRequiredTestClass().getSimpleName(),
+          context.getRequiredTestMethod().getName());
+    }
+
+    // Method-scope L3 incident scenarios
+    final List<L3AnnotationProcessor.AppliedL3> l3MethodHandles =
+        L3AnnotationProcessor.applyMethodLevel(context.getRequiredTestMethod(), handles, report);
+    context.getStore(NAMESPACE).put(L3_METHOD_HANDLES_KEY, l3MethodHandles);
+
+    if (!l3MethodHandles.isEmpty()) {
+      log.debug(
+          "Applied {} method-scope L3 incident scenario(s) on {}#{}",
+          l3MethodHandles.size(),
+          context.getRequiredTestClass().getSimpleName(),
+          context.getRequiredTestMethod().getName());
+    }
+  }
+
+  /**
+   * Removes method-scope L1 handles, then restores any persistent (class/field-scope) rules that
+   * were suspended by a method-level override. The restored handles are added back to the
+   * persistent handle list so {@code afterAll} cleans them up correctly.
+   */
+  @Override
+  public void afterEach(final ExtensionContext context) {
+    @SuppressWarnings("unchecked")
+    final List<L1AnnotationProcessor.AppliedL1> methodHandles =
+        (List<L1AnnotationProcessor.AppliedL1>)
+            context.getStore(NAMESPACE).get(L1_METHOD_HANDLES_KEY);
+
+    if (methodHandles != null && !methodHandles.isEmpty()) {
+      final boolean allOk = L1AnnotationProcessor.removeAll(methodHandles);
+      context.getStore(NAMESPACE).remove(L1_METHOD_HANDLES_KEY);
+
+      if (!allOk) {
+        log.warn(
+            "Some method-scope L1 removals failed on {}#{} — persistent rules may have residual state.",
+            context.getRequiredTestClass().getSimpleName(),
+            context.getRequiredTestMethod().getName());
+      }
+    }
+
+    // Restore any persistent rules that were suspended to make room for method overrides
+    @SuppressWarnings("unchecked")
+    final List<L1AnnotationProcessor.AppliedL1> suspended =
+        (List<L1AnnotationProcessor.AppliedL1>)
+            context.getStore(NAMESPACE).get(L1_SUSPENDED_HANDLES_KEY);
+
+    if (suspended != null && !suspended.isEmpty()) {
+      final List<L1AnnotationProcessor.AppliedL1> restored =
+          L1AnnotationProcessor.reapply(suspended);
+      context.getStore(NAMESPACE).remove(L1_SUSPENDED_HANDLES_KEY);
+
+      // Add restored handles back to the persistent list so afterAll cleans them up
+      @SuppressWarnings("unchecked")
+      final List<L1AnnotationProcessor.AppliedL1> persistent =
+          (List<L1AnnotationProcessor.AppliedL1>)
+              context.getStore(NAMESPACE).get(L1_PERSISTENT_HANDLES_KEY);
+      if (persistent != null) {
+        persistent.addAll(restored);
+      }
+
+      if (!restored.isEmpty()) {
+        log.debug(
+            "Restored {} suspended persistent L1 rule(s) after {}#{}",
+            restored.size(),
+            context.getRequiredTestClass().getSimpleName(),
+            context.getRequiredTestMethod().getName());
+      }
+    }
+
+    // Remove method-scope L2 handles
+    @SuppressWarnings("unchecked")
+    final List<L2AnnotationProcessor.AppliedL2> l2MethodHandles =
+        (List<L2AnnotationProcessor.AppliedL2>)
+            context.getStore(NAMESPACE).get(L2_METHOD_HANDLES_KEY);
+
+    if (l2MethodHandles != null && !l2MethodHandles.isEmpty()) {
+      final boolean allOk = L2AnnotationProcessor.removeAll(l2MethodHandles);
+      context.getStore(NAMESPACE).remove(L2_METHOD_HANDLES_KEY);
+
+      if (!allOk) {
+        log.warn(
+            "Some method-scope L2 removals failed on {}#{} — container chaos state may be inconsistent.",
+            context.getRequiredTestClass().getSimpleName(),
+            context.getRequiredTestMethod().getName());
+      }
+    }
+
+    // Remove method-scope L3 handles
+    @SuppressWarnings("unchecked")
+    final List<L3AnnotationProcessor.AppliedL3> l3MethodHandles =
+        (List<L3AnnotationProcessor.AppliedL3>)
+            context.getStore(NAMESPACE).get(L3_METHOD_HANDLES_KEY);
+
+    if (l3MethodHandles != null && !l3MethodHandles.isEmpty()) {
+      final boolean allOk = L3AnnotationProcessor.removeAll(l3MethodHandles);
+      context.getStore(NAMESPACE).remove(L3_METHOD_HANDLES_KEY);
+
+      if (!allOk) {
+        log.warn(
+            "Some method-scope L3 removals failed on {}#{} — container chaos state may be inconsistent.",
+            context.getRequiredTestClass().getSimpleName(),
+            context.getRequiredTestMethod().getName());
+      }
+    }
+  }
+
+  private static List<L1AnnotationProcessor.ContainerHandle> toL1ContainerHandles(
+      final List<ContainerInstance> containers) {
+
+    final List<L1AnnotationProcessor.ContainerHandle> handles = new ArrayList<>(containers.size());
+    for (final ContainerInstance ci : containers) {
+      handles.add(
+          new L1AnnotationProcessor.ContainerHandle(
+              ci.container, extractIdValue(ci.annotation), ci.annotation.annotationType()));
+    }
+    return handles;
+  }
+
+  private static String extractIdValue(final Annotation annotation) {
+    try {
+      final java.lang.reflect.Method idMethod = annotation.annotationType().getMethod("id");
+      final Object v = idMethod.invoke(annotation);
+      return v == null ? "default" : v.toString();
+    } catch (final Exception e) {
+      return "default";
+    }
+  }
+
+  @Override
+  public void afterAll(final ExtensionContext context) {
+    log.debug(
+        "ChaosTestingExtension.afterAll() for test class: {}",
+        context.getRequiredTestClass().getSimpleName());
+
+    try {
+      // Persistent L1 cleanup (class + field scope) BEFORE container stop — rule removal needs a
+      // running container.
+      @SuppressWarnings("unchecked")
+      final List<L1AnnotationProcessor.AppliedL1> persistentHandles =
+          (List<L1AnnotationProcessor.AppliedL1>)
+              context.getStore(NAMESPACE).get(L1_PERSISTENT_HANDLES_KEY);
+      if (persistentHandles != null && !persistentHandles.isEmpty()) {
+        L1AnnotationProcessor.removeAll(persistentHandles);
+      }
+
+      // Persistent L3 cleanup BEFORE container stop — same requirement.
+      @SuppressWarnings("unchecked")
+      final List<L3AnnotationProcessor.AppliedL3> l3PersistentHandles =
+          (List<L3AnnotationProcessor.AppliedL3>)
+              context.getStore(NAMESPACE).get(L3_PERSISTENT_HANDLES_KEY);
+      if (l3PersistentHandles != null && !l3PersistentHandles.isEmpty()) {
+        L3AnnotationProcessor.removeAll(l3PersistentHandles);
+      }
+
+      // Persistent L2 cleanup BEFORE container stop — same requirement.
+      @SuppressWarnings("unchecked")
+      final List<L2AnnotationProcessor.AppliedL2> l2PersistentHandles =
+          (List<L2AnnotationProcessor.AppliedL2>)
+              context.getStore(NAMESPACE).get(L2_PERSISTENT_HANDLES_KEY);
+      if (l2PersistentHandles != null && !l2PersistentHandles.isEmpty()) {
+        L2AnnotationProcessor.removeAll(l2PersistentHandles);
+      }
+
+      final ChaosApplicationReport report =
+          context.getStore(NAMESPACE).get(L1_REPORT_KEY, ChaosApplicationReport.class);
+      if (report != null
+          && (!report.applied().isEmpty()
+              || !report.skipped().isEmpty()
+              || !report.l2Applied().isEmpty()
+              || !report.l3Applied().isEmpty())) {
+        log.info(
+            "Chaos report for {}: {}",
+            context.getRequiredTestClass().getSimpleName(),
+            report.summary());
+      }
+
+      @SuppressWarnings("unchecked")
+      final List<ContainerInstance> containers =
+          (List<ContainerInstance>) context.getStore(NAMESPACE).get(CONTAINERS_KEY);
+
+      if (containers != null) {
+        for (final ContainerInstance instance : containers) {
+          try {
+            log.info(
+                "Stopping container: {}", instance.annotation.annotationType().getSimpleName());
+            instance.container.stop();
+          } catch (final Exception e) {
+            log.warn(
+                "Failed to stop container: {}",
+                instance.annotation.annotationType().getSimpleName(),
+                e);
+          }
+        }
+      }
+    } finally {
+      // CRITICAL: Always clear ThreadLocal to prevent memory leaks
+      CONNECTION_INFO_BY_ANNOTATION.remove();
+      CONNECTION_INFO_BY_BASE_TYPE.remove();
+      log.debug("Cleared ThreadLocal connection info registry");
+    }
+  }
+
+  @Override
+  public boolean supportsParameter(
+      final ParameterContext parameterContext, final ExtensionContext extensionContext)
+      throws ParameterResolutionException {
+
+    final Parameter parameter = parameterContext.getParameter();
+    final Class<?> parameterType = parameter.getType();
+
+    // Support List<T> parameters
+    if (List.class.isAssignableFrom(parameterType)) {
+      final Type genericType = parameter.getParameterizedType();
+      if (genericType instanceof ParameterizedType) {
+        final ParameterizedType pType = (ParameterizedType) genericType;
+        final Type[] typeArgs = pType.getActualTypeArguments();
+        if (typeArgs.length == 1 && typeArgs[0] instanceof Class) {
+          final Class<?> elementType = (Class<?>) typeArgs[0];
+          for (final ChaosPlugin<?> plugin : PLUGINS.values()) {
+            if (plugin.supportedParameterTypes().contains(elementType)) {
+              return true;
+            }
+          }
+        }
+      }
+      return false;
+    }
+
+    // Support single instance parameters
+    for (final ChaosPlugin<?> plugin : PLUGINS.values()) {
+      if (plugin.supportedParameterTypes().contains(parameterType)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  @Override
+  public Object resolveParameter(
+      final ParameterContext parameterContext, final ExtensionContext extensionContext)
+      throws ParameterResolutionException {
+
+    final Parameter parameter = parameterContext.getParameter();
+    final Class<?> parameterType = parameter.getType();
+
+    // Get containers from ExtensionContext.store (populated in beforeAll)
+    @SuppressWarnings("unchecked")
+    final List<ContainerInstance> containers =
+        (List<ContainerInstance>) extensionContext.getStore(NAMESPACE).get(CONTAINERS_KEY);
+
+    log.debug(
+        "resolveParameter: parameterType={}, containers={}, context={}",
+        parameterType.getSimpleName(),
+        containers == null ? "null" : containers.size(),
+        extensionContext.getUniqueId());
+
+    if (containers == null || containers.isEmpty()) {
+      throw new ParameterResolutionException(
+          "No containers found. Did you add container annotation to test class?");
+    }
+
+    // Resolve List<T> parameters
+    if (List.class.isAssignableFrom(parameterType)) {
+      final Type genericType = parameter.getParameterizedType();
+      if (genericType instanceof ParameterizedType) {
+        final ParameterizedType pType = (ParameterizedType) genericType;
+        final Type[] typeArgs = pType.getActualTypeArguments();
+        if (typeArgs.length == 1 && typeArgs[0] instanceof Class) {
+          final Class<?> elementType = (Class<?>) typeArgs[0];
+          final List<Object> matchingInstances = new ArrayList<>();
+
+          for (final ContainerInstance instance : containers) {
+            if (elementType.isAssignableFrom(instance.connectionInfo.getClass())) {
+              matchingInstances.add(instance.connectionInfo);
+            }
+          }
+
+          if (matchingInstances.isEmpty()) {
+            throw new ParameterResolutionException(
+                String.format(
+                    "No container connection info found for List<%s>",
+                    elementType.getSimpleName()));
+          }
+
+          return matchingInstances;
+        }
+      }
+    }
+
+    // Resolve single instance parameters
+    Object matchedInstance = null;
+    int matchCount = 0;
+
+    for (final ContainerInstance instance : containers) {
+      if (parameterType.isAssignableFrom(instance.connectionInfo.getClass())) {
+        matchedInstance = instance.connectionInfo;
+        matchCount++;
+      }
+    }
+
+    if (matchCount == 0) {
+      throw new ParameterResolutionException(
+          String.format(
+              "No container connection info found for parameter type: %s",
+              parameterType.getSimpleName()));
+    }
+
+    if (matchCount > 1) {
+      throw new ParameterResolutionException(
+          String.format(
+              "Multiple containers found for parameter type %s (found: %d). Use List<%s> for multiple instances or specify ID programmatically via INSTANCE.get(\"id\")",
+              parameterType.getSimpleName(), matchCount, parameterType.getSimpleName()));
+    }
+
+    return matchedInstance;
+  }
+
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  private ContainerInstance createContainerInstance(
+      final ChaosPlugin plugin,
+      final Annotation annotation,
+      final Resources resourcesAnnotation,
+      final LibchaosLib[] libsToPrepare,
+      final boolean prepareJvmAgent) {
+
+    try {
+      final GenericContainer<?> container = plugin.createContainer(annotation);
+
+      if (container == null) {
+        throw new ExtensionConfigurationException(
+            String.format(
+                "Plugin %s returned null container for @%s",
+                plugin.getClass().getSimpleName(), annotation.annotationType().getSimpleName()));
+      }
+
+      applyResourceConstraints(container, annotation, resourcesAnnotation);
+      prepareSyscallLevelChaos(container, libsToPrepare);
+      prepareJvmAgentChaos(container, prepareJvmAgent);
+
+      log.info(
+          "Starting container: {} (image: {})",
+          annotation.annotationType().getSimpleName(),
+          container.getDockerImageName());
+      container.start();
+      log.info(
+          "Container started: {} -> {}{}",
+          annotation.annotationType().getSimpleName(),
+          container.getHost(),
+          container.getExposedPorts().isEmpty() ? "" : ":" + container.getFirstMappedPort());
+
+      final Object connectionInfo = plugin.createConnectionInfo(container, annotation);
+
+      if (connectionInfo == null) {
+        throw new ExtensionConfigurationException(
+            String.format(
+                "Plugin %s returned null connection info for @%s",
+                plugin.getClass().getSimpleName(), annotation.annotationType().getSimpleName()));
+      }
+
+      // Store connection info for programmatic access
+      storeConnectionInfo(annotation, connectionInfo);
+
+      return new ContainerInstance(container, annotation, connectionInfo);
+
+    } catch (final IllegalArgumentException e) {
+      throw new ExtensionConfigurationException(
+          String.format(
+              "Invalid configuration in @%s: %s",
+              annotation.annotationType().getSimpleName(), e.getMessage()),
+          e);
+    } catch (final Exception e) {
+      throw new ExtensionConfigurationException(
+          String.format(
+              "Failed to create container for @%s: %s",
+              annotation.annotationType().getSimpleName(), e.getMessage()),
+          e);
+    }
+  }
+
+  /**
+   * Loads the libchaos-* libraries declared via {@code @SyscallLevelChaos} into the container's
+   * pre-start environment. Must run between {@link #applyResourceConstraints} and {@code
+   * container.start()} so that {@code LD_PRELOAD} is set when the container's main process boots.
+   *
+   * <p>{@link LibchaosTransport#prepare} is idempotent and label-guarded — preparing the same lib
+   * twice is a debug-level no-op.
+   *
+   * @param container container being created (not yet started)
+   * @param libsToPrepare libraries to inject; empty array is a no-op
+   */
+  private void prepareSyscallLevelChaos(
+      final GenericContainer<?> container, final LibchaosLib[] libsToPrepare) {
+    if (libsToPrepare.length == 0) {
+      return;
+    }
+    for (final LibchaosLib lib : libsToPrepare) {
+      log.info("Preparing libchaos-{} for container before start", lib.getShortName());
+      new LibchaosTransport(lib).prepare(container);
+    }
+  }
+
+  // ==================== @JvmAgentChaos — reflective bridge to chaos-java ====================
+  // The chaos-java module is an optional consumer of chaos-core; chaos-core must not depend on it
+  // at compile time. We reach for the annotation and the transport class via Class.forName so the
+  // wiring activates only when chaos-java is on the classpath.
+
+  private static final String JVM_AGENT_CHAOS_ANNOTATION_FQN =
+      "com.macstab.chaos.jvm.annotation.JvmAgentChaos";
+  private static final String JVM_AGENT_TRANSPORT_FQN = "com.macstab.chaos.jvm.JavaAgentTransport";
+
+  /**
+   * Reflectively checks whether {@code testClass} carries {@code @JvmAgentChaos}. Returns {@code
+   * false} if chaos-java is not on the classpath.
+   */
+  @SuppressWarnings("unchecked")
+  private boolean hasJvmAgentChaosAnnotation(final Class<?> testClass) {
+    try {
+      final Class<? extends Annotation> annotationClass =
+          (Class<? extends Annotation>) Class.forName(JVM_AGENT_CHAOS_ANNOTATION_FQN);
+      return testClass.isAnnotationPresent(annotationClass);
+    } catch (final ClassNotFoundException e) {
+      return false; // chaos-java not on classpath — annotation cannot have been used
+    }
+  }
+
+  /**
+   * Reflectively instantiates {@code JavaAgentTransport} and calls {@code prepare(container)}
+   * before the container starts — the JVM-agent analogue of {@link #prepareSyscallLevelChaos}.
+   * No-op when {@code prepareJvmAgent} is {@code false}.
+   *
+   * @throws ExtensionConfigurationException if {@code @JvmAgentChaos} is declared but chaos-java is
+   *     not on the classpath (a clear error beats opaque NoClassDefFoundError later)
+   */
+  private void prepareJvmAgentChaos(
+      final GenericContainer<?> container, final boolean prepareJvmAgent) {
+    if (!prepareJvmAgent) {
+      return;
+    }
+    try {
+      final Class<?> transportClass = Class.forName(JVM_AGENT_TRANSPORT_FQN);
+      final Object transport = transportClass.getDeclaredConstructor().newInstance();
+      transportClass.getMethod("prepare", GenericContainer.class).invoke(transport, container);
+      log.info("Prepared chaos-jvm-agent for container before start (driven by @JvmAgentChaos)");
+    } catch (final ClassNotFoundException e) {
+      throw new ExtensionConfigurationException(
+          "@JvmAgentChaos requires macstab-chaos-java on the classpath. "
+              + "Add: testImplementation(\"com.macstab:macstab-chaos-java:${version}\") "
+              + "(or one of the framework wrappers: macstab-chaos-java-junit5 / "
+              + "-spring-boot3 / -spring-boot4 / -micronaut / -quarkus).",
+          e);
+    } catch (final Exception e) {
+      throw new ExtensionConfigurationException(
+          "Failed to prepare chaos-jvm-agent on container via JavaAgentTransport: "
+              + e.getMessage(),
+          e);
+    }
+  }
+
+  private void applyResourceConstraints(
+      final GenericContainer<?> container,
+      final Annotation annotation,
+      final Resources resourcesAnnotation) {
+
+    if (resourcesAnnotation == null) {
+      log.debug(
+          "No @Resources annotation found for @{}", annotation.annotationType().getSimpleName());
+      return;
+    }
+
+    final String memory = resourcesAnnotation.memory();
+    final String cpus = resourcesAnnotation.cpus();
+    final String diskSize = resourcesAnnotation.diskSize();
+
+    if (!memory.isBlank()) {
+      try {
+        final long memoryBytes = ResourceParser.parseMemoryBytes(memory);
+        container.withCreateContainerCmdModifier(
+            cmd -> cmd.getHostConfig().withMemory(memoryBytes));
+        log.info(
+            "Applied memory limit: {} ({} bytes) to @{}",
+            memory,
+            memoryBytes,
+            annotation.annotationType().getSimpleName());
+      } catch (final IllegalArgumentException e) {
+        throw new IllegalArgumentException(
+            String.format(
+                "Invalid memory format in @%s (memory=\"%s\"): %s",
+                annotation.annotationType().getSimpleName(), memory, e.getMessage()),
+            e);
+      }
+    }
+
+    if (!cpus.isBlank()) {
+      try {
+        final long nanoCpus = ResourceParser.parseCpuNanoCpus(cpus);
+        container.withCreateContainerCmdModifier(
+            cmd -> cmd.getHostConfig().withCpuQuota(nanoCpus / 1000L).withCpuPeriod(100000L));
+        log.info(
+            "Applied CPU limit: {} ({} nano-CPUs) to @{}",
+            cpus,
+            nanoCpus,
+            annotation.annotationType().getSimpleName());
+      } catch (final IllegalArgumentException e) {
+        throw new IllegalArgumentException(
+            String.format(
+                "Invalid CPU format in @%s (cpus=\"%s\"): %s",
+                annotation.annotationType().getSimpleName(), cpus, e.getMessage()),
+            e);
+      }
+    }
+
+    if (!diskSize.isBlank()) {
+      try {
+        final String sizeOption = ResourceParser.parseDiskSizeOption(diskSize);
+
+        final String osName = System.getProperty("os.name").toLowerCase(Locale.ROOT);
+        if (osName.contains("linux")) {
+          container.withCreateContainerCmdModifier(
+              cmd -> cmd.getHostConfig().withStorageOpt(Map.of("size", diskSize)));
+          log.info(
+              "Applied disk size limit: {} to @{}",
+              diskSize,
+              annotation.annotationType().getSimpleName());
+        } else {
+          log.warn(
+              "Disk size constraint '{}' ignored (requires Linux + overlay2 driver, detected: {})",
+              diskSize,
+              osName);
+        }
+      } catch (final IllegalArgumentException e) {
+        throw new IllegalArgumentException(
+            String.format(
+                "Invalid disk size format in @%s (diskSize=\"%s\"): %s",
+                annotation.annotationType().getSimpleName(), diskSize, e.getMessage()),
+            e);
+      }
+    }
+  }
+
+  /**
+   * Stores connection info for programmatic access.
+   *
+   * @param annotation container annotation
+   * @param connectionInfo connection info object
+   */
+  private void storeConnectionInfo(final Annotation annotation, final Object connectionInfo) {
+    final Class<? extends Annotation> annotationType = annotation.annotationType();
+    final String id = extractId(annotation);
+
+    // Store by annotation type
+    CONNECTION_INFO_BY_ANNOTATION
+        .get()
+        .computeIfAbsent(annotationType, k -> new LinkedHashMap<>())
+        .put(id, connectionInfo);
+
+    // Store by base interface types
+    for (final Class<?> baseType : getBaseTypes(connectionInfo.getClass())) {
+      CONNECTION_INFO_BY_BASE_TYPE
+          .get()
+          .computeIfAbsent(baseType, k -> new LinkedHashMap<>())
+          .put(id, connectionInfo);
+    }
+  }
+
+  /**
+   * Extracts container id from annotation.
+   *
+   * @param annotation container annotation
+   * @return container id (default: "default")
+   */
+  /**
+   * Extracts all container annotations from test class (handles repeatable annotations).
+   *
+   * @param testClass test class
+   * @return list of container annotations
+   */
+  private List<Annotation> extractContainerAnnotations(final Class<?> testClass) {
+    final List<Annotation> result = new ArrayList<>();
+
+    for (final Annotation annotation : testClass.getAnnotations()) {
+      final Class<? extends Annotation> annotationType = annotation.annotationType();
+
+      // Direct plugin annotation
+      if (PLUGINS.containsKey(annotationType)) {
+        result.add(annotation);
+        continue;
+      }
+
+      // Check if this is a container for repeatable annotations
+      try {
+        final java.lang.reflect.Method valueMethod = annotationType.getMethod("value");
+        final Class<?> returnType = valueMethod.getReturnType();
+
+        if (returnType.isArray()) {
+          final Class<?> componentType = returnType.getComponentType();
+          if (Annotation.class.isAssignableFrom(componentType)
+              && PLUGINS.containsKey(componentType)) {
+            // This is a container annotation (e.g., @RedisStandalones)
+            final Annotation[] repeated = (Annotation[]) valueMethod.invoke(annotation);
+            for (final Annotation repeatedAnnotation : repeated) {
+              result.add(repeatedAnnotation);
+            }
+          }
+        }
+      } catch (final Exception e) {
+        // Not a container annotation, skip
+      }
+    }
+
+    return result;
+  }
+
+  private String extractId(final Annotation annotation) {
+    try {
+      final java.lang.reflect.Method idMethod = annotation.annotationType().getMethod("id");
+      return (String) idMethod.invoke(annotation);
+    } catch (final Exception e) {
+      return "default";
+    }
+  }
+
+  /**
+   * Gets all base interfaces and classes (excluding Object and Annotation).
+   *
+   * @param clazz connection info class
+   * @return set of base types
+   */
+  private static List<Class<?>> getBaseTypes(final Class<?> clazz) {
+    final List<Class<?>> baseTypes = new ArrayList<>();
+
+    for (final Class<?> iface : clazz.getInterfaces()) {
+      if (!iface.equals(Annotation.class)) {
+        baseTypes.add(iface);
+        baseTypes.addAll(getBaseTypes(iface));
+      }
+    }
+
+    final Class<?> superclass = clazz.getSuperclass();
+    if (superclass != null && !superclass.equals(Object.class)) {
+      baseTypes.add(superclass);
+      baseTypes.addAll(getBaseTypes(superclass));
+    }
+
+    return baseTypes;
+  }
+
+  /**
+   * Registers connection info from an external extension (e.g., SentinelContainerExtension).
+   *
+   * <p>Use this when a dedicated JUnit 5 extension manages its own container lifecycle but needs
+   * its connection info accessible via {@link com.macstab.chaos.core.api.ChaosContainers} / {@code
+   * INSTANCE.get()}.
+   *
+   * @param annotationType annotation class (e.g., {@code RedisSentinel.class})
+   * @param id container id
+   * @param connectionInfo connection info object to register
+   */
+  public static void registerExternalConnectionInfo(
+      final Class<? extends Annotation> annotationType,
+      final String id,
+      final Object connectionInfo) {
+
+    CONNECTION_INFO_BY_ANNOTATION
+        .get()
+        .computeIfAbsent(annotationType, k -> new LinkedHashMap<>())
+        .put(id, connectionInfo);
+
+    for (final Class<?> baseType : getBaseTypes(connectionInfo.getClass())) {
+      CONNECTION_INFO_BY_BASE_TYPE
+          .get()
+          .computeIfAbsent(baseType, k -> new LinkedHashMap<>())
+          .put(id, connectionInfo);
+    }
+  }
+
+  /**
+   * Gets connection info by annotation type and id (for programmatic access).
+   *
+   * @param annotationType annotation class
+   * @param id container id
+   * @return connection info object
+   * @throws IllegalStateException if no extension active
+   * @throws java.util.NoSuchElementException if container not found
+   */
+  public static Object getConnectionInfo(
+      final Class<? extends Annotation> annotationType, final String id) {
+
+    final Map<String, Object> byId = CONNECTION_INFO_BY_ANNOTATION.get().get(annotationType);
+
+    if (byId == null) {
+      throw new java.util.NoSuchElementException(
+          String.format("No containers found for @%s", annotationType.getSimpleName()));
+    }
+
+    final Object connectionInfo = byId.get(id);
+
+    if (connectionInfo == null) {
+      throw new java.util.NoSuchElementException(
+          String.format(
+              "No container found for @%s(id=\"%s\")", annotationType.getSimpleName(), id));
+    }
+
+    return connectionInfo;
+  }
+
+  /**
+   * Gets all connection info objects for annotation type.
+   *
+   * @param annotationType annotation class
+   * @return list of connection info objects (empty if none)
+   */
+  public static List<Object> getAllConnectionInfo(
+      final Class<? extends Annotation> annotationType) {
+
+    final Map<String, Object> byId = CONNECTION_INFO_BY_ANNOTATION.get().get(annotationType);
+
+    if (byId == null) {
+      return List.of();
+    }
+
+    return new ArrayList<>(byId.values());
+  }
+
+  /**
+   * Gets all connection info objects implementing base type (unified access).
+   *
+   * @param baseType base interface class
+   * @return list of connection info objects (empty if none)
+   */
+  public static List<Object> getAllConnectionInfoByBaseType(final Class<?> baseType) {
+    final Map<String, Object> byId = CONNECTION_INFO_BY_BASE_TYPE.get().get(baseType);
+
+    if (byId == null) {
+      return List.of();
+    }
+
+    return new ArrayList<>(byId.values());
+  }
+
+  /**
+   * Gets connection info by base type and id (unified access).
+   *
+   * @param baseType base interface class
+   * @param id container id
+   * @return connection info object
+   * @throws java.util.NoSuchElementException if container not found
+   */
+  public static Object getConnectionInfoByBaseType(final Class<?> baseType, final String id) {
+    final Map<String, Object> byId = CONNECTION_INFO_BY_BASE_TYPE.get().get(baseType);
+
+    if (byId == null) {
+      throw new java.util.NoSuchElementException(
+          String.format("No containers found implementing %s", baseType.getSimpleName()));
+    }
+
+    final Object connectionInfo = byId.get(id);
+
+    if (connectionInfo == null) {
+      throw new java.util.NoSuchElementException(
+          String.format(
+              "No container found implementing %s with id=\"%s\"", baseType.getSimpleName(), id));
+    }
+
+    return connectionInfo;
+  }
+
+  private static final class ContainerInstance {
+    final GenericContainer<?> container;
+    final Annotation annotation;
+    final Object connectionInfo;
+
+    ContainerInstance(
+        final GenericContainer<?> container,
+        final Annotation annotation,
+        final Object connectionInfo) {
+      this.container = container;
+      this.annotation = annotation;
+      this.connectionInfo = connectionInfo;
+    }
+  }
+}

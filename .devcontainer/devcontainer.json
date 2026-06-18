@@ -1,0 +1,26 @@
+{
+  "name": "Spring Redis Laned - Sentinel Tests",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "devcontainer-macstab-chaos-testing",
+  "workspaceFolder": "/workspace",
+  
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "moby": true
+    }
+  },
+  
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "vscjava.vscode-java-pack",
+        "vscjava.vscode-gradle"
+      ]
+    },
+    "jetbrains": {
+      "backend": "IntelliJ"
+    }
+  }
+}
