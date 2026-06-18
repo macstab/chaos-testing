@@ -72,22 +72,49 @@ jobs:
           echo "Version to check: ${VERSION}"
 
           # Published Maven artifact coordinates (groupId.artifactId).
-          # Benchmarks and examples are intentionally excluded.
           ARTIFACTS=(
-            "com.macstab.chaos.jvm.chaos-agent-api"
-            "com.macstab.chaos.jvm.chaos-agent-bootstrap"
-            "com.macstab.chaos.jvm.chaos-agent-core"
-            "com.macstab.chaos.jvm.chaos-agent-instrumentation-jdk"
-            "com.macstab.chaos.jvm.chaos-agent-micronaut-integration"
-            "com.macstab.chaos.jvm.chaos-agent-quarkus-extension"
-            "com.macstab.chaos.jvm.chaos-agent-quarkus-extension-deployment"
-            "com.macstab.chaos.jvm.chaos-agent-spring-boot-common"
-            "com.macstab.chaos.jvm.chaos-agent-spring-boot3-starter"
-            "com.macstab.chaos.jvm.chaos-agent-spring-boot3-test-starter"
-            "com.macstab.chaos.jvm.chaos-agent-spring-boot4-starter"
-            "com.macstab.chaos.jvm.chaos-agent-spring-boot4-test-starter"
-            "com.macstab.chaos.jvm.chaos-agent-startup-config"
-            "com.macstab.chaos.jvm.chaos-agent-testkit"
+            "com.macstab.chaos.macstab-chaos-core"
+            "com.macstab.chaos.macstab-chaos-patterns"
+            "com.macstab.chaos.macstab-chaos-cpu"
+            "com.macstab.chaos.macstab-chaos-memory"
+            "com.macstab.chaos.macstab-chaos-disk"
+            "com.macstab.chaos.macstab-chaos-process"
+            "com.macstab.chaos.macstab-chaos-time"
+            "com.macstab.chaos.macstab-chaos-dns"
+            "com.macstab.chaos.macstab-chaos-network"
+            "com.macstab.chaos.macstab-chaos-redis"
+            "com.macstab.chaos.macstab-chaos-connection"
+            "com.macstab.chaos.macstab-chaos-cache"
+            "com.macstab.chaos.macstab-chaos-filesystem"
+            "com.macstab.chaos.macstab-chaos-proxy"
+            "com.macstab.chaos.macstab-chaos-toxi-core"
+            "com.macstab.chaos.macstab-chaos-java"
+            "com.macstab.chaos.macstab-chaos-java-junit5"
+            "com.macstab.chaos.macstab-chaos-java-spring-boot3"
+            "com.macstab.chaos.macstab-chaos-java-spring-boot3-test"
+            "com.macstab.chaos.macstab-chaos-java-spring-boot4"
+            "com.macstab.chaos.macstab-chaos-java-spring-boot4-test"
+            "com.macstab.chaos.macstab-chaos-java-micronaut"
+            "com.macstab.chaos.macstab-chaos-java-quarkus"
+            "com.macstab.chaos.macstab-chaos-testpacks-dns"
+            "com.macstab.chaos.macstab-chaos-testpacks-connection"
+            "com.macstab.chaos.macstab-chaos-testpacks-memory"
+            "com.macstab.chaos.macstab-chaos-testpacks-process"
+            "com.macstab.chaos.macstab-chaos-testpacks-time"
+            "com.macstab.chaos.macstab-chaos-testpacks-filesystem"
+            "com.macstab.chaos.macstab-chaos-testpacks-java"
+            "com.macstab.chaos.macstab-chaos-testpacks-l3-redis"
+            "com.macstab.chaos.macstab-chaos-testpacks-l3-jdbc"
+            "com.macstab.chaos.macstab-chaos-testpacks-l3-http"
+            "com.macstab.chaos.macstab-chaos-testpacks-l3-grpc"
+            "com.macstab.chaos.macstab-chaos-testpacks-l3-kafka"
+            "com.macstab.chaos.macstab-chaos-testpacks-l3-spring-boot"
+            "com.macstab.chaos.macstab-chaos-testpacks-l3-jvm"
+            "com.macstab.chaos.macstab-chaos-testpacks-l3-kubernetes"
+            "com.macstab.chaos.macstab-chaos-testpacks-l3-cache"
+            "com.macstab.chaos.macstab-chaos-testpacks-l3-spring"
+            "com.macstab.chaos.macstab-chaos-testpacks-l3-feign"
+            "com.macstab.chaos.macstab-chaos-testpacks-l3-system"
           )
 
           DELETED_COUNT=0
@@ -129,13 +156,23 @@ jobs:
               continue
             fi
 
-            echo "  version ${VERSION} exists (id=${VERSION_ID}) - deleting..."
+            TOTAL_VERSIONS=$(echo "$VERSIONS" | jq -r '. | length')
+            echo "  version ${VERSION} exists (id=${VERSION_ID}, total versions=${TOTAL_VERSIONS}) - deleting..."
 
-            DELETE_RESULT=$(curl -s -w "\n%{http_code}" -X DELETE \
-              -H "Authorization: Bearer ${{ secrets.BOT_GITHUB_TOKEN }}" \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "https://api.github.com/orgs/macstab/packages/maven/${PACKAGE_NAME}/versions/${VERSION_ID}")
+            if [ "$TOTAL_VERSIONS" = "1" ]; then
+              # Last version: must delete the whole package, not just the version
+              DELETE_RESULT=$(curl -s -w "\n%{http_code}" -X DELETE \
+                -H "Authorization: Bearer ${{ secrets.BOT_GITHUB_TOKEN }}" \
+                -H "Accept: application/vnd.github+json" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                "https://api.github.com/orgs/macstab/packages/maven/${PACKAGE_NAME}")
+            else
+              DELETE_RESULT=$(curl -s -w "\n%{http_code}" -X DELETE \
+                -H "Authorization: Bearer ${{ secrets.BOT_GITHUB_TOKEN }}" \
+                -H "Accept: application/vnd.github+json" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                "https://api.github.com/orgs/macstab/packages/maven/${PACKAGE_NAME}/versions/${VERSION_ID}")
+            fi
 
             HTTP_CODE=$(echo "$DELETE_RESULT" | tail -n1)
 
