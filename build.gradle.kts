@@ -9,6 +9,10 @@ plugins {
 group = project.property("group").toString()
 version = project.property("version").toString()
 
+repositories {
+    mavenCentral()
+}
+
 subprojects {
     apply(plugin = "java-library")
     apply(plugin = "maven-publish")
