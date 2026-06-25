@@ -277,6 +277,30 @@ subprojects {
     }
 }
 
+// Aggregate Javadoc across every subproject into one report.
+tasks.register<Javadoc>("aggregatedJavadoc") {
+    group = "documentation"
+    description = "Aggregate Javadoc from every subproject into one output directory."
+
+    destinationDir = layout.buildDirectory.dir("docs/aggregated-javadoc").get().asFile
+    title = "macstab-chaos-testing ${version} API"
+
+    subprojects.forEach { sub ->
+        val javaExt = sub.extensions.findByType(JavaPluginExtension::class)
+        if (javaExt != null) {
+            source(javaExt.sourceSets["main"].allJava)
+            classpath += sub.tasks.named<JavaCompile>("compileJava").get().classpath
+        }
+        dependsOn(sub.tasks.matching { it.name == "compileJava" })
+    }
+
+    (options as StandardJavadocDocletOptions).apply {
+        addStringOption("Xdoclint:all,-missing", "-quiet")
+        encoding = "UTF-8"
+        charSet = "UTF-8"
+    }
+}
+
 // Aggregate JaCoCo coverage across every subproject into one report.
 tasks.register<JacocoReport>("jacocoAggregatedReport") {
     group = "verification"
