@@ -1,3 +1,5 @@
+## [1.0.1](https://github.com/macstab/chaos-testing/compare/1.0.0...1.0.1) (2026-09-07)
+
 # 1.0.0 (2026-06-19)
 
 
