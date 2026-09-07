@@ -53,7 +53,7 @@ class ChaosTestingExtensionIntegrationTest {
   void shouldApplyMemoryConstraint(final MockConnectionInfo info) {
     final GenericContainer<?> container = info.getContainer();
 
-    // Note: Docker inspect validation would require TestContainers API extension
+    // Note: Docker inspect validation would require Testcontainers API extension
     // For now, validate container is running (constraint didn't cause failure)
     assertThat(container.isRunning()).isTrue();
   }
@@ -63,7 +63,7 @@ class ChaosTestingExtensionIntegrationTest {
   void shouldApplyCpuConstraint(final MockConnectionInfo info) {
     final GenericContainer<?> container = info.getContainer();
 
-    // Note: Docker inspect validation would require TestContainers API extension
+    // Note: Docker inspect validation would require Testcontainers API extension
     // For now, validate container is running (constraint didn't cause failure)
     assertThat(container.isRunning()).isTrue();
   }
