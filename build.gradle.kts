@@ -277,6 +277,30 @@ subprojects {
     }
 }
 
+// Aggregate Javadoc across every subproject into one report.
+tasks.register<Javadoc>("aggregatedJavadoc") {
+    group = "documentation"
+    description = "Aggregate Javadoc from every subproject into one output directory."
+
+    destinationDir = layout.buildDirectory.dir("docs/aggregated-javadoc").get().asFile
+    title = "macstab-chaos-testing ${version} API"
+
+    subprojects.forEach { sub ->
+        val javaExt = sub.extensions.findByType(JavaPluginExtension::class)
+        if (javaExt != null) {
+            source(javaExt.sourceSets["main"].allJava)
+            classpath += sub.tasks.named<JavaCompile>("compileJava").get().classpath
+        }
+        dependsOn(sub.tasks.matching { it.name == "compileJava" })
+    }
+
+    (options as StandardJavadocDocletOptions).apply {
+        addStringOption("Xdoclint:all,-missing", "-quiet")
+        encoding = "UTF-8"
+        charSet = "UTF-8"
+    }
+}
+
 // Aggregate JaCoCo coverage across every subproject into one report.
 tasks.register<JacocoReport>("jacocoAggregatedReport") {
     group = "verification"
@@ -302,5 +326,48 @@ tasks.register<JacocoReport>("jacocoAggregatedReport") {
         csv.required.set(false)
         html.outputLocation.set(layout.buildDirectory.dir("reports/jacoco/aggregated/html"))
         xml.outputLocation.set(layout.buildDirectory.file("reports/jacoco/aggregated/jacoco.xml"))
+    }
+}
+
+// Task that prints release instructions (used by RELEASE.md).
+tasks.register("releaseToCentral") {
+    group = "publishing"
+    description = "Publish staged deployment to Maven Central via the Central Portal API."
+
+    doLast {
+        val username = project.findProperty("ossrhUsername") as String?
+        val password = project.findProperty("ossrhPassword") as String?
+
+        if (username.isNullOrBlank() || password.isNullOrBlank()) {
+            logger.warn("Maven Central credentials not configured.")
+            logger.warn("Add ossrhUsername / ossrhPassword to ~/.gradle/gradle.properties.")
+            throw GradleException("Maven Central credentials missing. Cannot release.")
+        }
+
+        logger.lifecycle("Triggering Central Portal manual upload API...")
+        logger.lifecycle("  Group:   ${project.group}")
+        logger.lifecycle("  Version: ${project.version}")
+
+        val apiUrl = "https://ossrh-staging-api.central.sonatype.com/manual/upload/defaultRepository/com.macstab"
+
+        val process = ProcessBuilder(
+            "curl", "-u", "$username:$password",
+            "-X", "POST",
+            apiUrl,
+        ).inheritIO().start()
+
+        val exitCode = process.waitFor()
+
+        if (exitCode == 0) {
+            logger.lifecycle("Triggered publish to Maven Central.")
+            logger.lifecycle("Artifacts sync to Maven Central in ~10-30 minutes.")
+            logger.lifecycle("Check: https://central.sonatype.com/artifact/${project.group}")
+        } else {
+            logger.error("Failed to publish. Manual fallback:")
+            logger.error("  1. https://central.sonatype.com/ -> Deployments")
+            logger.error("  2. Find ${project.group}")
+            logger.error("  3. Click Publish")
+            throw GradleException("Failed to publish to Maven Central (exit code: $exitCode)")
+        }
     }
 }
