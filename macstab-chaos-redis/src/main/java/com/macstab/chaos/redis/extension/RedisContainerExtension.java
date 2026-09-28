@@ -87,7 +87,7 @@ public final class RedisContainerExtension
         annotations.length);
 
     if (mustVerifyChaosDependencies(annotations)) {
-      DependencyVerifier.requireCacheModule();
+      DependencyVerifier.requireNetworkModule();
     }
     if (mustVerifyConnectionDependencies(annotations)) {
       DependencyVerifier.requireConnectionModule();
