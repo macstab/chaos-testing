@@ -108,7 +108,8 @@ git checkout vX.Y.Z
 # Build, sign, and stage signed artifacts into the Central Portal staging repo.
 # Requires ossrhUsername, ossrhPassword, and signing.* in ~/.gradle/gradle.properties.
 ./gradlew clean publish -x test --no-daemon --stacktrace
-
+# move to release
+./gradlew releaseToCentral
 git checkout main
 ```
 
