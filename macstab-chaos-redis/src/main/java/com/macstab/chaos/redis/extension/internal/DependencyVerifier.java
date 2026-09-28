@@ -13,7 +13,7 @@ package com.macstab.chaos.redis.extension.internal;
  *
  * <pre>{@code
  * // Called when enableNetworkChaos=true:
- * DependencyVerifier.requireCacheModule();
+ * DependencyVerifier.requireNetworkModule();
  * }</pre>
  *
  * @author Christian Schnapka - Macstab GmbH
@@ -21,8 +21,8 @@ package com.macstab.chaos.redis.extension.internal;
  */
 public final class DependencyVerifier {
 
-  private static final String REDIS_CACHE_CHAOS_CLASS =
-      "com.macstab.chaos.cache.redis.RedisCacheChaosProvider";
+  private static final String NETWORK_CHAOS_CONTROLLER_CLASS =
+      "com.macstab.chaos.network.control.NetworkChaosController";
 
   private static final String COMPOSITE_CONNECTION_CHAOS_CLASS =
       "com.macstab.chaos.connection.CompositeConnectionChaos";
@@ -32,20 +32,24 @@ public final class DependencyVerifier {
   }
 
   /**
-   * Verifies that the macstab-chaos-cache module is present on the classpath.
+   * Verifies that the macstab-chaos-network module is present on the classpath.
    *
-   * <p>Required when {@code enableNetworkChaos=true} is set on a Redis annotation. The cache module
-   * provides the {@code RedisCacheChaosProvider} Toxiproxy integration.
+   * <p>Required when {@code enableNetworkChaos=true} is set on a Redis annotation. The network
+   * module provides {@code NetworkChaosController}, which drives the kernel packet path ({@code
+   * tc/netem} + {@code iptables}) inside the container. Without this dependency, {@code
+   * ControlFacade#create} would fail with a {@link NoClassDefFoundError} — this check converts that
+   * into a clear startup-time error pointing at the missing build dependency.
    *
-   * @throws IllegalStateException if the cache module is not on the classpath
+   * @throws IllegalStateException if the network module is not on the classpath
    */
-  public static void requireCacheModule() {
-    if (!isPresent(REDIS_CACHE_CHAOS_CLASS)) {
+  public static void requireNetworkModule() {
+    if (!isPresent(NETWORK_CHAOS_CONTROLLER_CLASS)) {
       throw new IllegalStateException(
-          "enableNetworkChaos=true requires macstab-chaos-cache (RedisCacheChaosProvider) on classpath.\n"
-              + "This proxies Redis traffic: client → Toxiproxy → Redis\n\n"
+          "enableNetworkChaos=true requires macstab-chaos-network (NetworkChaosController) on classpath.\n"
+              + "This injects latency, jitter and packet loss on the container's kernel packet path"
+              + " (tc/netem + iptables).\n\n"
               + "Add to your build.gradle.kts:\n"
-              + "    testImplementation(\"com.macstab:macstab-chaos-cache:${version}\")");
+              + "    testImplementation(\"com.macstab:macstab-chaos-network:<version>\")");
     }
   }
 
@@ -67,7 +71,7 @@ public final class DependencyVerifier {
           "enableConnectionChaos=true requires macstab-chaos-connection (CompositeConnectionChaos) on classpath.\n"
               + "This wires libchaos-net (LD_PRELOAD syscall errno injection) + Toxiproxy fallback.\n\n"
               + "Add to your build.gradle.kts:\n"
-              + "    testImplementation(\"com.macstab:macstab-chaos-connection:${version}\")");
+              + "    testImplementation(\"com.macstab:macstab-chaos-connection:<version>\")");
     }
   }
 

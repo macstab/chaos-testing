@@ -2,6 +2,7 @@
 package com.macstab.chaos.redis.extension.internal;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.lang.reflect.Constructor;
@@ -47,18 +48,39 @@ class DependencyVerifierTest {
   }
 
   @Nested
-  @DisplayName("requireCacheModule()")
-  class RequireCacheModuleTests {
+  @DisplayName("requireNetworkModule()")
+  class RequireNetworkModuleTests {
 
     @Test
-    @DisplayName("Should throw ISE when cache module is absent")
-    void shouldThrowWhenCacheModuleAbsent() {
-      // ARRANGE: The cache module is NOT on the test classpath
+    @DisplayName("Should not throw when network module is on the classpath")
+    void shouldNotThrowWhenNetworkModulePresent() {
+      // ARRANGE: macstab-chaos-network is a testImplementation dependency of this module
       // ACT & ASSERT
-      assertThatThrownBy(DependencyVerifier::requireCacheModule)
-          .isInstanceOf(IllegalStateException.class)
-          .hasMessageContaining("RedisCacheChaosProvider")
-          .hasMessageContaining("macstab-chaos-cache");
+      assertThatCode(DependencyVerifier::requireNetworkModule).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("Should guard the class that enableNetworkChaos actually needs at runtime")
+    void shouldGuardNetworkChaosController() {
+      // ARRANGE: ControlFacade.create() instantiates NetworkChaosController for tc/netem chaos
+      // ACT & ASSERT
+      assertThat(
+              DependencyVerifier.isPresent(
+                  "com.macstab.chaos.network.control.NetworkChaosController"))
+          .isTrue();
+    }
+  }
+
+  @Nested
+  @DisplayName("requireConnectionModule()")
+  class RequireConnectionModuleTests {
+
+    @Test
+    @DisplayName("Should not throw when connection module is on the classpath")
+    void shouldNotThrowWhenConnectionModulePresent() {
+      // ARRANGE: macstab-chaos-connection is a testImplementation dependency of this module
+      // ACT & ASSERT
+      assertThatCode(DependencyVerifier::requireConnectionModule).doesNotThrowAnyException();
     }
   }
 
