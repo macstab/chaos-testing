@@ -1,3 +1,10 @@
+## [1.0.2](https://github.com/macstab/chaos-testing/compare/1.0.1...1.0.2) (2026-09-28)
+
+
+### Bug Fixes
+
+* **redis:** require macstab-chaos-network for enableNetworkChaos  ([#6](https://github.com/macstab/chaos-testing/issues/6)) ([cef6d73](https://github.com/macstab/chaos-testing/commit/cef6d73b27c4620a32d5e6e5eba975973517a1b2)), closes [ControlFacade#create](https://github.com/ControlFacade/issues/create)
+
 ## [1.0.1](https://github.com/macstab/chaos-testing/compare/1.0.0...1.0.1) (2026-09-07)
 
 # 1.0.0 (2026-06-19)
